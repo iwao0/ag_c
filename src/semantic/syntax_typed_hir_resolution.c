@@ -2410,10 +2410,22 @@ static int preflight_direct_expression_impl(
         !preflight_direct_expression(
             context, ternary->els, &else_type))
       return 0;
+    long long then_constant = 0;
+    long long else_constant = 0;
+    int then_is_null_pointer_constant =
+        direct_integer_constant(
+            context, syntax->rhs, &then_constant) &&
+        then_constant == 0;
+    int else_is_null_pointer_constant =
+        direct_integer_constant(
+            context, ternary->els, &else_constant) &&
+        else_constant == 0;
     psx_conditional_types_resolution_t resolution;
     psx_resolve_conditional_qual_types_in(
         context->semantic_context, condition_type,
-        then_type, else_type, &resolution);
+        then_type, else_type,
+        then_is_null_pointer_constant,
+        else_is_null_pointer_constant, &resolution);
     if (resolution.status ==
         PSX_CONDITIONAL_CONDITION_NOT_SCALAR)
       return note_direct_semantic_rejection(
@@ -3663,13 +3675,24 @@ static psx_semantic_node_t *build_direct_expression_impl(
     psx_semantic_node_t *else_value =
         build_direct_expression(context, ternary->els);
     if (!condition || !then_value || !else_value) return NULL;
+    long long then_constant = 0;
+    long long else_constant = 0;
+    int then_is_null_pointer_constant =
+        direct_integer_constant(
+            context, syntax->rhs, &then_constant) &&
+        then_constant == 0;
+    int else_is_null_pointer_constant =
+        direct_integer_constant(
+            context, ternary->els, &else_constant) &&
+        else_constant == 0;
     psx_conditional_types_resolution_t resolution;
     psx_resolve_conditional_qual_types_in(
         context->semantic_context,
         psx_semantic_node_expression_qual_type(condition),
         psx_semantic_node_expression_qual_type(then_value),
         psx_semantic_node_expression_qual_type(else_value),
-        &resolution);
+        then_is_null_pointer_constant,
+        else_is_null_pointer_constant, &resolution);
     if (resolution.status != PSX_CONDITIONAL_TYPES_OK) {
       set_failure(
           context->failure,

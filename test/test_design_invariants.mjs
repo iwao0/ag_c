@@ -2778,6 +2778,14 @@ const assignmentResolutionSource = await readFile(
   "src/semantic/assignment_resolution.c",
   "utf8",
 );
+const typeCompletenessHeader = await readFile(
+  "src/semantic/type_completeness.h",
+  "utf8",
+);
+const typeCompletenessSource = await readFile(
+  "src/semantic/type_completeness.c",
+  "utf8",
+);
 const callResolutionHeader = await readFile(
   "src/semantic/call_resolution.h",
   "utf8",
@@ -7333,6 +7341,30 @@ if (!/\bpsx_type_shape_t\b/.test(integerConversionHeader) ||
     ) ||
     !/\bpsx_resolve_conditional_result_qual_type_in\s*\([^]*?usual_arithmetic_result\s*\(/.test(
       expressionOperandResolutionSource,
+    ) ||
+    !/\bpsx_resolve_conditional_result_qual_type_in\s*\([^]*?psx_resolve_value_decay_qual_type_in\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/\bpsx_resolve_conditional_result_qual_type_in\s*\([^]*?pointer_types_are_compatible\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/\bpsx_resolve_conditional_result_qual_type_in\s*\([^]*?composite_array_type\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/left_atomic\s*!=\s*right_atomic/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/allow_array_element_qualifier_difference/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/pointer_types_are_compatible\s*\([^;]*?1\s*,\s*1\s*,\s*0\s*,\s*0\s*\)/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/pointer_types_are_compatible\s*\([^;]*?1\s*,\s*1\s*,\s*0\s*,\s*1\s*\)/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/common_base\.qualifiers\s*&=\s*~PSX_TYPE_QUALIFIER_ATOMIC/.test(
+      expressionOperandResolutionSource,
     )) {
   throw new Error(
     "integer promotion and usual arithmetic conversion must have one TypeShape and DataLayout source of truth",
@@ -9212,6 +9244,12 @@ if (!/psx_resolve_number_literal_semantics_in_contexts\s*\(/.test(
     !/PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/then_is_null_pointer_constant/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/else_is_null_pointer_constant/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     /ps_type_(?:binary|conditional)_result_for_target_in\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
@@ -9332,6 +9370,9 @@ if (!/ps_lvar_static_storage_global\s*\(/.test(
 if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/(?:ast|type)\.h|\bpsx_type_t\b|\bps_ctx_type_by_id_in\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
       `${assignmentResolutionHeader}\n${assignmentResolutionSource}`,
     ) ||
+    /\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/(?:ast|type)\.h|\bpsx_type_t\b|\bps_ctx_type_by_id_in\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
+      `${typeCompletenessHeader}\n${typeCompletenessSource}`,
+    ) ||
     !/\bpsx_type_shape_t\b/.test(assignmentResolutionSource) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
       assignmentResolutionSource,
@@ -9341,6 +9382,21 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/(?:ast|type)\.h|\bpsx_type_t\
     ) ||
     !/\bpsx_semantic_type_table_function_types_compatible\s*\(/.test(
       assignmentResolutionSource,
+    ) ||
+    !/target_base\.qualifiers\s*\^\s*value_base\.qualifiers[^]*?PSX_TYPE_QUALIFIER_ATOMIC/.test(
+      assignmentResolutionSource,
+    ) ||
+    !/psx_semantic_pointer_points_to_complete_object_in\s*\(/.test(
+      assignmentResolutionSource,
+    ) ||
+    !/psx_semantic_pointer_points_to_complete_object_in\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/psx_semantic_type_is_complete_object_in\s*\([^]*?PSX_TYPE_VOID[^]*?PSX_TYPE_FUNCTION[^]*?record->is_complete[^]*?type\.array_len\s*>\s*0\s*\|\|\s*type\.is_vla/.test(
+      typeCompletenessSource,
+    ) ||
+    !/\$\(OBJROOT\)\/semantic\/type_completeness\.o/.test(
+      makefileSource,
     ) ||
     !/static\s+int\s+semantic_qual_types_match\s*\([^]*?case\s+PSX_TYPE_POINTER:[^]*?case\s+PSX_TYPE_ARRAY:[^]*?case\s+PSX_TYPE_FUNCTION:/.test(
       typeIdentityImplementationSource,
@@ -9700,7 +9756,7 @@ for (const core of obsoleteOperandTypeViewCores) {
 const sharedOperandQualTypeRuleCores = new Map([
   ["promoted_integer_result", 4],
   ["usual_arithmetic_result", 3],
-  ["decay_pointer_like", 8],
+  ["decay_pointer_like", 6],
 ]);
 for (const [core, expectedCalls] of sharedOperandQualTypeRuleCores) {
   const calls = expressionOperandResolutionSource.match(

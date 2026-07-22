@@ -69,11 +69,15 @@ void psx_resolve_conditional_qual_types_in(
     psx_qual_type_t condition_type,
     psx_qual_type_t then_type,
     psx_qual_type_t else_type,
+    int then_is_null_pointer_constant,
+    int else_is_null_pointer_constant,
     psx_conditional_types_resolution_t *resolution);
 psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t then_type,
-    psx_qual_type_t else_type);
+    psx_qual_type_t else_type,
+    int then_is_null_pointer_constant,
+    int else_is_null_pointer_constant);
 psx_qual_type_t psx_resolve_indirection_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t operand_type);

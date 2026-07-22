@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "../parser/semantic_ctx.h"
+#include "type_completeness.h"
 #include "type_identity.h"
 
 static int describe_type(
@@ -101,6 +102,9 @@ static int pointer_targets_are_compatible(
   if (target_shape.kind == PSX_TYPE_VOID ||
       value_shape.kind == PSX_TYPE_VOID)
     return 1;
+  if (((target_base.qualifiers ^ value_base.qualifiers) &
+       PSX_TYPE_QUALIFIER_ATOMIC) != 0)
+    return 0;
   return pointed_types_are_compatible(
       types, target_base, value_base);
 }
@@ -222,7 +226,7 @@ void psx_resolve_return_qual_types_in(
 }
 
 void psx_resolve_compound_assignment_qual_types_in(
-    const psx_semantic_context_t *semantic_context,
+    psx_semantic_context_t *semantic_context,
     psx_compound_assignment_operator_t operation,
     psx_qual_type_t target_type,
     psx_qual_type_t value_type,
@@ -250,7 +254,9 @@ void psx_resolve_compound_assignment_qual_types_in(
     case PSX_COMPOUND_ASSIGN_ADD:
     case PSX_COMPOUND_ASSIGN_SUB:
       compatible = target.kind == PSX_TYPE_POINTER
-                       ? kind_is_integer(value.kind)
+                       ? kind_is_integer(value.kind) &&
+                             psx_semantic_pointer_points_to_complete_object_in(
+                                 semantic_context, target_type)
                        : kind_is_arithmetic(target.kind) &&
                              kind_is_arithmetic(value.kind);
       break;

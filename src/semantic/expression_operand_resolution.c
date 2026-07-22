@@ -2,6 +2,7 @@
 
 #include "../parser/semantic_ctx.h"
 #include "../type_system/integer_conversion.h"
+#include "type_completeness.h"
 
 #include <string.h>
 
@@ -82,43 +83,54 @@ static psx_qual_type_t decay_pointer_like(
                    semantic_context, element);
 }
 
-static int type_is_complete_object(
+static int array_types_are_compatible(
     psx_semantic_context_t *semantic_context,
-    psx_type_id_t type_id) {
-  psx_type_shape_t type = {0};
-  if (!describe_type(
-          semantic_context,
-          (psx_qual_type_t){
-              type_id, PSX_TYPE_QUALIFIER_NONE},
-          &type) ||
-      type.kind == PSX_TYPE_INVALID || type.kind == PSX_TYPE_VOID ||
-      type.kind == PSX_TYPE_FUNCTION)
+    psx_qual_type_t left, psx_qual_type_t right,
+    int allow_element_qualifier_difference) {
+  if (((left.qualifiers ^ right.qualifiers) &
+       PSX_TYPE_QUALIFIER_ATOMIC) != 0 ||
+      (!allow_element_qualifier_difference &&
+       left.qualifiers != right.qualifiers))
     return 0;
-  if (psx_type_kind_is_aggregate(type.kind)) {
-    const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
-        semantic_context, type.record_id);
-    return record && record->is_complete;
-  }
-  if (type.kind == PSX_TYPE_ARRAY) {
-    psx_qual_type_t element = psx_semantic_type_table_base(
-        ps_ctx_semantic_type_table_in(semantic_context), type_id);
-    return (type.array_len > 0 || type.is_vla) &&
-           type_is_complete_object(
-               semantic_context, element.type_id);
-  }
-  return 1;
-}
-
-static int pointer_points_to_complete_object(
-    psx_semantic_context_t *semantic_context,
-    psx_qual_type_t pointer_type) {
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(semantic_context);
-  psx_qual_type_t pointee = psx_semantic_type_table_base(
-      types, pointer_type.type_id);
-  return pointee.type_id != PSX_TYPE_ID_INVALID &&
-         type_is_complete_object(
-             semantic_context, pointee.type_id);
+  psx_type_shape_t left_shape = {0};
+  psx_type_shape_t right_shape = {0};
+  if (!describe_type(semantic_context, left, &left_shape) ||
+      !describe_type(semantic_context, right, &right_shape) ||
+      left_shape.kind != PSX_TYPE_ARRAY ||
+      right_shape.kind != PSX_TYPE_ARRAY)
+    return 0;
+  int left_has_constant_bound =
+      !left_shape.is_vla && left_shape.array_len > 0;
+  int right_has_constant_bound =
+      !right_shape.is_vla && right_shape.array_len > 0;
+  if (left_has_constant_bound && right_has_constant_bound &&
+      left_shape.array_len != right_shape.array_len)
+    return 0;
+  psx_qual_type_t left_element =
+      psx_semantic_type_table_base(types, left.type_id);
+  psx_qual_type_t right_element =
+      psx_semantic_type_table_base(types, right.type_id);
+  psx_type_shape_t left_element_shape = {0};
+  psx_type_shape_t right_element_shape = {0};
+  if (!describe_type(
+          semantic_context, left_element, &left_element_shape) ||
+      !describe_type(
+          semantic_context, right_element, &right_element_shape) ||
+      left_element_shape.kind != right_element_shape.kind)
+    return 0;
+  if (left_element_shape.kind == PSX_TYPE_ARRAY)
+    return array_types_are_compatible(
+        semantic_context, left_element, right_element,
+        allow_element_qualifier_difference);
+  if (((left_element.qualifiers ^ right_element.qualifiers) &
+       PSX_TYPE_QUALIFIER_ATOMIC) != 0 ||
+      (!allow_element_qualifier_difference &&
+       left_element.qualifiers != right_element.qualifiers))
+    return 0;
+  return psx_semantic_type_table_unqualified_types_match(
+      types, left_element, right_element);
 }
 
 static int pointer_types_are_compatible(
@@ -126,7 +138,8 @@ static int pointer_types_are_compatible(
     psx_qual_type_t left, psx_qual_type_t right,
     int allow_void_object_conversion,
     int allow_function_comparison,
-    int require_complete_object) {
+    int require_complete_object,
+    int allow_array_element_qualifier_difference) {
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(semantic_context);
   psx_qual_type_t left_base = psx_semantic_type_table_base(
@@ -145,20 +158,94 @@ static int pointer_types_are_compatible(
            left_function && right_function &&
            psx_semantic_type_table_function_types_compatible(
                types, left_base, right_base);
+  int left_atomic =
+      (left_base.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0;
+  int right_atomic =
+      (right_base.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0;
+  if (left_atomic != right_atomic &&
+      !(allow_void_object_conversion &&
+        (left_shape.kind == PSX_TYPE_VOID ||
+         right_shape.kind == PSX_TYPE_VOID)))
+    return 0;
   if (allow_void_object_conversion &&
       (left_shape.kind == PSX_TYPE_VOID ||
        right_shape.kind == PSX_TYPE_VOID))
     return 1;
   if (left_shape.kind == PSX_TYPE_VOID ||
       right_shape.kind == PSX_TYPE_VOID ||
-      !psx_semantic_type_table_unqualified_types_match(
-          types, left_base, right_base))
+      (left_shape.kind == PSX_TYPE_ARRAY
+           ? !array_types_are_compatible(
+                 semantic_context,
+                 (psx_qual_type_t){
+                     left_base.type_id,
+                     PSX_TYPE_QUALIFIER_NONE},
+                 (psx_qual_type_t){
+                     right_base.type_id,
+                     PSX_TYPE_QUALIFIER_NONE},
+                 allow_array_element_qualifier_difference)
+           : !psx_semantic_type_table_unqualified_types_match(
+                 types, left_base, right_base)))
     return 0;
   return !require_complete_object ||
-         (type_is_complete_object(
+         (psx_semantic_type_is_complete_object_in(
               semantic_context, left_base.type_id) &&
-          type_is_complete_object(
+          psx_semantic_type_is_complete_object_in(
               semantic_context, right_base.type_id));
+}
+
+static psx_qual_type_t composite_array_type(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t left, psx_qual_type_t right) {
+  if (!array_types_are_compatible(
+          semantic_context,
+          (psx_qual_type_t){
+              left.type_id, PSX_TYPE_QUALIFIER_NONE},
+          (psx_qual_type_t){
+              right.type_id, PSX_TYPE_QUALIFIER_NONE},
+          0))
+    return invalid_qual_type();
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t left_shape = {0};
+  psx_type_shape_t right_shape = {0};
+  if (!describe_type(semantic_context, left, &left_shape) ||
+      !describe_type(semantic_context, right, &right_shape))
+    return invalid_qual_type();
+  psx_qual_type_t left_element =
+      psx_semantic_type_table_base(types, left.type_id);
+  psx_qual_type_t right_element =
+      psx_semantic_type_table_base(types, right.type_id);
+  psx_type_shape_t left_element_shape = {0};
+  psx_type_shape_t right_element_shape = {0};
+  if (!describe_type(
+          semantic_context, left_element, &left_element_shape) ||
+      !describe_type(
+          semantic_context, right_element, &right_element_shape))
+    return invalid_qual_type();
+  psx_qual_type_t element = left_element;
+  if (left_element_shape.kind == PSX_TYPE_ARRAY &&
+      right_element_shape.kind == PSX_TYPE_ARRAY &&
+      left_element.type_id != right_element.type_id) {
+    element = composite_array_type(
+        semantic_context, left_element, right_element);
+    if (element.type_id == PSX_TYPE_ID_INVALID)
+      return invalid_qual_type();
+  }
+
+  int array_len = 0;
+  int is_vla = 0;
+  if (!left_shape.is_vla && left_shape.array_len > 0) {
+    array_len = left_shape.array_len;
+  } else if (!right_shape.is_vla && right_shape.array_len > 0) {
+    array_len = right_shape.array_len;
+  } else if (left_shape.is_vla || right_shape.is_vla) {
+    is_vla = 1;
+  }
+  psx_qual_type_t composite =
+      ps_ctx_intern_array_of_qual_type_in(
+          semantic_context, element, array_len, is_vla);
+  composite.qualifiers = left.qualifiers | right.qualifiers;
+  return composite;
 }
 
 static psx_qual_type_t usual_arithmetic_result(
@@ -328,7 +415,7 @@ void psx_resolve_binary_qual_types_in(
       } else if (lhs_pointer && rhs_pointer) {
         compatible = pointer_types_are_compatible(
             semantic_context, effective_lhs, effective_rhs,
-            1, 1, 0);
+            1, 1, 0, 1);
       } else if (lhs_pointer && kind_is_integer(rhs.kind)) {
         compatible = rhs_is_null_pointer_constant;
       } else if (rhs_pointer && kind_is_integer(lhs.kind)) {
@@ -341,7 +428,7 @@ void psx_resolve_binary_qual_types_in(
       } else if (lhs_pointer && rhs_pointer) {
         compatible = pointer_types_are_compatible(
             semantic_context, effective_lhs, effective_rhs,
-            0, 0, 0);
+            0, 0, 0, 1);
       }
       break;
     case PSX_TYPE_BINARY_ADD:
@@ -349,10 +436,10 @@ void psx_resolve_binary_qual_types_in(
           (kind_is_arithmetic(lhs.kind) &&
            kind_is_arithmetic(rhs.kind)) ||
           (lhs_pointer && kind_is_integer(rhs.kind) &&
-           pointer_points_to_complete_object(
+           psx_semantic_pointer_points_to_complete_object_in(
                semantic_context, effective_lhs)) ||
           (rhs_pointer && kind_is_integer(lhs.kind) &&
-           pointer_points_to_complete_object(
+           psx_semantic_pointer_points_to_complete_object_in(
                semantic_context, effective_rhs));
       break;
     case PSX_TYPE_BINARY_SUB:
@@ -360,12 +447,12 @@ void psx_resolve_binary_qual_types_in(
           (kind_is_arithmetic(lhs.kind) &&
            kind_is_arithmetic(rhs.kind)) ||
           (lhs_pointer && kind_is_integer(rhs.kind) &&
-           pointer_points_to_complete_object(
+           psx_semantic_pointer_points_to_complete_object_in(
                semantic_context, effective_lhs)) ||
           (lhs_pointer && rhs_pointer &&
            pointer_types_are_compatible(
                semantic_context, effective_lhs, effective_rhs,
-               0, 0, 1));
+               0, 0, 1, 1));
       break;
     case PSX_TYPE_BINARY_MUL:
     case PSX_TYPE_BINARY_DIV:
@@ -395,35 +482,102 @@ void psx_resolve_binary_qual_types_in(
 
 psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
-    psx_qual_type_t then_type, psx_qual_type_t else_type) {
+    psx_qual_type_t then_type, psx_qual_type_t else_type,
+    int then_is_null_pointer_constant,
+    int else_is_null_pointer_constant) {
+  if (!semantic_context) return invalid_qual_type();
+  then_type = psx_resolve_value_decay_qual_type_in(
+      semantic_context, then_type);
+  else_type = psx_resolve_value_decay_qual_type_in(
+      semantic_context, else_type);
   psx_type_shape_t then_shape = {0};
   psx_type_shape_t else_shape = {0};
   if (!describe_type(semantic_context, then_type, &then_shape) ||
       !describe_type(semantic_context, else_type, &else_shape))
     return invalid_qual_type();
+  if (kind_is_arithmetic(then_shape.kind) &&
+      kind_is_arithmetic(else_shape.kind))
+    return usual_arithmetic_result(
+        semantic_context, &then_shape, &else_shape);
   if (then_shape.kind == PSX_TYPE_VOID ||
       else_shape.kind == PSX_TYPE_VOID)
     return then_shape.kind == PSX_TYPE_VOID &&
                    else_shape.kind == PSX_TYPE_VOID
                ? unqualified(then_type)
                : invalid_qual_type();
-  if (kind_is_pointer_like(then_shape.kind))
-    return decay_pointer_like(
-        semantic_context, then_type, &then_shape);
-  if (kind_is_pointer_like(else_shape.kind))
-    return decay_pointer_like(
-        semantic_context, else_type, &else_shape);
-  if (then_shape.kind == else_shape.kind &&
-      psx_type_kind_is_aggregate(then_shape.kind))
+
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  if (psx_type_kind_is_aggregate(then_shape.kind) ||
+      psx_type_kind_is_aggregate(else_shape.kind)) {
+    if (then_shape.kind != else_shape.kind ||
+        !psx_semantic_type_table_unqualified_types_match(
+            types, then_type, else_type))
+      return invalid_qual_type();
     return unqualified(then_type);
-  return usual_arithmetic_result(
-      semantic_context, &then_shape, &else_shape);
+  }
+
+  int then_pointer = then_shape.kind == PSX_TYPE_POINTER;
+  int else_pointer = else_shape.kind == PSX_TYPE_POINTER;
+  if (then_pointer && kind_is_integer(else_shape.kind))
+    return else_is_null_pointer_constant
+               ? unqualified(then_type)
+               : invalid_qual_type();
+  if (else_pointer && kind_is_integer(then_shape.kind))
+    return then_is_null_pointer_constant
+               ? unqualified(else_type)
+               : invalid_qual_type();
+  if (!then_pointer || !else_pointer ||
+      !pointer_types_are_compatible(
+          semantic_context, then_type, else_type,
+          1, 1, 0, 0))
+    return invalid_qual_type();
+
+  psx_qual_type_t then_base =
+      psx_semantic_type_table_base(types, then_type.type_id);
+  psx_qual_type_t else_base =
+      psx_semantic_type_table_base(types, else_type.type_id);
+  psx_type_shape_t then_base_shape = {0};
+  psx_type_shape_t else_base_shape = {0};
+  if (!describe_type(
+          semantic_context, then_base, &then_base_shape) ||
+      !describe_type(
+          semantic_context, else_base, &else_base_shape))
+    return invalid_qual_type();
+
+  psx_qual_type_t common_base = then_base;
+  if (then_base_shape.kind == PSX_TYPE_VOID) {
+    common_base = then_base;
+  } else if (else_base_shape.kind == PSX_TYPE_VOID) {
+    common_base = else_base;
+  } else if (then_base_shape.kind == PSX_TYPE_FUNCTION &&
+             else_base_shape.kind == PSX_TYPE_FUNCTION &&
+             !then_base_shape.has_function_prototype &&
+             else_base_shape.has_function_prototype) {
+    common_base = else_base;
+  } else if (then_base_shape.kind == PSX_TYPE_ARRAY &&
+             else_base_shape.kind == PSX_TYPE_ARRAY &&
+             then_base.type_id != else_base.type_id) {
+    common_base = composite_array_type(
+        semantic_context, then_base, else_base);
+    if (common_base.type_id == PSX_TYPE_ID_INVALID)
+      return invalid_qual_type();
+  }
+  common_base.qualifiers =
+      then_base.qualifiers | else_base.qualifiers;
+  if (then_base_shape.kind == PSX_TYPE_VOID ||
+      else_base_shape.kind == PSX_TYPE_VOID)
+    common_base.qualifiers &= ~PSX_TYPE_QUALIFIER_ATOMIC;
+  return ps_ctx_intern_pointer_to_qual_type_in(
+      semantic_context, common_base);
 }
 
 void psx_resolve_conditional_qual_types_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t condition_type,
     psx_qual_type_t then_type, psx_qual_type_t else_type,
+    int then_is_null_pointer_constant,
+    int else_is_null_pointer_constant,
     psx_conditional_types_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
@@ -442,7 +596,9 @@ void psx_resolve_conditional_qual_types_in(
   }
   resolution->result_qual_type =
       psx_resolve_conditional_result_qual_type_in(
-          semantic_context, then_type, else_type);
+          semantic_context, then_type, else_type,
+          then_is_null_pointer_constant,
+          else_is_null_pointer_constant);
   if (resolution->result_qual_type.type_id ==
       PSX_TYPE_ID_INVALID) {
     resolution->status =
@@ -571,7 +727,7 @@ void psx_resolve_incdec_operand_qual_type_in(
        shape.kind != PSX_TYPE_FLOAT))
     return;
   if (shape.kind == PSX_TYPE_POINTER &&
-      !pointer_points_to_complete_object(
+      !psx_semantic_pointer_points_to_complete_object_in(
           semantic_context, operand_type)) {
     resolution->status =
         PSX_INCDEC_OPERAND_POINTER_NOT_COMPLETE_OBJECT;

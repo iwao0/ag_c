@@ -53,7 +53,7 @@ void psx_resolve_return_qual_types_in(
     psx_return_types_status_t *status);
 
 void psx_resolve_compound_assignment_qual_types_in(
-    const psx_semantic_context_t *semantic_context,
+    psx_semantic_context_t *semantic_context,
     psx_compound_assignment_operator_t operation,
     psx_qual_type_t target_type,
     psx_qual_type_t value_type,
