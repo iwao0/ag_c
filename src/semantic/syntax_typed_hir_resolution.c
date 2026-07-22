@@ -4690,6 +4690,12 @@ static int preflight_direct_local_declaration(
               context->semantic_context, base_qual_type,
               &application);
       if (decl_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+      if (!psx_validate_parsed_decl_specifier_constraints_in_context(
+              context->semantic_context, &declaration->specifier,
+              decl_qual_type, specifier_resolution.requested_alignment,
+              1, 0, declarator->has_bitfield,
+              declarator->diagnostic_token))
+        return 0;
       psx_typedef_declaration_resolution_t resolution;
       psx_resolve_typedef_declaration(
           &(psx_typedef_declaration_resolution_request_t){
@@ -4753,6 +4759,13 @@ static int preflight_direct_local_declaration(
     psx_type_shape_t type_shape = {0};
     int has_type = psx_semantic_type_table_describe(
         semantic_types, decl_qual_type.type_id, &type_shape);
+    if (!has_type ||
+        !psx_validate_parsed_decl_specifier_constraints_in_context(
+            context->semantic_context, &declaration->specifier,
+            decl_qual_type, specifier_resolution.requested_alignment,
+            0, 0, declarator->has_bitfield,
+            declarator->diagnostic_token))
+      return 0;
     if (has_type && (declaration->is_extern ||
                      type_shape.kind == PSX_TYPE_FUNCTION)) {
       if (type_shape.kind == PSX_TYPE_FUNCTION) {
@@ -4787,6 +4800,8 @@ static int preflight_direct_local_declaration(
                   .name = name->str,
                   .name_len = name->len,
                   .type = decl_qual_type,
+                  .requested_alignment =
+                      specifier_resolution.requested_alignment,
                   .has_initializer = initializer->has_initializer,
                   .diag_tok = (token_t *)name,
               }))
@@ -4810,6 +4825,8 @@ static int preflight_direct_local_declaration(
           .name = name->str,
           .name_len = name->len,
           .type = decl_qual_type,
+          .requested_alignment =
+              specifier_resolution.requested_alignment,
           .initializer = initializer,
           .diag_tok = (token_t *)name,
       };

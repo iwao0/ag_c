@@ -14590,8 +14590,8 @@ static void test_multiple_funcdefs(
 
   reset_test_translation_unit_state(test_suite_session);
   ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
-      "int variadic(...){ return 0; } "
-      "int main() { return variadic(); }"));
+      "int variadic(int first, ...){ return first; } "
+      "int main() { return variadic(0); }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(2, psx_hir_module_root_count(hir));
   const psx_hir_node_t *variadic =

@@ -113,10 +113,12 @@ void gen_float_literals_in(
 }
 
 static int log2_alignment(int alignment) {
-  if (alignment >= 8) return 3;
-  if (alignment >= 4) return 2;
-  if (alignment >= 2) return 1;
-  return 0;
+  int exponent = 0;
+  while (alignment > 1) {
+    alignment >>= 1;
+    exponent++;
+  }
+  return exponent;
 }
 
 static void emit_relocation_target(

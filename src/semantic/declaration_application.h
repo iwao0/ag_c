@@ -63,6 +63,12 @@ int psx_resolve_parsed_decl_alignment_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_parsed_decl_specifier_t *specifier);
+int psx_validate_parsed_decl_specifier_constraints_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_decl_specifier_t *specifier,
+    psx_qual_type_t declared_type, int requested_alignment,
+    int is_typedef, int is_parameter, int is_bitfield,
+    token_t *diagnostic_token);
 void psx_apply_parsed_declarator_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

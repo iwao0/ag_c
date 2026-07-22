@@ -24,6 +24,10 @@ typedef struct {
   int is_thread_local;
   int is_const_qualified;
   int is_volatile_qualified;
+  int is_restrict_qualified;
+  int is_inline;
+  int is_noreturn;
+  int is_register;
   int is_extern;
   int is_static;
 } psx_type_spec_result_t;

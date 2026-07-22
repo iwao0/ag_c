@@ -23,6 +23,7 @@ typedef struct {
   const ag_compilation_options_t *options;
   psx_parsed_toplevel_declaration_t *declaration;
   psx_qual_type_t base_qual_type;
+  int requested_alignment;
   psx_toplevel_apply_kind_t current_kind;
   psx_qual_type_t current_qual_type;
   psx_parsed_initializer_t current_initializer;
@@ -81,6 +82,15 @@ static int begin_declaration(
   };
   application->declaration = declaration;
   if (declaration->is_standalone_tag) {
+    if (declaration->specifier.alignas_specifier_count > 0 ||
+        declaration->specifier.type_spec.is_inline ||
+        declaration->specifier.type_spec.is_noreturn) {
+      ps_diag_ctx_in(
+          application_diagnostics(application),
+          declaration->diagnostic_token, "declaration-specifier",
+          "standalone tag declaration cannot use function or alignment specifiers");
+      return 0;
+    }
     psx_apply_parsed_standalone_tag_in_contexts(
         application->semantic_context, application->global_registry,
         application->local_registry,
@@ -100,6 +110,10 @@ static int begin_declaration(
         "canonical top-level base type resolution failed");
     return 0;
   }
+  application->requested_alignment =
+      psx_resolve_parsed_decl_alignment_in_contexts(
+          application->semantic_context, application->global_registry,
+          application->local_registry, &declaration->specifier);
   return 1;
 }
 
@@ -126,6 +140,13 @@ static void begin_declarator(
         "canonical top-level declarator type resolution failed");
     return;
   }
+  if (!psx_validate_parsed_decl_specifier_constraints_in_context(
+          application->semantic_context, &declaration->specifier,
+          application->current_qual_type,
+          application->requested_alignment, declaration->is_typedef,
+          0, declarator->has_bitfield,
+          declarator->diagnostic_token))
+    return;
 
   if (declaration->is_typedef) {
     if (initializer->has_initializer) {
@@ -171,6 +192,7 @@ static void begin_declarator(
           .is_extern_decl = declaration->is_extern,
           .is_static = declaration->is_static,
           .is_thread_local = declaration->is_thread_local,
+          .requested_alignment = application->requested_alignment,
           .initializer = &application->current_initializer,
           .diag_tok = declarator->diagnostic_token,
       };

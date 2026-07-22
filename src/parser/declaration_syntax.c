@@ -400,6 +400,21 @@ static int consume_declarator_suffix(
       tk_set_current_token_ctx(
           tk_ctx, current_token(runtime_context)->next);
     }
+    if (!parse_context->allow_vla_star &&
+        (has_static || is_const || is_volatile || is_restrict)) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context), current_token(runtime_context),
+          "declaration-syntax",
+          "array qualifiers and 'static' require a function parameter declarator");
+    }
+    if (has_static &&
+        (current_token(runtime_context)->kind == TK_RBRACKET ||
+         current_token(runtime_context)->kind == TK_MUL)) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context), current_token(runtime_context),
+          "declaration-syntax",
+          "'static' array parameter requires an assignment-expression bound");
+    }
     int has_vla_star =
         parse_context->allow_vla_star && !has_static &&
         current_token(runtime_context)->kind == TK_MUL;
@@ -823,11 +838,14 @@ int psx_try_parse_decl_specifier_syntax_ex(
     specifier->source = PSX_PARSED_DECL_TYPE_TAG;
     parse_tag_specifier(specifier, options);
     while (current_token(runtime_context)->kind == TK_CONST ||
-           current_token(runtime_context)->kind == TK_VOLATILE) {
+           current_token(runtime_context)->kind == TK_VOLATILE ||
+           current_token(runtime_context)->kind == TK_RESTRICT) {
       if (current_token(runtime_context)->kind == TK_CONST)
         specifier->type_spec.is_const_qualified = 1;
       if (current_token(runtime_context)->kind == TK_VOLATILE)
         specifier->type_spec.is_volatile_qualified = 1;
+      if (current_token(runtime_context)->kind == TK_RESTRICT)
+        specifier->type_spec.is_restrict_qualified = 1;
       tk_set_current_token_ctx(
           tk_ctx, current_token(runtime_context)->next);
     }
@@ -852,6 +870,8 @@ int psx_try_parse_decl_specifier_syntax_ex(
         specifier->type_spec.is_const_qualified = 1;
       if (current_token(runtime_context)->kind == TK_VOLATILE)
         specifier->type_spec.is_volatile_qualified = 1;
+      if (current_token(runtime_context)->kind == TK_RESTRICT)
+        specifier->type_spec.is_restrict_qualified = 1;
       if (current_token(runtime_context)->kind == TK_ATOMIC)
         specifier->type_spec.is_atomic = 1;
       tk_set_current_token_ctx(

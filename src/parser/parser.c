@@ -35,6 +35,10 @@ int ps_gvar_is_static_storage(const global_var_t *gv) {
   return (gv && gv->is_static) ? 1 : 0;
 }
 
+int ps_gvar_requested_alignment(const global_var_t *gv) {
+  return gv ? gv->requested_alignment : 0;
+}
+
 char *ps_gvar_name(const global_var_t *gv) {
   return gv ? gv->name : NULL;
 }
@@ -67,6 +71,9 @@ static token_kind_t parse_atomic_type_specifier(
 static void psx_type_spec_result_reset(psx_type_spec_result_t *out);
 static void skip_cv_qualifiers_into_ex(
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
+static int try_consume_post_cv_qualifier(
+    tokenizer_context_t *tokenizer_context,
+    psx_type_spec_result_t *out, token_kind_t kind);
 static inline token_t *curtok_in(tokenizer_context_t *tokenizer_context);
 static inline void set_curtok_in(
     tokenizer_context_t *tokenizer_context, token_t *tok);
@@ -74,7 +81,8 @@ static inline void set_curtok_in(
 bool psx_is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
          k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
-         k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC;
+         k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC ||
+         k == TK_RESTRICT;
 }
 
 bool psx_is_type_specifier_token(token_kind_t kind) {
@@ -162,6 +170,14 @@ static void skip_cv_qualifiers_into_ex(
       out->is_const_qualified = 1;
     if (curtok_in(tokenizer_context)->kind == TK_VOLATILE)
       out->is_volatile_qualified = 1;
+    if (curtok_in(tokenizer_context)->kind == TK_RESTRICT)
+      out->is_restrict_qualified = 1;
+    if (curtok_in(tokenizer_context)->kind == TK_INLINE)
+      out->is_inline = 1;
+    if (curtok_in(tokenizer_context)->kind == TK_NORETURN)
+      out->is_noreturn = 1;
+    if (curtok_in(tokenizer_context)->kind == TK_REGISTER)
+      out->is_register = 1;
     if (curtok_in(tokenizer_context)->kind == TK_EXTERN) out->is_extern = 1;
     if (curtok_in(tokenizer_context)->kind == TK_STATIC) out->is_static = 1;
     if (curtok_in(tokenizer_context)->kind == TK_EXTERN ||
@@ -466,7 +482,7 @@ static int try_consume_post_cv_qualifier(
   switch (k) {
     case TK_CONST:    out->is_const_qualified = 1; break;
     case TK_VOLATILE: out->is_volatile_qualified = 1; break;
-    case TK_RESTRICT: break;
+    case TK_RESTRICT: out->is_restrict_qualified = 1; break;
     case TK_ATOMIC:   out->is_atomic = 1; break;
     default: return 0;
   }
@@ -505,6 +521,10 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     out->is_atomic = 1;
     token_kind_t inner = parse_atomic_type_specifier(syntax);
     if (inner != TK_EOF) {
+      while (try_consume_post_cv_qualifier(
+          tokenizer_context, out,
+          curtok_in(tokenizer_context)->kind)) {
+      }
       out->kind = inner;
       return inner;
     }
@@ -660,6 +680,10 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
       }
       if (k == TK_CONST)        out->is_const_qualified = 1;
       else if (k == TK_VOLATILE) out->is_volatile_qualified = 1;
+      else if (k == TK_RESTRICT) out->is_restrict_qualified = 1;
+      else if (k == TK_INLINE)   out->is_inline = 1;
+      else if (k == TK_NORETURN) out->is_noreturn = 1;
+      else if (k == TK_REGISTER) out->is_register = 1;
       else if (k == TK_STATIC)   out->is_static = 1;
       else if (k == TK_EXTERN)   out->is_extern = 1;
       else if (k == TK_THREAD_LOCAL) out->is_thread_local = 1;

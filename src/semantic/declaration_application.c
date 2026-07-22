@@ -100,6 +100,17 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
       psx_apply_parsed_declarator_in_contexts(
           semantic_context, global_registry, local_registry,
           head, &resolved_shape, &resolved_bit_width);
+      psx_qual_type_t member_qual_type = psx_resolve_decl_qual_type(
+          &(psx_decl_type_request_t){
+              .semantic_context = semantic_context,
+              .base_qual_type = member_base_qual_type,
+              .declarator_shape = &resolved_shape,
+          });
+      if (!psx_validate_parsed_decl_specifier_constraints_in_context(
+              semantic_context, &declaration->specifier,
+              member_qual_type, requested_alignment, 0, 0,
+              head->has_bitfield, head->diagnostic_token))
+        continue;
       member_count += psx_apply_aggregate_member_declaration(
           &layout,
           &(psx_aggregate_member_declaration_request_t){
@@ -399,8 +410,15 @@ static int resolve_parsed_alignas_expression(
       ps_diag_ctx_in(
           ps_ctx_diagnostics(semantic_context), alignas->diagnostic_token,
           "alignas", "alignment is not representable as int");
+      return 0;
     }
-    return constant_result.value > 0 ? (int)constant_result.value : 1;
+    if (constant_result.value < 0) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context), alignas->diagnostic_token,
+          "alignas", "alignment must not be negative");
+      return 0;
+    }
+    return (int)constant_result.value;
   }
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
@@ -468,6 +486,59 @@ int psx_resolve_parsed_decl_alignment_in_contexts(
     if (value > alignment) alignment = value;
   }
   return alignment;
+}
+
+int psx_validate_parsed_decl_specifier_constraints_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_decl_specifier_t *specifier,
+    psx_qual_type_t declared_type, int requested_alignment,
+    int is_typedef, int is_parameter, int is_bitfield,
+    token_t *diagnostic_token) {
+  if (!semantic_context || !specifier ||
+      declared_type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          declared_type.type_id, &shape))
+    return 0;
+  int is_function = shape.kind == PSX_TYPE_FUNCTION;
+  if ((specifier->type_spec.is_inline ||
+       specifier->type_spec.is_noreturn) &&
+      (is_typedef || is_parameter || is_bitfield || !is_function)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "'inline' and '_Noreturn' may only declare a function identifier");
+    return 0;
+  }
+  if (specifier->alignas_specifier_count <= 0) return 1;
+  if (is_typedef || is_parameter || is_bitfield || is_function ||
+      specifier->type_spec.is_register) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "alignas",
+        "alignment specifier is not permitted for this declaration");
+    return 0;
+  }
+  if (requested_alignment == 0) return 1;
+  if ((requested_alignment & (requested_alignment - 1)) != 0) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "alignas", "alignment must be zero or a power of two");
+    return 0;
+  }
+  int natural_alignment = psx_type_layout_alignof(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context),
+      declared_type.type_id, ps_ctx_data_layout(semantic_context));
+  if (natural_alignment > requested_alignment) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "alignas", "alignment cannot be weaker than the natural alignment");
+    return 0;
+  }
+  return 1;
 }
 
 void psx_apply_parsed_standalone_tag_in_contexts(

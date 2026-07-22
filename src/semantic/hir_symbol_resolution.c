@@ -23,6 +23,9 @@ int psx_resolve_global_hir_symbol_spec_in(
                                          qual_type.type_id, data_layout);
   int alignment = psx_type_layout_alignof(semantic_types, record_layouts,
                                           qual_type.type_id, data_layout);
+  int requested_alignment = ps_gvar_requested_alignment(global);
+  if (requested_alignment > alignment)
+    alignment = requested_alignment;
   psx_type_shape_t shape = {0};
   int has_shape = psx_semantic_type_table_describe(
       semantic_types, qual_type.type_id, &shape);

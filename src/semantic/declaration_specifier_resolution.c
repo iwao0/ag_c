@@ -184,6 +184,16 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
               context->local_registry, declarator, bounds,
               declarator->array_bound_count, &application))
         return PSX_DECL_SPECIFIER_VALUE_INVALID;
+      psx_qual_type_t member_qual_type =
+          psx_apply_runtime_declarator_qual_type_in_context(
+              context->semantic_context, base_qual_type,
+              &application);
+      if (!psx_validate_parsed_decl_specifier_constraints_in_context(
+              context->semantic_context, &declaration->specifier,
+              member_qual_type, requested_alignment, 0, 0,
+              declarator->has_bitfield,
+              declarator->diagnostic_token))
+        return PSX_DECL_SPECIFIER_VALUE_INVALID;
       int bit_width = 0;
       if (declarator->has_bitfield) {
         long long value = resolve_const_expr_value(

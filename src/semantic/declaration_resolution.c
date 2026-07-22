@@ -97,6 +97,15 @@ static psx_qual_type_t apply_decl_specifier_qualifiers(
     cv_qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
   type = apply_decl_specifier_cv_qualifiers(
       semantic_context, type, cv_qualifiers);
+  if (specifier->is_restrict_qualified) {
+    psx_type_shape_t shape = {0};
+    if (!psx_semantic_type_table_describe(
+            ps_ctx_semantic_type_table_in(semantic_context),
+            type.type_id, &shape) ||
+        shape.kind != PSX_TYPE_POINTER)
+      return invalid_qual_type();
+    type.qualifiers |= PSX_TYPE_QUALIFIER_RESTRICT;
+  }
   if (specifier->is_atomic)
     type.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
   return type;

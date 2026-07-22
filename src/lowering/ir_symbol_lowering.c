@@ -103,6 +103,9 @@ ir_symbol_t *lower_ir_global_symbol(
   }
   int alignment = psx_type_layout_alignof(semantic_types, record_layouts, type_id,
                                      ag_target_info_data_layout(target));
+  int requested_alignment = ps_gvar_requested_alignment(global);
+  if (requested_alignment > alignment)
+    alignment = requested_alignment;
   /* Streaming functions may take the address of a tentative record before
    * its later tag definition supplies a layout. No allocation uses this
    * per-function symbol marker; translation-unit data lowering sees the

@@ -31,6 +31,12 @@ static int resolve_function_definition_header(
     return 0;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
+  if (definition->return_specifier.alignas_specifier_count > 0) {
+    ps_diag_ctx_in(
+        diagnostics, definition->diagnostic_token, "funcdef",
+        "function definition cannot use an alignment specifier");
+    return 0;
+  }
   ps_local_registry_prepare_function_resolution_in(local_registry);
   local_storage_reset(lowering_context);
 

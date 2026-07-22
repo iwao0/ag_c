@@ -344,6 +344,9 @@ static void lower_global_object(global_var_t *global, void *user) {
   }
   int alignment = type_alignment_id(
       lowering, type_id);
+  int requested_alignment = ps_gvar_requested_alignment(global);
+  if (requested_alignment > alignment)
+    alignment = requested_alignment;
   /* An extern declaration of an incomplete record allocates no storage in
    * this translation unit. Keep only an opaque nonzero symbol description
    * so address relocations can target the definition in another unit. */

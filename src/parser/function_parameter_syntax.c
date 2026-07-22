@@ -74,6 +74,12 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
   if (tk_consume_ctx(tk_ctx, ')')) return 1;
   for (;;) {
     if (current_token(runtime_context)->kind == TK_ELLIPSIS) {
+      if (parameters->count == 0) {
+        ps_diag_ctx_in(
+            diagnostics(runtime_context), current_token(runtime_context),
+            "function-parameters",
+            "ISO C requires a named parameter before '...'");
+      }
       tk_set_current_token_ctx(
           tk_ctx, current_token(runtime_context)->next);
       parameters->is_variadic = 1;
@@ -98,6 +104,15 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
                               DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
       synchronize_function_parameters(runtime_context);
       return 0;
+    }
+    if (parameter->specifier.alignas_specifier_count > 0 ||
+        parameter->specifier.type_spec.is_inline ||
+        parameter->specifier.type_spec.is_noreturn) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context),
+          parameter->specifier.diagnostic_token,
+          "function-parameters",
+          "parameter declaration cannot use alignment or function specifiers");
     }
     parameter->declarator =
         psx_parse_parameter_declarator_syntax_tree_in_contexts(

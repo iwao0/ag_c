@@ -459,6 +459,12 @@ psx_qual_type_t psx_semantic_type_table_intern_function(
   if (parameter_count < 0 ||
       (parameter_count > 0 && !parameters))
     return invalid_qual_type();
+  psx_type_shape_t result_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          table, result.type_id, &result_shape) ||
+      result_shape.kind == PSX_TYPE_ARRAY ||
+      result_shape.kind == PSX_TYPE_FUNCTION)
+    return invalid_qual_type();
   const psx_type_shape_t shape = {
       .kind = PSX_TYPE_FUNCTION,
       .parameter_count = parameter_count,

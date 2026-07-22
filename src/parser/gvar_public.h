@@ -185,6 +185,7 @@ unsigned long long ps_gvar_init_slot_bitfield_bits(const global_var_t *gv, int i
 int ps_gvar_is_extern_decl(const global_var_t *gv);
 int ps_gvar_is_thread_local(const global_var_t *gv);
 int ps_gvar_is_static_storage(const global_var_t *gv);
+int ps_gvar_requested_alignment(const global_var_t *gv);
 char *ps_gvar_name(const global_var_t *gv);
 int ps_gvar_name_len(const global_var_t *gv);
 int ps_gvar_decl_type_shape(const global_var_t *gv,

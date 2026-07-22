@@ -176,6 +176,9 @@ int psx_begin_global_declaration_pipeline(
   }
   result->global = lowered.global;
   result->created = lowered.created;
+  if (result->global &&
+      request->requested_alignment > result->global->requested_alignment)
+    result->global->requested_alignment = request->requested_alignment;
   note_pipeline_declaration_source(
       request->semantic_context, PSX_SCOPE_ID_TRANSLATION_UNIT,
       PSX_NAMESPACE_ORDINARY, request->name, request->name_len,
@@ -745,6 +748,9 @@ int psx_begin_static_local_declaration_pipeline(
   }
   result->global = storage.global;
   result->alias = storage.alias;
+  if (result->global &&
+      request->requested_alignment > result->global->requested_alignment)
+    result->global->requested_alignment = request->requested_alignment;
 
   return 1;
 }
@@ -1112,6 +1118,7 @@ int psx_apply_block_extern_declaration_pipeline(
               .name_len = request->name_len,
               .type = request->type,
               .is_extern_decl = 1,
+              .requested_alignment = request->requested_alignment,
               .initializer = &initializer,
               .diag_tok = request->diag_tok,
           },
