@@ -6,6 +6,8 @@
 #include "../parser/diag.h"
 #include "../parser/semantic_ctx.h"
 
+#include <limits.h>
+
 void psx_resolve_declarator_syntax_in_context(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -66,7 +68,14 @@ void psx_resolve_declarator_syntax_in_context(
           "bit-field width is not an integer constant expression");
     }
     long long value = resolution.constant_value;
-    if (bit_width) *bit_width = value > 0 ? (int)value : 0;
+    if (value < INT_MIN || value > INT_MAX) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context),
+          parsed->bit_width_expression.start, "declarator-resolution",
+          "bit-field width is outside the supported integer range");
+      value = 0;
+    }
+    if (bit_width) *bit_width = (int)value;
   }
 }
 

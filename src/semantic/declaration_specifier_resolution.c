@@ -207,7 +207,15 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
       if (declarator->has_bitfield) {
         long long value = resolve_const_expr_value(
             context, &declarator->bit_width_expression);
-        bit_width = value > 0 && value <= INT_MAX ? (int)value : 0;
+        if (value < INT_MIN || value > INT_MAX) {
+          ps_diag_ctx_in(
+              ps_ctx_diagnostics(context->semantic_context),
+              declarator->bit_width_expression.start,
+              "declaration-specifier",
+              "bit-field width is outside the supported integer range");
+          value = 0;
+        }
+        bit_width = (int)value;
       }
       token_ident_t *name = declarator->identifier;
       int registered = psx_apply_aggregate_member_declaration(

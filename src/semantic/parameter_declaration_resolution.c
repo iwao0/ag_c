@@ -4,6 +4,7 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
 #include "../type_layout.h"
+#include "type_completeness.h"
 
 #include <string.h>
 
@@ -61,6 +62,9 @@ int psx_resolve_parameter_declaration(
           types, identity.type_id, &shape)) {
     return 0;
   }
+  if (psx_semantic_type_has_flexible_array_element_in(
+          request->type.semantic_context, identity.type_id))
+    return 0;
   if (shape.kind == PSX_TYPE_ARRAY) {
     psx_qual_type_t element =
         psx_semantic_type_table_base(types, identity.type_id);

@@ -11713,6 +11713,42 @@ static void test_aggregate_member_resolution_boundary(
       "struct BadWidth { int value : 33; }; "
       "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
+      "struct NegativeWidth { unsigned int value : -1; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct NamedZeroWidth { unsigned int value : 0; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct BoolWidth { _Bool value : 2; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "union FlexibleUnion { int prefix; int data[]; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct FlexibleOnly { int data[]; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct FlexibleNotLast { int prefix; int data[]; int tail; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct FlexibleInner { int prefix; int data[]; }; "
+      "struct FlexibleOuter { struct FlexibleInner inner; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct FlexibleElement { int prefix; int data[]; }; "
+      "struct FlexibleElement values[2]; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct FlexibleParameter { int prefix; int data[]; }; "
+      "int consume(struct FlexibleParameter values[2]) { "
+      "  return values != 0; "
+      "} int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct FlexibleLiteral { int prefix; int data[]; }; "
+      "int main(void) { "
+      "  return ((struct FlexibleLiteral[2]){{1}, {2}})[0].prefix; "
+      "}");
+  expect_parse_fail(test_suite_session,
       "struct BadPointer { int *value : 1; }; "
       "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,

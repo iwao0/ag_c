@@ -3422,6 +3422,15 @@ if (!aggregateMemberResolutionType ||
 if (!/finish_aggregate_bitfield_run\s*\([^]*?\(\s*state->bitfield_bits_used\s*\+\s*7\s*\)\s*\/\s*8[^]*?state->bitfield_storage_offset\s*\+\s*occupied_bytes/.test(
       aggregateMemberResolutionSource,
     ) ||
+    !/storage_bits\s*=\s*storage_size\s*\*\s*8[^]*?bit_capacity\s*=\s*type\.kind\s*==\s*PSX_TYPE_BOOL\s*\?\s*1\s*:\s*storage_bits[^]*?request->bit_width\s*>\s*bit_capacity/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/request->has_bitfield\s*&&\s*request->bit_width\s*<\s*0[^]*?PSX_AGGREGATE_MEMBER_NEGATIVE_BIT_WIDTH/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/request->has_bitfield\s*&&\s*request->bit_width\s*==\s*0\s*&&\s*has_name[^]*?PSX_AGGREGATE_MEMBER_NAMED_ZERO_WIDTH_BITFIELD/.test(
+      aggregateMemberResolutionSource,
+    ) ||
     !/aggregate_bitfield_request_t\s*;/.test(
       aggregateMemberResolutionSource,
     ) ||
@@ -8778,6 +8787,40 @@ const initializerResolutionSource = await readFile(
   "src/semantic/initializer_resolution.c",
   "utf8",
 );
+if (!/semantic_record_contains_flexible_array_member\s*\([^]*?record->member_count[^]*?semantic_type_contains_flexible_array_member/.test(
+      typeCompletenessSource,
+    ) ||
+    !/semantic_type_has_flexible_array_element\s*\([^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?semantic_type_contains_flexible_array_member/.test(
+      typeCompletenessSource,
+    ) ||
+    !/record_has_direct_flexible_array_member\s*\([^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?shape\.array_len\s*<=\s*0/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/PSX_AGGREGATE_MEMBER_FLEXIBLE_ARRAY_IN_UNION/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/PSX_AGGREGATE_MEMBER_AFTER_FLEXIBLE_ARRAY/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/PSX_AGGREGATE_MEMBER_FLEXIBLE_ARRAY_NESTED_IN_STRUCT/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/psx_semantic_type_has_flexible_array_element_in\s*\(\s*semantic_context,\s*declared_type\.type_id\s*\)/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?psx_semantic_type_has_flexible_array_element_in\s*\(\s*semantic_context,\s*resolved\.type_id\s*\)/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/psx_resolve_parameter_declaration\s*\([^]*?psx_semantic_type_has_flexible_array_element_in\s*\(\s*request->type\.semantic_context,\s*identity\.type_id\s*\)[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/canonical_member_flat_slot_count\s*\([^]*?member_shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?member_shape\.array_len\s*<=\s*0\s*\)\s*return\s+0/.test(
+      initializerResolutionSource,
+    )) {
+  throw new Error(
+    "flexible array constraints must follow RecordDecl containment and flexible members must contribute zero initializer slots",
+  );
+}
 if (!/static\s+int\s+flat_initializer_next_active_cursor\s*\([^]*?!context->plan->items\[cursor\]\.is_active[^]*?cursor\+\+/.test(
       initializerResolutionSource,
     ) ||

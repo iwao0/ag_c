@@ -20,6 +20,7 @@
 #include "prototype_parameter.h"
 #include "syntax_typed_hir_resolution.h"
 #include "type_name_resolution.h"
+#include "type_completeness.h"
 #include "typed_hir_materialization.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
@@ -220,12 +221,24 @@ psx_qual_type_t psx_apply_parsed_type_name_qual_type_in_contexts(
   psx_apply_parsed_declarator_in_contexts(
       semantic_context, global_registry, local_registry,
       &type_name->declarator, &shape, NULL);
-  return psx_resolve_decl_qual_type(
+  psx_qual_type_t resolved = psx_resolve_decl_qual_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
           .base_qual_type = base_qual_type,
           .declarator_shape = &shape,
       });
+  if (resolved.type_id != PSX_TYPE_ID_INVALID &&
+      psx_semantic_type_has_flexible_array_element_in(
+          semantic_context, resolved.type_id)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        type_name->diagnostic_token, "type-name",
+        "a structure or union containing a flexible array member "
+        "cannot be an array element");
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  }
+  return resolved;
 }
 
 psx_qual_type_t psx_apply_atomic_type_specifier_qual_type_in(
@@ -569,6 +582,15 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
           ps_ctx_semantic_type_table_in(semantic_context),
           declared_type.type_id, &shape))
     return 0;
+  if (psx_semantic_type_has_flexible_array_element_in(
+          semantic_context, declared_type.type_id)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "a structure or union containing a flexible array member "
+        "cannot be an array element");
+    return 0;
+  }
   int is_function = shape.kind == PSX_TYPE_FUNCTION;
   const psx_type_spec_result_t *type_spec = &specifier->type_spec;
   int is_parameter =

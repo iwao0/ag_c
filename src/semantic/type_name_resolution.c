@@ -2,7 +2,9 @@
 
 #include "declaration_application.h"
 #include "../parser/declaration_syntax.h"
+#include "../parser/diag.h"
 #include "../parser/semantic_ctx.h"
+#include "type_completeness.h"
 
 static psx_scope_lookup_point_t type_name_lookup_point(
     const psx_type_name_ref_t *type_name) {
@@ -125,6 +127,15 @@ int psx_resolve_type_name_qual_type_in_contexts(
           base.base_qual_type, &type_name->syntax->declarator);
   if (resolved.type_id == PSX_TYPE_ID_INVALID)
     return 0;
+  if (psx_semantic_type_has_flexible_array_element_in(
+          semantic_context, resolved.type_id)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        type_name->syntax->diagnostic_token, "type-name",
+        "a structure or union containing a flexible array member "
+        "cannot be an array element");
+    return 0;
+  }
   *qual_type = resolved;
   return 1;
 }

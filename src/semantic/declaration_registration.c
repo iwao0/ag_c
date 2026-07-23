@@ -194,11 +194,55 @@ int psx_apply_aggregate_member_declaration(
     ps_diag_ctx_in(diagnostics, diag_tok, "member",
                  "bit-field width %d exceeds its %d-bit storage type",
                  request ? request->bit_width : 0,
-                 resolution.storage_size * 8);
+                 resolution.bit_capacity);
   }
   if (resolution.status == PSX_AGGREGATE_MEMBER_INVALID_BITFIELD_TYPE) {
     ps_diag_ctx_in(diagnostics, diag_tok, "member",
                  "bit-field has non-integer canonical type");
+  }
+  if (resolution.status == PSX_AGGREGATE_MEMBER_NEGATIVE_BIT_WIDTH) {
+    ps_diag_ctx_in(diagnostics, diag_tok, "member",
+                 "bit-field width %d is negative",
+                 request ? request->bit_width : 0);
+  }
+  if (resolution.status ==
+      PSX_AGGREGATE_MEMBER_NAMED_ZERO_WIDTH_BITFIELD) {
+    ps_diag_ctx_in(diagnostics, diag_tok, "member",
+                 "named bit-field '%.*s' has zero width",
+                 request ? request->member_name_len : 0,
+                 request && request->member_name
+                     ? request->member_name : "");
+  }
+  if (resolution.status ==
+      PSX_AGGREGATE_MEMBER_FLEXIBLE_ARRAY_IN_UNION) {
+    ps_diag_ctx_in(diagnostics, diag_tok, "member",
+                 "a flexible array member is not permitted in a union");
+  }
+  if (resolution.status ==
+      PSX_AGGREGATE_MEMBER_FLEXIBLE_ARRAY_NEEDS_PRIOR_NAMED_MEMBER) {
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "member",
+        "a flexible array member requires a prior named struct member");
+  }
+  if (resolution.status ==
+      PSX_AGGREGATE_MEMBER_AFTER_FLEXIBLE_ARRAY) {
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "member",
+        "a flexible array member must be the last struct member");
+  }
+  if (resolution.status ==
+      PSX_AGGREGATE_MEMBER_FLEXIBLE_ARRAY_NESTED_IN_STRUCT) {
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "member",
+        "a structure or union containing a flexible array member "
+        "cannot be a struct member");
+  }
+  if (resolution.status ==
+      PSX_AGGREGATE_MEMBER_FLEXIBLE_ARRAY_ELEMENT) {
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "member",
+        "a structure or union containing a flexible array member "
+        "cannot be an array element");
   }
   if (resolution.status == PSX_AGGREGATE_MEMBER_DUPLICATE) {
     ps_diag_ctx_in(diagnostics,

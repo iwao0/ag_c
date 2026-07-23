@@ -1340,6 +1340,12 @@ static int canonical_member_flat_slot_count(
     const ag_data_layout_t *data_layout, const psx_record_member_decl_t *member,
     psx_type_id_t member_type_id) {
   if (!member) return 0;
+  psx_type_shape_t member_shape = {0};
+  if (psx_semantic_type_table_describe(
+          semantic_types, member_type_id, &member_shape) &&
+      member_shape.kind == PSX_TYPE_ARRAY &&
+      !member_shape.is_vla && member_shape.array_len <= 0)
+    return 0;
   int per = 1;
   psx_qual_type_t leaf = psx_semantic_type_table_array_leaf(
       semantic_types, member_type_id);
