@@ -549,6 +549,7 @@ static int resolve_definition_parameter(
           .base_qual_type = base_qual_type,
           .declarator_shape = &application->shape,
       },
+      .allow_incomplete_object = 0,
   };
   if (application->shape.count > 0) {
     semantic_request.inner_dimensions = arena_alloc_in(

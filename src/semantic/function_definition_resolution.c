@@ -1,6 +1,7 @@
 #include "function_definition_resolution.h"
 
 #include "declaration_application.h"
+#include "type_completeness.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
 #include "../lowering/local_storage.h"
@@ -15,6 +16,83 @@
 
 #include <stdlib.h>
 #include <string.h>
+
+static int parsed_declarator_has_explicit_vla_star(
+    const psx_parsed_declarator_t *declarator) {
+  if (!declarator) return 0;
+  for (int op_index = 0;
+       op_index < declarator->declarator_shape.count; op_index++) {
+    const psx_declarator_op_t *op =
+        &declarator->declarator_shape.ops[op_index];
+    if (op->kind != PSX_DECL_OP_ARRAY || !op->is_vla_array)
+      continue;
+    int has_bound_expression = 0;
+    for (int bound_index = 0;
+         bound_index < declarator->array_bound_count; bound_index++) {
+      if (declarator->array_bounds[bound_index].declarator_op_index ==
+          op_index) {
+        has_bound_expression = 1;
+        break;
+      }
+    }
+    if (!has_bound_expression) return 1;
+  }
+  return 0;
+}
+
+static int validate_function_definition_parameter_vla_stars(
+    ag_diagnostic_context_t *diagnostics,
+    const psx_parsed_function_definition_t *definition) {
+  const psx_parsed_function_suffix_t *primary_suffix =
+      psx_declarator_outermost_function_suffix(
+          &definition->declarator);
+  const psx_parsed_function_parameters_t *parameters =
+      primary_suffix ? primary_suffix->parameters : NULL;
+  for (int i = 0; parameters && i < parameters->count; i++) {
+    const psx_parsed_function_parameter_t *parameter =
+        &parameters->items[i];
+    if (!parsed_declarator_has_explicit_vla_star(
+            &parameter->declarator))
+      continue;
+    ps_diag_ctx_in(
+        diagnostics, parameter->declarator.diagnostic_token,
+        "funcdef",
+        "variable length array '*' is only permitted in a "
+        "function prototype declaration");
+    return 0;
+  }
+  return 1;
+}
+
+static int validate_function_definition_return_type(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t function_qual_type,
+    token_t *diagnostic_token) {
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t function_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          types, function_qual_type.type_id, &function_shape) ||
+      function_shape.kind != PSX_TYPE_FUNCTION)
+    return 0;
+  psx_qual_type_t return_type =
+      psx_semantic_type_table_base(
+          types, function_qual_type.type_id);
+  psx_type_shape_t return_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          types, return_type.type_id, &return_shape))
+    return 0;
+  if (return_shape.kind == PSX_TYPE_VOID ||
+      psx_semantic_type_is_complete_object_in(
+          semantic_context, return_type.type_id))
+    return 1;
+  ps_diag_ctx_in(
+      ps_ctx_diagnostics(semantic_context), diagnostic_token,
+      "funcdef",
+      "function definition return type must be void or a "
+      "complete object type");
+  return 0;
+}
 
 static int resolve_function_definition_header(
     psx_semantic_context_t *semantic_context,
@@ -37,6 +115,9 @@ static int resolve_function_definition_header(
         "function definition cannot use an alignment specifier");
     return 0;
   }
+  if (!validate_function_definition_parameter_vla_stars(
+          diagnostics, definition))
+    return 0;
   ps_local_registry_prepare_function_resolution_in(local_registry);
   local_storage_reset(lowering_context);
 
@@ -101,6 +182,10 @@ static int resolve_function_definition_header(
         "canonical function return type construction failed");
     return 0;
   }
+  if (!validate_function_definition_return_type(
+          semantic_context, applied.function_qual_type,
+          definition->declarator.diagnostic_token))
+    return 0;
   if (!psx_validate_parsed_decl_specifier_constraints_in_context(
           semantic_context, &definition->return_specifier,
           applied.function_qual_type, 0, 0,

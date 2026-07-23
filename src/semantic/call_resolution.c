@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "assignment_resolution.h"
+#include "type_completeness.h"
 
 static psx_qual_type_t invalid_qual_type(void) {
   return (psx_qual_type_t){
@@ -10,7 +11,7 @@ static psx_qual_type_t invalid_qual_type(void) {
 }
 
 void psx_resolve_call_qual_types_in(
-    const psx_semantic_context_t *semantic_context,
+    psx_semantic_context_t *semantic_context,
     psx_qual_type_t callee_qual_type,
     int argument_count,
     psx_call_types_resolution_t *resolution) {
@@ -42,6 +43,18 @@ void psx_resolve_call_qual_types_in(
       function.is_variadic_function ? 1 : 0;
   if (resolution->return_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return;
+  psx_type_shape_t return_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          types, resolution->return_qual_type.type_id,
+          &return_shape))
+    return;
+  if (return_shape.kind != PSX_TYPE_VOID &&
+      !psx_semantic_type_is_complete_object_in(
+          semantic_context,
+          resolution->return_qual_type.type_id)) {
+    resolution->status = PSX_CALL_TYPES_INCOMPLETE_RETURN;
+    return;
+  }
 
   if ((function.has_function_prototype &&
        function.parameter_count == 0 && argument_count > 0) ||

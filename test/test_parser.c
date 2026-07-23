@@ -15746,6 +15746,52 @@ static void test_parse_invalid(
       "struct Holder { struct Forward values[2]; }; "
       "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
+      "int f(int values[*]) { return values[0]; } "
+      "int main(void) { return 0; }");
+  expect_parse_ok(test_suite_session,
+      "int first(int values[1]) { return values[0]; } "
+      "int apply(int (*callback)(int values[*]), int *values) { "
+      "return callback(values); } "
+      "int main(void) { int values[1]={7}; "
+      "return apply(first, values) != 7; }");
+  expect_parse_fail(test_suite_session,
+      "int f(void value); int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int f(int (*callback)(void value)); "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int f(const void); int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int f(void, ...); int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef void no_parameters; int f(no_parameters, ...); "
+      "int main(void) { return 0; }");
+  expect_parse_ok(test_suite_session,
+      "typedef void no_parameters; int f(no_parameters); "
+      "int f(void) { return 7; } "
+      "int main(void) { return f() != 7; }");
+  expect_parse_ok(test_suite_session,
+      "struct record; typedef int reader(struct record); "
+      "reader read; struct record { int value; }; "
+      "int read(struct record value) { return value.value; } "
+      "int main(void) { struct record value={7}; "
+      "return read(value) != 7; }");
+  expect_parse_fail(test_suite_session,
+      "struct record; int f(struct record value) { return 0; } "
+      "int main(void) { return 0; }");
+  expect_parse_ok(test_suite_session,
+      "struct record; struct record make(int); "
+      "struct record { int value; }; "
+      "struct record make(int value) { "
+      "struct record result={value}; return result; } "
+      "int main(void) { return make(7).value != 7; }");
+  expect_parse_fail(test_suite_session,
+      "struct record; struct record f(void) { for (;;) {} } "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct record; struct record make(void); "
+      "int main(void) { make(); return 0; }");
+  expect_parse_fail(test_suite_session,
       "typedef int FunctionType(int); struct Holder { FunctionType f; }; "
       "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session, "struct S; union S; int main(void) { return 0; }");

@@ -484,6 +484,11 @@ static int resolve_direct_function_call(
     return note_direct_semantic_rejection(
         context, PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_NOT_CALLABLE,
         &call->base);
+  if (resolution.status == PSX_CALL_TYPES_INCOMPLETE_RETURN)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_INCOMPLETE_RETURN,
+        &call->base);
   if (resolution.status == PSX_CALL_TYPES_ARGUMENT_COUNT_MISMATCH)
     return note_direct_semantic_rejection(
         context,

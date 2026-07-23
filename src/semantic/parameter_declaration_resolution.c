@@ -92,20 +92,31 @@ int psx_resolve_parameter_declaration(
     identity = ps_ctx_intern_pointer_to_qual_type_in(
         request->type.semantic_context, identity);
   }
+  psx_type_shape_t adjusted_shape = {0};
   if (identity.type_id == PSX_TYPE_ID_INVALID ||
-      psx_type_layout_sizeof(
-          types,
-          ps_ctx_record_layout_table_in(request->type.semantic_context),
-          identity.type_id,
-          ps_ctx_data_layout(request->type.semantic_context)) <= 0) {
+      !psx_semantic_type_table_describe(
+          types, identity.type_id, &adjusted_shape)) {
     return 0;
   }
+  int object_size = psx_type_layout_sizeof(
+      types,
+      ps_ctx_record_layout_table_in(request->type.semantic_context),
+      identity.type_id,
+      ps_ctx_data_layout(request->type.semantic_context));
+  int is_incomplete_aggregate =
+      object_size <= 0 &&
+      psx_type_kind_is_aggregate(adjusted_shape.kind);
+  if (object_size <= 0 &&
+      !(request->allow_incomplete_object &&
+        is_incomplete_aggregate))
+    return 0;
   resolution->declaration_qual_type = identity;
   resolution->function_qual_type = identity;
   /* C11 6.7.6.3p15 removes top-level qualifiers from the function
    * type, while the parameter object in a definition remains qualified. */
   resolution->function_qual_type.qualifiers =
       PSX_TYPE_QUALIFIER_NONE;
+  if (is_incomplete_aggregate) return 1;
 
   int leaf_is_aggregate = derived_leaf_is_aggregate(
       types, identity.type_id);

@@ -6,6 +6,7 @@
 typedef enum {
   PSX_CALL_TYPES_OK = 0,
   PSX_CALL_TYPES_NOT_CALLABLE,
+  PSX_CALL_TYPES_INCOMPLETE_RETURN,
   PSX_CALL_TYPES_ARGUMENT_COUNT_MISMATCH,
 } psx_call_types_status_t;
 
@@ -25,7 +26,7 @@ typedef enum {
 } psx_call_argument_types_status_t;
 
 void psx_resolve_call_qual_types_in(
-    const psx_semantic_context_t *semantic_context,
+    psx_semantic_context_t *semantic_context,
     psx_qual_type_t callee_qual_type,
     int argument_count,
     psx_call_types_resolution_t *resolution);

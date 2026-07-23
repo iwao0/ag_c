@@ -1021,10 +1021,20 @@ void psx_apply_parsed_function_parameters_in_contexts(
         semantic_context, global_registry, local_registry,
         &parameter->declarator, &parameter_application, -1,
         parameter_lookup_point);
-    if (parameters->count == 1 && base_shape.kind == PSX_TYPE_VOID &&
+    if (base_shape.kind == PSX_TYPE_VOID &&
         parameter_application.shape.count == 0) {
-      resolved_count = 0;
-      break;
+      if (parameters->count == 1 &&
+          !parameters->is_variadic &&
+          !parameter->declarator.identifier &&
+          base_qual_type.qualifiers == PSX_TYPE_QUALIFIER_NONE) {
+        resolved_count = 0;
+        break;
+      }
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context),
+          parameter->specifier.diagnostic_token, "param",
+          "a void parameter must be the only parameter, unnamed, "
+          "and unqualified");
     }
     psx_parameter_declaration_resolution_t parameter_resolution;
     if (!psx_resolve_parameter_declaration(
@@ -1034,6 +1044,7 @@ void psx_apply_parsed_function_parameters_in_contexts(
                     .base_qual_type = base_qual_type,
                     .declarator_shape = &parameter_application.shape,
                 },
+                .allow_incomplete_object = 1,
             },
             &parameter_resolution)) {
       ps_diag_ctx_in(

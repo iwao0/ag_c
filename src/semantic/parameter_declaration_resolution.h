@@ -19,6 +19,7 @@ typedef struct {
   psx_parameter_dimension_t *inner_dimensions;
   int inner_dimension_count;
   int pointer_indirections;
+  int allow_incomplete_object;
 } psx_parameter_declaration_resolution_request_t;
 
 typedef struct {

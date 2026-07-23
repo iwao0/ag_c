@@ -311,6 +311,11 @@ static int diagnose_direct_syntax_rejection(
           "%s", diag_message_for_in(
                     diagnostics, DIAG_ERR_PARSER_CALL_NOT_CALLABLE));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_INCOMPLETE_RETURN:
+      ps_diag_ctx_in(
+          diagnostics, token, "call",
+          "a function with an incomplete return type cannot be called");
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH:
       diag_emit_tokf_in(
           diagnostics,

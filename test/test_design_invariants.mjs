@@ -8965,6 +8965,71 @@ if (!/int\s+op_index\s*=\s*declarator->declarator_shape\.count[^]*?parse_context
     "array parameter qualifiers and static must be restricted to the outermost array type derivation and static must not repeat",
   );
 }
+if (!/parsed_declarator_has_explicit_vla_star\s*\([^]*?op->kind\s*!=\s*PSX_DECL_OP_ARRAY\s*\|\|\s*!op->is_vla_array[^]*?declarator->array_bound_count[^]*?!has_bound_expression\s*\)\s*return\s+1/.test(
+      frontendDeclarationSources,
+    ) ||
+    !/validate_function_definition_parameter_vla_stars\s*\([^]*?psx_declarator_outermost_function_suffix[^]*?parameters->items\[i\][^]*?parsed_declarator_has_explicit_vla_star/.test(
+      frontendDeclarationSources,
+    ) ||
+    !/resolve_function_definition_header\s*\([^]*?validate_function_definition_parameter_vla_stars\s*\(\s*diagnostics,\s*definition\s*\)/.test(
+      frontendDeclarationSources,
+    )) {
+  throw new Error(
+    "explicit VLA star parameters must be accepted in prototypes and rejected only on the defining function parameter list",
+  );
+}
+if (!/validate_function_definition_return_type\s*\([^]*?function_shape\.kind\s*!=\s*PSX_TYPE_FUNCTION[^]*?psx_semantic_type_table_base[^]*?return_shape\.kind\s*==\s*PSX_TYPE_VOID\s*\|\|[^]*?psx_semantic_type_is_complete_object_in[^]*?function definition return type must be void or a[^]*?complete object type/.test(
+      frontendDeclarationSources,
+    ) ||
+    !/resolve_function_definition_header\s*\([^]*?validate_function_definition_return_type\s*\(\s*semantic_context,\s*applied\.function_qual_type/.test(
+      frontendDeclarationSources,
+    )) {
+  throw new Error(
+    "function declarations may retain incomplete record returns but definitions must reject them before IR lowering",
+  );
+}
+if (!/PSX_CALL_TYPES_INCOMPLETE_RETURN/.test(
+      callResolutionHeader,
+    ) ||
+    !/psx_resolve_call_qual_types_in\s*\([^]*?return_shape\.kind\s*!=\s*PSX_TYPE_VOID[^]*?!psx_semantic_type_is_complete_object_in[^]*?PSX_CALL_TYPES_INCOMPLETE_RETURN/.test(
+      callResolutionSource,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_INCOMPLETE_RETURN/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/resolution\.status\s*==\s*PSX_CALL_TYPES_INCOMPLETE_RETURN[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_INCOMPLETE_RETURN/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_INCOMPLETE_RETURN[^]*?function with an incomplete return type cannot be called/.test(
+      semanticTreeResolutionSource,
+    )) {
+  throw new Error(
+    "calls with incomplete return types must be rejected during canonical call resolution before Typed HIR lowering",
+  );
+}
+if (!/base_shape\.kind\s*==\s*PSX_TYPE_VOID\s*&&[^]*?parameter_application\.shape\.count\s*==\s*0[^]*?parameters->count\s*==\s*1\s*&&[^]*?!parameters->is_variadic\s*&&[^]*?!parameter->declarator\.identifier\s*&&[^]*?base_qual_type\.qualifiers\s*==\s*PSX_TYPE_QUALIFIER_NONE[^]*?resolved_count\s*=\s*0[^]*?void parameter must be the only parameter, unnamed/.test(
+      declarationApplicationSource,
+    )) {
+  throw new Error(
+    "the zero-parameter void marker must be the sole unnamed unqualified parameter while typedef void remains valid",
+  );
+}
+if (!/allow_incomplete_object/.test(
+      parameterDeclarationResolutionHeader,
+    ) ||
+    !/object_size\s*<=\s*0[^]*?psx_type_kind_is_aggregate\s*\(\s*adjusted_shape\.kind\s*\)[^]*?request->allow_incomplete_object[^]*?is_incomplete_aggregate[^]*?resolution->declaration_qual_type\s*=\s*identity[^]*?if\s*\(is_incomplete_aggregate\)\s*return\s+1/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/psx_apply_parsed_function_parameters_in_contexts\s*\([^]*?\.allow_incomplete_object\s*=\s*1/.test(
+      declarationApplicationSource,
+    ) ||
+    !/resolve_definition_parameter\s*\([^]*?\.allow_incomplete_object\s*=\s*0/.test(
+      declarationPipelineSource,
+    )) {
+  throw new Error(
+    "function prototypes must retain incomplete record parameter identity while definitions require complete parameter objects",
+  );
+}
 if (!/static\s+int\s+flat_initializer_next_active_cursor\s*\([^]*?!context->plan->items\[cursor\]\.is_active[^]*?cursor\+\+/.test(
       initializerResolutionSource,
     ) ||
