@@ -76,6 +76,79 @@ static int static_nested_pointer_2d(int rows, int columns) {
   return (*handle)[1][1][1];
 }
 
+static int nested_parameter_2d(
+    int rows, int columns, int (**handle)[rows][columns]) {
+  int index = 0;
+  if ((int)sizeof (*handle)[index++] !=
+          rows * columns * (int)sizeof(int) ||
+      index != 1)
+    return -1;
+  index = 0;
+  if ((int)sizeof (*handle)[index++][0] !=
+          columns * (int)sizeof(int) ||
+      index != 1)
+    return -2;
+  if ((int)sizeof **handle !=
+      rows * columns * (int)sizeof(int))
+    return -3;
+  if ((int)sizeof (**handle)[0] !=
+      columns * (int)sizeof(int))
+    return -4;
+  if ((int)sizeof (*handle)[0] !=
+      rows * columns * (int)sizeof(int))
+    return -5;
+  if ((int)sizeof (*handle)[0][0] !=
+      columns * (int)sizeof(int))
+    return -6;
+  return (*handle)[1][1][1];
+}
+
+static int call_nested_parameter_2d(int rows, int columns) {
+  int (*matrix)[rows][columns] = (void *)backing;
+  return nested_parameter_2d(rows, columns, &matrix);
+}
+
+static int nested_pointer_comparison(
+    int columns, int (**runtime)[columns], int (**fixed)[3]) {
+  return runtime == fixed;
+}
+
+static int call_nested_pointer_comparison(int columns) {
+  int (*row)[3] = (void *)backing;
+  return nested_pointer_comparison(columns, &row, &row);
+}
+
+static int nested_pointer_ops(
+    int choose_runtime, int columns,
+    int (**runtime)[columns], int (**fixed)[3]) {
+  int (**selected)[columns] =
+      choose_runtime ? runtime : fixed;
+  if (selected != (choose_runtime ? runtime : fixed))
+    return 0;
+  return runtime - fixed == 0;
+}
+
+static int call_nested_pointer_ops(
+    int choose_runtime, int columns) {
+  int (*row)[3] = (void *)backing;
+  return nested_pointer_ops(
+      choose_runtime, columns, &row, &row);
+}
+
+static int triple_pointer_parameter(
+    int columns, int (***triple)[columns]) {
+  if ((int)sizeof ***triple !=
+      columns * (int)sizeof(int))
+    return -1;
+  return (**triple)[1][2];
+}
+
+static int call_triple_pointer_parameter(int columns) {
+  int (*row)[columns] = (void *)backing;
+  int (**handle)[columns] = &row;
+  return triple_pointer_parameter(columns, &handle);
+}
+
 int main(void) {
   for (int i = 0; i < 64; i++) backing[i] = i + 1;
 
@@ -100,5 +173,13 @@ int main(void) {
   if (nested_pointer_2d(3, 4) != 18) return 18;
   if (static_nested_pointer_2d(2, 3) != 11) return 19;
   if (static_nested_pointer_2d(3, 4) != 18) return 20;
+  if (call_nested_parameter_2d(2, 3) != 11) return 21;
+  if (call_nested_parameter_2d(3, 4) != 18) return 22;
+  if (!call_nested_pointer_comparison(3)) return 23;
+  if (!call_nested_pointer_comparison(5)) return 24;
+  if (!call_nested_pointer_ops(1, 3)) return 25;
+  if (!call_nested_pointer_ops(0, 5)) return 26;
+  if (call_triple_pointer_parameter(3) != 6) return 27;
+  if (call_triple_pointer_parameter(5) != 8) return 28;
   return 0;
 }

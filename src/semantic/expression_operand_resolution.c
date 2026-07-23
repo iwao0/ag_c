@@ -133,6 +133,36 @@ static int array_types_are_compatible(
       types, left_element, right_element);
 }
 
+static int nested_pointed_types_are_compatible(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t left, psx_qual_type_t right,
+    int require_identical_qualifiers) {
+  if (require_identical_qualifiers &&
+      left.qualifiers != right.qualifiers)
+    return 0;
+  psx_type_shape_t left_shape = {0};
+  psx_type_shape_t right_shape = {0};
+  if (!describe_type(semantic_context, left, &left_shape) ||
+      !describe_type(semantic_context, right, &right_shape) ||
+      left_shape.kind != right_shape.kind)
+    return 0;
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  if (left_shape.kind == PSX_TYPE_POINTER)
+    return nested_pointed_types_are_compatible(
+        semantic_context,
+        psx_semantic_type_table_base(types, left.type_id),
+        psx_semantic_type_table_base(types, right.type_id), 1);
+  if (left_shape.kind == PSX_TYPE_ARRAY)
+    return array_types_are_compatible(
+        semantic_context, left, right, 0);
+  if (left_shape.kind == PSX_TYPE_FUNCTION)
+    return psx_semantic_type_table_function_types_compatible(
+        types, left, right);
+  return psx_semantic_type_table_unqualified_types_match(
+      types, left, right);
+}
+
 static int pointer_types_are_compatible(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t left, psx_qual_type_t right,
@@ -183,6 +213,9 @@ static int pointer_types_are_compatible(
                      right_base.type_id,
                      PSX_TYPE_QUALIFIER_NONE},
                  allow_array_element_qualifier_difference)
+           : left_shape.kind == PSX_TYPE_POINTER
+                 ? !nested_pointed_types_are_compatible(
+                       semantic_context, left_base, right_base, 0)
            : !psx_semantic_type_table_unqualified_types_match(
                  types, left_base, right_base)))
     return 0;

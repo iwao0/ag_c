@@ -336,6 +336,9 @@ static int resolve_direct_call_identifier(
 static int direct_syntax_has_vla_binding(
     direct_resolution_context_t *context,
     const node_t *syntax);
+static direct_vla_runtime_view_t direct_vla_runtime_view(
+    direct_resolution_context_t *context,
+    const node_t *syntax);
 static int resolve_direct_declarator_application(
     direct_resolution_context_t *context,
     const psx_parsed_declarator_t *declarator,
@@ -1265,20 +1268,26 @@ static int resolve_direct_sizeof_type_name(
       &binding->plan);
 }
 
-static int resolve_direct_sizeof_vla_subscript(
+static int resolve_direct_sizeof_vla_derived_expression(
     direct_resolution_context_t *context,
     const node_sizeof_query_t *query,
     direct_type_query_binding_t *binding) {
   if (!context || !query || !query->operand || !binding ||
-      query->operand->kind != ND_SUBSCRIPT)
+      (query->operand->kind != ND_SUBSCRIPT &&
+       query->operand->kind != ND_UNARY_DEREF))
     return 0;
   const node_t *base = query->operand;
-  int depth = 0;
-  while (base && base->kind == ND_SUBSCRIPT) {
-    depth++;
+  int derived_operation_count = 0;
+  int subscript_count = 0;
+  while (base &&
+         (base->kind == ND_SUBSCRIPT ||
+          base->kind == ND_UNARY_DEREF)) {
+    if (base->kind == ND_SUBSCRIPT) subscript_count++;
+    derived_operation_count++;
     base = base->lhs;
   }
-  if (!base || base->kind != ND_IDENTIFIER || depth <= 0)
+  if (!base || base->kind != ND_IDENTIFIER ||
+      derived_operation_count <= 0)
     return 0;
 
   psx_identifier_expression_resolution_t identifier;
@@ -1291,23 +1300,30 @@ static int resolve_direct_sizeof_vla_subscript(
       !identifier.symbol.local)
     return 0;
 
-  binding->evaluated_prefixes = arena_alloc_in(
-      ps_ctx_arena(context->semantic_context),
-      (size_t)depth * sizeof(*binding->evaluated_prefixes));
-  if (!binding->evaluated_prefixes) {
-    context->preflight_failed = 1;
-    set_failure(
-        context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
-        &query->base);
-    return 0;
+  if (subscript_count > 0) {
+    binding->evaluated_prefixes = arena_alloc_in(
+        ps_ctx_arena(context->semantic_context),
+        (size_t)subscript_count *
+        sizeof(*binding->evaluated_prefixes));
+    if (!binding->evaluated_prefixes) {
+      context->preflight_failed = 1;
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          &query->base);
+      return 0;
+    }
   }
-  const node_t *subscript = query->operand;
-  for (int i = depth - 1; i >= 0; i--) {
-    binding->evaluated_prefixes[i] = subscript->rhs;
-    subscript = subscript->lhs;
+  int prefix_index = subscript_count;
+  const node_t *derived = query->operand;
+  while (derived &&
+         (derived->kind == ND_SUBSCRIPT ||
+          derived->kind == ND_UNARY_DEREF)) {
+    if (derived->kind == ND_SUBSCRIPT)
+      binding->evaluated_prefixes[--prefix_index] = derived->rhs;
+    derived = derived->lhs;
   }
-  binding->evaluated_prefix_count = depth;
-  for (int i = 0; i < depth; i++) {
+  binding->evaluated_prefix_count = subscript_count;
+  for (int i = 0; i < subscript_count; i++) {
     psx_qual_type_t index_qual_type;
     if (!binding->evaluated_prefixes[i] ||
         !preflight_direct_expression(
@@ -1322,7 +1338,7 @@ static int resolve_direct_sizeof_vla_subscript(
       direct_semantic_types(context);
   psx_qual_type_t queried_qual_type =
       identifier.declaration_qual_type;
-  for (int i = 0; i < depth; i++) {
+  for (int i = 0; i < derived_operation_count; i++) {
     psx_type_shape_t queried_shape = {0};
     if (!direct_describe_qual_type(
             context, queried_qual_type, &queried_shape) ||
@@ -1335,15 +1351,16 @@ static int resolve_direct_sizeof_vla_subscript(
   }
   if (queried_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
 
-  lvar_t *local = identifier.symbol.local;
-  int row_slot = ps_lvar_vla_row_stride_frame_off(local);
-  int remaining = ps_lvar_vla_strides_remaining(local);
-  if (row_slot == 0 ||
-      (depth != 1 && depth - 1 > remaining))
+  direct_vla_runtime_view_t runtime_view =
+      direct_vla_runtime_view(context, query->operand->lhs);
+  if (runtime_view.stride_frame_offset == 0 ||
+      runtime_view.pointer_indirections > 0 ||
+      !psx_semantic_type_table_contains_vla_array(
+          semantic_types, queried_qual_type.type_id))
     return 0;
   return psx_resolve_sizeof_runtime_slot_plan_in(
       context->semantic_context, queried_qual_type,
-      row_slot + PSX_VLA_RUNTIME_SLOT_SIZE * (depth - 1),
+      runtime_view.stride_frame_offset,
       &binding->plan);
 }
 
@@ -1423,9 +1440,19 @@ static int resolve_direct_type_query(
             syntax);
       psx_qual_type_t queried_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-      if (query->operand->kind == ND_SUBSCRIPT &&
-          direct_syntax_has_vla_binding(context, query->operand)) {
-        resolved = resolve_direct_sizeof_vla_subscript(
+      int derived_operand =
+          query->operand->kind == ND_SUBSCRIPT ||
+          query->operand->kind == ND_UNARY_DEREF;
+      int operand_has_vla_binding = 0;
+      if (derived_operand) {
+        context->unevaluated_depth++;
+        operand_has_vla_binding =
+            direct_syntax_has_vla_binding(
+                context, query->operand);
+        context->unevaluated_depth--;
+      }
+      if (derived_operand && operand_has_vla_binding) {
+        resolved = resolve_direct_sizeof_vla_derived_expression(
             context, query, binding);
         if (!resolved &&
             !preflight_direct_sizeof_operand(
@@ -7259,7 +7286,7 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
         .name_length = ps_lvar_name_len(parameter) > 0
                            ? (size_t)ps_lvar_name_len(parameter) : 0,
     };
-    if (!psx_resolve_local_hir_node_spec_in(
+    if (!psx_resolve_parameter_hir_node_spec_in(
             semantic_context, parameter,
             ps_lvar_offset(parameter), &parameter_spec)) {
       set_failure(

@@ -2362,6 +2362,77 @@ static void test_typed_hir_vla_parameter_metadata_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_typed_hir_indirect_vla_parameter_metadata_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_hir_indirect_vla_parameter_metadata_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
+      "int indirect_rstride("
+      "int rows, int columns, int (**handle)[rows][columns]) { "
+      "return (*handle)[1][1][1]; }");
+  ASSERT_TRUE(program_resolved);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  const psx_hir_node_t *root = psx_hir_module_lookup(hir, root_id);
+  ASSERT_TRUE(root != NULL);
+  const psx_hir_node_t *vla_parameter = NULL;
+  for (size_t i = 0; i < psx_hir_node_child_count(root); i++) {
+    if (psx_hir_node_child_edge_at(root, i) !=
+        PSX_HIR_EDGE_PARAMETER)
+      continue;
+    const psx_hir_node_t *parameter = psx_hir_module_lookup(
+        hir, psx_hir_node_child_at(root, i));
+    if (psx_hir_node_vla_dimension_count(parameter) > 0)
+      vla_parameter = parameter;
+  }
+  ASSERT_TRUE(vla_parameter != NULL);
+  ASSERT_TRUE(psx_hir_node_vla_stride_frame_offset(vla_parameter) != 0);
+  ASSERT_EQ(4, psx_hir_node_vla_stride_element_size(vla_parameter));
+  ASSERT_EQ(8, psx_hir_node_vla_stride_slot_size(vla_parameter));
+  ASSERT_EQ(2, psx_hir_node_vla_dimension_count(vla_parameter));
+
+  int unstrided_handle_reference_count = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *candidate =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    size_t name_length = 0;
+    const char *name = candidate
+                           ? psx_hir_node_name(candidate, &name_length)
+                           : NULL;
+    if (candidate != vla_parameter && name && name_length == 6 &&
+        memcmp(name, "handle", 6) == 0 &&
+        psx_hir_node_vla_stride_frame_offset(candidate) == 0)
+      unstrided_handle_reference_count++;
+  }
+  ASSERT_TRUE(unstrided_handle_reference_count >= 1);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_MUL) >= 2);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) >= 2);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_vla_allocation_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_vla_allocation_without_ast...\n");
@@ -7830,6 +7901,30 @@ static void test_direct_function_typed_hir_resolution_boundary(
       "(&_Generic(choose, int: (struct S)10, "
       "default: (struct S)11))->value + "
       "(&_Generic(choose, int: helper, default: helper) != 0); }");
+  assert_direct_function_resolution(test_suite_session,
+      "int __direct_nested_vla_pointer_argument(int count) { "
+      "int consume(int, int (**)[count]); "
+      "int (*row)[3] = 0; return consume(count, &row); }");
+  assert_direct_function_resolution(test_suite_session,
+      "int __direct_nested_vla_pointer_comparison("
+      "int count, int (**runtime)[count], int (**fixed)[3]) { "
+      "return runtime == fixed; }");
+  assert_direct_function_resolution(test_suite_session,
+      "int __direct_first_level_pointer_qualifier_addition("
+      "int **source) { int * const *target = source; "
+      "return **target; }");
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_nested_pointer_qualifier_argument(void) { "
+      "int consume(const int **); int *value = 0; "
+      "return consume(&value); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_TYPES_INCOMPATIBLE,
+      ND_ADDRESS_OF);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_nested_pointer_qualifier_comparison("
+      "int **plain, const int **qualified) { "
+      "return plain == qualified; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_BINARY_OPERANDS_INCOMPATIBLE,
+      ND_EQ);
   assert_direct_function_rejection(test_suite_session,
       "int __direct_return_value_required(void) { return; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_REQUIRED,
@@ -13720,6 +13815,23 @@ static void test_expr_sizeof(
 
   assert_test_program_return_hir_number(test_suite_session,
       "int main() { int x; return sizeof(x); }", 4);
+  assert_test_program_return_hir_number(test_suite_session,
+      "int main(void) { int values[2][3]; "
+      "int (*pointer)[2][3] = &values; "
+      "return sizeof (*pointer)[0]; }",
+      12);
+  assert_test_program_return_hir_number(test_suite_session,
+      "int main(void) { int values[2][3]; "
+      "int (*pointer)[2][3] = &values; "
+      "int (**handle)[2][3] = &pointer; "
+      "return sizeof **handle; }",
+      24);
+  assert_test_program_return_hir_number(test_suite_session,
+      "int main(void) { int values[2][3]; "
+      "int (*pointer)[2][3] = &values; "
+      "int (**handle)[2][3] = &pointer; "
+      "return sizeof (**handle)[0]; }",
+      12);
   expect_parse_ok_without_message(test_suite_session, "int main(void){ int x; return sizeof(x); }", "W3004");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ int a[3]; return sizeof(a); }", "W3003");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ int n=3; int a[n]; return sizeof(a); }", "W3003");
@@ -17876,6 +17988,8 @@ int main() {
   test_typed_hir_pointer_lowering_without_ast(test_suite_session);
   test_typed_hir_post_inc_lowering_without_ast(test_suite_session);
   test_typed_hir_vla_parameter_metadata_without_ast(test_suite_session);
+  test_typed_hir_indirect_vla_parameter_metadata_without_ast(
+      test_suite_session);
   test_typed_hir_vla_allocation_without_ast(test_suite_session);
   test_typed_hir_direct_call_lowering_without_ast(test_suite_session);
   test_typed_hir_variadic_aggregate_call_without_ast(test_suite_session);

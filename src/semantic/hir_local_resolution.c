@@ -5,12 +5,15 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
 
-int psx_apply_local_vla_hir_node_spec_in(
+static int apply_vla_hir_node_spec(
     const psx_semantic_context_t *semantic_context,
-    const lvar_t *local, psx_hir_node_spec_t *spec) {
+    const lvar_t *local, int include_indirect_parameter_metadata,
+    psx_hir_node_spec_t *spec) {
   if (!semantic_context || !local || !spec) return 0;
   if (!ps_lvar_is_vla(local)) return 1;
-  if (ps_lvar_vla_pointer_indirections(local) > 0) return 1;
+  if (!include_indirect_parameter_metadata &&
+      ps_lvar_vla_pointer_indirections(local) > 0)
+    return 1;
 
   spec->vla_stride_frame_offset =
       ps_lvar_vla_row_stride_frame_off(local);
@@ -39,9 +42,17 @@ int psx_apply_local_vla_hir_node_spec_in(
   return 1;
 }
 
-int psx_resolve_local_hir_node_spec_in(
+int psx_apply_local_vla_hir_node_spec_in(
+    const psx_semantic_context_t *semantic_context,
+    const lvar_t *local, psx_hir_node_spec_t *spec) {
+  return apply_vla_hir_node_spec(
+      semantic_context, local, 0, spec);
+}
+
+static int resolve_local_hir_node_spec(
     const psx_semantic_context_t *semantic_context,
     const lvar_t *local, int storage_offset,
+    int include_indirect_parameter_metadata,
     psx_hir_node_spec_t *spec) {
   if (!semantic_context || !local || !spec) return 0;
   spec->kind = PSX_HIR_LOCAL;
@@ -51,6 +62,24 @@ int psx_resolve_local_hir_node_spec_in(
   spec->object_offset = ps_lvar_offset(local);
   spec->object_size = ps_lvar_frame_storage_size(local);
   spec->object_align = ps_lvar_align_bytes(local);
-  return psx_apply_local_vla_hir_node_spec_in(
-      semantic_context, local, spec);
+  return apply_vla_hir_node_spec(
+      semantic_context, local,
+      include_indirect_parameter_metadata, spec);
+}
+
+int psx_resolve_local_hir_node_spec_in(
+    const psx_semantic_context_t *semantic_context,
+    const lvar_t *local, int storage_offset,
+    psx_hir_node_spec_t *spec) {
+  return resolve_local_hir_node_spec(
+      semantic_context, local, storage_offset, 0, spec);
+}
+
+int psx_resolve_parameter_hir_node_spec_in(
+    const psx_semantic_context_t *semantic_context,
+    const lvar_t *parameter, int storage_offset,
+    psx_hir_node_spec_t *spec) {
+  if (!ps_lvar_is_param(parameter)) return 0;
+  return resolve_local_hir_node_spec(
+      semantic_context, parameter, storage_offset, 1, spec);
 }

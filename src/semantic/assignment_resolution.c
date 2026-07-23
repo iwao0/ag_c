@@ -32,13 +32,24 @@ static int kind_is_aggregate(psx_type_kind_t kind) {
 
 static int pointed_types_are_compatible(
     const psx_semantic_type_table_t *types,
-    psx_qual_type_t target, psx_qual_type_t value) {
+    psx_qual_type_t target, psx_qual_type_t value,
+    int require_identical_qualifiers) {
   psx_type_shape_t target_shape = {0};
   psx_type_shape_t value_shape = {0};
   if (!describe_type(types, target, &target_shape) ||
       !describe_type(types, value, &value_shape) ||
       target_shape.kind != value_shape.kind)
     return 0;
+  if (require_identical_qualifiers &&
+      target.qualifiers != value.qualifiers)
+    return 0;
+  if (target_shape.kind == PSX_TYPE_POINTER)
+    return pointed_types_are_compatible(
+        types, psx_semantic_type_table_base(types, target.type_id),
+        psx_semantic_type_table_base(types, value.type_id), 1);
+  if (target_shape.kind == PSX_TYPE_FUNCTION)
+    return psx_semantic_type_table_function_types_compatible(
+        types, target, value);
   if (target_shape.kind != PSX_TYPE_ARRAY)
     return psx_semantic_type_table_unqualified_types_match(
         types, target, value);
@@ -52,7 +63,8 @@ static int pointed_types_are_compatible(
     return 0;
   return pointed_types_are_compatible(
       types, psx_semantic_type_table_base(types, target.type_id),
-      psx_semantic_type_table_base(types, value.type_id));
+      psx_semantic_type_table_base(types, value.type_id),
+      require_identical_qualifiers);
 }
 
 static int resolve_modifiable_target(
@@ -106,7 +118,7 @@ static int pointer_targets_are_compatible(
        PSX_TYPE_QUALIFIER_ATOMIC) != 0)
     return 0;
   return pointed_types_are_compatible(
-      types, target_base, value_base);
+      types, target_base, value_base, 0);
 }
 
 void psx_resolve_assignment_qual_types_in(

@@ -11,6 +11,11 @@ int psx_resolve_local_hir_node_spec_in(
     const lvar_t *local, int storage_offset,
     psx_hir_node_spec_t *spec);
 
+int psx_resolve_parameter_hir_node_spec_in(
+    const psx_semantic_context_t *semantic_context,
+    const lvar_t *parameter, int storage_offset,
+    psx_hir_node_spec_t *spec);
+
 int psx_apply_local_vla_hir_node_spec_in(
     const psx_semantic_context_t *semantic_context,
     const lvar_t *local, psx_hir_node_spec_t *spec);

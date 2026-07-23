@@ -544,6 +544,7 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
     set_curtok(ctx, curtok(ctx)->next);
     query->operand = expr_internal_ctx(ctx);
     tk_expect_ctx(ctx->tokenizer_context, ')');
+    query->operand = apply_postfix(query->operand, ctx);
     return (node_t *)query;
   }
 

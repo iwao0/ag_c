@@ -2660,7 +2660,7 @@ if (!directProgramHirHelper ||
     /compatibility|psx_test_frontend_next_function/.test(
       directProgramHirHelper[1],
     ) ||
-    directProgramHirTests.length !== 32) {
+    directProgramHirTests.length !== 33) {
   throw new Error(
     "Typed HIR program tests must enter through the production frontend",
   );
@@ -5884,7 +5884,13 @@ if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY
     !/ps_lvar_vla_pointer_indirections\s*\(\s*local\s*\)\s*>\s*0/.test(
       hirLocalResolutionSource,
     ) ||
+    !/psx_resolve_parameter_hir_node_spec_in\s*\([^]*?resolve_local_hir_node_spec\s*\([^]*?storage_offset,\s*1,\s*spec/.test(
+      hirLocalResolutionSource,
+    ) ||
     !/resolution\.symbol\.kind\s*==\s*PSX_IDENTIFIER_LOCAL[^]*?psx_apply_local_vla_hir_node_spec_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_parameter_hir_node_spec_in\s*\(\s*semantic_context,\s*parameter/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/view\.pointer_indirections\s*>\s*0[^]*?view\.pointer_indirections--/.test(
@@ -8030,6 +8036,9 @@ if (!runtimeArrayBoundStruct ||
     !/\bpsx_qual_type_t\s+function_qual_type\s*;/.test(
       parameterDeclarationResolutionStruct[1],
     ) ||
+    !/\bint\s+pointer_indirections\s*;/.test(
+      parameterDeclarationResolutionStruct[1],
+    ) ||
     /\bpsx_parameter_storage_plan_t\b/.test(
       parameterDeclarationResolutionStruct[1],
     ) ||
@@ -8104,6 +8113,9 @@ if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
     ) ||
     !/int\s+dimension_count\s*;/.test(vlaLoweringHeader) ||
     !/int\s+pointer_indirections\s*;/.test(vlaLoweringHeader) ||
+    !/\.pointer_indirections\s*=\s*resolution->pointer_indirections/.test(
+      parameterLoweringSource,
+    ) ||
     /psx_semantic_expr_id_t\s+row_dimension_id\s*;/.test(
       vlaLoweringHeader,
     ) ||
@@ -10575,6 +10587,9 @@ if (!/PSX_TYPE_QUERY_PLAN_RUNTIME_PRODUCT/.test(
 if (!/direct_type_query_binding_t/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/query->operand\s*=\s*apply_postfix\s*\(\s*query->operand,\s*ctx\s*\)/.test(
+      parserExpressionSource,
+    ) ||
     !/psx_resolve_sizeof_qual_type_plan_in\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
@@ -10582,6 +10597,12 @@ if (!/direct_type_query_binding_t/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/psx_resolve_sizeof_runtime_slot_plan_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/resolve_direct_sizeof_vla_derived_expression\s*\([^]*?base->kind\s*==\s*ND_SUBSCRIPT\s*\|\|[^]*?base->kind\s*==\s*ND_UNARY_DEREF/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/direct_vla_runtime_view\s*\(\s*context,\s*query->operand->lhs\s*\)/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/psx_resolve_alignof_qual_type_plan_in\s*\(/.test(
