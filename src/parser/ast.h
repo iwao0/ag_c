@@ -40,10 +40,8 @@ typedef struct {
 
 typedef struct {
   node_t *value;
-  psx_initializer_designator_t designators[8];
-  unsigned char designator_count;
-  node_t *index_exprs[8];
-  unsigned char index_expr_count;
+  psx_initializer_designator_t *designators;
+  int designator_count;
   char *member_name;
   int member_len;
   token_t *tok;

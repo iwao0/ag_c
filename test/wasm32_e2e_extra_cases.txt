@@ -657,6 +657,7 @@ probes_found_bugs/union_array_sparse_designators.c
 probes_found_bugs/union_repeated_designator_last_wins.c
 probes_found_bugs/aggregate_repeated_designator_last_wins.c
 probes_found_bugs/aggregate_copy_designator_override.c
+probes_found_bugs/deep_initializer_designator_chain.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c

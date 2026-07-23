@@ -15734,6 +15734,13 @@ static void test_parser_width_limits(
   expect_parse_ok(test_suite_session, ok_inits);
   free(ok_inits);
 
+  expect_parse_ok(
+      test_suite_session,
+      "int main(void) { "
+      "int values[1][1][1][1][1][1][1][1][1][1] = {"
+      "[0][0][0][0][0][0][0][0][0][0] = 1}; "
+      "return values[0][0][0][0][0][0][0][0][0][0]; }");
+
   char *too_many_inits = build_many_array_init_elements_program(5000);
   ASSERT_TRUE(too_many_inits != NULL);
   expect_parse_fail_with_message(test_suite_session, too_many_inits, "初期化子要素数が多すぎます");

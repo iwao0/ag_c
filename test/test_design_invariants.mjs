@@ -4119,6 +4119,20 @@ if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
     "initializer syntax parsing must depend only on parser runtime and explicit syntax-expression services",
   );
 }
+if (!/\bpsx_initializer_designator_t\s*\*\s*designators\s*;/.test(
+      astHeader,
+    ) ||
+    !/\bint\s+designator_count\s*;/.test(astHeader) ||
+    !/grow_initializer_syntax_array\s*\([^]*?sizeof\(\*designators\)/.test(
+      initializerSyntaxSource,
+    ) ||
+    /designators\s*\[\s*8\s*\]|designator_count\s*>=\s*8/.test(
+      `${astHeader}\n${initializerSyntaxSource}`,
+    )) {
+  throw new Error(
+    "standard C initializer designator paths must use parser-arena dynamic storage rather than an eight-component cap",
+  );
+}
 const localDeclarationSyntaxSource = await readFile(
   "src/parser/local_declaration_syntax.c",
   "utf8",
@@ -8693,6 +8707,19 @@ const initializerResolutionSource = await readFile(
   "src/semantic/initializer_resolution.c",
   "utf8",
 );
+if (!/\}\s*psx_initializer_designator_range_t\s*;/.test(
+      initializerResolutionSource,
+    ) ||
+    !/\(size_t\)entry->designator_count\s*\*\s*sizeof\(\*ranges\)/.test(
+      initializerResolutionSource,
+    ) ||
+    /range_(?:overrides|begins|ends|indices)\s*\[\s*8\s*\]/.test(
+      initializerResolutionSource,
+    )) {
+  throw new Error(
+    "semantic initializer range state must scale with the complete designator path",
+  );
+}
 const initializerMemberRef = initializerResolutionHeader.match(
   /typedef\s+struct\s*\{([\s\S]*?)\}\s*psx_initializer_member_ref_t\s*;/,
 );

@@ -6,7 +6,9 @@
 #include "runtime_context.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
-#include <stdlib.h>
+#include <limits.h>
+#include <stdint.h>
+#include <string.h>
 
 static inline tokenizer_context_t *tokenizer(
     psx_parser_runtime_context_t *runtime_context) {
@@ -21,6 +23,24 @@ static inline token_t *curtok(
 static inline ag_diagnostic_context_t *diagnostics(
     psx_parser_runtime_context_t *runtime_context) {
   return ps_parser_runtime_diagnostics(runtime_context);
+}
+
+static void *grow_initializer_syntax_array(
+    arena_context_t *arena_context, const void *items, int count,
+    int *capacity, size_t item_size) {
+  if (!arena_context || count < 0 || !capacity || item_size == 0)
+    return NULL;
+  if (count < *capacity) return (void *)items;
+  if (*capacity < 0 || *capacity > INT_MAX / 2) return NULL;
+  int next_capacity = *capacity > 0 ? *capacity * 2 : 8;
+  if ((size_t)next_capacity > SIZE_MAX / item_size) return NULL;
+  void *next = arena_alloc_in(
+      arena_context, (size_t)next_capacity * item_size);
+  if (!next) return NULL;
+  if (items && count > 0)
+    memcpy(next, items, (size_t)count * item_size);
+  *capacity = next_capacity;
+  return next;
 }
 
 void psx_prepare_optional_initializer_syntax(
@@ -82,10 +102,11 @@ node_t *psx_parse_initializer_syntax_list_with_context(
   psx_initializer_entry_t *entries = NULL;
   int count = 0;
   int capacity = 0;
+  arena_context_t *arena_context =
+      ps_parser_runtime_arena(runtime_context);
   if (!tk_consume_ctx(tk_ctx, '}')) {
     for (;;) {
       if (count >= PS_MAX_INITIALIZER_ELEMENTS) {
-        free(entries);
         ps_diag_ctx_in(
             diagnostics(runtime_context), curtok(runtime_context),
             "initializer-syntax",
@@ -95,41 +116,41 @@ node_t *psx_parse_initializer_syntax_list_with_context(
             PS_MAX_INITIALIZER_ELEMENTS);
       }
       if (count == capacity) {
-        int next_capacity = capacity ? capacity * 2 : 8;
-        psx_initializer_entry_t *next = realloc(
-            entries, sizeof(*entries) * (size_t)next_capacity);
+        psx_initializer_entry_t *next =
+            grow_initializer_syntax_array(
+                arena_context, entries, count, &capacity,
+                sizeof(*entries));
         if (!next) {
-          free(entries);
           ps_diag_ctx_in(
               diagnostics(runtime_context), curtok(runtime_context),
               "initializer-syntax", "initializer allocation failed");
         }
         entries = next;
-        capacity = next_capacity;
       }
 
       token_t *entry_tok = curtok(runtime_context);
       token_ident_t *member = NULL;
-      psx_initializer_designator_t designators[8] = {0};
+      psx_initializer_designator_t *designators = NULL;
       int designator_count = 0;
-      node_t *index_exprs[8] = {0};
-      int index_expr_count = 0;
+      int designator_capacity = 0;
+      int has_index = 0;
       while (curtok(runtime_context)->kind == TK_DOT ||
              curtok(runtime_context)->kind == TK_LBRACKET) {
-        if (designator_count >= 8) {
-          free(entries);
-          ps_diag_ctx_in(
-              diagnostics(runtime_context), curtok(runtime_context),
-              "initializer-syntax", "%s",
-              diag_message_for_in(
-                  diagnostics(runtime_context),
-                  DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+        if (designator_count == designator_capacity) {
+          psx_initializer_designator_t *next =
+              grow_initializer_syntax_array(
+                  arena_context, designators, designator_count,
+                  &designator_capacity, sizeof(*designators));
+          if (!next)
+            ps_diag_ctx_in(
+                diagnostics(runtime_context), curtok(runtime_context),
+                "initializer-syntax", "initializer allocation failed");
+          designators = next;
         }
         token_t *designator_tok = curtok(runtime_context);
         if (tk_consume_ctx(tk_ctx, '.')) {
           token_ident_t *current_member = tk_consume_ident_ctx(tk_ctx);
           if (!current_member) {
-            free(entries);
             ps_diag_missing_in(
                 diagnostics(runtime_context), curtok(runtime_context),
                 diag_text_for_in(
@@ -169,7 +190,7 @@ node_t *psx_parse_initializer_syntax_list_with_context(
               .tok = designator_tok,
               .is_range = is_range,
           };
-          index_exprs[index_expr_count++] = index_expr;
+          has_index = 1;
         }
       }
       if (designator_count > 0) tk_expect_ctx(tk_ctx, '=');
@@ -184,16 +205,11 @@ node_t *psx_parse_initializer_syntax_list_with_context(
           .member_name = member ? member->str : NULL,
           .member_len = member ? member->len : 0,
           .tok = entry_tok,
-          .has_index = index_expr_count > 0,
+          .designators = designators,
+          .designator_count = designator_count,
+          .has_index = has_index,
           .has_member = member != NULL,
       };
-      entries[count - 1].designator_count =
-          (unsigned char)designator_count;
-      for (int d = 0; d < designator_count; d++)
-        entries[count - 1].designators[d] = designators[d];
-      entries[count - 1].index_expr_count = (unsigned char)index_expr_count;
-      for (int d = 0; d < index_expr_count; d++)
-        entries[count - 1].index_exprs[d] = index_exprs[d];
 
       if (tk_consume_ctx(tk_ctx, '}')) break;
       tk_expect_ctx(tk_ctx, ',');

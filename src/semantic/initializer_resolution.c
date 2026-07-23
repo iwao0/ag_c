@@ -6,6 +6,7 @@
 #include "../parser/diag.h"
 #include "../type_layout.h"
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,6 +27,13 @@ typedef struct {
   int leaf_end;
   int member_index;
 } psx_initializer_union_activation_t;
+
+typedef struct {
+  unsigned char is_range;
+  long long begin;
+  long long end;
+  long long index;
+} psx_initializer_designator_range_t;
 
 typedef struct {
   arena_context_t *arena_context;
@@ -659,8 +667,7 @@ static int flat_initializer_designated_span(
     psx_flat_initializer_context_t *context,
     const psx_initializer_object_span_t *root,
     const psx_initializer_entry_t *entry,
-    const unsigned char *range_overrides,
-    const long long *range_indices,
+    const psx_initializer_designator_range_t *ranges,
     psx_initializer_object_span_t *target) {
   if (!context || !root || !entry || !target ||
       entry->designator_count <= 0)
@@ -686,10 +693,9 @@ static int flat_initializer_designated_span(
       if (!designator->index_expr || !context->resolve_index)
         return 0;
       if (designator->is_range) {
-        if (!range_overrides || !range_indices ||
-            !range_overrides[i])
+        if (!ranges || !ranges[i].is_range)
           return 0;
-        index = range_indices[i];
+        index = ranges[i].index;
       } else if (!context->resolve_index(
                      context->resolver_context,
                      designator->index_expr, &index)) {
@@ -754,19 +760,13 @@ static int flat_initializer_relocate_whole_object_value(
 static int flat_initializer_entry_ranges(
     const psx_flat_initializer_context_t *context,
     const psx_initializer_entry_t *entry,
-    unsigned char *range_overrides,
-    long long *range_begins, long long *range_ends,
-    int *range_count) {
-  if (range_count) *range_count = 0;
-  if (!context || !entry || !range_overrides || !range_begins ||
-      !range_ends || !range_count || !context->resolve_index)
+    psx_initializer_designator_range_t *ranges) {
+  if (!context || !entry || !ranges || !context->resolve_index)
     return 0;
   for (int i = 0; i < entry->designator_count; i++) {
     const psx_initializer_designator_t *designator =
         &entry->designators[i];
-    range_overrides[i] = 0;
-    range_begins[i] = 0;
-    range_ends[i] = 0;
+    ranges[i] = (psx_initializer_designator_range_t){0};
     if (!designator->is_range) continue;
     if (designator->kind != PSX_INIT_DESIGNATOR_INDEX ||
         !designator->index_expr || !designator->range_end_expr)
@@ -781,10 +781,12 @@ static int flat_initializer_entry_ranges(
             designator->range_end_expr, &end) ||
         begin < 0 || end < begin)
       return 0;
-    range_overrides[i] = 1;
-    range_begins[i] = begin;
-    range_ends[i] = end;
-    (*range_count)++;
+    ranges[i] = (psx_initializer_designator_range_t){
+        .is_range = 1,
+        .begin = begin,
+        .end = end,
+        .index = begin,
+    };
   }
   return 1;
 }
@@ -793,37 +795,31 @@ static int flat_initializer_apply_designated_ranges(
     psx_flat_initializer_context_t *context,
     const psx_initializer_object_span_t *object,
     const psx_initializer_entry_t *entry,
-    const unsigned char *range_overrides,
-    const long long *range_begins,
-    const long long *range_ends,
-    long long *range_indices, int designator_index,
+    psx_initializer_designator_range_t *ranges,
+    int designator_index,
     psx_initializer_object_span_t *last_target) {
-  if (!context || !object || !entry || !range_overrides ||
-      !range_begins || !range_ends || !range_indices ||
-      !last_target || designator_index < 0)
+  if (!context || !object || !entry || !ranges || !last_target ||
+      designator_index < 0)
     return 0;
   if (designator_index == entry->designator_count) {
     return flat_initializer_designated_span(
-               context, object, entry, range_overrides,
-               range_indices, last_target) &&
+               context, object, entry, ranges, last_target) &&
            flat_initializer_apply_value(
                context, last_target, entry->value, 1);
   }
-  if (!range_overrides[designator_index]) {
+  if (!ranges[designator_index].is_range) {
     return flat_initializer_apply_designated_ranges(
-        context, object, entry, range_overrides,
-        range_begins, range_ends, range_indices,
-        designator_index + 1, last_target);
+        context, object, entry, ranges, designator_index + 1,
+        last_target);
   }
-  for (long long index = range_begins[designator_index];;
+  for (long long index = ranges[designator_index].begin;;
        index++) {
-    range_indices[designator_index] = index;
+    ranges[designator_index].index = index;
     if (!flat_initializer_apply_designated_ranges(
-            context, object, entry, range_overrides,
-            range_begins, range_ends, range_indices,
+            context, object, entry, ranges,
             designator_index + 1, last_target))
       return 0;
-    if (index == range_ends[designator_index]) break;
+    if (index == ranges[designator_index].end) break;
   }
   return 1;
 }
@@ -863,30 +859,42 @@ static int flat_initializer_apply_list(
         return 0;
       }
     }
-    unsigned char range_overrides[8] = {0};
-    long long range_begins[8] = {0};
-    long long range_ends[8] = {0};
-    long long range_indices[8] = {0};
     int range_count = 0;
-    if (!flat_initializer_entry_ranges(
-            context, entry, range_overrides,
-            range_begins, range_ends, &range_count))
-      return 0;
+    for (int d = 0; d < entry->designator_count; d++) {
+      if (entry->designators[d].is_range) range_count++;
+    }
+    psx_initializer_designator_range_t *ranges = NULL;
+    if (range_count > 0) {
+      if ((size_t)entry->designator_count >
+          SIZE_MAX / sizeof(*ranges)) {
+        context->failure_status =
+            PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY;
+        return 0;
+      }
+      ranges = arena_alloc_in(
+          context->arena_context,
+          (size_t)entry->designator_count * sizeof(*ranges));
+      if (!ranges) {
+        context->failure_status =
+            PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY;
+        return 0;
+      }
+      if (!flat_initializer_entry_ranges(context, entry, ranges))
+        return 0;
+    }
     psx_initializer_object_span_t target;
     if (entry->designator_count > 0) {
       if (object_shape.kind == PSX_TYPE_UNION)
         union_has_designated_initializer = 1;
       if (range_count > 0) {
         if (!flat_initializer_apply_designated_ranges(
-                context, object, entry, range_overrides,
-                range_begins, range_ends, range_indices,
-                0, &target))
+                context, object, entry, ranges, 0, &target))
           return 0;
         cursor = target.leaf_end;
         continue;
       }
       if (!flat_initializer_designated_span(
-              context, object, entry, NULL, NULL, &target))
+              context, object, entry, ranges, &target))
         return 0;
     } else {
       if (entry->has_index || entry->has_member)
