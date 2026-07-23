@@ -466,7 +466,8 @@ static int gvar_init_cursor_pack_bitfield_unit(
 static int record_union_init_member_for_slot(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_t *record_decl,
-    const global_var_t *gv, int idx,
+    const global_var_t *gv, psx_type_id_t aggregate_type_id,
+    long long base_offset, int idx,
     psx_record_member_decl_t *out_declaration,
     int *out_ordinal);
 static void gvar_aggregate_member_iter_note_cover(
@@ -982,7 +983,8 @@ static int gvar_walk_union_initializer(
   psx_record_member_layout_t member_layout = {0};
   int member_ordinal = -1;
   if (!record_union_init_member_for_slot(
-          semantic_types, record_decl, gv, gvar_init_cursor_index(cur),
+          semantic_types, record_decl, gv, aggregate_type_id,
+          base_offset, gvar_init_cursor_index(cur),
           &member, &member_ordinal)) {
     if (ops && ops->padding) {
       gvar_walk_emit_padding(ops, user, base_offset, union_size);
@@ -1500,6 +1502,61 @@ void ps_gvar_init_slot_set_offset(
   gv->init_offsets[idx] = relative_offset;
 }
 
+int ps_gvar_union_activation_set(
+    global_var_t *gv, psx_type_id_t union_type_id,
+    int relative_offset, int member_ordinal) {
+  if (!gv || union_type_id == PSX_TYPE_ID_INVALID ||
+      relative_offset < 0 || member_ordinal < 0)
+    return 0;
+  for (int i = 0; i < gv->init_union_activation_count; i++) {
+    psx_gvar_union_activation_t *activation =
+        &gv->init_union_activations[i];
+    if (activation->union_type_id == union_type_id &&
+        activation->relative_offset == relative_offset) {
+      activation->member_ordinal = member_ordinal;
+      return 1;
+    }
+  }
+  if (gv->init_union_activation_count ==
+      gv->init_union_activation_capacity) {
+    int capacity = gv->init_union_activation_capacity
+                       ? gv->init_union_activation_capacity * 2
+                       : 8;
+    psx_gvar_union_activation_t *activations = realloc(
+        gv->init_union_activations,
+        (size_t)capacity * sizeof(*activations));
+    if (!activations) return 0;
+    gv->init_union_activations = activations;
+    gv->init_union_activation_capacity = capacity;
+  }
+  gv->init_union_activations[
+      gv->init_union_activation_count++] =
+      (psx_gvar_union_activation_t){
+          .union_type_id = union_type_id,
+          .relative_offset = relative_offset,
+          .member_ordinal = member_ordinal,
+      };
+  return 1;
+}
+
+int ps_gvar_union_activation_ordinal(
+    const global_var_t *gv, psx_type_id_t union_type_id,
+    int relative_offset, int *member_ordinal) {
+  if (!gv || union_type_id == PSX_TYPE_ID_INVALID ||
+      relative_offset < 0 || !member_ordinal)
+    return 0;
+  for (int i = 0; i < gv->init_union_activation_count; i++) {
+    const psx_gvar_union_activation_t *activation =
+        &gv->init_union_activations[i];
+    if (activation->union_type_id == union_type_id &&
+        activation->relative_offset == relative_offset) {
+      *member_ordinal = activation->member_ordinal;
+      return 1;
+    }
+  }
+  return 0;
+}
+
 tk_float_kind_t ps_gvar_init_slot_fp_kind(const global_var_t *gv, int idx) {
   psx_gvar_init_slot_t slot = ps_gvar_init_slot_view(gv, idx);
   if (slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) return slot.fp_sentinel_kind;
@@ -1544,15 +1601,26 @@ static int record_member_decl_fp_size(
 static int record_union_init_member_for_slot(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_t *record_decl,
-    const global_var_t *gv, int idx,
+    const global_var_t *gv, psx_type_id_t aggregate_type_id,
+    long long base_offset, int idx,
     psx_record_member_decl_t *out_declaration,
     int *out_ordinal) {
   if (!semantic_types || !record_decl || !record_decl->members ||
       !out_declaration)
     return 0;
-  int ordinal = ps_gvar_union_init_slot_ordinal(gv, idx);
+  int ordinal = -1;
+  int has_activation =
+      base_offset >= 0 && base_offset <= INT32_MAX &&
+      ps_gvar_union_activation_ordinal(
+          gv, aggregate_type_id, (int)base_offset, &ordinal);
+  if (!has_activation)
+    ordinal = ps_gvar_union_init_slot_ordinal(gv, idx);
   if (ordinal < 0 || ordinal >= record_decl->member_count) return 0;
   *out_declaration = record_decl->members[ordinal];
+  if (has_activation) {
+    if (out_ordinal) *out_ordinal = ordinal;
+    return 1;
+  }
   int init_fp_size = ps_gvar_union_init_slot_fp_size(gv, idx);
   int selected_fp_size = record_member_decl_fp_size(
       semantic_types, out_declaration);

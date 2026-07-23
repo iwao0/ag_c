@@ -542,6 +542,8 @@ static int aggregate_leaf_index_for_target(
 }
 
 typedef struct {
+  psx_type_id_t union_type_id;
+  int relative_offset;
   int slot_begin;
   int slot_capacity;
   psx_initializer_scalar_leaf_list_t selected_leaves;
@@ -574,6 +576,74 @@ static int aggregate_target_matches_selected_member(
     return 1;
   }
   return 0;
+}
+
+static int aggregate_make_union_activation(
+    const static_hir_aggregate_t *aggregate, psx_qual_type_t union_type,
+    int relative_offset, int member_index,
+    const psx_initializer_target_t *target,
+    static_hir_union_activation_t *activation) {
+  psx_type_shape_t shape = {0};
+  if (!aggregate || !activation ||
+      !type_shape(&aggregate->eval, union_type.type_id, &shape) ||
+      shape.kind != PSX_TYPE_UNION)
+    return 0;
+  const psx_semantic_type_table_t *semantic_types =
+      ps_lowering_semantic_types(aggregate->eval.lowering_context);
+  const psx_record_decl_table_t *record_decls =
+      ps_lowering_record_decls(aggregate->eval.lowering_context);
+  const psx_record_layout_table_t *record_layouts =
+      ps_lowering_record_layouts(aggregate->eval.lowering_context);
+  const ag_data_layout_t *data_layout =
+      ps_lowering_data_layout(aggregate->eval.lowering_context);
+  const psx_record_decl_t *record =
+      psx_record_decl_table_lookup(record_decls, shape.record_id);
+  const psx_record_layout_t *layout =
+      psx_record_layout_table_lookup(record_layouts, shape.record_id,
+                                     data_layout);
+  if (!record || !layout || member_index < 0 ||
+      member_index >= record->member_count)
+    return 0;
+  const psx_record_member_layout_t *selected_layout =
+      psx_record_layout_member(layout, member_index);
+  psx_qual_type_t selected_type =
+      psx_semantic_type_table_record_member(
+          semantic_types, union_type.type_id, member_index);
+  if (!selected_layout || selected_type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  int selected_offset = relative_offset + selected_layout->offset;
+  psx_initializer_scalar_leaf_list_t selected_leaves = {0};
+  if (!psx_collect_initializer_scalar_leaves_with_records(
+          semantic_types, record_decls, record_layouts, data_layout,
+          selected_type, selected_offset, &selected_leaves))
+    return 0;
+  if (target &&
+      !aggregate_target_matches_selected_member(
+          aggregate, selected_type, selected_offset, &selected_leaves,
+          target)) {
+    psx_initializer_scalar_leaf_list_dispose(&selected_leaves);
+    return 0;
+  }
+  int slot_begin =
+      aggregate_leaf_index_at_offset(&aggregate->leaves, relative_offset);
+  int slot_capacity = psx_initializer_flat_slot_count_with_records(
+      semantic_types, record_decls, record_layouts, data_layout,
+      union_type.type_id);
+  if (slot_begin < 0 || slot_capacity <= 0 ||
+      selected_leaves.count <= 0 ||
+      selected_leaves.count > slot_capacity ||
+      slot_begin + slot_capacity > aggregate->leaves.count) {
+    psx_initializer_scalar_leaf_list_dispose(&selected_leaves);
+    return 0;
+  }
+  *activation = (static_hir_union_activation_t){
+      .union_type_id = union_type.type_id,
+      .relative_offset = relative_offset,
+      .slot_begin = slot_begin,
+      .slot_capacity = slot_capacity,
+      .selected_leaves = selected_leaves,
+  };
+  return 1;
 }
 
 static int aggregate_find_union_activation(
@@ -610,9 +680,8 @@ static int aggregate_find_union_activation(
     return 0;
   const psx_record_decl_t *record =
       psx_record_decl_table_lookup(record_decls, shape.record_id);
-  const psx_record_layout_t *layout =
-      psx_record_layout_table_lookup(record_layouts, shape.record_id,
-                                     data_layout);
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      record_layouts, shape.record_id, data_layout);
   if (!record || !layout || record->member_count <= 0) return 0;
 
   /*
@@ -640,75 +709,37 @@ static int aggregate_find_union_activation(
       target->union_member_index < 0 ||
       target->union_member_index >= record->member_count)
     return 0;
-  const psx_record_member_layout_t *selected_layout =
-      psx_record_layout_member(layout, target->union_member_index);
-  psx_qual_type_t selected_type =
-      psx_semantic_type_table_record_member(
-          semantic_types, qual_type.type_id, target->union_member_index);
-  if (!selected_layout || selected_type.type_id == PSX_TYPE_ID_INVALID)
-    return 0;
-  int selected_offset = relative_offset + selected_layout->offset;
-  psx_initializer_scalar_leaf_list_t selected_leaves = {0};
-  if (!psx_collect_initializer_scalar_leaves_with_records(
-          semantic_types, record_decls, record_layouts, data_layout,
-          selected_type, selected_offset, &selected_leaves))
-    return 0;
-  if (!aggregate_target_matches_selected_member(
-          aggregate, selected_type, selected_offset, &selected_leaves,
-          target)) {
-    psx_initializer_scalar_leaf_list_dispose(&selected_leaves);
-    return 0;
-  }
-  int slot_begin =
-      aggregate_leaf_index_at_offset(&aggregate->leaves, relative_offset);
-  int slot_capacity = psx_initializer_flat_slot_count_with_records(
-      semantic_types, record_decls, record_layouts, data_layout,
-      qual_type.type_id);
-  if (slot_begin < 0 || slot_capacity <= 0 ||
-      selected_leaves.count <= 0 ||
-      selected_leaves.count > slot_capacity ||
-      slot_begin + slot_capacity > aggregate->leaves.count) {
-    psx_initializer_scalar_leaf_list_dispose(&selected_leaves);
-    return 0;
-  }
-  *activation = (static_hir_union_activation_t){
-      .slot_begin = slot_begin,
-      .slot_capacity = slot_capacity,
-      .selected_leaves = selected_leaves,
-  };
-  return 1;
+  return aggregate_make_union_activation(
+      aggregate, qual_type, relative_offset,
+      target->union_member_index, target, activation);
 }
 
-static int aggregate_prepare_union_target(
+static int aggregate_apply_union_activation(
     static_hir_aggregate_t *aggregate,
-    const psx_initializer_target_t *target) {
-  if (!aggregate || !target || target->union_relative_offset < 0 ||
-      target->union_member_index < 0)
-    return 1;
-  static_hir_union_activation_t activation = {0};
-  if (!aggregate_find_union_activation(
-          aggregate, aggregate->root_qual_type, 0, target, 0,
-          &activation))
-    return 1;
+    static_hir_union_activation_t *activation, int member_index) {
+  if (!aggregate || !activation || activation->slot_begin < 0 ||
+      activation->slot_capacity <= 0 ||
+      activation->selected_leaves.count <= 0)
+    return 0;
   int previous_member = ps_gvar_union_init_slot_ordinal(
-      aggregate->global, activation.slot_begin);
-  if (previous_member != target->union_member_index) {
-    for (int i = 0; i < activation.slot_capacity; i++)
+      aggregate->global, activation->slot_begin);
+  if (previous_member != member_index) {
+    for (int i = 0; i < activation->slot_capacity; i++)
       ps_gvar_init_slot_clear(
-          aggregate->global, activation.slot_begin + i);
+          aggregate->global, activation->slot_begin + i);
   }
-  for (int i = 0; i < activation.slot_capacity; i++) {
-    int slot = activation.slot_begin + i;
-    if (i < activation.selected_leaves.count) {
+  for (int i = 0; i < activation->slot_capacity; i++) {
+    int slot = activation->slot_begin + i;
+    if (i < activation->selected_leaves.count) {
       aggregate->leaves.items[slot] =
-          activation.selected_leaves.items[i];
+          activation->selected_leaves.items[i];
       ps_gvar_init_slot_set_offset(
           aggregate->global, slot,
-          activation.selected_leaves.items[i].relative_offset);
+          activation->selected_leaves.items[i].relative_offset);
     } else {
       int padding_offset =
-          activation.selected_leaves
-              .items[activation.selected_leaves.count - 1]
+          activation->selected_leaves
+              .items[activation->selected_leaves.count - 1]
               .relative_offset;
       aggregate->leaves.items[slot] =
           (psx_initializer_scalar_leaf_t){
@@ -727,10 +758,94 @@ static int aggregate_prepare_union_target(
     }
   }
   ps_gvar_init_slot_set_ordinal(
-      aggregate->global, activation.slot_begin,
-      target->union_member_index);
+      aggregate->global, activation->slot_begin, member_index);
+  if (!ps_gvar_union_activation_set(
+          aggregate->global, activation->union_type_id,
+          activation->relative_offset, member_index)) {
+    psx_initializer_scalar_leaf_list_dispose(
+        &activation->selected_leaves);
+    return 0;
+  }
   psx_initializer_scalar_leaf_list_dispose(
-      &activation.selected_leaves);
+      &activation->selected_leaves);
+  return 1;
+}
+
+static int aggregate_prepare_union_target(
+    static_hir_aggregate_t *aggregate,
+    const psx_initializer_target_t *target) {
+  if (!aggregate || !target || target->union_relative_offset < 0 ||
+      target->union_member_index < 0)
+    return 1;
+  static_hir_union_activation_t activation = {0};
+  if (!aggregate_find_union_activation(
+          aggregate, aggregate->root_qual_type, 0, target, 0,
+          &activation))
+    return 1;
+  return aggregate_apply_union_activation(
+      aggregate, &activation, target->union_member_index);
+}
+
+static int aggregate_prepare_default_unions(
+    static_hir_aggregate_t *aggregate, psx_qual_type_t qual_type,
+    int relative_offset, int depth) {
+  psx_type_shape_t shape = {0};
+  if (!aggregate || depth > 64 ||
+      !type_shape(&aggregate->eval, qual_type.type_id, &shape))
+    return 0;
+  const psx_semantic_type_table_t *semantic_types =
+      ps_lowering_semantic_types(aggregate->eval.lowering_context);
+  if (shape.kind == PSX_TYPE_ARRAY) {
+    psx_qual_type_t element =
+        psx_semantic_type_table_base(semantic_types, qual_type.type_id);
+    int element_size = aggregate_type_size(aggregate, element.type_id);
+    if (element.type_id == PSX_TYPE_ID_INVALID || element_size <= 0)
+      return 0;
+    for (int i = 0; i < shape.array_len; i++) {
+      if (!aggregate_prepare_default_unions(
+              aggregate, element, relative_offset + i * element_size,
+              depth + 1))
+        return 0;
+    }
+    return 1;
+  }
+  if (shape.kind != PSX_TYPE_STRUCT && shape.kind != PSX_TYPE_UNION)
+    return 1;
+  const psx_record_decl_table_t *record_decls =
+      ps_lowering_record_decls(aggregate->eval.lowering_context);
+  const psx_record_layout_table_t *record_layouts =
+      ps_lowering_record_layouts(aggregate->eval.lowering_context);
+  const ag_data_layout_t *data_layout =
+      ps_lowering_data_layout(aggregate->eval.lowering_context);
+  const psx_record_decl_t *record =
+      psx_record_decl_table_lookup(record_decls, shape.record_id);
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      record_layouts, shape.record_id, data_layout);
+  if (!record || !layout || record->member_count <= 0) return 0;
+  int first_member = 0;
+  int member_count = record->member_count;
+  if (shape.kind == PSX_TYPE_UNION) {
+    static_hir_union_activation_t activation = {0};
+    if (!aggregate_make_union_activation(
+            aggregate, qual_type, relative_offset, first_member, NULL,
+            &activation) ||
+        !aggregate_apply_union_activation(
+            aggregate, &activation, first_member))
+      return 0;
+    member_count = 1;
+  }
+  for (int i = first_member; i < member_count; i++) {
+    const psx_record_member_layout_t *member_layout =
+        psx_record_layout_member(layout, i);
+    psx_qual_type_t member_type =
+        psx_semantic_type_table_record_member(
+            semantic_types, qual_type.type_id, i);
+    if (!member_layout || member_type.type_id == PSX_TYPE_ID_INVALID ||
+        !aggregate_prepare_default_unions(
+            aggregate, member_type,
+            relative_offset + member_layout->offset, depth + 1))
+      return 0;
+  }
   return 1;
 }
 
@@ -1100,8 +1215,10 @@ int psx_build_static_aggregate_hir_initializer_plan(
     ps_gvar_init_slot_set_offset(
         &temporary, i, aggregate.leaves.items[i].relative_offset);
   }
-  int lowered = aggregate_lower_list(
-      &aggregate, type_id, 0, initializer);
+  int lowered = aggregate_prepare_default_unions(
+                    &aggregate, aggregate.root_qual_type, 0, 0) &&
+                aggregate_lower_list(
+                    &aggregate, type_id, 0, initializer);
   psx_initializer_scalar_leaf_list_dispose(&aggregate.leaves);
   if (!lowered) {
     plan->failure = aggregate.failure;
@@ -1114,7 +1231,12 @@ int psx_build_static_aggregate_hir_initializer_plan(
       .symbol_lengths = temporary.init_value_symbol_lens,
       .union_ordinals = temporary.init_union_ordinals,
       .offsets = temporary.init_offsets,
+      .union_activations = temporary.init_union_activations,
       .value_count = temporary.init_count,
+      .union_activation_count =
+          temporary.init_union_activation_count,
+      .union_activation_capacity =
+          temporary.init_union_activation_capacity,
       .union_ordinal = temporary.union_init_ordinal,
   };
   return plan->value_count > 0;

@@ -19,7 +19,12 @@ int psx_apply_static_aggregate_initializer_plan(
   global->init_value_symbol_lens = plan->symbol_lengths;
   global->init_union_ordinals = plan->union_ordinals;
   global->init_offsets = plan->offsets;
+  global->init_union_activations = plan->union_activations;
   global->init_count = plan->value_count;
+  global->init_union_activation_count =
+      plan->union_activation_count;
+  global->init_union_activation_capacity =
+      plan->union_activation_capacity;
   global->union_init_ordinal = plan->union_ordinal;
   return 1;
 }

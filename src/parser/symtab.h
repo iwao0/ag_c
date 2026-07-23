@@ -32,6 +32,7 @@ struct global_var_t {
   int *init_value_symbol_lens;
   int *init_union_ordinals;  // 各 init slot の union active member ordinal (-1=未指定)
   int *init_offsets;  // static aggregate scalar leaf の object-relative byte offset
+  psx_gvar_union_activation_t *init_union_activations;
   long long init_val; // 初期値（整数定数、スカラ用）
   long long init_symbol_offset;  // `&a[1]` / `a+1` のシンボルからのバイトオフセット
   double fval;        // 浮動小数スカラの初期値 (fp_kind != NONE のとき有効)
@@ -41,6 +42,8 @@ struct global_var_t {
   int init_symbol_len;
   int union_init_ordinal;  // union の designated 初期化 `{.m=v}` で活性メンバの序数 (既定 0=先頭)
   int init_count;
+  int init_union_activation_count;
+  int init_union_activation_capacity;
   int requested_alignment;
   // ビットフラグ群 (unsigned int コンテナ、4 バイト)。真偽フラグはここに集約する。
   unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）

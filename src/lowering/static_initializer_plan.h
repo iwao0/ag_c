@@ -1,6 +1,8 @@
 #ifndef LOWERING_STATIC_INITIALIZER_PLAN_H
 #define LOWERING_STATIC_INITIALIZER_PLAN_H
 
+#include "../parser/gvar_public.h"
+
 typedef struct global_var_t global_var_t;
 
 typedef enum {
@@ -15,7 +17,10 @@ typedef struct psx_static_aggregate_initializer_plan_t {
   int *symbol_lengths;
   int *union_ordinals;
   int *offsets;
+  psx_gvar_union_activation_t *union_activations;
   int value_count;
+  int union_activation_count;
+  int union_activation_capacity;
   int union_ordinal;
   psx_static_aggregate_initializer_failure_t failure;
 } psx_static_aggregate_initializer_plan_t;

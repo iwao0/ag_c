@@ -9813,6 +9813,36 @@ static void test_wasm_target_global_pointer_data_layout() {
                   "layout_anonymous_references = { "
                   "  .data = &layout_first, "
                   "  .callback = layout_callback "
+                  "}; "
+                  "union LayoutAnonymousReferences "
+                  "layout_anonymous_reference_array[] = { "
+                  "  [1] = { "
+                  "    .raw[1] = -1, "
+                  "    .data = &layout_second, "
+                  "    .callback = layout_callback "
+                  "  } "
+                  "}; "
+                  "struct LayoutDeepReferences { "
+                  "  union { "
+                  "    struct { "
+                  "      union { "
+                  "        long long raw; "
+                  "        struct { "
+                  "          int *data; "
+                  "          int (*callback)(int); "
+                  "        } references; "
+                  "      }; "
+                  "    }; "
+                  "    long long outer_raw[2]; "
+                  "  }; "
+                  "  int tail; "
+                  "}; "
+                  "struct LayoutDeepReferences "
+                  "layout_deep_references = { "
+                  "  .outer_raw[1] = -1, "
+                  "  .references.data = &layout_first, "
+                  "  .references.callback = layout_callback, "
+                  "  .tail = 7 "
                   "};")));
 
   const psx_scope_declaration_t *declaration =
@@ -9854,6 +9884,36 @@ static void test_wasm_target_global_pointer_data_layout() {
                    types, record_layouts,
                    ps_gvar_decl_type_id(pointers), data_layout));
 
+  const psx_scope_declaration_t *deep_declaration =
+      find_test_scope_declaration(
+          ps_ctx_scope_graph(
+              ag_compilation_session_semantic_context(
+                  &session)),
+          "layout_deep_references", PSX_DECL_GLOBAL_OBJECT, 0);
+  ASSERT_TRUE(deep_declaration != NULL);
+  global_var_t *deep_references =
+      (global_var_t *)deep_declaration->payload;
+  ASSERT_TRUE(deep_references != NULL);
+  psx_qual_type_t outer_union =
+      psx_semantic_type_table_record_member(
+          types, ps_gvar_decl_type_id(deep_references), 0);
+  psx_qual_type_t outer_first =
+      psx_semantic_type_table_record_member(
+          types, outer_union.type_id, 0);
+  psx_qual_type_t inner_union =
+      psx_semantic_type_table_record_member(
+          types, outer_first.type_id, 0);
+  int outer_ordinal = -1;
+  int inner_ordinal = -1;
+  ASSERT_TRUE(ps_gvar_union_activation_ordinal(
+      deep_references, outer_union.type_id, 0,
+      &outer_ordinal));
+  ASSERT_TRUE(ps_gvar_union_activation_ordinal(
+      deep_references, inner_union.type_id, 0,
+      &inner_ordinal));
+  ASSERT_EQ(0, outer_ordinal);
+  ASSERT_EQ(1, inner_ordinal);
+
   ir_data_module_t *module =
       lower_ir_translation_unit_data_in_session(&session);
   ASSERT_TRUE(module != NULL);
@@ -9885,6 +9945,44 @@ static void test_wasm_target_global_pointer_data_layout() {
   ASSERT_EQ(4, anonymous_object->relocs->next->width);
   ASSERT_EQ(IR_DATA_RELOC_FUNCTION,
             anonymous_object->relocs->next->kind);
+
+  ir_data_object_t *anonymous_array_object =
+      ir_data_module_find_object(
+          module, "layout_anonymous_reference_array", 32);
+  ASSERT_TRUE(anonymous_array_object != NULL);
+  ASSERT_EQ(32, anonymous_array_object->byte_size);
+  ASSERT_EQ(8, anonymous_array_object->alignment);
+  for (int i = 0; i < 16; i++)
+    ASSERT_EQ(0, anonymous_array_object->bytes[i]);
+  ASSERT_TRUE(anonymous_array_object->relocs != NULL);
+  ASSERT_EQ(16, anonymous_array_object->relocs->offset);
+  ASSERT_EQ(4, anonymous_array_object->relocs->width);
+  ASSERT_EQ(IR_DATA_RELOC_DATA,
+            anonymous_array_object->relocs->kind);
+  ASSERT_TRUE(anonymous_array_object->relocs->next != NULL);
+  ASSERT_EQ(20, anonymous_array_object->relocs->next->offset);
+  ASSERT_EQ(4, anonymous_array_object->relocs->next->width);
+  ASSERT_EQ(IR_DATA_RELOC_FUNCTION,
+            anonymous_array_object->relocs->next->kind);
+  ASSERT_TRUE(anonymous_array_object->relocs->next->next == NULL);
+
+  ir_data_object_t *deep_object =
+      ir_data_module_find_object(
+          module, "layout_deep_references", 22);
+  ASSERT_TRUE(deep_object != NULL);
+  ASSERT_EQ(24, deep_object->byte_size);
+  ASSERT_EQ(8, deep_object->alignment);
+  ASSERT_TRUE(deep_object->relocs != NULL);
+  ASSERT_EQ(0, deep_object->relocs->offset);
+  ASSERT_EQ(4, deep_object->relocs->width);
+  ASSERT_EQ(IR_DATA_RELOC_DATA, deep_object->relocs->kind);
+  ASSERT_TRUE(deep_object->relocs->next != NULL);
+  ASSERT_EQ(4, deep_object->relocs->next->offset);
+  ASSERT_EQ(4, deep_object->relocs->next->width);
+  ASSERT_EQ(IR_DATA_RELOC_FUNCTION,
+            deep_object->relocs->next->kind);
+  ASSERT_TRUE(deep_object->relocs->next->next == NULL);
+  ASSERT_EQ(7, deep_object->bytes[16]);
 
   ir_data_module_free(module);
   ASSERT_TRUE(ag_compilation_session_dispose(&session));

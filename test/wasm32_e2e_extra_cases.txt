@@ -662,6 +662,7 @@ probes_found_bugs/incomplete_array_designator_positional.c
 probes_found_bugs/union_aggregate_positional_continuation.c
 probes_found_bugs/nested_union_initializer_cursor.c
 probes_found_bugs/anonymous_union_relocation_initializer.c
+probes_found_bugs/nested_union_activation_identity.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c

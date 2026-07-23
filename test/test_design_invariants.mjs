@@ -8970,14 +8970,32 @@ if (!/\bint\s*\*\s*init_offsets\s*;/.test(gvarStruct[1]) ||
     !/\baggregate_prepare_union_target\s*\(/.test(
       staticHirInitializerSource,
     ) ||
+    !/\baggregate_prepare_default_unions\s*\([^]*?\)\s*&&\s*aggregate_lower_list\s*\(/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/typedef\s+struct\s*\{[^}]*\bpsx_type_id_t\s+union_type_id\s*;[^}]*\bint\s+relative_offset\s*;[^}]*\bint\s+member_ordinal\s*;[^}]*\}\s*psx_gvar_union_activation_t\s*;/.test(
+      gvarPublicSource,
+    ) ||
+    !/\bpsx_gvar_union_activation_t\s*\*\s*init_union_activations\s*;/.test(
+      gvarStruct[1],
+    ) ||
+    !/\bps_gvar_union_activation_set\s*\([^]*?\bactivation->union_type_id\s*,[^]*?\bactivation->relative_offset\s*,\s*member_index\s*\)/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/\bps_gvar_union_activation_ordinal\s*\([^]*?\baggregate_type_id\s*,\s*\(int\)base_offset\s*,\s*&ordinal\s*\)/.test(
+      nodeUtilsSource,
+    ) ||
+    !/global->init_union_activations\s*=\s*plan->union_activations\s*;/.test(
+      staticDataInitializerSource,
+    ) ||
     !/\bpsx_initializer_flat_slot_count_with_records\s*\(/.test(
       staticHirInitializerSource,
     ) ||
-    !/\bactivation\.selected_leaves\.items\s*\[\s*i\s*\]\.relative_offset\b/.test(
+    !/\bactivation->selected_leaves\.items\s*\[\s*i\s*\]\.relative_offset\b/.test(
       staticHirInitializerSource,
     )) {
   throw new Error(
-    "static aggregate initializer slots must preserve resolved byte offsets and remap active union member layouts through recursive union walking",
+    "static aggregate initializer slots must preserve resolved byte offsets and keep default and active union members keyed by TypeId plus object offset through recursive union walking",
   );
 }
 const canonicalArrayCompletion = globalRegistrySource.match(

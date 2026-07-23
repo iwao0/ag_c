@@ -44,14 +44,19 @@ static struct anonymous_reference_holder global_holder = {
 };
 
 static union anonymous_references global_reference_array[] = {
-    [0] = {0},
-    [1] = {
-        .data = &global_number,
-        .callback = plus_one,
-    },
+    [1].raw[1] = -1,
+    [1].data = &global_number,
+    plus_one,
+    &second_global_number,
+    plus_two,
+};
+
+static struct anonymous_reference_holder global_holder_array[] = {
     [2] = {
+        .raw[1] = -1,
         .data = &second_global_number,
         .callback = plus_two,
+        .tail = 49,
     },
 };
 
@@ -79,6 +84,20 @@ static int check_global_objects(void) {
       &global_reference_array[1], &global_number, 11));
   assert(references_match(
       &global_reference_array[2], &second_global_number, 12));
+
+  assert(sizeof(global_holder_array) /
+             sizeof(global_holder_array[0]) ==
+         3);
+  assert(global_holder_array[0].data == 0);
+  assert(global_holder_array[0].callback == 0);
+  assert(global_holder_array[0].tail == 0);
+  assert(global_holder_array[1].data == 0);
+  assert(global_holder_array[1].callback == 0);
+  assert(global_holder_array[1].tail == 0);
+  assert(global_holder_array[2].data == &second_global_number);
+  assert(global_holder_array[2].callback != 0);
+  assert(global_holder_array[2].callback(20) == 22);
+  assert(global_holder_array[2].tail == 49);
   return 0;
 }
 
@@ -94,6 +113,13 @@ static int check_static_local_objects(void) {
       plus_two,
       45,
   };
+  static union anonymous_references reference_array[] = {
+      [1] = {
+          .raw[0] = -1,
+          .data = &global_number,
+          .callback = plus_one,
+      },
+  };
 
   assert(references_match(
       &references, &second_global_number, 12));
@@ -101,6 +127,11 @@ static int check_static_local_objects(void) {
   assert(holder.callback != 0);
   assert(holder.callback(30) == 32);
   assert(holder.tail == 45);
+  assert(sizeof(reference_array) / sizeof(reference_array[0]) == 2);
+  assert(reference_array[0].data == 0);
+  assert(reference_array[0].callback == 0);
+  assert(references_match(
+      &reference_array[1], &global_number, 11));
   return 0;
 }
 
@@ -117,12 +148,25 @@ static int check_automatic_objects(void) {
       plus_two,
       47,
   };
+  union anonymous_references reference_array[3] = {
+      [2] = {
+          .raw[1] = -1,
+          .data = &local_number,
+          .callback = plus_one,
+      },
+  };
 
   assert(references_match(&references, &local_number, 11));
   assert(holder.data == &local_number);
   assert(holder.callback != 0);
   assert(holder.callback(40) == 42);
   assert(holder.tail == 47);
+  assert(reference_array[0].data == 0);
+  assert(reference_array[0].callback == 0);
+  assert(reference_array[1].data == 0);
+  assert(reference_array[1].callback == 0);
+  assert(references_match(
+      &reference_array[2], &local_number, 11));
   return 0;
 }
 
@@ -140,6 +184,14 @@ static int check_compound_literals(void) {
           plus_one,
           48,
       };
+  union anonymous_references *reference_array =
+      (union anonymous_references[]){
+          [1] = {
+              .raw[0] = -1,
+              .data = &second_global_number,
+              .callback = plus_two,
+          },
+      };
 
   assert(references_match(
       references, &global_number, 12));
@@ -147,6 +199,10 @@ static int check_compound_literals(void) {
   assert(holder->callback != 0);
   assert(holder->callback(50) == 51);
   assert(holder->tail == 48);
+  assert(reference_array[0].data == 0);
+  assert(reference_array[0].callback == 0);
+  assert(references_match(
+      &reference_array[1], &second_global_number, 12));
   return 0;
 }
 

@@ -14,6 +14,12 @@ typedef struct psx_record_layout_table_t psx_record_layout_table_t;
 typedef struct ag_target_info_t ag_target_info_t;
 typedef void (*global_var_visitor_t)(global_var_t *gv, void *user);
 
+typedef struct {
+  psx_type_id_t union_type_id;
+  int relative_offset;
+  int member_ordinal;
+} psx_gvar_union_activation_t;
+
 psx_gvar_init_slot_t ps_gvar_init_slot_view(
     const global_var_t *gv, int idx);
 tk_float_kind_t ps_gvar_init_slot_fp_kind(
@@ -43,6 +49,12 @@ void ps_gvar_init_slot_set_ordinal(
     global_var_t *gv, int idx, int ordinal);
 void ps_gvar_init_slot_set_offset(
     global_var_t *gv, int idx, int relative_offset);
+int ps_gvar_union_activation_set(
+    global_var_t *gv, psx_type_id_t union_type_id,
+    int relative_offset, int member_ordinal);
+int ps_gvar_union_activation_ordinal(
+    const global_var_t *gv, psx_type_id_t union_type_id,
+    int relative_offset, int *member_ordinal);
 
 typedef enum {
   PSX_GVAR_INIT_KIND_INTEGER = 0,
