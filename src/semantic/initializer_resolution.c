@@ -213,6 +213,20 @@ static void flat_initializer_clear_nested_union_activations(
     psx_flat_initializer_context_t *context,
     const psx_initializer_object_span_t *parent) {
   if (!context || !parent) return;
+  int parent_index = -1;
+  for (int i = 0; i < context->union_activation_count; i++) {
+    if (flat_initializer_union_activation_matches(
+            &context->union_activations[i], parent)) {
+      parent_index = i;
+      break;
+    }
+  }
+  if (parent_index < 0) return;
+  /*
+   * Activations are appended while descending from containing unions to
+   * nested unions. Same-offset anonymous unions can have identical leaf
+   * spans, so span containment alone must not remove an earlier ancestor.
+   */
   int write = 0;
   for (int read = 0; read < context->union_activation_count;
        read++) {
@@ -220,7 +234,7 @@ static void flat_initializer_clear_nested_union_activations(
         context->union_activations[read];
     int is_parent = flat_initializer_union_activation_matches(
         &activation, parent);
-    int is_nested = !is_parent &&
+    int is_nested = !is_parent && read > parent_index &&
                     activation.leaf_begin >= parent->leaf_begin &&
                     activation.leaf_begin < parent->leaf_end;
     if (is_nested) continue;
@@ -292,6 +306,9 @@ static int flat_initializer_reset_aggregate_target(
     int is_nested = !is_containing &&
                     activation.leaf_begin >= target->leaf_begin &&
                     activation.leaf_begin < target->leaf_end;
+    /* Preserve earlier containing activations when spans start together. */
+    if (containing_index >= 0)
+      is_nested = is_nested && read > containing_index;
     if (is_nested) continue;
     context->union_activations[write++] = activation;
   }

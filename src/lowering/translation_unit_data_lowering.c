@@ -167,6 +167,16 @@ static int write_bits(ir_data_object_t *object, int offset,
   return 1;
 }
 
+static int merge_bits(ir_data_object_t *object, int offset,
+                      unsigned long long value, int size) {
+  if (!object || !object->bytes || offset < 0 || size <= 0 ||
+      offset > object->byte_size - size)
+    return 0;
+  for (int i = 0; i < size; i++)
+    object->bytes[offset + i] |= (unsigned char)(value >> (8 * i));
+  return 1;
+}
+
 static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
                               psx_gvar_init_value_t value,
                               psx_type_id_t callable_type_id) {
@@ -257,7 +267,7 @@ static void lower_aggregate_bitfield_unit(
   global_data_lowering_t *ctx = user;
   long long offset = base_offset + unit->offset;
   if (offset < 0 || offset > INT32_MAX ||
-      !write_bits(ctx->object, (int)offset, unit->packed, unit->size))
+      !merge_bits(ctx->object, (int)offset, unit->packed, unit->size))
     ctx->lowering->failed = 1;
 }
 

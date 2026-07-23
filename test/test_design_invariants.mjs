@@ -8855,11 +8855,17 @@ if (!/\bunsigned\s+char\s+bit_width\s*;/.test(
     !/target->bit_width\s*>\s*0[^]*?unit_mask[^]*?packed\s*=\s*\(packed\s*&\s*~unit_mask\)/.test(
       staticHirInitializerSource,
     ) ||
+    !/aggregate_leaf_index_for_bitfield_unit\s*\([^]*?declaration->bit_width\s*>\s*0[^]*?leaf->member_ref\.record_id\s*==\s*target->member_ref\.record_id/.test(
+      staticHirInitializerSource,
+    ) ||
     !/gvar_init_cursor_advance_at_offset\s*\([^,]*,\s*base_offset\s*\+\s*unit_off\s*\)/.test(
       nodeUtilsSource,
+    ) ||
+    !/lower_aggregate_bitfield_unit\s*\([^]*?\bmerge_bits\s*\(/.test(
+      translationUnitDataLoweringSource,
     )) {
   throw new Error(
-    "bitfield initializer leaves sharing one offset must retain member identity and one packed storage unit",
+    "bitfield initializer leaves sharing or overlapping one storage unit must retain member identity and preserve adjacent initialized bytes",
   );
 }
 if (!/\}\s*psx_initializer_union_activation_t\s*;/.test(
@@ -8869,6 +8875,9 @@ if (!/\}\s*psx_initializer_union_activation_t\s*;/.test(
       initializerResolutionSource,
     ) ||
     !/flat_initializer_clear_nested_union_activations\s*\(\s*context\s*,\s*parent\s*\)/.test(
+      initializerResolutionSource,
+    ) ||
+    !/int\s+is_nested\s*=\s*!is_parent\s*&&\s*read\s*>\s*parent_index/.test(
       initializerResolutionSource,
     ) ||
     !/flat_initializer_reset_aggregate_target\s*\(\s*context\s*,\s*target\s*\)/.test(
@@ -8980,6 +8989,9 @@ if (!/\bint\s*\*\s*init_offsets\s*;/.test(gvarStruct[1]) ||
       gvarStruct[1],
     ) ||
     !/\bps_gvar_union_activation_set\s*\([^]*?\bactivation->union_type_id\s*,[^]*?\bactivation->relative_offset\s*,\s*member_index\s*\)/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/\bps_gvar_union_activation_ordinal\s*\(\s*aggregate->global\s*,\s*activation->union_type_id\s*,\s*activation->relative_offset\s*,\s*&previous_member\s*\)/.test(
       staticHirInitializerSource,
     ) ||
     !/\bps_gvar_union_activation_ordinal\s*\([^]*?\baggregate_type_id\s*,\s*\(int\)base_offset\s*,\s*&ordinal\s*\)/.test(

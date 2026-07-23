@@ -541,6 +541,26 @@ static int aggregate_leaf_index_for_target(
       leaves, target->relative_offset);
 }
 
+static int aggregate_leaf_index_for_bitfield_unit(
+    const psx_initializer_scalar_leaf_list_t *leaves,
+    const psx_initializer_target_t *target) {
+  int exact = aggregate_leaf_index_for_target(leaves, target);
+  if (!leaves || !target || !target->member_ref.declaration)
+    return exact;
+  for (int i = 0; i < leaves->count; i++) {
+    const psx_initializer_scalar_leaf_t *leaf = &leaves->items[i];
+    const psx_record_member_decl_t *declaration =
+        leaf->member_ref.declaration;
+    if (leaf->relative_offset == target->relative_offset &&
+        declaration && declaration->bit_width > 0 &&
+        leaf->member_ref.record_id == target->member_ref.record_id &&
+        leaf->member_ref.layout.offset ==
+            target->member_ref.layout.offset)
+      return i;
+  }
+  return exact;
+}
+
 typedef struct {
   psx_type_id_t union_type_id;
   int relative_offset;
@@ -721,8 +741,10 @@ static int aggregate_apply_union_activation(
       activation->slot_capacity <= 0 ||
       activation->selected_leaves.count <= 0)
     return 0;
-  int previous_member = ps_gvar_union_init_slot_ordinal(
-      aggregate->global, activation->slot_begin);
+  int previous_member = -1;
+  (void)ps_gvar_union_activation_ordinal(
+      aggregate->global, activation->union_type_id,
+      activation->relative_offset, &previous_member);
   if (previous_member != member_index) {
     for (int i = 0; i < activation->slot_capacity; i++)
       ps_gvar_init_slot_clear(
@@ -971,8 +993,8 @@ static int aggregate_write_scalar(
   int index = aggregate_leaf_index_for_target(
       &aggregate->leaves, target);
   if (target && target->bit_width > 0)
-    index = aggregate_leaf_index_at_offset(
-        &aggregate->leaves, target->relative_offset);
+    index = aggregate_leaf_index_for_bitfield_unit(
+        &aggregate->leaves, target);
   psx_type_shape_t target_type = {0};
   if (index < 0 || index >= aggregate->leaves.count || !value ||
       !type_shape(&aggregate->eval, target->type_id, &target_type))
