@@ -1081,6 +1081,12 @@ static int validate_direct_type_query_type(
   if (!context || !source ||
       !direct_describe_qual_type(context, queried_qual_type, &shape))
     return 0;
+  if (psx_semantic_type_table_has_invalid_restrict_qualification(
+          direct_semantic_types(context), queried_qual_type))
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+        source);
   if (is_sizeof && shape.kind == PSX_TYPE_VOID)
     return 1;
   if (shape.kind == PSX_TYPE_VOID || shape.kind == PSX_TYPE_FUNCTION)

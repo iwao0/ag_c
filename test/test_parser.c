@@ -14864,6 +14864,11 @@ static void test_type_decl(
       "typedef unsigned long long ull; int main() { ull v=5; return v; }",
       "int main() { static int x=3; register int r=2; auto int a=1; "
       "int *restrict p=0; return a+r+x+(p==0); }",
+      "struct S; int read(struct S *restrict); "
+      "struct S { int value; }; "
+      "int read(struct S *restrict p) { return p->value; } "
+      "int main(void) { struct S value={7}; void *restrict p=&value; "
+      "return read(p); }",
       "int main() { const const int x=3; volatile volatile int y=4; "
       "int *restrict restrict p=0; return x+y+(p==0); }",
       "int sumq(const const int a, volatile volatile int b, "
@@ -15747,6 +15752,36 @@ static void test_parse_invalid(
       "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
       "int f(int values[*]) { return values[0]; } "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int answer(void) { return 42; } int main(void) { "
+      "int (*restrict callback)(void)=answer; return callback(); }");
+  expect_parse_fail(test_suite_session,
+      "typedef int function_type(void); int main(void) { "
+      "function_type *restrict callback=0; return callback != 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int (*function_pointer)(void); "
+      "int main(void) { restrict function_pointer callback=0; "
+      "return callback != 0; }");
+  expect_parse_fail(test_suite_session,
+      "int main(void) { return (int (*restrict)(void))0 != 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int (*function_pointer)(void); "
+      "int main(void) { return (restrict function_pointer)0 != 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int scalar_type; "
+      "int main(void) { return sizeof(restrict scalar_type); }");
+  expect_parse_fail(test_suite_session,
+      "int (*restrict callback)(void); int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int apply(int (*restrict callback)(void)); "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct callbacks { int (*restrict read)(void); }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int function_type(void); "
+      "typedef function_type *restrict callback_type; "
       "int main(void) { return 0; }");
   expect_parse_ok(test_suite_session,
       "int first(int values[1]) { return values[0]; } "

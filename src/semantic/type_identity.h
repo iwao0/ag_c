@@ -48,6 +48,10 @@ int psx_semantic_type_table_describe(
     psx_type_shape_t *out);
 int psx_semantic_type_table_qual_type_is_valid(
     const psx_semantic_type_table_t *table, psx_qual_type_t type);
+int psx_semantic_type_table_pointer_can_be_restrict_qualified(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id);
+int psx_semantic_type_table_has_invalid_restrict_qualification(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type);
 int psx_semantic_type_table_unqualified_types_match(
     const psx_semantic_type_table_t *table,
     psx_qual_type_t left, psx_qual_type_t right);

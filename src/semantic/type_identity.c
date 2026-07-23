@@ -494,6 +494,55 @@ int psx_semantic_type_table_qual_type_is_valid(
          semantic_type_id_is_valid(table, type.type_id);
 }
 
+int psx_semantic_type_table_pointer_can_be_restrict_qualified(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
+  psx_type_shape_t pointer_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          table, type_id, &pointer_shape) ||
+      pointer_shape.kind != PSX_TYPE_POINTER)
+    return 0;
+  psx_qual_type_t pointee =
+      psx_semantic_type_table_base(table, type_id);
+  psx_type_shape_t pointee_shape = {0};
+  return pointee.type_id != PSX_TYPE_ID_INVALID &&
+         psx_semantic_type_table_describe(
+             table, pointee.type_id, &pointee_shape) &&
+         pointee_shape.kind != PSX_TYPE_FUNCTION;
+}
+
+int psx_semantic_type_table_has_invalid_restrict_qualification(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type) {
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          table, type.type_id, &shape))
+    return 1;
+  if ((type.qualifiers & PSX_TYPE_QUALIFIER_RESTRICT) != 0 &&
+      !psx_semantic_type_table_pointer_can_be_restrict_qualified(
+          table, type.type_id))
+    return 1;
+  if (shape.kind == PSX_TYPE_POINTER ||
+      shape.kind == PSX_TYPE_ARRAY ||
+      shape.kind == PSX_TYPE_FUNCTION) {
+    psx_qual_type_t base =
+        psx_semantic_type_table_base(table, type.type_id);
+    if (base.type_id == PSX_TYPE_ID_INVALID ||
+        psx_semantic_type_table_has_invalid_restrict_qualification(
+            table, base))
+      return 1;
+  }
+  if (shape.kind == PSX_TYPE_FUNCTION) {
+    for (int i = 0; i < shape.parameter_count; i++) {
+      psx_qual_type_t parameter =
+          psx_semantic_type_table_parameter(table, type.type_id, i);
+      if (parameter.type_id == PSX_TYPE_ID_INVALID ||
+          psx_semantic_type_table_has_invalid_restrict_qualification(
+              table, parameter))
+        return 1;
+    }
+  }
+  return 0;
+}
+
 static int semantic_qual_types_match(
     const psx_semantic_type_table_t *table,
     psx_qual_type_t left, psx_qual_type_t right,

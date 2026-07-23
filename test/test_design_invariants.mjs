@@ -8965,6 +8965,31 @@ if (!/int\s+op_index\s*=\s*declarator->declarator_shape\.count[^]*?parse_context
     "array parameter qualifiers and static must be restricted to the outermost array type derivation and static must not repeat",
   );
 }
+if (!/psx_semantic_type_table_pointer_can_be_restrict_qualified\s*\([^]*?pointer_shape\.kind\s*!=\s*PSX_TYPE_POINTER[^]*?pointee_shape\.kind\s*!=\s*PSX_TYPE_FUNCTION/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/psx_semantic_type_table_has_invalid_restrict_qualification\s*\([^]*?PSX_TYPE_QUALIFIER_RESTRICT[^]*?psx_semantic_type_table_pointer_can_be_restrict_qualified[^]*?shape\.kind\s*==\s*PSX_TYPE_POINTER[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?shape\.kind\s*==\s*PSX_TYPE_FUNCTION/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?restrict qualifier requires a pointer to an object or[^]*?incomplete type/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_resolve_parameter_declaration\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification\s*\(\s*types,\s*identity\s*\)/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/apply_reference_qualifiers\s*\([^]*?syntax->is_restrict_qualified[^]*?PSX_TYPE_QUALIFIER_RESTRICT/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/validate_direct_type_query_type\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?restrict qualifier requires a pointer to an object or[^]*?incomplete type/.test(
+      typeNameResolutionSource,
+    )) {
+  throw new Error(
+    "restrict qualifiers must be validated against canonical pointer pointee identity and reject function pointers",
+  );
+}
 if (!/parsed_declarator_has_explicit_vla_star\s*\([^]*?op->kind\s*!=\s*PSX_DECL_OP_ARRAY\s*\|\|\s*!op->is_vla_array[^]*?declarator->array_bound_count[^]*?!has_bound_expression\s*\)\s*return\s+1/.test(
       frontendDeclarationSources,
     ) ||

@@ -63,6 +63,9 @@ int psx_resolve_parameter_declaration(
           types, identity.type_id, &shape)) {
     return 0;
   }
+  if (psx_semantic_type_table_has_invalid_restrict_qualification(
+          types, identity))
+    return 0;
   if (psx_semantic_type_has_flexible_array_element_in(
           request->type.semantic_context, identity.type_id))
     return 0;

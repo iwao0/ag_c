@@ -23,6 +23,8 @@ static psx_qual_type_t apply_reference_qualifiers(
     base.qualifiers |= PSX_TYPE_QUALIFIER_CONST;
   if (syntax->is_volatile_qualified)
     base.qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
+  if (syntax->is_restrict_qualified)
+    base.qualifiers |= PSX_TYPE_QUALIFIER_RESTRICT;
   if (syntax->is_atomic)
     base.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
   return base;
@@ -127,6 +129,16 @@ int psx_resolve_type_name_qual_type_in_contexts(
           base.base_qual_type, &type_name->syntax->declarator);
   if (resolved.type_id == PSX_TYPE_ID_INVALID)
     return 0;
+  if (psx_semantic_type_table_has_invalid_restrict_qualification(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          resolved)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        type_name->syntax->diagnostic_token, "type-name",
+        "restrict qualifier requires a pointer to an object or "
+        "incomplete type");
+    return 0;
+  }
   if (psx_semantic_type_has_incomplete_array_element_in(
           semantic_context, resolved.type_id)) {
     ps_diag_ctx_in(
