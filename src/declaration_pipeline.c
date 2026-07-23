@@ -793,13 +793,17 @@ int psx_begin_static_local_declaration_pipeline(
             DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
         request->name_len, request->name);
   }
-  if (psx_semantic_type_table_contains_vla_array(
-          semantic_types, declaration_identity.type_id)) {
+  int has_variably_modified_type =
+      psx_semantic_type_table_contains_vla_array(
+          semantic_types, declaration_identity.type_id);
+  if (has_variably_modified_type &&
+      object_shape.kind == PSX_TYPE_ARRAY) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(request->semantic_context),
         request->diag_tok, "decl",
-        "static local object '%.*s' cannot have variably modified type",
+        "static local variable length array '%.*s' is not permitted",
         request->name_len, request->name);
+    return 0;
   }
 
   psx_qual_type_t leaf = psx_semantic_type_table_array_leaf(
@@ -874,6 +878,53 @@ int psx_begin_static_local_declaration_pipeline(
   }
   result->global = storage.global;
   result->alias = storage.alias;
+  if (has_variably_modified_type) {
+    if (!request->application ||
+        object_shape.kind != PSX_TYPE_POINTER)
+      return 0;
+    psx_local_declaration_resolution_t local_resolution;
+    psx_resolve_local_declaration(
+        &(psx_local_declaration_resolution_request_t){
+            .arena_context =
+                ps_lowering_arena(request->lowering_context),
+            .semantic_types = semantic_types,
+            .record_layouts =
+                ps_ctx_record_layout_table_in(
+                    request->semantic_context),
+            .type_id = declaration_identity.type_id,
+            .data_layout =
+                ps_lowering_data_layout(request->lowering_context),
+            .application = request->application,
+            .has_initializer =
+                request->initializer->has_initializer,
+        },
+        &local_resolution);
+    if (local_resolution.status != PSX_LOCAL_DECLARATION_OK ||
+        local_resolution.storage_kind !=
+            PSX_LOCAL_STORAGE_POINTER_TO_VLA ||
+        !ps_ctx_semantic_expression_in(
+            request->semantic_context,
+            local_resolution.pointer_row_dimension_id))
+      return 0;
+    psx_vla_lowering_result_t vla =
+        lower_static_pointer_to_vla_declaration_plan(
+            &(psx_pointer_vla_lowering_request_t){
+                .local_registry = request->local_registry,
+                .lowering_context = request->lowering_context,
+                .name = request->name,
+                .name_len = request->name_len,
+                .row_dimension_id =
+                    local_resolution.pointer_row_dimension_id,
+                .type = declaration_identity,
+                .requested_alignment =
+                    request->requested_alignment,
+                .diag_tok = request->diag_tok,
+            },
+            result->alias);
+    if (vla.var != result->alias || !vla.runtime_plan)
+      return 0;
+    result->vla_runtime_plan = vla.runtime_plan;
+  }
   if (result->global)
     result->global->is_thread_local = request->is_thread_local ? 1 : 0;
   if (result->global &&
@@ -1271,6 +1322,17 @@ int psx_apply_block_extern_declaration_pipeline(
       return 0;
     }
     return 1;
+  }
+  if (psx_semantic_type_table_contains_vla_array(
+          ps_ctx_semantic_type_table_in(request->semantic_context),
+          request->type.type_id)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(request->semantic_context),
+        request->diag_tok, "decl",
+        "block scope extern object '%.*s' cannot have "
+        "variably modified type",
+        request->name_len, request->name);
+    return 0;
   }
 
   psx_parsed_initializer_t initializer = {0};

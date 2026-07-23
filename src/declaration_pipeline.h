@@ -114,6 +114,7 @@ typedef struct {
   char *name;
   int name_len;
   psx_qual_type_t type;
+  const psx_runtime_declarator_application_t *application;
   int is_thread_local;
   int requested_alignment;
   const psx_parsed_initializer_t *initializer;
@@ -123,6 +124,7 @@ typedef struct {
 typedef struct {
   global_var_t *global;
   struct lvar_t *alias;
+  psx_vla_runtime_plan_t *vla_runtime_plan;
   int initialized;
   int type_completed;
 } psx_static_local_declaration_pipeline_result_t;

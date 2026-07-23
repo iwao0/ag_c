@@ -5,18 +5,10 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
 
-int psx_resolve_local_hir_node_spec_in(
+int psx_apply_local_vla_hir_node_spec_in(
     const psx_semantic_context_t *semantic_context,
-    const lvar_t *local, int storage_offset,
-    psx_hir_node_spec_t *spec) {
+    const lvar_t *local, psx_hir_node_spec_t *spec) {
   if (!semantic_context || !local || !spec) return 0;
-  spec->kind = PSX_HIR_LOCAL;
-  spec->attached_qual_type = (psx_qual_type_t){
-      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  spec->storage_offset = storage_offset;
-  spec->object_offset = ps_lvar_offset(local);
-  spec->object_size = ps_lvar_frame_storage_size(local);
-  spec->object_align = ps_lvar_align_bytes(local);
   if (!ps_lvar_is_vla(local)) return 1;
 
   spec->vla_stride_frame_offset =
@@ -44,4 +36,20 @@ int psx_resolve_local_hir_node_spec_in(
   spec->vla_dimension_source_offsets = source_offsets;
   spec->vla_dimension_count = (size_t)count;
   return 1;
+}
+
+int psx_resolve_local_hir_node_spec_in(
+    const psx_semantic_context_t *semantic_context,
+    const lvar_t *local, int storage_offset,
+    psx_hir_node_spec_t *spec) {
+  if (!semantic_context || !local || !spec) return 0;
+  spec->kind = PSX_HIR_LOCAL;
+  spec->attached_qual_type = (psx_qual_type_t){
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  spec->storage_offset = storage_offset;
+  spec->object_offset = ps_lvar_offset(local);
+  spec->object_size = ps_lvar_frame_storage_size(local);
+  spec->object_align = ps_lvar_align_bytes(local);
+  return psx_apply_local_vla_hir_node_spec_in(
+      semantic_context, local, spec);
 }

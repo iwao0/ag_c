@@ -2780,6 +2780,17 @@ static psx_semantic_node_t *build_direct_identifier(
     spec.kind = PSX_HIR_GLOBAL;
     spec.name = symbol.name;
     spec.name_length = symbol.name_length;
+    if (resolution.symbol.kind == PSX_IDENTIFIER_LOCAL &&
+        resolution.symbol.local &&
+        !psx_apply_local_vla_hir_node_spec_in(
+            context->semantic_context,
+            resolution.symbol.local, &spec)) {
+      set_failure(
+          context->failure,
+          PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          &identifier->base);
+      return NULL;
+    }
     object = psx_semantic_node_builder_leaf_expression(
         &context->builder, &spec,
         resolution.declaration_qual_type, &symbol,
@@ -5200,6 +5211,7 @@ static int preflight_direct_local_declaration(
           .name = name->str,
           .name_len = name->len,
           .type = decl_qual_type,
+          .application = &effective_application,
           .is_thread_local =
               declaration->specifier.type_spec.is_thread_local,
           .requested_alignment =
@@ -5279,6 +5291,7 @@ static int preflight_direct_local_declaration(
           .declaration_qual_type = ps_lvar_decl_qual_type(
               static_result.alias),
           .initializer = initializer,
+          .vla_runtime_plan = static_result.vla_runtime_plan,
           .is_semantic_only = 1,
       };
       continue;
@@ -6235,25 +6248,29 @@ static psx_semantic_node_t *build_direct_local_declaration(
       if (!children[i]) return NULL;
       continue;
     }
-    if (declarator->is_semantic_only) {
-      psx_hir_node_spec_t nop_spec = {
-          .kind = PSX_HIR_NOP,
-          .attached_qual_type = {
-              PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-      };
-      children[i] = psx_semantic_node_builder_statement(
-          &context->builder, &nop_spec, NULL, NULL, 0,
-          ND_LOCAL_DECLARATION);
-      edges[i] = PSX_HIR_EDGE_BLOCK_ITEM;
-      if (!children[i]) return NULL;
-      continue;
-    }
     psx_semantic_node_t *vla_runtime = NULL;
     if (declarator->vla_runtime_plan) {
       vla_runtime = psx_semantic_node_builder_vla_runtime(
           &context->builder, declarator->vla_runtime_plan,
           ND_LOCAL_DECLARATION);
       if (!vla_runtime) return NULL;
+    }
+    if (declarator->is_semantic_only) {
+      if (vla_runtime) {
+        children[i] = vla_runtime;
+      } else {
+        psx_hir_node_spec_t nop_spec = {
+            .kind = PSX_HIR_NOP,
+            .attached_qual_type = {
+                PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+        };
+        children[i] = psx_semantic_node_builder_statement(
+            &context->builder, &nop_spec, NULL, NULL, 0,
+            ND_LOCAL_DECLARATION);
+      }
+      edges[i] = PSX_HIR_EDGE_BLOCK_ITEM;
+      if (!children[i]) return NULL;
+      continue;
     }
     if (!initializer || !initializer->has_initializer) {
       if (vla_runtime) {

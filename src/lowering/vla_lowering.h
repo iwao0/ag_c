@@ -43,6 +43,10 @@ typedef struct {
 psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
     const psx_pointer_vla_lowering_request_t *request);
 
+psx_vla_lowering_result_t lower_static_pointer_to_vla_declaration_plan(
+    const psx_pointer_vla_lowering_request_t *request,
+    lvar_t *static_alias);
+
 typedef struct {
   psx_semantic_expr_id_t expression_id;
   long long constant_value;

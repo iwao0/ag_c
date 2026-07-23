@@ -11494,6 +11494,21 @@ static void test_local_declaration_resolution_boundary(
 
   expect_parse_fail(test_suite_session,
       "int main(void) { int incomplete[]; return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int main(int argc, char **argv) { "
+      "  static int values[argc]; "
+      "  return values[0] + (argv != 0); "
+      "}");
+  expect_parse_fail(test_suite_session,
+      "int main(int argc, char **argv) { "
+      "  extern int values[argc]; "
+      "  return values[0] + (argv != 0); "
+      "}");
+  expect_parse_fail(test_suite_session,
+      "int main(int argc, char **argv) { "
+      "  extern int (*pointer)[argc]; "
+      "  return pointer != 0 && argv != 0; "
+      "}");
 }
 
 static void test_aggregate_member_resolution_boundary(

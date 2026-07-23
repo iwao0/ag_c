@@ -5856,6 +5856,31 @@ if (!functionDeclarationPipelineRequest ||
     "function declaration pipeline must resolve names from semantic context only",
   );
 }
+if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(
+      declarationPipelineSource,
+    ) ||
+    !/lower_static_pointer_to_vla_declaration_plan\s*\([^]*?result->alias[^]*?result->vla_runtime_plan\s*=\s*vla\.runtime_plan/.test(
+      declarationPipelineSource,
+    ) ||
+    !/psx_apply_block_extern_declaration_pipeline\s*\([^]*?declaration_shape\.kind\s*==\s*PSX_TYPE_FUNCTION[^]*?psx_semantic_type_table_contains_vla_array\s*\([^]*?block scope extern object/.test(
+      declarationPipelineSource,
+    ) ||
+    !/lower_static_pointer_to_vla_declaration_plan\s*\([^]*?local_storage_allocate\s*\([^]*?PSX_VLA_RUNTIME_SLOT_SIZE[^]*?ps_local_registry_set_vla_descriptor\s*\(\s*static_alias/.test(
+      vlaLoweringSource,
+    ) ||
+    !/psx_apply_local_vla_hir_node_spec_in\s*\(/.test(
+      hirLocalResolutionSource,
+    ) ||
+    !/resolution\.symbol\.kind\s*==\s*PSX_IDENTIFIER_LOCAL[^]*?psx_apply_local_vla_hir_node_spec_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\.vla_runtime_plan\s*=\s*static_result\.vla_runtime_plan/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "VM declaration constraints must reject linkage-bearing objects while static pointers retain a per-entry runtime stride plan",
+  );
+}
 const parameterDeclarationResolutionSource = await readFile(
   "src/semantic/parameter_declaration_resolution.c",
   "utf8",
