@@ -11600,8 +11600,18 @@ static void test_aggregate_member_resolution_boundary(
   ASSERT_TRUE(constraint_record != NULL);
 
   ASSERT_EQ(4, layout_record->member_count);
-  ASSERT_EQ(12, layout_record->size);
+  ASSERT_EQ(8, layout_record->size);
   ASSERT_EQ(4, layout_record->alignment);
+  ASSERT_EQ(0, psx_record_layout_member(
+                   layout_record, 1)->offset);
+  ASSERT_EQ(8, psx_record_layout_member(
+                   layout_record, 1)->bit_offset);
+  ASSERT_EQ(4, psx_record_layout_member(
+                   layout_record, 2)->offset);
+  ASSERT_EQ(0, psx_record_layout_member(
+                   layout_record, 2)->bit_offset);
+  ASSERT_EQ(6, psx_record_layout_member(
+                   layout_record, 3)->offset);
   ASSERT_EQ(2, union_record->member_count);
   ASSERT_EQ(8, union_record->size);
   ASSERT_EQ(8, union_record->alignment);

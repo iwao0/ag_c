@@ -666,6 +666,9 @@ probes_found_bugs/nested_union_activation_identity.c
 probes_found_bugs/nested_union_string_bitfield_activation.c
 probes_found_bugs/triple_nested_union_activation_reset.c
 probes_found_bugs/bitfield_overlapping_storage_units.c
+probes_found_bugs/zero_width_unnamed_bitfield_initializer.c
+probes_found_bugs/mixed_base_bitfield_tail_layout.c
+probes_found_bugs/packed_bitfield_tail_layout.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c

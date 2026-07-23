@@ -3419,6 +3419,46 @@ if (!aggregateMemberResolutionType ||
     "aggregate member resolution must separate RecordDecl completeness from QualType target layout",
   );
 }
+if (!/finish_aggregate_bitfield_run\s*\([^]*?\(\s*state->bitfield_bits_used\s*\+\s*7\s*\)\s*\/\s*8[^]*?state->bitfield_storage_offset\s*\+\s*occupied_bytes/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/aggregate_bitfield_request_t\s*;/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/\bint\s+pack_alignment\s*;/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/member_alignment\s*=\s*storage_size[^]*?request->pack_alignment\s*>\s*0[^]*?member_alignment\s*=\s*request->pack_alignment/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/state->record_kind\s*==\s*PSX_TYPE_UNION[^]*?occupied_size\s*=\s*\(\s*request->bit_width\s*\+\s*7\s*\)\s*\/\s*8[^]*?state->union_size\s*=\s*occupied_size/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/if\s*\(\s*request->bit_width\s*==\s*0\s*\)\s*\{\s*finish_aggregate_bitfield_run\s*\(\s*state\s*\)/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/resolve_aggregate_object_placement\s*\([^]*?finish_aggregate_bitfield_run\s*\(\s*state\s*\)/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/long long\s+next_bit\s*=\s*[^;]*state->bitfield_storage_offset[^;]*state->bitfield_bits_used[^;]*state->current_offset\s*\*\s*8/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/container_bit_start\s*=\s*next_bit\s*\/\s*storage_bits\s*\*\s*storage_bits/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/bits_before\s*\+\s*request->bit_width\s*>\s*storage_bits[^]*?aligned_byte/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/if\s*\(\s*request->pack_alignment\s*>\s*0\s*\)[^]*?state->bitfield_storage_offset[^]*?next_bit\s*\/\s*8\s*\*\s*8/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/psx_aggregate_layout_size\s*\([^]*?state->bitfield_storage_offset\s*>=\s*0[^]*?occupied_bytes[^]*?size\s*=\s*state->bitfield_storage_offset\s*\+\s*occupied_bytes/.test(
+      aggregateMemberResolutionSource,
+    )) {
+  throw new Error(
+    "aggregate layout must pack normal and pragma-packed mixed-base bit-field runs by occupied bit extent",
+  );
+}
 const declarationApplicationSource = await readFile(
   "src/semantic/declaration_application.c",
   "utf8",
@@ -8861,7 +8901,13 @@ if (!/\bunsigned\s+char\s+bit_width\s*;/.test(
     !/gvar_init_cursor_advance_at_offset\s*\([^,]*,\s*base_offset\s*\+\s*unit_off\s*\)/.test(
       nodeUtilsSource,
     ) ||
+    !/member_extent\s*=\s*\([^;]*member_layout\.bit_offset[^;]*member(?:->|\.)bit_width[^;]*\+\s*7\s*\)\s*\/\s*8[^]*?member_extent\s*>\s*unit_size\)\s*unit_size\s*=\s*member_extent/.test(
+      nodeUtilsSource,
+    ) ||
     !/lower_aggregate_bitfield_unit\s*\([^]*?\bmerge_bits\s*\(/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    !/lower_aggregate_bitfield_member\s*\([^]*?\bsize\s*=\s*\(\s*layout->bit_offset\s*\+\s*member->bit_width\s*\+\s*7\s*\)\s*\/\s*8[^]*?\bwrite_bits\s*\(/.test(
       translationUnitDataLoweringSource,
     )) {
   throw new Error(

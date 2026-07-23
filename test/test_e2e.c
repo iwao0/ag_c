@@ -1388,6 +1388,9 @@ static const test_case_t test_cases[] = {
     {"probes", "nested_union_string_bitfield_activation", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nested_union_string_bitfield_activation.c", 0, 0},
     {"probes", "triple_nested_union_activation_reset", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/triple_nested_union_activation_reset.c", 0, 0},
     {"probes", "bitfield_overlapping_storage_units", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/bitfield_overlapping_storage_units.c", 0, 0},
+    {"probes", "zero_width_unnamed_bitfield_initializer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/zero_width_unnamed_bitfield_initializer.c", 0, 0},
+    {"probes", "mixed_base_bitfield_tail_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mixed_base_bitfield_tail_layout.c", 0, 0},
+    {"probes", "packed_bitfield_tail_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/packed_bitfield_tail_layout.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

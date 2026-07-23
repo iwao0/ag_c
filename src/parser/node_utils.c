@@ -789,13 +789,6 @@ static psx_qual_type_t gvar_member_value_qual_type(
              : member_qual_type;
 }
 
-static psx_type_id_t gvar_member_value_type_id(
-    const psx_semantic_type_table_t *semantic_types,
-    psx_type_id_t aggregate_type_id, int member_ordinal) {
-  return gvar_member_value_qual_type(
-      semantic_types, aggregate_type_id, member_ordinal).type_id;
-}
-
 static int gvar_walk_struct_initializer(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
@@ -1341,11 +1334,8 @@ static int gvar_init_cursor_pack_bitfield_unit(
     return 0;
   if (first.bit_width <= 0) return 0;
   int unit_off = first_layout.offset;
-  psx_type_id_t unit_type_id = gvar_member_value_type_id(
-      semantic_types, aggregate_type_id, member_index);
   int unit_size =
-      psx_type_layout_sizeof(semantic_types, record_layouts, unit_type_id,
-                        ag_target_info_data_layout(target));
+      (first_layout.bit_offset + first.bit_width + 7) / 8;
   if (unit_size <= 0) return 0;
   unsigned long long packed = 0;
   int m = member_index;
@@ -1366,6 +1356,9 @@ static int gvar_init_cursor_pack_bitfield_unit(
               m, &member_layout) ||
           member->bit_width <= 0 || member_layout.offset != unit_off)
         break;
+      int member_extent =
+          (member_layout.bit_offset + member->bit_width + 7) / 8;
+      if (member_extent > unit_size) unit_size = member_extent;
       last = m;
       m++;
     }
@@ -1386,6 +1379,9 @@ static int gvar_init_cursor_pack_bitfield_unit(
             m, &member_layout))
       break;
     if (member.bit_width <= 0 || member_layout.offset != unit_off) break;
+    int member_extent =
+        (member_layout.bit_offset + member.bit_width + 7) / 8;
+    if (member_extent > unit_size) unit_size = member_extent;
     packed |= ps_gvar_init_slot_bitfield_bits(cur->gv, cur->index,
                                                member.bit_width,
                                                member_layout.bit_offset);

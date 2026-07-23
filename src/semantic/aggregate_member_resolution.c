@@ -21,6 +21,7 @@ typedef struct {
   const psx_record_layout_table_t *record_layouts;
   psx_type_id_t type_id;
   int bit_width;
+  int pack_alignment;
 } aggregate_bitfield_request_t;
 
 typedef struct {
@@ -81,6 +82,21 @@ void psx_aggregate_layout_init(
   state->bitfield_storage_offset = -1;
 }
 
+static void finish_aggregate_bitfield_run(
+    psx_aggregate_layout_state_t *state) {
+  if (!state) return;
+  if (state->record_kind != PSX_TYPE_UNION &&
+      state->bitfield_storage_offset >= 0 &&
+      state->bitfield_bits_used > 0) {
+    int occupied_bytes = (state->bitfield_bits_used + 7) / 8;
+    state->current_offset =
+        state->bitfield_storage_offset + occupied_bytes;
+  }
+  state->bitfield_storage_offset = -1;
+  state->bitfield_storage_size = 0;
+  state->bitfield_bits_used = 0;
+}
+
 static void resolve_aggregate_bitfield_placement(
     psx_aggregate_layout_state_t *state,
     const aggregate_bitfield_request_t *request,
@@ -93,7 +109,7 @@ static void resolve_aggregate_bitfield_placement(
       !request->semantic_types ||
       !request->record_layouts ||
       request->type_id == PSX_TYPE_ID_INVALID ||
-      request->bit_width < 0) {
+      request->bit_width < 0 || request->pack_alignment < 0) {
     return;
   }
   psx_type_shape_t type = {0};
@@ -114,14 +130,16 @@ static void resolve_aggregate_bitfield_placement(
       type.kind != PSX_TYPE_BOOL && !type.is_unsigned &&
       type.integer_kind != PSX_INTEGER_KIND_ENUM;
   int storage_bits = storage_size * 8;
+  int member_alignment = storage_size;
+  if (request->pack_alignment > 0 &&
+      request->pack_alignment < member_alignment)
+    member_alignment = request->pack_alignment;
   if (request->bit_width > storage_bits) {
     resolution->status = PSX_AGGREGATE_MEMBER_BIT_WIDTH_EXCEEDS_STORAGE;
     return;
   }
   if (request->bit_width == 0) {
-    state->bitfield_storage_offset = -1;
-    state->bitfield_storage_size = 0;
-    state->bitfield_bits_used = 0;
+    finish_aggregate_bitfield_run(state);
     if (state->record_kind != PSX_TYPE_UNION)
       state->current_offset = align_up(state->current_offset, storage_size);
     resolution->storage_size = storage_size;
@@ -135,35 +153,59 @@ static void resolve_aggregate_bitfield_placement(
     state->bitfield_storage_offset = 0;
     state->bitfield_storage_size = storage_size;
     state->bitfield_bits_used = request->bit_width;
-    if (storage_size > state->union_size) state->union_size = storage_size;
-    if (storage_size > state->alignment) state->alignment = storage_size;
+    int occupied_size = (request->bit_width + 7) / 8;
+    if (occupied_size > state->union_size)
+      state->union_size = occupied_size;
+    if (member_alignment > state->alignment)
+      state->alignment = member_alignment;
     resolution->offset = 0;
     resolution->storage_size = storage_size;
     resolution->status = PSX_AGGREGATE_MEMBER_OK;
     return;
   }
 
-  if (state->bitfield_storage_offset < 0 ||
-      state->bitfield_storage_size != storage_size ||
-      state->bitfield_bits_used + request->bit_width > storage_bits) {
-    int container_start =
-        state->current_offset - (state->current_offset % storage_size);
-    int bits_before = (state->current_offset - container_start) * 8;
-    if (state->bitfield_storage_offset < 0 &&
-        bits_before + request->bit_width <= storage_bits) {
-      state->bitfield_storage_offset = container_start;
-      state->bitfield_storage_size = storage_size;
-      state->bitfield_bits_used = bits_before;
-      state->current_offset = container_start + storage_size;
-    } else {
-      state->current_offset = align_up(state->current_offset, storage_size);
-      state->bitfield_storage_offset = state->current_offset;
-      state->bitfield_storage_size = storage_size;
-      state->bitfield_bits_used = 0;
-      state->current_offset += storage_size;
+  long long next_bit =
+      state->bitfield_storage_offset >= 0
+          ? (long long)state->bitfield_storage_offset * 8 +
+                state->bitfield_bits_used
+          : (long long)state->current_offset * 8;
+  long long container_bit_start = 0;
+  int bits_before = 0;
+  if (request->pack_alignment > 0) {
+    container_bit_start =
+        state->bitfield_storage_offset >= 0
+            ? (long long)state->bitfield_storage_offset * 8
+            : next_bit / 8 * 8;
+    bits_before = (int)(next_bit - container_bit_start);
+    if (bits_before + request->bit_width > storage_bits) {
+      container_bit_start = next_bit / 8 * 8;
+      bits_before = (int)(next_bit - container_bit_start);
+      if (bits_before + request->bit_width > storage_bits) {
+        container_bit_start = (next_bit + 7) / 8 * 8;
+        bits_before = 0;
+      }
     }
-    if (storage_size > state->alignment) state->alignment = storage_size;
+  } else {
+    container_bit_start = next_bit / storage_bits * storage_bits;
+    bits_before = (int)(next_bit - container_bit_start);
+    if (bits_before + request->bit_width > storage_bits) {
+      long long next_byte = (next_bit + 7) / 8;
+      long long aligned_byte =
+          (next_byte + storage_size - 1) / storage_size * storage_size;
+      container_bit_start = aligned_byte * 8;
+      bits_before = 0;
+    }
   }
+  long long container_start = container_bit_start / 8;
+  if (container_start < 0 ||
+      container_start > INT_MAX - storage_size)
+    return;
+  state->bitfield_storage_offset = (int)container_start;
+  state->bitfield_storage_size = storage_size;
+  state->bitfield_bits_used = bits_before;
+  state->current_offset = (int)container_start + storage_size;
+  if (member_alignment > state->alignment)
+    state->alignment = member_alignment;
   resolution->offset = state->bitfield_storage_offset;
   resolution->bit_offset = state->bitfield_bits_used;
   resolution->storage_size = state->bitfield_storage_size;
@@ -183,9 +225,7 @@ static void resolve_aggregate_object_placement(
       request->pack_alignment < 0 || request->requested_alignment < 0) {
     return;
   }
-  state->bitfield_storage_offset = -1;
-  state->bitfield_storage_size = 0;
-  state->bitfield_bits_used = 0;
+  finish_aggregate_bitfield_run(state);
 
   int alignment = request->natural_alignment;
   if (request->pack_alignment > 0 && request->pack_alignment < alignment)
@@ -211,6 +251,12 @@ int psx_aggregate_layout_size(const psx_aggregate_layout_state_t *state) {
   if (!state || !is_aggregate_kind(state->record_kind)) return 0;
   int size = state->record_kind == PSX_TYPE_UNION
                  ? state->union_size : state->current_offset;
+  if (state->record_kind != PSX_TYPE_UNION &&
+      state->bitfield_storage_offset >= 0 &&
+      state->bitfield_bits_used > 0) {
+    int occupied_bytes = (state->bitfield_bits_used + 7) / 8;
+    size = state->bitfield_storage_offset + occupied_bytes;
+  }
   return align_up(size, state->alignment);
 }
 
@@ -331,6 +377,7 @@ void psx_resolve_aggregate_member_declaration(
             .record_layouts = ps_ctx_record_layout_table_in(semantic_context),
             .type_id = identity.type_id,
             .bit_width = request->bit_width,
+            .pack_alignment = request->pack_alignment,
         },
         ps_ctx_data_layout(semantic_context), &bitfield);
     resolution->status = bitfield.status;

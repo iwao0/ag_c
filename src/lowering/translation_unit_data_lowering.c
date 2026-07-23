@@ -277,9 +277,10 @@ static void lower_aggregate_bitfield_member(
     psx_type_id_t value_type_id, int slot,
     long long offset) {
   global_data_lowering_t *ctx = user;
+  (void)value_type_id;
   unsigned long long packed = ps_gvar_init_slot_bitfield_bits(
       ctx->global, slot, member->bit_width, layout->bit_offset);
-  int size = type_size_id(ctx->lowering, value_type_id);
+  int size = (layout->bit_offset + member->bit_width + 7) / 8;
   if (offset < 0 || offset > INT32_MAX ||
       !write_bits(ctx->object, (int)offset, packed, size))
     ctx->lowering->failed = 1;
