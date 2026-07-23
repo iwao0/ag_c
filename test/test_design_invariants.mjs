@@ -5868,10 +5868,26 @@ if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY
     !/lower_static_pointer_to_vla_declaration_plan\s*\([^]*?local_storage_allocate\s*\([^]*?PSX_VLA_RUNTIME_SLOT_SIZE[^]*?ps_local_registry_set_vla_descriptor\s*\(\s*static_alias/.test(
       vlaLoweringSource,
     ) ||
+    !/request->dimension_count\s*\*\s*PSX_VLA_RUNTIME_SLOT_SIZE/.test(
+      vlaLoweringSource,
+    ) ||
+    !/request->dimension_count\s*-\s*1/.test(vlaLoweringSource) ||
+    !/plan->stride_store_offsets\[i\]\s*=\s*row_stride_offset\s*\+\s*PSX_VLA_RUNTIME_SLOT_SIZE\s*\*\s*i/.test(
+      vlaLoweringSource,
+    ) ||
+    !/ps_local_registry_set_vla_pointer_indirections\s*\([^]*?request->pointer_indirections/.test(
+      vlaLoweringSource,
+    ) ||
     !/psx_apply_local_vla_hir_node_spec_in\s*\(/.test(
       hirLocalResolutionSource,
     ) ||
+    !/ps_lvar_vla_pointer_indirections\s*\(\s*local\s*\)\s*>\s*0/.test(
+      hirLocalResolutionSource,
+    ) ||
     !/resolution\.symbol\.kind\s*==\s*PSX_IDENTIFIER_LOCAL[^]*?psx_apply_local_vla_hir_node_spec_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/view\.pointer_indirections\s*>\s*0[^]*?view\.pointer_indirections--/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/\.vla_runtime_plan\s*=\s*static_result\.vla_runtime_plan/.test(
@@ -8018,10 +8034,16 @@ if (!runtimeArrayBoundStruct ||
       parameterDeclarationResolutionStruct[1],
     ) ||
     /\bpsx_type_t\b/.test(parameterDeclarationResolutionStruct[1]) ||
-    !/\bpsx_semantic_expr_id_t\s+pointer_row_dimension_id\s*;/.test(
+    !/\bpsx_local_vla_dimension_t\s*\*\s*dimensions\s*;/.test(
       localDeclarationResolutionSource,
     ) ||
-    /\bnode_t\s*\*\s*pointer_row_dimension\s*;/.test(
+    !/\bint\s+dimension_count\s*;/.test(
+      localDeclarationResolutionSource,
+    ) ||
+    !/\bint\s+pointer_indirections\s*;/.test(
+      localDeclarationResolutionSource,
+    ) ||
+    /\b(?:psx_semantic_expr_id_t\s+pointer_row_dimension_id|node_t\s*\*\s*pointer_row_dimension)\s*;/.test(
       localDeclarationResolutionSource,
     ) ||
     !/const\s+psx_typed_hir_tree_t\s*\*expression/.test(
@@ -8074,7 +8096,15 @@ if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
     !/psx_qual_type_t\s+stride_storage_type\s*;/.test(
       vlaLoweringHeader,
     ) ||
-    !/psx_semantic_expr_id_t\s+row_dimension_id\s*;/.test(
+    !/psx_vla_runtime_dimension_t\s*\*\s*dimensions\s*;/.test(
+      vlaLoweringHeader,
+    ) ||
+    !/psx_qual_type_t\s+constant_qual_type\s*;/.test(
+      vlaLoweringHeader,
+    ) ||
+    !/int\s+dimension_count\s*;/.test(vlaLoweringHeader) ||
+    !/int\s+pointer_indirections\s*;/.test(vlaLoweringHeader) ||
+    /psx_semantic_expr_id_t\s+row_dimension_id\s*;/.test(
       vlaLoweringHeader,
     ) ||
     !/psx_semantic_expr_id_t\s+expression_id\s*;/.test(
@@ -8165,6 +8195,7 @@ if (!/\bpsx_resolve_parameter_declaration\s*\(/.test(
 if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
       vlaRuntimeHeaderSource,
     ) ||
+    !/int\s+pointer_indirections\s*;/.test(vlaRuntimeHeaderSource) ||
     !/PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE/.test(frameLayoutSource) ||
     !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(frameLayoutSource) ||
     !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(vlaLoweringSource) ||

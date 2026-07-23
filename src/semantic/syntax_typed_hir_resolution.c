@@ -73,6 +73,7 @@ typedef struct {
 typedef struct {
   int stride_frame_offset;
   int strides_remaining;
+  int pointer_indirections;
 } direct_vla_runtime_view_t;
 
 typedef struct {
@@ -1539,6 +1540,9 @@ static direct_vla_runtime_view_t direct_vla_runtime_view(
             resolution.symbol.local),
         .strides_remaining = ps_lvar_vla_strides_remaining(
             resolution.symbol.local),
+        .pointer_indirections =
+            ps_lvar_vla_pointer_indirections(
+                resolution.symbol.local),
     };
   }
 
@@ -1574,9 +1578,13 @@ static direct_vla_runtime_view_t direct_vla_runtime_view(
       return empty;
   }
 
-  if (view.stride_frame_offset == 0 ||
-      view.strides_remaining <= 0)
+  if (view.stride_frame_offset == 0)
     return empty;
+  if (view.pointer_indirections > 0) {
+    view.pointer_indirections--;
+    return view;
+  }
+  if (view.strides_remaining <= 0) return empty;
   view.stride_frame_offset += PSX_VLA_RUNTIME_SLOT_SIZE;
   view.strides_remaining--;
   return view;
@@ -1594,7 +1602,9 @@ static void apply_direct_vla_runtime_view(
     return;
   direct_vla_runtime_view_t view =
       direct_vla_runtime_view(context, syntax);
-  if (view.stride_frame_offset == 0) return;
+  if (view.stride_frame_offset == 0 ||
+      view.pointer_indirections > 0)
+    return;
   spec->vla_stride_frame_offset = view.stride_frame_offset;
   spec->vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE;
 }

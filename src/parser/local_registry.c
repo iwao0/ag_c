@@ -393,6 +393,13 @@ void ps_local_registry_set_vla_descriptor(
       row_stride_elem_size > 0 ? row_stride_elem_size : 0;
 }
 
+void ps_local_registry_set_vla_pointer_indirections(
+    lvar_t *var, int pointer_indirections) {
+  if (!var) return;
+  var->vla_runtime.view.pointer_indirections =
+      pointer_indirections > 0 ? pointer_indirections : 0;
+}
+
 void ps_local_registry_set_vla_param_inner_dims(
     psx_local_registry_t *registry, lvar_t *var,
     const int *inner_dim_consts,

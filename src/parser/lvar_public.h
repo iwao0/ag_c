@@ -53,6 +53,7 @@ tk_float_kind_t ps_lvar_fp_kind(const lvar_t *var);
 
 int ps_lvar_vla_row_stride_frame_off(const lvar_t *var);
 int ps_lvar_vla_strides_remaining(const lvar_t *var);
+int ps_lvar_vla_pointer_indirections(const lvar_t *var);
 int ps_lvar_vla_row_stride_elem_size(const lvar_t *var);
 int ps_lvar_vla_row_stride_src_offset(const lvar_t *var);
 int ps_lvar_vla_param_inner_dim_count(const lvar_t *var);

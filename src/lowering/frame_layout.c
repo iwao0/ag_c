@@ -31,10 +31,12 @@ frame_vla_layout_t frame_layout_vla_storage(int dim_count, int inner_is_const) {
   return layout;
 }
 
-frame_vla_layout_t frame_layout_pointer_vla_storage(void) {
+frame_vla_layout_t frame_layout_pointer_vla_storage(int dimension_count) {
+  if (dimension_count <= 0) return (frame_vla_layout_t){0};
   frame_vla_layout_t layout = {
-      PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE,
-      PSX_POINTER_VLA_RUNTIME_STRIDE_RELATIVE_OFFSET, 0};
+      PSX_VLA_RUNTIME_SLOT_SIZE * (dimension_count + 1),
+      PSX_POINTER_VLA_RUNTIME_STRIDE_RELATIVE_OFFSET,
+      dimension_count - 1};
   return layout;
 }
 

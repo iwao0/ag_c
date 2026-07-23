@@ -10,6 +10,7 @@ int psx_apply_local_vla_hir_node_spec_in(
     const lvar_t *local, psx_hir_node_spec_t *spec) {
   if (!semantic_context || !local || !spec) return 0;
   if (!ps_lvar_is_vla(local)) return 1;
+  if (ps_lvar_vla_pointer_indirections(local) > 0) return 1;
 
   spec->vla_stride_frame_offset =
       ps_lvar_vla_row_stride_frame_off(local);

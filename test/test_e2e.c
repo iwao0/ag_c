@@ -796,6 +796,7 @@ static const test_case_t test_cases[] = {
     {"vla", "sizeof_vla", CASE_ASSERT_FILE, "test/fixtures/vla/sizeof_vla.c", 0, 0},
     {"vla", "typedef_capture", CASE_ASSERT_FILE, "test/fixtures/type_decl/vla_typedef_capture.c", 0, 0},
     {"vla", "static_pointer_to_vla", CASE_ASSERT_FILE, "test/fixtures/vla/static_pointer_to_vla.c", 0, 0},
+    {"vla", "pointer_to_multidim_vla", CASE_ASSERT_FILE, "test/fixtures/vla/pointer_to_multidim_vla.c", 0, 0},
     // 構造体引数渡し (ARM64 ABI)
     {"struct_arg", "small_sum", CASE_ASSERT_FILE, "test/fixtures/struct_arg/small_sum.c", 0, 0},
     {"struct_arg", "small_member", CASE_ASSERT_FILE, "test/fixtures/struct_arg/small_member.c", 0, 0},

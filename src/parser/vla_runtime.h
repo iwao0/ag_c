@@ -24,6 +24,7 @@ static inline int psx_vla_runtime_stride_relative_offset(int level) {
 typedef struct {
   int row_stride_frame_off;
   int strides_remaining;
+  int pointer_indirections;
 } psx_vla_runtime_view_t;
 
 typedef struct {

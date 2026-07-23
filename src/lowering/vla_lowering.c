@@ -181,31 +181,52 @@ psx_vla_lowering_result_t lower_vla_declaration_plan(
 static psx_vla_runtime_plan_t *pointer_vla_runtime_plan(
     const psx_pointer_vla_lowering_request_t *request,
     int row_stride_offset, int element_size) {
+  int count = request ? request->dimension_count : 0;
   if (!request || !request->lowering_context ||
-      request->row_dimension_id == PSX_SEMANTIC_EXPR_ID_INVALID ||
+      count <= 0 || !request->dimensions ||
       row_stride_offset <= 0 || element_size <= 0)
     return NULL;
+  int has_constant_dimension = 0;
+  for (int i = 0; i < count; i++) {
+    const psx_vla_runtime_dimension_t *dimension =
+        &request->dimensions[i];
+    if (dimension->is_constant) {
+      if (dimension->constant_value <= 0) return NULL;
+      has_constant_dimension = 1;
+    } else if (dimension->expression_id == PSX_SEMANTIC_EXPR_ID_INVALID) {
+      return NULL;
+    }
+  }
+  if (has_constant_dimension &&
+      request->constant_qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return NULL;
+
   arena_context_t *arena_context = ps_lowering_arena(
       request->lowering_context);
   psx_vla_runtime_plan_t *plan = arena_alloc_in(
       arena_context, sizeof(*plan));
   if (!plan) return NULL;
   plan->dimensions = arena_alloc_in(
-      arena_context, sizeof(*plan->dimensions));
+      arena_context, (size_t)count * sizeof(*plan->dimensions));
   plan->stride_store_offsets = arena_alloc_in(
-      arena_context, sizeof(*plan->stride_store_offsets));
+      arena_context, (size_t)count * sizeof(*plan->stride_store_offsets));
   plan->stride_start_dimensions = arena_alloc_in(
-      arena_context, sizeof(*plan->stride_start_dimensions));
+      arena_context,
+      (size_t)count * sizeof(*plan->stride_start_dimensions));
   if (!plan->dimensions || !plan->stride_store_offsets ||
       !plan->stride_start_dimensions)
     return NULL;
-  plan->dimensions[0] = (psx_vla_runtime_dimension_t){
-      .expression_id = request->row_dimension_id,
-  };
-  plan->stride_store_offsets[0] = row_stride_offset;
-  plan->stride_start_dimensions[0] = 0;
-  plan->dimension_count = 1;
-  plan->stride_store_count = 1;
+  memcpy(
+      plan->dimensions, request->dimensions,
+      (size_t)count * sizeof(*plan->dimensions));
+  for (int i = 0; i < count; i++) {
+    plan->stride_store_offsets[i] =
+        row_stride_offset + PSX_VLA_RUNTIME_SLOT_SIZE * i;
+    plan->stride_start_dimensions[i] = i;
+  }
+  plan->constant_qual_type = request->constant_qual_type;
+  plan->dimension_count = count;
+  plan->stride_store_count = count;
   plan->row_stride_frame_offset = row_stride_offset;
   plan->element_size = element_size;
   return plan;
@@ -214,10 +235,19 @@ static psx_vla_runtime_plan_t *pointer_vla_runtime_plan(
 static int pointer_vla_element_size(
     const psx_pointer_vla_lowering_request_t *request) {
   if (!request || !request->lowering_context ||
-      request->type.type_id == PSX_TYPE_ID_INVALID)
+      request->type.type_id == PSX_TYPE_ID_INVALID ||
+      request->pointer_indirections < 0)
     return 0;
+  const psx_semantic_type_table_t *semantic_types =
+      ps_lowering_semantic_types(request->lowering_context);
+  psx_qual_type_t stride_type = request->type;
+  for (int i = 0; i < request->pointer_indirections; i++) {
+    stride_type = psx_semantic_type_table_base(
+        semantic_types, stride_type.type_id);
+    if (stride_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  }
   psx_qual_type_t element_type = pointee_value_type(
-      request->lowering_context, request->type);
+      request->lowering_context, stride_type);
   return qual_type_size(
       request->lowering_context, element_type);
 }
@@ -232,15 +262,17 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
   if (!request->local_registry ||
       request->type.type_id == PSX_TYPE_ID_INVALID ||
       !request->name || request->name_len <= 0 ||
-      element_size <= 0 ||
-      request->row_dimension_id == PSX_SEMANTIC_EXPR_ID_INVALID) {
+      element_size <= 0 || request->dimension_count <= 0 ||
+      !request->dimensions) {
     ps_diag_ctx_in(
         diagnostics, request->diag_tok, "vla-lowering", "%s",
         diag_message_for_in(
             diagnostics, DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+    return result;
   }
 
-  frame_vla_layout_t layout = frame_layout_pointer_vla_storage();
+  frame_vla_layout_t layout = frame_layout_pointer_vla_storage(
+      request->dimension_count);
   result.var = create_vla_storage(
       request->local_registry, request->lowering_context,
       request->name, request->name_len, layout.storage_size,
@@ -250,7 +282,10 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
   int row_stride_offset =
       ps_lvar_offset(result.var) + layout.row_stride_relative_offset;
   ps_local_registry_set_vla_descriptor(
-      result.var, row_stride_offset, 0, 0, element_size);
+      result.var, row_stride_offset, layout.subsequent_stride_count,
+      0, element_size);
+  ps_local_registry_set_vla_pointer_indirections(
+      result.var, request->pointer_indirections);
 
   result.runtime_plan = pointer_vla_runtime_plan(
       request, row_stride_offset, element_size);
@@ -264,16 +299,20 @@ psx_vla_lowering_result_t lower_static_pointer_to_vla_declaration_plan(
   if (!request || !request->lowering_context ||
       !request->local_registry || !static_alias ||
       request->type.type_id == PSX_TYPE_ID_INVALID ||
-      request->row_dimension_id == PSX_SEMANTIC_EXPR_ID_INVALID)
+      request->dimension_count <= 0 || !request->dimensions)
     return result;
   int element_size = pointer_vla_element_size(request);
   if (element_size <= 0) return result;
   int row_stride_offset = local_storage_allocate(
-      request->lowering_context, PSX_VLA_RUNTIME_SLOT_SIZE,
+      request->lowering_context,
+      request->dimension_count * PSX_VLA_RUNTIME_SLOT_SIZE,
       PSX_VLA_RUNTIME_SLOT_SIZE);
   if (row_stride_offset <= 0) return result;
   ps_local_registry_set_vla_descriptor(
-      static_alias, row_stride_offset, 0, 0, element_size);
+      static_alias, row_stride_offset, request->dimension_count - 1,
+      0, element_size);
+  ps_local_registry_set_vla_pointer_indirections(
+      static_alias, request->pointer_indirections);
   result.var = static_alias;
   result.runtime_plan = pointer_vla_runtime_plan(
       request, row_stride_offset, element_size);
@@ -301,8 +340,15 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(request->lowering_context);
   int count = request->inner_dimension_count;
+  psx_qual_type_t stride_type = request->type;
+  for (int i = 0; i < request->pointer_indirections; i++) {
+    stride_type = psx_semantic_type_table_base(
+        ps_lowering_semantic_types(request->lowering_context),
+        stride_type.type_id);
+    if (stride_type.type_id == PSX_TYPE_ID_INVALID) return result;
+  }
   psx_qual_type_t element_type = pointee_value_type(
-      request->lowering_context, request->type);
+      request->lowering_context, stride_type);
   int element_size = qual_type_size(
       request->lowering_context, element_type);
   int parameter_storage_size = type_size(
@@ -314,6 +360,7 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
       !request->name || request->name_len <= 0 ||
       element_size <= 0 || parameter_storage_size <= 0 ||
       parameter_alignment <= 0 || count < 0 ||
+      request->pointer_indirections < 0 ||
       (count > 0 && !request->inner_dimensions)) {
     ps_diag_ctx_in(
         diagnostics, request->diag_tok, "vla-lowering", "%s",
@@ -411,6 +458,8 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
           result.var, ps_lvar_offset(result.stride_storage), 0,
           source_offsets[0], element_size);
     }
+    ps_local_registry_set_vla_pointer_indirections(
+        result.var, request->pointer_indirections);
     free(constants);
     free(source_offsets);
   }

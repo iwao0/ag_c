@@ -56,11 +56,26 @@ static int test_vla_layout(void) {
   ASSERT_EQ(1, three_dim.subsequent_stride_count);
   ASSERT_EQ(32 + psx_vla_runtime_stride_relative_offset(1),
             frame_layout_vla_stride_offset(32, 1));
-  frame_vla_layout_t pointer_vla = frame_layout_pointer_vla_storage();
+  frame_vla_layout_t invalid_pointer_vla =
+      frame_layout_pointer_vla_storage(0);
+  ASSERT_EQ(0, invalid_pointer_vla.storage_size);
+
+  frame_vla_layout_t pointer_vla =
+      frame_layout_pointer_vla_storage(1);
   ASSERT_EQ(PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE,
             pointer_vla.storage_size);
   ASSERT_EQ(PSX_POINTER_VLA_RUNTIME_STRIDE_RELATIVE_OFFSET,
             pointer_vla.row_stride_relative_offset);
+  ASSERT_EQ(0, pointer_vla.subsequent_stride_count);
+
+  frame_vla_layout_t pointer_vla_2d =
+      frame_layout_pointer_vla_storage(2);
+  ASSERT_EQ(PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE +
+                PSX_VLA_RUNTIME_SLOT_SIZE,
+            pointer_vla_2d.storage_size);
+  ASSERT_EQ(PSX_POINTER_VLA_RUNTIME_STRIDE_RELATIVE_OFFSET,
+            pointer_vla_2d.row_stride_relative_offset);
+  ASSERT_EQ(1, pointer_vla_2d.subsequent_stride_count);
   ASSERT_EQ(32 + PSX_POINTER_VLA_RUNTIME_STRIDE_RELATIVE_OFFSET,
             frame_layout_pointer_vla_stride_offset(32));
   return 0;

@@ -34,7 +34,10 @@ typedef struct {
   psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
-  psx_semantic_expr_id_t row_dimension_id;
+  psx_vla_runtime_dimension_t *dimensions;
+  psx_qual_type_t constant_qual_type;
+  int dimension_count;
+  int pointer_indirections;
   psx_qual_type_t type;
   int requested_alignment;
   token_t *diag_tok;
@@ -61,6 +64,7 @@ typedef struct {
   int name_len;
   psx_parameter_vla_dimension_t *inner_dimensions;
   int inner_dimension_count;
+  int pointer_indirections;
   psx_qual_type_t type;
   psx_qual_type_t stride_storage_type;
   token_t *diag_tok;

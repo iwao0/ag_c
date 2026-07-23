@@ -11391,6 +11391,25 @@ static void test_local_declarator_application_boundary(
   ASSERT_TRUE(applied.array_bounds[1].is_constant);
   ASSERT_EQ(4, applied.array_bounds[1].constant_value);
   psx_dispose_declarator_syntax(&syntax);
+
+  tokens = tk_tokenize_ctx(
+      test_tokenizer(test_suite_session), (char *)"(*pointer)[n][4]");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
+  syntax = parse_test_declarator_syntax_tree(test_suite_session);
+  ASSERT_TRUE(syntax.identifier != NULL);
+  ASSERT_EQ(3, syntax.declarator_shape.count);
+  apply_test_runtime_parsed_declarator(
+      test_suite_session, &syntax, &applied);
+  ASSERT_EQ(PSX_DECL_OP_POINTER, applied.shape.ops[0].kind);
+  ASSERT_EQ(PSX_DECL_OP_ARRAY, applied.shape.ops[1].kind);
+  ASSERT_TRUE(applied.shape.ops[1].is_vla_array);
+  ASSERT_EQ(PSX_DECL_OP_ARRAY, applied.shape.ops[2].kind);
+  ASSERT_TRUE(!applied.shape.ops[2].is_vla_array);
+  ASSERT_EQ(4, applied.shape.ops[2].array_len);
+  ASSERT_EQ(2, applied.array_bound_count);
+  ASSERT_EQ(1, applied.array_bounds[0].declarator_op_index);
+  ASSERT_EQ(2, applied.array_bounds[1].declarator_op_index);
+  psx_dispose_declarator_syntax(&syntax);
 }
 
 static void test_local_declaration_resolution_boundary(
@@ -11405,10 +11424,16 @@ static void test_local_declaration_resolution_boundary(
       "  int inferred[] = {1, 2, 3}; "
       "  int runtime_values[n]; "
       "  int (*pointer_to_runtime)[n] = 0; "
+      "  int (*pointer_to_runtime_2d)[n][3] = 0; "
+      "  int (**nested_pointer_to_runtime)[n] = "
+      "      &pointer_to_runtime; "
       "  struct LocalRecordElement records[] = "
       "      {{1, 2}, {3, 4}}; "
       "  return scalar + inferred[2] + runtime_values[0] "
-      "      + (pointer_to_runtime == 0) + records[1].second; "
+      "      + (pointer_to_runtime == 0) "
+      "      + (pointer_to_runtime_2d == 0) "
+      "      + (nested_pointer_to_runtime != 0) "
+      "      + records[1].second; "
       "}"));
 
   const psx_semantic_type_table_t *types =
@@ -11423,9 +11448,10 @@ static void test_local_declaration_resolution_boundary(
 
   const char *names[] = {
       "scalar", "inferred", "runtime_values",
-      "pointer_to_runtime", "records",
+      "pointer_to_runtime", "pointer_to_runtime_2d",
+      "nested_pointer_to_runtime", "records",
   };
-  lvar_t *locals[5] = {0};
+  lvar_t *locals[7] = {0};
   for (size_t i = 0;
        i < sizeof(names) / sizeof(names[0]); i++) {
     const psx_scope_declaration_t *declaration =
@@ -11479,18 +11505,49 @@ static void test_local_declaration_resolution_boundary(
 
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, ps_lvar_decl_type_id(locals[4]), &shape));
+  ASSERT_EQ(PSX_TYPE_POINTER, shape.kind);
+  ASSERT_TRUE(ps_lvar_is_vla(locals[4]));
+  ASSERT_EQ(24, ps_lvar_frame_storage_size(locals[4]));
+  ASSERT_TRUE(ps_lvar_vla_row_stride_frame_off(locals[4]) > 0);
+  ASSERT_EQ(1, ps_lvar_vla_strides_remaining(locals[4]));
+  psx_qual_type_t pointed_runtime_matrix =
+      psx_semantic_type_table_base(
+          types, ps_lvar_decl_type_id(locals[4]));
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, pointed_runtime_matrix.type_id, &shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, shape.kind);
+  ASSERT_TRUE(shape.is_vla);
+  psx_qual_type_t pointed_runtime_row =
+      psx_semantic_type_table_base(
+          types, pointed_runtime_matrix.type_id);
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, pointed_runtime_row.type_id, &shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, shape.kind);
+  ASSERT_EQ(3, shape.array_len);
+
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, ps_lvar_decl_type_id(locals[5]), &shape));
+  ASSERT_EQ(PSX_TYPE_POINTER, shape.kind);
+  ASSERT_TRUE(ps_lvar_is_vla(locals[5]));
+  ASSERT_EQ(16, ps_lvar_frame_storage_size(locals[5]));
+  ASSERT_TRUE(ps_lvar_vla_row_stride_frame_off(locals[5]) > 0);
+  ASSERT_EQ(0, ps_lvar_vla_strides_remaining(locals[5]));
+  ASSERT_EQ(1, ps_lvar_vla_pointer_indirections(locals[5]));
+
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, ps_lvar_decl_type_id(locals[6]), &shape));
   ASSERT_EQ(PSX_TYPE_ARRAY, shape.kind);
   ASSERT_EQ(2, shape.array_len);
   psx_qual_type_t record_element =
       psx_semantic_type_table_base(
-          types, ps_lvar_decl_type_id(locals[4]));
+          types, ps_lvar_decl_type_id(locals[6]));
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, record_element.type_id, &shape));
   ASSERT_EQ(PSX_TYPE_STRUCT, shape.kind);
   ASSERT_TRUE(shape.record_id != PSX_RECORD_ID_INVALID);
   ASSERT_EQ(16, psx_type_layout_sizeof(
                     types, record_layouts,
-                    ps_lvar_decl_type_id(locals[4]), data_layout));
+                    ps_lvar_decl_type_id(locals[6]), data_layout));
 
   expect_parse_fail(test_suite_session,
       "int main(void) { int incomplete[]; return 0; }");

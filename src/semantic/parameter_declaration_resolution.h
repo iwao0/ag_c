@@ -18,6 +18,7 @@ typedef struct {
   psx_decl_type_request_t type;
   psx_parameter_dimension_t *inner_dimensions;
   int inner_dimension_count;
+  int pointer_indirections;
 } psx_parameter_declaration_resolution_request_t;
 
 typedef struct {
@@ -27,6 +28,7 @@ typedef struct {
   psx_type_id_t runtime_stride_storage_type_id;
   psx_parameter_dimension_t *inner_dimensions;
   int inner_dimension_count;
+  int pointer_indirections;
 } psx_parameter_declaration_resolution_t;
 
 int psx_resolve_parameter_declaration(

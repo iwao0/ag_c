@@ -85,6 +85,8 @@ void ps_local_registry_set_vla_descriptor(
     lvar_t *var, int row_stride_frame_off, int strides_remaining,
     int row_stride_src_offset,
     int row_stride_elem_size);
+void ps_local_registry_set_vla_pointer_indirections(
+    lvar_t *var, int pointer_indirections);
 void ps_local_registry_set_vla_param_inner_dims(
     psx_local_registry_t *registry, lvar_t *var,
     const int *inner_dim_consts,

@@ -204,6 +204,12 @@ int ps_lvar_vla_strides_remaining(const lvar_t *var) {
              : 0;
 }
 
+int ps_lvar_vla_pointer_indirections(const lvar_t *var) {
+  return var && var->vla_runtime.view.pointer_indirections > 0
+             ? var->vla_runtime.view.pointer_indirections
+             : 0;
+}
+
 int ps_lvar_vla_row_stride_elem_size(const lvar_t *var) {
   return var && var->vla_runtime.row_stride_elem_size > 0
              ? var->vla_runtime.row_stride_elem_size

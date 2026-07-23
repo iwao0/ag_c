@@ -44,7 +44,7 @@ typedef struct {
   psx_local_storage_kind_t storage_kind;
   psx_local_vla_dimension_t *dimensions;
   int dimension_count;
-  psx_semantic_expr_id_t pointer_row_dimension_id;
+  int pointer_indirections;
 } psx_local_declaration_resolution_t;
 
 void psx_resolve_local_declaration(

@@ -48,6 +48,7 @@ int psx_resolve_parameter_declaration(
     const psx_parameter_declaration_resolution_request_t *request,
     psx_parameter_declaration_resolution_t *resolution) {
   if (!request || !resolution || request->inner_dimension_count < 0 ||
+      request->pointer_indirections < 0 ||
       (request->inner_dimension_count > 0 && !request->inner_dimensions)) {
     return 0;
   }
@@ -141,6 +142,7 @@ int psx_resolve_parameter_declaration(
   }
 
   resolution->inner_dimension_count = request->inner_dimension_count;
+  resolution->pointer_indirections = request->pointer_indirections;
   if (request->inner_dimension_count > 0) {
     resolution->inner_dimensions = arena_alloc_in(
         ps_ctx_arena(request->type.semantic_context),

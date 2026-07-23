@@ -66,6 +66,7 @@ lvar_t *lower_resolved_parameter_declaration(
       .name = request->name,
       .name_len = request->name_len,
       .inner_dimension_count = resolution->inner_dimension_count,
+      .pointer_indirections = resolution->pointer_indirections,
       .type = resolution->declaration_qual_type,
       .stride_storage_type = {
           resolution->runtime_stride_storage_type_id,

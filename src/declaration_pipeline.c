@@ -53,6 +53,49 @@ static void note_pipeline_declaration_source(
       token->source_input, token->byte_offset, token->byte_length);
 }
 
+static int prepare_local_vla_dimensions(
+    psx_semantic_context_t *semantic_context,
+    psx_lowering_context_t *lowering_context,
+    const psx_local_declaration_resolution_t *resolution,
+    psx_vla_runtime_dimension_t **out_dimensions,
+    psx_qual_type_t *out_constant_qual_type) {
+  if (out_dimensions) *out_dimensions = NULL;
+  if (out_constant_qual_type)
+    *out_constant_qual_type = (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!semantic_context || !lowering_context || !resolution ||
+      !out_dimensions || !out_constant_qual_type ||
+      resolution->dimension_count <= 0 || !resolution->dimensions)
+    return 0;
+
+  psx_vla_runtime_dimension_t *dimensions = arena_alloc_in(
+      ps_lowering_arena(lowering_context),
+      (size_t)resolution->dimension_count * sizeof(*dimensions));
+  psx_qual_type_t constant_qual_type =
+      ps_ctx_intern_integer_qual_type_in(
+          semantic_context, PSX_INTEGER_KIND_INT, 0, 0);
+  if (!dimensions ||
+      constant_qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  for (int i = 0; i < resolution->dimension_count; i++) {
+    const psx_local_vla_dimension_t *dimension =
+        &resolution->dimensions[i];
+    dimensions[i] = (psx_vla_runtime_dimension_t){
+        .expression_id = dimension->expression_id,
+        .constant_value = dimension->constant_value,
+        .is_constant = dimension->is_constant ? 1 : 0,
+    };
+    if ((dimension->is_constant && dimension->constant_value <= 0) ||
+        (!dimension->is_constant &&
+         !ps_ctx_semantic_expression_in(
+             semantic_context, dimension->expression_id)))
+      return 0;
+  }
+  *out_dimensions = dimensions;
+  *out_constant_qual_type = constant_qual_type;
+  return 1;
+}
+
 static void diagnose_global_declaration(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_status_t status) {
@@ -517,9 +560,12 @@ static int resolve_definition_parameter(
       application->shape.count > 0 &&
       application->shape.ops[0].kind == PSX_DECL_OP_ARRAY;
   int saw_array = 0;
+  int first_inner_array_op_index = -1;
   for (int op_index = 0; op_index < application->shape.count; op_index++) {
     if (application->shape.ops[op_index].kind != PSX_DECL_OP_ARRAY) continue;
     if (skip_outer_array && saw_array++ == 0) continue;
+    if (first_inner_array_op_index < 0)
+      first_inner_array_op_index = op_index;
     const psx_runtime_array_bound_t *bound =
         parameter_bound_for_op(application, op_index);
     psx_parameter_dimension_t *dimension =
@@ -531,6 +577,16 @@ static int resolve_definition_parameter(
         bound && bound->is_constant ? bound->constant_value : 0;
     dimension->is_constant = bound && bound->is_constant;
   }
+  int explicit_pointer_count = 0;
+  for (int op_index = 0;
+       op_index < first_inner_array_op_index; op_index++) {
+    if (application->shape.ops[op_index].kind == PSX_DECL_OP_POINTER)
+      explicit_pointer_count++;
+  }
+  semantic_request.pointer_indirections =
+      explicit_pointer_count - (skip_outer_array ? 0 : 1);
+  if (semantic_request.pointer_indirections < 0)
+    semantic_request.pointer_indirections = 0;
   return psx_resolve_parameter_declaration(
       &semantic_request, resolution);
 }
@@ -901,10 +957,13 @@ int psx_begin_static_local_declaration_pipeline(
         &local_resolution);
     if (local_resolution.status != PSX_LOCAL_DECLARATION_OK ||
         local_resolution.storage_kind !=
-            PSX_LOCAL_STORAGE_POINTER_TO_VLA ||
-        !ps_ctx_semantic_expression_in(
-            request->semantic_context,
-            local_resolution.pointer_row_dimension_id))
+            PSX_LOCAL_STORAGE_POINTER_TO_VLA)
+      return 0;
+    psx_vla_runtime_dimension_t *dimensions = NULL;
+    psx_qual_type_t constant_qual_type;
+    if (!prepare_local_vla_dimensions(
+            request->semantic_context, request->lowering_context,
+            &local_resolution, &dimensions, &constant_qual_type))
       return 0;
     psx_vla_lowering_result_t vla =
         lower_static_pointer_to_vla_declaration_plan(
@@ -913,8 +972,12 @@ int psx_begin_static_local_declaration_pipeline(
                 .lowering_context = request->lowering_context,
                 .name = request->name,
                 .name_len = request->name_len,
-                .row_dimension_id =
-                    local_resolution.pointer_row_dimension_id,
+                .dimensions = dimensions,
+                .constant_qual_type = constant_qual_type,
+                .dimension_count =
+                    local_resolution.dimension_count,
+                .pointer_indirections =
+                    local_resolution.pointer_indirections,
                 .type = declaration_identity,
                 .requested_alignment =
                     request->requested_alignment,
@@ -1237,47 +1300,34 @@ int psx_begin_automatic_local_declaration_hir_pipeline(
           .requested_alignment = request->requested_alignment,
           .diag_tok = request->diag_tok,
       };
-      lowering.dimensions = arena_alloc_in(
-          ps_lowering_arena(request->lowering_context),
-          (size_t)resolution.dimension_count * sizeof(*lowering.dimensions));
-      lowering.constant_qual_type = ps_ctx_intern_integer_qual_type_in(
-          request->semantic_context, PSX_INTEGER_KIND_INT, 0, 0);
-      if (!lowering.dimensions ||
-          lowering.constant_qual_type.type_id == PSX_TYPE_ID_INVALID)
+      if (!prepare_local_vla_dimensions(
+              request->semantic_context, request->lowering_context,
+              &resolution, &lowering.dimensions,
+              &lowering.constant_qual_type))
         return 0;
-      for (int i = 0; i < resolution.dimension_count; i++) {
-        const psx_local_vla_dimension_t *dimension =
-            &resolution.dimensions[i];
-        lowering.dimensions[i] = (psx_vla_runtime_dimension_t){
-            .expression_id = dimension->expression_id,
-            .constant_value = dimension->constant_value,
-            .is_constant = dimension->is_constant ? 1 : 0,
-        };
-        if (!dimension->is_constant &&
-            !ps_ctx_semantic_expression_in(
-                request->semantic_context, dimension->expression_id))
-          return 0;
-      }
       vla = lower_vla_declaration_plan(&lowering);
       result->var = vla.var;
       result->vla_runtime_plan = vla.runtime_plan;
       break;
     }
     case PSX_LOCAL_STORAGE_POINTER_TO_VLA: {
-      if (!ps_ctx_semantic_expression_in(
-              request->semantic_context,
-              resolution.pointer_row_dimension_id))
-        return 0;
       psx_pointer_vla_lowering_request_t lowering = {
               .local_registry = request->local_registry,
               .lowering_context = request->lowering_context,
               .name = request->name,
               .name_len = request->name_len,
-              .row_dimension_id = resolution.pointer_row_dimension_id,
+              .dimension_count = resolution.dimension_count,
+              .pointer_indirections =
+                  resolution.pointer_indirections,
               .type = declaration_identity,
               .requested_alignment = request->requested_alignment,
               .diag_tok = request->diag_tok,
       };
+      if (!prepare_local_vla_dimensions(
+              request->semantic_context, request->lowering_context,
+              &resolution, &lowering.dimensions,
+              &lowering.constant_qual_type))
+        return 0;
       vla = lower_pointer_to_vla_declaration_plan(&lowering);
       result->var = vla.var;
       result->vla_runtime_plan = vla.runtime_plan;

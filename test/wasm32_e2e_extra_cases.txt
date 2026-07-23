@@ -565,6 +565,7 @@ vla/basic_elem.c
 vla/bound_evaluated_once.c
 vla/loop_fill.c
 vla/param_size.c
+vla/pointer_to_multidim_vla.c
 vla/sizeof_vla.c
 vla/static_pointer_to_vla.c
 vla_2d/const_inner_loop.c

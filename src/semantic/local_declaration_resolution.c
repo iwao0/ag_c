@@ -14,6 +14,34 @@ static const psx_runtime_array_bound_t *bound_for_op(
   return NULL;
 }
 
+static psx_local_vla_dimension_t dimension_for_op(
+    const psx_runtime_declarator_application_t *application,
+    int op_index) {
+  const psx_declarator_op_t *op =
+      application && op_index >= 0 &&
+              op_index < application->shape.count
+          ? &application->shape.ops[op_index]
+          : NULL;
+  const psx_runtime_array_bound_t *bound =
+      bound_for_op(application, op_index);
+  if (bound) {
+    return (psx_local_vla_dimension_t){
+        .expression_id = bound->expression_id,
+        .constant_value =
+            bound->is_constant ? bound->constant_value : 0,
+        .is_constant = bound->is_constant,
+    };
+  }
+  return (psx_local_vla_dimension_t){
+      .expression_id = PSX_SEMANTIC_EXPR_ID_INVALID,
+      .constant_value =
+          op && op->kind == PSX_DECL_OP_ARRAY ? op->array_len : 0,
+      .is_constant =
+          op && op->kind == PSX_DECL_OP_ARRAY &&
+          !op->is_vla_array && op->array_len > 0,
+  };
+}
+
 void psx_resolve_local_declaration(
     const psx_local_declaration_resolution_request_t *request,
     psx_local_declaration_resolution_t *resolution) {
@@ -42,21 +70,15 @@ void psx_resolve_local_declaration(
     resolution->dimensions = arena_alloc_in(
         request->arena_context,
         (size_t)application->shape.count * sizeof(*resolution->dimensions));
+    if (!resolution->dimensions) return;
   }
   int leading_array_count = 0;
   int leading_array_has_vla = 0;
   for (int i = 0; i < application->shape.count; i++) {
     const psx_declarator_op_t *op = &application->shape.ops[i];
     if (op->kind != PSX_DECL_OP_ARRAY) break;
-    const psx_runtime_array_bound_t *bound = bound_for_op(application, i);
     resolution->dimensions[leading_array_count++] =
-        (psx_local_vla_dimension_t){
-            .expression_id = bound ? bound->expression_id
-                                   : PSX_SEMANTIC_EXPR_ID_INVALID,
-            .constant_value = bound && bound->is_constant
-                                  ? bound->constant_value : 0,
-            .is_constant = bound && bound->is_constant,
-        };
+        dimension_for_op(application, i);
     if (op->is_vla_array) leading_array_has_vla = 1;
   }
 
@@ -98,17 +120,29 @@ void psx_resolve_local_declaration(
     return;
   }
 
-  if (type.kind == PSX_TYPE_POINTER) {
-    for (int i = 0; i < application->shape.count; i++) {
+  if (type.kind == PSX_TYPE_POINTER &&
+      application->shape.count > 1 &&
+      application->shape.ops[0].kind == PSX_DECL_OP_POINTER) {
+    int pointer_op_count = 0;
+    while (pointer_op_count < application->shape.count &&
+           application->shape.ops[pointer_op_count].kind ==
+               PSX_DECL_OP_POINTER)
+      pointer_op_count++;
+    int pointer_array_count = 0;
+    int pointer_array_has_vla = 0;
+    for (int i = pointer_op_count;
+         i < application->shape.count; i++) {
       const psx_declarator_op_t *op = &application->shape.ops[i];
-      if (op->kind != PSX_DECL_OP_ARRAY || !op->is_vla_array) continue;
-      const psx_runtime_array_bound_t *bound = bound_for_op(application, i);
-      if (!bound ||
-          bound->expression_id == PSX_SEMANTIC_EXPR_ID_INVALID ||
-          element_size <= 0)
-        return;
+      if (op->kind != PSX_DECL_OP_ARRAY) break;
+      resolution->dimensions[pointer_array_count++] =
+          dimension_for_op(application, i);
+      if (op->is_vla_array) pointer_array_has_vla = 1;
+    }
+    if (pointer_array_has_vla) {
+      if (pointer_array_count <= 0 || element_size <= 0) return;
       resolution->storage_kind = PSX_LOCAL_STORAGE_POINTER_TO_VLA;
-      resolution->pointer_row_dimension_id = bound->expression_id;
+      resolution->dimension_count = pointer_array_count;
+      resolution->pointer_indirections = pointer_op_count - 1;
       resolution->status = PSX_LOCAL_DECLARATION_OK;
       return;
     }
