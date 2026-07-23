@@ -11813,7 +11813,19 @@ static void test_initializer_resolution_boundary(
       "struct InitUnionBox union_scalar_cursor = "
       "    {.value.scalar = 45, 46}; "
       "struct InitUnionBox union_pair_cursor = "
-      "    {.value.pair.a = 47, 48, 49};"));
+      "    {.value.pair.a = 47, 48, 49}; "
+      "union InitScalarFirst { "
+      "    int scalar; struct { int a; int b; } pair; }; "
+      "union InitScalarFirst union_default_array[] = {1, 2}; "
+      "union InitScalarFirst union_pair_continue = "
+      "    {.pair.a = 3, 4}; "
+      "union InitTextFirst { char text[2]; char larger[4]; }; "
+      "union InitTextFirst union_text_array[] = {\"A\", \"B\"}; "
+      "union InitBitfieldsFirst { "
+      "    struct { unsigned a : 3; unsigned b : 3; "
+      "             unsigned c : 3; } fields; long long wide; }; "
+      "union InitBitfieldsFirst union_bitfield_array[] = "
+      "    {1, 2, 3, 4, 5, 6};"));
 
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
@@ -11848,11 +11860,31 @@ static void test_initializer_resolution_boundary(
       find_test_scope_declaration(
           test_scope_graph(test_suite_session), "union_pair_cursor",
           PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *union_default_array_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "union_default_array",
+          PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *union_pair_continue_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "union_pair_continue",
+          PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *union_text_array_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "union_text_array",
+          PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *union_bitfield_array_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "union_bitfield_array",
+          PSX_DECL_GLOBAL_OBJECT, 0);
   ASSERT_TRUE(designated_declaration != NULL);
   ASSERT_TRUE(qualified_declaration != NULL);
   ASSERT_TRUE(recursive_declaration != NULL);
   ASSERT_TRUE(union_scalar_declaration != NULL);
   ASSERT_TRUE(union_pair_declaration != NULL);
+  ASSERT_TRUE(union_default_array_declaration != NULL);
+  ASSERT_TRUE(union_pair_continue_declaration != NULL);
+  ASSERT_TRUE(union_text_array_declaration != NULL);
+  ASSERT_TRUE(union_bitfield_array_declaration != NULL);
   global_var_t *designated =
       (global_var_t *)designated_declaration->payload;
   global_var_t *qualified =
@@ -11863,11 +11895,40 @@ static void test_initializer_resolution_boundary(
       (global_var_t *)union_scalar_declaration->payload;
   global_var_t *union_pair =
       (global_var_t *)union_pair_declaration->payload;
+  global_var_t *union_default_array =
+      (global_var_t *)union_default_array_declaration->payload;
+  global_var_t *union_pair_continue =
+      (global_var_t *)union_pair_continue_declaration->payload;
+  global_var_t *union_text_array =
+      (global_var_t *)union_text_array_declaration->payload;
+  global_var_t *union_bitfield_array =
+      (global_var_t *)union_bitfield_array_declaration->payload;
   ASSERT_TRUE(designated != NULL);
   ASSERT_TRUE(qualified != NULL);
   ASSERT_TRUE(recursive != NULL);
   ASSERT_TRUE(union_scalar != NULL);
   ASSERT_TRUE(union_pair != NULL);
+  ASSERT_TRUE(union_default_array != NULL);
+  ASSERT_TRUE(union_pair_continue != NULL);
+  ASSERT_TRUE(union_text_array != NULL);
+  ASSERT_TRUE(union_bitfield_array != NULL);
+
+  psx_type_shape_t union_array_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, ps_gvar_decl_type_id(union_default_array),
+      &union_array_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, union_array_shape.kind);
+  ASSERT_EQ(2, union_array_shape.array_len);
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, ps_gvar_decl_type_id(union_bitfield_array),
+      &union_array_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, union_array_shape.kind);
+  ASSERT_EQ(2, union_array_shape.array_len);
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, ps_gvar_decl_type_id(union_text_array),
+      &union_array_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, union_array_shape.kind);
+  ASSERT_EQ(2, union_array_shape.array_len);
 
   psx_qual_type_t designated_type =
       ps_gvar_decl_qual_type(designated);
@@ -11969,11 +12030,27 @@ static void test_initializer_resolution_boundary(
   ir_data_object_t *union_pair_data =
       ir_data_module_find_object(
           module, "union_pair_cursor", 17);
+  ir_data_object_t *union_default_array_data =
+      ir_data_module_find_object(
+          module, "union_default_array", 19);
+  ir_data_object_t *union_pair_continue_data =
+      ir_data_module_find_object(
+          module, "union_pair_continue", 19);
+  ir_data_object_t *union_text_array_data =
+      ir_data_module_find_object(
+          module, "union_text_array", 16);
+  ir_data_object_t *union_bitfield_array_data =
+      ir_data_module_find_object(
+          module, "union_bitfield_array", 20);
   ASSERT_TRUE(designated_data != NULL);
   ASSERT_TRUE(qualified_data != NULL);
   ASSERT_TRUE(recursive_data != NULL);
   ASSERT_TRUE(union_scalar_data != NULL);
   ASSERT_TRUE(union_pair_data != NULL);
+  ASSERT_TRUE(union_default_array_data != NULL);
+  ASSERT_TRUE(union_pair_continue_data != NULL);
+  ASSERT_TRUE(union_text_array_data != NULL);
+  ASSERT_TRUE(union_bitfield_array_data != NULL);
   ASSERT_EQ(12, designated_data->byte_size);
   ASSERT_EQ(0, designated_data->bytes[4]);
   ASSERT_EQ(9, designated_data->bytes[8]);
@@ -11991,6 +12068,21 @@ static void test_initializer_resolution_boundary(
   ASSERT_EQ(47, union_pair_data->bytes[0]);
   ASSERT_EQ(48, union_pair_data->bytes[4]);
   ASSERT_EQ(49, union_pair_data->bytes[8]);
+  ASSERT_EQ(16, union_default_array_data->byte_size);
+  ASSERT_EQ(1, union_default_array_data->bytes[0]);
+  ASSERT_EQ(2, union_default_array_data->bytes[8]);
+  ASSERT_EQ(8, union_pair_continue_data->byte_size);
+  ASSERT_EQ(3, union_pair_continue_data->bytes[0]);
+  ASSERT_EQ(4, union_pair_continue_data->bytes[4]);
+  ASSERT_EQ(8, union_text_array_data->byte_size);
+  ASSERT_EQ('A', union_text_array_data->bytes[0]);
+  ASSERT_EQ(0, union_text_array_data->bytes[1]);
+  ASSERT_EQ('B', union_text_array_data->bytes[4]);
+  ASSERT_EQ(0, union_text_array_data->bytes[5]);
+  ASSERT_EQ(16, union_bitfield_array_data->byte_size);
+  ASSERT_EQ(209, union_bitfield_array_data->bytes[0]);
+  ASSERT_EQ(172, union_bitfield_array_data->bytes[8]);
+  ASSERT_EQ(1, union_bitfield_array_data->bytes[9]);
   ir_data_module_free(module);
 }
 

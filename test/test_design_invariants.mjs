@@ -3837,11 +3837,26 @@ if (!/initializer_shape_designated_span\s*\(/.test(
     !/max_leaf_end\s*\+\s*element_slots\s*-\s*1\)\s*\/\s*element_slots/.test(
       declarationResolutionSource,
     ) ||
+    !/initializer_shape_activate_union_member\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/initializer_shape_next_active_cursor\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/initializer_shape_prepare_positional_cursor\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/initializer_shape_positional_string_span\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/slots\s*>\s*max_slots\s*\|\|[^]*?slots\s*==\s*max_slots\s*&&\s*bytes\s*>\s*max_bytes/.test(
+      declarationResolutionSource,
+    ) ||
     /static\s+long\s+long\s+initializer_list_count\s*\([^]*?\bmax_index\b[^]*?cursor\+\+/.test(
       declarationResolutionSource,
     )) {
   throw new Error(
-    "incomplete aggregate arrays must infer their outer extent from the full designated scalar cursor",
+    "incomplete aggregate arrays must infer their outer extent from the active designated scalar cursor, including union members",
   );
 }
 const genericSelectionResolutionSource = await readFile(
@@ -8728,9 +8743,29 @@ if (!/static\s+int\s+flat_initializer_next_active_cursor\s*\([^]*?!context->plan
     ) ||
     !/cursor\s*=\s*flat_initializer_next_active_cursor\s*\(\s*context,\s*cursor_object,\s*cursor\s*\)/.test(
       initializerResolutionSource,
+    ) ||
+    !/flat_initializer_activate_positional_unions_at_cursor\s*\(\s*context,\s*cursor_object,\s*cursor\s*\)/.test(
+      initializerResolutionSource,
+    ) ||
+    !/entry->value->kind\s*==\s*ND_STRING\s*&&[^]*?flat_initializer_activate_positional_unions_at_cursor[^]*?flat_initializer_string_span/.test(
+      initializerResolutionSource,
+    ) ||
+    !/member_slots\s*>\s*slots\s*\|\|[^]*?member_slots\s*==\s*slots\s*&&\s*bytes\s*>\s*union_max_bytes/.test(
+      initializerResolutionSource,
+    ) ||
+    !/union_capacity_slots/.test(initializerResolutionSource) ||
+    !/capacity_leaves\.items\[i\]/.test(initializerResolutionSource) ||
+    !/flat_initializer_innermost_union_activation_at_cursor\s*\(/.test(
+      initializerResolutionSource,
+    ) ||
+    !/target\.union_relative_offset\s*=\s*activation->relative_offset/.test(
+      initializerResolutionSource,
+    ) ||
+    !/positional_shape\.kind\s*==\s*PSX_TYPE_ARRAY\s*\|\|\s*psx_type_kind_is_aggregate\(positional_shape\.kind\)/.test(
+      initializerResolutionSource,
     )) {
   throw new Error(
-    "positional initialization must skip inactive canonical union leaves after selecting a smaller member",
+    "positional initialization must follow the active union aggregate and skip inactive canonical union leaves",
   );
 }
 if (!/\}\s*psx_initializer_designator_range_t\s*;/.test(

@@ -1,9 +1,11 @@
 #include "declaration_resolution.h"
 
+#include "../parser/arena.h"
 #include "../parser/semantic_ctx.h"
 #include "../type_layout.h"
 
 #include <limits.h>
+#include <string.h>
 
 static psx_qual_type_t invalid_qual_type(void) {
   return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
@@ -253,7 +255,8 @@ static int object_scalar_slots_by_id(
           semantic_context, member_type_id);
       int bytes = psx_type_layout_sizeof(semantic_types, record_layouts,
                                     member_type_id, data_layout);
-      if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
+      if (slots > max_slots ||
+          (slots == max_slots && bytes > max_bytes)) {
         max_bytes = bytes;
         max_slots = slots;
       }
@@ -358,6 +361,95 @@ typedef struct {
   long long leaf_begin;
   long long leaf_end;
 } psx_initializer_shape_span_t;
+
+typedef struct {
+  psx_type_id_t union_type_id;
+  long long leaf_begin;
+  long long leaf_end;
+  long long active_leaf_end;
+  int member_index;
+} psx_initializer_shape_union_activation_t;
+
+typedef struct {
+  psx_initializer_shape_union_activation_t *items;
+  int count;
+  int capacity;
+} psx_initializer_shape_state_t;
+
+static psx_initializer_shape_union_activation_t *
+initializer_shape_find_union_activation(
+    psx_initializer_shape_state_t *state, psx_type_id_t union_type_id,
+    long long leaf_begin) {
+  if (!state) return NULL;
+  for (int i = 0; i < state->count; i++) {
+    psx_initializer_shape_union_activation_t *activation =
+        &state->items[i];
+    if (activation->union_type_id == union_type_id &&
+        activation->leaf_begin == leaf_begin)
+      return activation;
+  }
+  return NULL;
+}
+
+static int initializer_shape_activate_union_member(
+    psx_semantic_context_t *semantic_context,
+    psx_initializer_shape_state_t *state,
+    const psx_initializer_shape_span_t *parent, int member_index,
+    const psx_initializer_shape_span_t *child) {
+  if (!semantic_context || !state || !parent || !child ||
+      member_index < 0 || child->leaf_begin != parent->leaf_begin ||
+      child->leaf_end <= child->leaf_begin ||
+      child->leaf_end > parent->leaf_end)
+    return 0;
+  psx_initializer_shape_union_activation_t *activation =
+      initializer_shape_find_union_activation(
+          state, parent->qual_type.type_id, parent->leaf_begin);
+  if (!activation) {
+    if (state->count == state->capacity) {
+      if (state->capacity > INT_MAX / 2) return 0;
+      int next_capacity =
+          state->capacity > 0 ? state->capacity * 2 : 8;
+      psx_initializer_shape_union_activation_t *next =
+          arena_alloc_in(
+              ps_ctx_arena(semantic_context),
+              (size_t)next_capacity * sizeof(*next));
+      if (!next) return 0;
+      if (state->count > 0) {
+        memcpy(next, state->items,
+               (size_t)state->count * sizeof(*next));
+      }
+      state->items = next;
+      state->capacity = next_capacity;
+    }
+    activation = &state->items[state->count++];
+  }
+  *activation = (psx_initializer_shape_union_activation_t){
+      .union_type_id = parent->qual_type.type_id,
+      .leaf_begin = parent->leaf_begin,
+      .leaf_end = parent->leaf_end,
+      .active_leaf_end = child->leaf_end,
+      .member_index = member_index,
+  };
+  return 1;
+}
+
+static long long initializer_shape_next_active_cursor(
+    const psx_initializer_shape_state_t *state, long long cursor) {
+  if (!state || cursor < 0) return cursor;
+  for (;;) {
+    long long next = cursor;
+    for (int i = 0; i < state->count; i++) {
+      const psx_initializer_shape_union_activation_t *activation =
+          &state->items[i];
+      if (cursor >= activation->active_leaf_end &&
+          cursor < activation->leaf_end &&
+          activation->leaf_end > next)
+        next = activation->leaf_end;
+    }
+    if (next == cursor) return cursor;
+    cursor = next;
+  }
+}
 
 static int initializer_shape_child_span(
     psx_semantic_context_t *semantic_context,
@@ -471,6 +563,7 @@ static int initializer_shape_record_has_member(
 
 static int initializer_shape_designated_member_span(
     psx_semantic_context_t *semantic_context,
+    psx_initializer_shape_state_t *state,
     const psx_initializer_shape_span_t *aggregate,
     const psx_initializer_designator_t *designator,
     psx_initializer_shape_span_t *target) {
@@ -502,8 +595,13 @@ static int initializer_shape_designated_member_span(
     if (!initializer_shape_child_span(
             semantic_context, aggregate, i, &anonymous_span))
       return 0;
+    if (shape.kind == PSX_TYPE_UNION &&
+        !initializer_shape_activate_union_member(
+            semantic_context, state, aggregate, i,
+            &anonymous_span))
+      return 0;
     return initializer_shape_designated_member_span(
-        semantic_context, &anonymous_span, designator, target);
+        semantic_context, state, &anonymous_span, designator, target);
   }
 
   int member_index = -1;
@@ -513,8 +611,12 @@ static int initializer_shape_designated_member_span(
           &member_index, NULL) ||
       member_index < 0)
     return 0;
-  return initializer_shape_child_span(
-      semantic_context, aggregate, member_index, target);
+  if (!initializer_shape_child_span(
+          semantic_context, aggregate, member_index, target))
+    return 0;
+  return shape.kind != PSX_TYPE_UNION ||
+         initializer_shape_activate_union_member(
+             semantic_context, state, aggregate, member_index, target);
 }
 
 static int initializer_shape_index(
@@ -541,6 +643,7 @@ static int initializer_shape_index(
 
 static int initializer_shape_designated_span(
     psx_semantic_context_t *semantic_context,
+    psx_initializer_shape_state_t *state,
     psx_qual_type_t incomplete_type,
     const psx_initializer_entry_t *entry,
     psx_incomplete_array_constant_index_resolver_t resolve_index,
@@ -586,7 +689,7 @@ static int initializer_shape_designated_span(
         return 0;
     } else if (designator->kind == PSX_INIT_DESIGNATOR_MEMBER) {
       if (!initializer_shape_designated_member_span(
-              semantic_context, target, designator, &child))
+              semantic_context, state, target, designator, &child))
         return 0;
     } else {
       return 0;
@@ -637,6 +740,125 @@ static int initializer_shape_child_containing_leaf(
     }
   }
   return 0;
+}
+
+static int initializer_shape_positional_string_span(
+    psx_semantic_context_t *semantic_context,
+    psx_initializer_shape_state_t *state,
+    psx_qual_type_t element, int element_slots, long long cursor,
+    const node_t *value, psx_initializer_shape_span_t *target) {
+  if (!semantic_context || !state ||
+      element.type_id == PSX_TYPE_ID_INVALID ||
+      element_slots <= 0 || cursor < 0 || !value || !target)
+    return 0;
+  long long outer_index = cursor / element_slots;
+  if (outer_index > (LLONG_MAX - element_slots) / element_slots)
+    return 0;
+  psx_initializer_shape_span_t candidate = {
+      .qual_type = element,
+      .leaf_begin = outer_index * element_slots,
+      .leaf_end = outer_index * element_slots + element_slots,
+  };
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  for (;;) {
+    if (candidate.leaf_begin == cursor &&
+        initializer_string_count(
+            semantic_types, ps_ctx_data_layout(semantic_context),
+            candidate.qual_type, value) > 0) {
+      *target = candidate;
+      return 1;
+    }
+    psx_type_shape_t shape = {0};
+    if (!psx_semantic_type_table_describe(
+            semantic_types, candidate.qual_type.type_id, &shape))
+      return 0;
+    psx_initializer_shape_span_t child;
+    if (shape.kind == PSX_TYPE_UNION) {
+      psx_initializer_shape_union_activation_t *activation =
+          initializer_shape_find_union_activation(
+              state, candidate.qual_type.type_id,
+              candidate.leaf_begin);
+      int member_index = activation ? activation->member_index : 0;
+      if (!initializer_shape_child_span(
+              semantic_context, &candidate, member_index, &child) ||
+          (!activation &&
+           !initializer_shape_activate_union_member(
+               semantic_context, state, &candidate, member_index,
+               &child)))
+        return 0;
+    } else if (shape.kind == PSX_TYPE_ARRAY ||
+               shape.kind == PSX_TYPE_STRUCT) {
+      if (!initializer_shape_child_containing_leaf(
+              semantic_context, &candidate, cursor, &child))
+        return 0;
+    } else {
+      return 0;
+    }
+    if (cursor < child.leaf_begin || cursor >= child.leaf_end)
+      return 0;
+    if (child.qual_type.type_id == candidate.qual_type.type_id &&
+        child.leaf_begin == candidate.leaf_begin &&
+        child.leaf_end == candidate.leaf_end)
+      return 0;
+    candidate = child;
+  }
+}
+
+static int initializer_shape_prepare_positional_cursor(
+    psx_semantic_context_t *semantic_context,
+    psx_initializer_shape_state_t *state,
+    psx_qual_type_t element, int element_slots, long long cursor) {
+  if (!semantic_context || !state ||
+      element.type_id == PSX_TYPE_ID_INVALID ||
+      element_slots <= 0 || cursor < 0)
+    return 0;
+  long long outer_index = cursor / element_slots;
+  if (outer_index > (LLONG_MAX - element_slots) / element_slots)
+    return 0;
+  psx_initializer_shape_span_t candidate = {
+      .qual_type = element,
+      .leaf_begin = outer_index * element_slots,
+      .leaf_end = outer_index * element_slots + element_slots,
+  };
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  for (;;) {
+    psx_type_shape_t shape = {0};
+    if (!psx_semantic_type_table_describe(
+            semantic_types, candidate.qual_type.type_id, &shape))
+      return 0;
+    psx_initializer_shape_span_t child;
+    if (shape.kind == PSX_TYPE_UNION) {
+      psx_initializer_shape_union_activation_t *activation =
+          initializer_shape_find_union_activation(
+              state, candidate.qual_type.type_id,
+              candidate.leaf_begin);
+      int member_index = activation ? activation->member_index : 0;
+      if (!initializer_shape_child_span(
+              semantic_context, &candidate, member_index, &child) ||
+          (!activation &&
+           !initializer_shape_activate_union_member(
+               semantic_context, state, &candidate, member_index,
+               &child)))
+        return 0;
+    } else if (shape.kind == PSX_TYPE_ARRAY ||
+               shape.kind == PSX_TYPE_STRUCT) {
+      if (!initializer_shape_child_containing_leaf(
+              semantic_context, &candidate, cursor, &child))
+        return 0;
+    } else {
+      return cursor >= candidate.leaf_begin &&
+             cursor < candidate.leaf_end;
+    }
+    if (cursor < child.leaf_begin || cursor >= child.leaf_end)
+      return 0;
+    if (child.qual_type.type_id == candidate.qual_type.type_id &&
+        child.leaf_begin == candidate.leaf_begin &&
+        child.leaf_end == candidate.leaf_end)
+      return 0;
+    candidate = child;
+  }
 }
 
 static int initializer_shape_positional_aggregate_span(
@@ -697,13 +919,17 @@ static long long initializer_list_count(
   if (!semantic_context || !list || !resolve_index ||
       !entries_initialize_outer_elements)
     return 0;
-  if (list->entry_count == 1 && list->entries[0].designator_count == 0) {
-    const node_t *value = list->entries[0].value;
-    if (value && value->kind == ND_STRING) return -1;
-  }
-
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(semantic_context);
+  if (list->entry_count == 1 && list->entries[0].designator_count == 0) {
+    const node_t *value = list->entries[0].value;
+    if (value && value->kind == ND_STRING &&
+        initializer_string_count(
+            semantic_types, ps_ctx_data_layout(semantic_context),
+            incomplete_type, value) > 0)
+      return -1;
+  }
+
   psx_qual_type_t element = psx_semantic_type_table_base(
       semantic_types, incomplete_type.type_id);
   int element_slots = object_scalar_slots_by_id(
@@ -711,15 +937,18 @@ static long long initializer_list_count(
   if (element.type_id == PSX_TYPE_ID_INVALID || element_slots <= 0)
     return 0;
 
+  psx_initializer_shape_state_t shape_state = {0};
   long long cursor = 0;
   long long max_leaf_end = 0;
   for (int i = 0; i < list->entry_count; i++) {
     const psx_initializer_entry_t *entry = &list->entries[i];
     if (!entry->value) return 0;
+    cursor = initializer_shape_next_active_cursor(
+        &shape_state, cursor);
     psx_initializer_shape_span_t target = {0};
     if (entry->designator_count > 0) {
       if (!initializer_shape_designated_span(
-              semantic_context, incomplete_type, entry,
+              semantic_context, &shape_state, incomplete_type, entry,
               resolve_index, resolve_index_context, element_slots,
               &target))
         return 0;
@@ -733,12 +962,7 @@ static long long initializer_list_count(
           .leaf_end = cursor + 1,
       };
       int consumes_outer_element =
-          entry->value->kind == ND_INIT_LIST ||
-          (entry->value->kind == ND_STRING &&
-           cursor % element_slots == 0 &&
-           initializer_string_count(
-               semantic_types, ps_ctx_data_layout(semantic_context),
-               element, entry->value) > 0);
+          entry->value->kind == ND_INIT_LIST;
       if (consumes_outer_element) {
         long long outer_index = cursor / element_slots;
         if (outer_index >
@@ -746,11 +970,20 @@ static long long initializer_list_count(
           return 0;
         target.leaf_begin = outer_index * element_slots;
         target.leaf_end = target.leaf_begin + element_slots;
+      } else if (entry->value->kind == ND_STRING &&
+                 initializer_shape_positional_string_span(
+                     semantic_context, &shape_state, element,
+                     element_slots, cursor, entry->value, &target)) {
+        /* A string initializes the current character-array subobject. */
       } else if (initializer_shape_positional_aggregate_span(
                      semantic_context, element, element_slots,
                      cursor, entry->value, resolve_value_type,
                      resolve_index_context, &target)) {
         /* Compatible aggregate expressions consume one complete subobject. */
+      } else if (!initializer_shape_prepare_positional_cursor(
+                     semantic_context, &shape_state, element,
+                     element_slots, cursor)) {
+        return 0;
       }
     }
     if (target.leaf_end <= target.leaf_begin) return 0;
