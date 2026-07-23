@@ -9124,8 +9124,18 @@ static void test_local_declaration_storage_plan_boundary(
       "int local_storage_pipeline(void) { "
       "  int pipeline_deferred[] = {1, 2, 3}; "
       "  int *pointers[] = {0}; "
+      "  int designated_matrix[][2] = {[1][0] = 4, 5}; "
+      "  int designated_cube[][2][2] = "
+      "      {[1][0][0] = 6, 7, 8, 9}; "
+      "  struct pipeline_pair { int first; int second; }; "
+      "  struct pipeline_pair pair_value = {10, 11}; "
+      "  struct pipeline_pair pair_copies[] = "
+      "      {pair_value, pair_value}; "
       "  return sizeof(pipeline_deferred) == 12 "
-      "      && sizeof(pointers) == 8; "
+      "      && sizeof(pointers) == 8 "
+      "      && sizeof(designated_matrix) == 16 "
+      "      && sizeof(designated_cube) == 32 "
+      "      && sizeof(pair_copies) == 16; "
       "}"));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(
@@ -9139,14 +9149,38 @@ static void test_local_declaration_storage_plan_boundary(
       find_test_scope_declaration(
           test_scope_graph(test_suite_session), "pointers",
           PSX_DECL_LOCAL_OBJECT, 0);
+  const psx_scope_declaration_t *matrix_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "designated_matrix",
+          PSX_DECL_LOCAL_OBJECT, 0);
+  const psx_scope_declaration_t *cube_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "designated_cube",
+          PSX_DECL_LOCAL_OBJECT, 0);
+  const psx_scope_declaration_t *pair_copies_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "pair_copies",
+          PSX_DECL_LOCAL_OBJECT, 0);
   ASSERT_TRUE(deferred_declaration != NULL);
   ASSERT_TRUE(pointers_declaration != NULL);
+  ASSERT_TRUE(matrix_declaration != NULL);
+  ASSERT_TRUE(cube_declaration != NULL);
+  ASSERT_TRUE(pair_copies_declaration != NULL);
   lvar_t *pipeline_deferred =
       (lvar_t *)deferred_declaration->payload;
   lvar_t *pipeline_pointers =
       (lvar_t *)pointers_declaration->payload;
+  lvar_t *designated_matrix =
+      (lvar_t *)matrix_declaration->payload;
+  lvar_t *designated_cube =
+      (lvar_t *)cube_declaration->payload;
+  lvar_t *pair_copies =
+      (lvar_t *)pair_copies_declaration->payload;
   ASSERT_TRUE(pipeline_deferred != NULL);
   ASSERT_TRUE(pipeline_pointers != NULL);
+  ASSERT_TRUE(designated_matrix != NULL);
+  ASSERT_TRUE(designated_cube != NULL);
+  ASSERT_TRUE(pair_copies != NULL);
   psx_type_shape_t pipeline_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types,
@@ -9164,6 +9198,23 @@ static void test_local_declaration_storage_plan_boundary(
   ASSERT_EQ(1, pipeline_shape.array_len);
   ASSERT_EQ(8, ps_lvar_frame_storage_size(
                    pipeline_pointers));
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, ps_lvar_decl_type_id(designated_matrix),
+      &pipeline_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, pipeline_shape.kind);
+  ASSERT_EQ(2, pipeline_shape.array_len);
+  ASSERT_EQ(16, ps_lvar_frame_storage_size(designated_matrix));
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, ps_lvar_decl_type_id(designated_cube),
+      &pipeline_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, pipeline_shape.kind);
+  ASSERT_EQ(2, pipeline_shape.array_len);
+  ASSERT_EQ(32, ps_lvar_frame_storage_size(designated_cube));
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, ps_lvar_decl_type_id(pair_copies), &pipeline_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, pipeline_shape.kind);
+  ASSERT_EQ(2, pipeline_shape.array_len);
+  ASSERT_EQ(16, ps_lvar_frame_storage_size(pair_copies));
 }
 
 static void test_target_type_layout_boundary(
@@ -11755,7 +11806,14 @@ static void test_initializer_resolution_boundary(
       "    {.x = 1, .a = {2, 3}}; "
       "struct RecursiveInit { "
       "    struct RecursiveInit *next; int value; }; "
-      "struct RecursiveInit recursive_init = {0, 4};"));
+      "struct RecursiveInit recursive_init = {0, 4}; "
+      "struct InitUnionBox { "
+      "    union { struct { int a; int b; } pair; int scalar; } value; "
+      "    int tail; }; "
+      "struct InitUnionBox union_scalar_cursor = "
+      "    {.value.scalar = 45, 46}; "
+      "struct InitUnionBox union_pair_cursor = "
+      "    {.value.pair.a = 47, 48, 49};"));
 
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
@@ -11782,18 +11840,34 @@ static void test_initializer_resolution_boundary(
       find_test_scope_declaration(
           test_scope_graph(test_suite_session), "recursive_init",
           PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *union_scalar_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "union_scalar_cursor",
+          PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *union_pair_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "union_pair_cursor",
+          PSX_DECL_GLOBAL_OBJECT, 0);
   ASSERT_TRUE(designated_declaration != NULL);
   ASSERT_TRUE(qualified_declaration != NULL);
   ASSERT_TRUE(recursive_declaration != NULL);
+  ASSERT_TRUE(union_scalar_declaration != NULL);
+  ASSERT_TRUE(union_pair_declaration != NULL);
   global_var_t *designated =
       (global_var_t *)designated_declaration->payload;
   global_var_t *qualified =
       (global_var_t *)qualified_declaration->payload;
   global_var_t *recursive =
       (global_var_t *)recursive_declaration->payload;
+  global_var_t *union_scalar =
+      (global_var_t *)union_scalar_declaration->payload;
+  global_var_t *union_pair =
+      (global_var_t *)union_pair_declaration->payload;
   ASSERT_TRUE(designated != NULL);
   ASSERT_TRUE(qualified != NULL);
   ASSERT_TRUE(recursive != NULL);
+  ASSERT_TRUE(union_scalar != NULL);
+  ASSERT_TRUE(union_pair != NULL);
 
   psx_qual_type_t designated_type =
       ps_gvar_decl_qual_type(designated);
@@ -11838,6 +11912,24 @@ static void test_initializer_resolution_boundary(
 
   ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
       types, records, record_layouts, data_layout,
+      ps_gvar_decl_qual_type(union_scalar), 0, &leaves));
+  ASSERT_EQ(3, leaves.count);
+  ASSERT_EQ(0, leaves.items[0].relative_offset);
+  ASSERT_EQ(4, leaves.items[1].relative_offset);
+  ASSERT_EQ(8, leaves.items[2].relative_offset);
+  psx_initializer_scalar_leaf_list_dispose(&leaves);
+
+  ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
+      types, records, record_layouts, data_layout,
+      ps_gvar_decl_qual_type(union_pair), 0, &leaves));
+  ASSERT_EQ(3, leaves.count);
+  ASSERT_EQ(0, leaves.items[0].relative_offset);
+  ASSERT_EQ(4, leaves.items[1].relative_offset);
+  ASSERT_EQ(8, leaves.items[2].relative_offset);
+  psx_initializer_scalar_leaf_list_dispose(&leaves);
+
+  ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
+      types, records, record_layouts, data_layout,
       ps_gvar_decl_qual_type(qualified), 0, &leaves));
   ASSERT_EQ(3, leaves.count);
   for (int i = 0; i < leaves.count; i++) {
@@ -11871,9 +11963,17 @@ static void test_initializer_resolution_boundary(
   ir_data_object_t *recursive_data =
       ir_data_module_find_object(
           module, "recursive_init", 14);
+  ir_data_object_t *union_scalar_data =
+      ir_data_module_find_object(
+          module, "union_scalar_cursor", 19);
+  ir_data_object_t *union_pair_data =
+      ir_data_module_find_object(
+          module, "union_pair_cursor", 17);
   ASSERT_TRUE(designated_data != NULL);
   ASSERT_TRUE(qualified_data != NULL);
   ASSERT_TRUE(recursive_data != NULL);
+  ASSERT_TRUE(union_scalar_data != NULL);
+  ASSERT_TRUE(union_pair_data != NULL);
   ASSERT_EQ(12, designated_data->byte_size);
   ASSERT_EQ(0, designated_data->bytes[4]);
   ASSERT_EQ(9, designated_data->bytes[8]);
@@ -11884,6 +11984,13 @@ static void test_initializer_resolution_boundary(
   ASSERT_EQ(16, recursive_data->byte_size);
   ASSERT_EQ(0, recursive_data->bytes[0]);
   ASSERT_EQ(4, recursive_data->bytes[8]);
+  ASSERT_EQ(12, union_scalar_data->byte_size);
+  ASSERT_EQ(45, union_scalar_data->bytes[0]);
+  ASSERT_EQ(46, union_scalar_data->bytes[8]);
+  ASSERT_EQ(12, union_pair_data->byte_size);
+  ASSERT_EQ(47, union_pair_data->bytes[0]);
+  ASSERT_EQ(48, union_pair_data->bytes[4]);
+  ASSERT_EQ(49, union_pair_data->bytes[8]);
   ir_data_module_free(module);
 }
 

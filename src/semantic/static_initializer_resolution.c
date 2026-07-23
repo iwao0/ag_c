@@ -70,6 +70,7 @@ void psx_resolve_static_initializer(
     if (!psx_resolve_incomplete_array_initializer_shape_in(
             semantic_context, request->type, kind, initializer,
             resolve_static_initializer_constant_index,
+            NULL,
             &constant_context, &array_resolution) ||
         !psx_resolve_completed_incomplete_array_qual_type_in(
             semantic_context, request->type, &array_resolution,

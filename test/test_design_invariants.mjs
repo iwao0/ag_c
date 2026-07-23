@@ -3828,6 +3828,22 @@ if (/\bpsx_type_t\b|\bps_type_(?:new|clone|apply|add|set|is_tag|record_id|charac
     "declaration resolution must use canonical type identity and explicit record layout",
   );
 }
+if (!/initializer_shape_designated_span\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/initializer_shape_designated_member_span\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/max_leaf_end\s*\+\s*element_slots\s*-\s*1\)\s*\/\s*element_slots/.test(
+      declarationResolutionSource,
+    ) ||
+    /static\s+long\s+long\s+initializer_list_count\s*\([^]*?\bmax_index\b[^]*?cursor\+\+/.test(
+      declarationResolutionSource,
+    )) {
+  throw new Error(
+    "incomplete aggregate arrays must infer their outer extent from the full designated scalar cursor",
+  );
+}
 const genericSelectionResolutionSource = await readFile(
   "src/semantic/generic_selection_resolution.c",
   "utf8",
@@ -8707,6 +8723,16 @@ const initializerResolutionSource = await readFile(
   "src/semantic/initializer_resolution.c",
   "utf8",
 );
+if (!/static\s+int\s+flat_initializer_next_active_cursor\s*\([^]*?!context->plan->items\[cursor\]\.is_active[^]*?cursor\+\+/.test(
+      initializerResolutionSource,
+    ) ||
+    !/cursor\s*=\s*flat_initializer_next_active_cursor\s*\(\s*context,\s*cursor_object,\s*cursor\s*\)/.test(
+      initializerResolutionSource,
+    )) {
+  throw new Error(
+    "positional initialization must skip inactive canonical union leaves after selecting a smaller member",
+  );
+}
 if (!/\}\s*psx_initializer_designator_range_t\s*;/.test(
       initializerResolutionSource,
     ) ||

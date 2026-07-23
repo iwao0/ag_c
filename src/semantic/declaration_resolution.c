@@ -353,49 +353,415 @@ static long long initializer_string_count(
   return (long long)string->byte_len + 1;
 }
 
+typedef struct {
+  psx_qual_type_t qual_type;
+  long long leaf_begin;
+  long long leaf_end;
+} psx_initializer_shape_span_t;
+
+static int initializer_shape_child_span(
+    psx_semantic_context_t *semantic_context,
+    const psx_initializer_shape_span_t *parent, int child_index,
+    psx_initializer_shape_span_t *child) {
+  if (!semantic_context || !parent || !child || child_index < 0)
+    return 0;
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t parent_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, parent->qual_type.type_id, &parent_shape))
+    return 0;
+
+  if (parent_shape.kind == PSX_TYPE_ARRAY) {
+    if (child_index >= parent_shape.array_len) return 0;
+    psx_qual_type_t child_type = psx_semantic_type_table_base(
+        semantic_types, parent->qual_type.type_id);
+    int child_slots = object_scalar_slots_by_id(
+        semantic_context, child_type.type_id);
+    if (child_slots <= 0 ||
+        child_index > (LLONG_MAX - parent->leaf_begin) / child_slots)
+      return 0;
+    long long child_begin =
+        parent->leaf_begin + (long long)child_index * child_slots;
+    if (child_begin > LLONG_MAX - child_slots) return 0;
+    *child = (psx_initializer_shape_span_t){
+        .qual_type = child_type,
+        .leaf_begin = child_begin,
+        .leaf_end = child_begin + child_slots,
+    };
+    return child->leaf_end <= parent->leaf_end;
+  }
+
+  if (!psx_type_kind_is_aggregate(parent_shape.kind)) return 0;
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      semantic_context, parent_shape.record_id);
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      ps_ctx_record_layout_table_in(semantic_context),
+      parent_shape.record_id, ps_ctx_data_layout(semantic_context));
+  if (!record || !layout || child_index >= record->member_count ||
+      layout->member_count < record->member_count)
+    return 0;
+
+  long long child_begin = parent->leaf_begin;
+  if (parent_shape.kind == PSX_TYPE_STRUCT) {
+    int covered_end = -1;
+    for (int i = 0; i <= child_index; i++) {
+      const psx_record_member_decl_t *member = &record->members[i];
+      const psx_record_member_layout_t *member_layout =
+          psx_record_layout_member(layout, i);
+      if (!member_layout) return 0;
+      if (member_layout->offset < covered_end) {
+        if (i == child_index) return 0;
+        continue;
+      }
+      psx_type_id_t member_type_id =
+          psx_semantic_type_table_record_member(
+              semantic_types, parent->qual_type.type_id, i).type_id;
+      int member_slots = object_scalar_slots_by_id(
+          semantic_context, member_type_id);
+      if (member_slots <= 0) return 0;
+      if (i == child_index) break;
+      if (child_begin > LLONG_MAX - member_slots) return 0;
+      child_begin += member_slots;
+      if (member->len <= 0) {
+        int member_size = psx_type_layout_sizeof(
+            semantic_types,
+            ps_ctx_record_layout_table_in(semantic_context),
+            member_type_id, ps_ctx_data_layout(semantic_context));
+        if (member_size <= 0 ||
+            member_layout->offset > INT_MAX - member_size)
+          return 0;
+        int end = member_layout->offset + member_size;
+        if (end > covered_end) covered_end = end;
+      }
+    }
+  }
+
+  psx_qual_type_t child_type = psx_semantic_type_table_record_member(
+      semantic_types, parent->qual_type.type_id, child_index);
+  int child_slots = object_scalar_slots_by_id(
+      semantic_context, child_type.type_id);
+  if (child_slots <= 0 || child_begin > LLONG_MAX - child_slots)
+    return 0;
+  *child = (psx_initializer_shape_span_t){
+      .qual_type = child_type,
+      .leaf_begin = child_begin,
+      .leaf_end = child_begin + child_slots,
+  };
+  return child->leaf_end <= parent->leaf_end;
+}
+
+static int initializer_shape_record_has_member(
+    psx_semantic_context_t *semantic_context, psx_type_id_t type_id,
+    const psx_initializer_designator_t *designator) {
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t shape = {0};
+  int member_index = -1;
+  return designator &&
+         psx_semantic_type_table_describe(
+             semantic_types, type_id, &shape) &&
+         psx_type_kind_is_aggregate(shape.kind) &&
+         ps_ctx_find_record_member_in(
+             semantic_context, shape.record_id,
+             designator->member_name, designator->member_len,
+             &member_index, NULL) &&
+         member_index >= 0;
+}
+
+static int initializer_shape_designated_member_span(
+    psx_semantic_context_t *semantic_context,
+    const psx_initializer_shape_span_t *aggregate,
+    const psx_initializer_designator_t *designator,
+    psx_initializer_shape_span_t *target) {
+  if (!semantic_context || !aggregate || !designator || !target)
+    return 0;
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, aggregate->qual_type.type_id, &shape) ||
+      !psx_type_kind_is_aggregate(shape.kind))
+    return 0;
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      semantic_context, shape.record_id);
+  if (!record) return 0;
+
+  for (int i = 0; i < record->member_count; i++) {
+    const psx_record_member_decl_t *member = &record->members[i];
+    if (!psx_record_member_decl_is_unnamed_aggregate(
+            semantic_types, member))
+      continue;
+    psx_type_id_t member_type_id =
+        psx_semantic_type_table_record_member(
+            semantic_types, aggregate->qual_type.type_id, i).type_id;
+    if (!initializer_shape_record_has_member(
+            semantic_context, member_type_id, designator))
+      continue;
+    psx_initializer_shape_span_t anonymous_span;
+    if (!initializer_shape_child_span(
+            semantic_context, aggregate, i, &anonymous_span))
+      return 0;
+    return initializer_shape_designated_member_span(
+        semantic_context, &anonymous_span, designator, target);
+  }
+
+  int member_index = -1;
+  if (!ps_ctx_find_record_member_in(
+          semantic_context, shape.record_id,
+          designator->member_name, designator->member_len,
+          &member_index, NULL) ||
+      member_index < 0)
+    return 0;
+  return initializer_shape_child_span(
+      semantic_context, aggregate, member_index, target);
+}
+
+static int initializer_shape_index(
+    const psx_initializer_designator_t *designator,
+    psx_incomplete_array_constant_index_resolver_t resolve_index,
+    void *resolve_index_context, long long *index) {
+  if (!designator || designator->kind != PSX_INIT_DESIGNATOR_INDEX ||
+      !designator->index_expr || !resolve_index || !index ||
+      !resolve_index(
+          resolve_index_context, designator->index_expr, index) ||
+      *index < 0)
+    return 0;
+  if (designator->is_range) {
+    long long end = 0;
+    if (!designator->range_end_expr ||
+        !resolve_index(
+            resolve_index_context, designator->range_end_expr, &end) ||
+        end < *index)
+      return 0;
+    *index = end;
+  }
+  return 1;
+}
+
+static int initializer_shape_designated_span(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t incomplete_type,
+    const psx_initializer_entry_t *entry,
+    psx_incomplete_array_constant_index_resolver_t resolve_index,
+    void *resolve_index_context, int element_slots,
+    psx_initializer_shape_span_t *target) {
+  if (!semantic_context || !entry || entry->designator_count <= 0 ||
+      !target || element_slots <= 0)
+    return 0;
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_qual_type_t element = psx_semantic_type_table_base(
+      semantic_types, incomplete_type.type_id);
+  long long outer_index = 0;
+  if (!initializer_shape_index(
+          &entry->designators[0], resolve_index,
+          resolve_index_context, &outer_index) ||
+      outer_index > (LLONG_MAX - element_slots) / element_slots)
+    return 0;
+  long long leaf_begin = outer_index * element_slots;
+  *target = (psx_initializer_shape_span_t){
+      .qual_type = element,
+      .leaf_begin = leaf_begin,
+      .leaf_end = leaf_begin + element_slots,
+  };
+
+  for (int i = 1; i < entry->designator_count; i++) {
+    const psx_initializer_designator_t *designator =
+        &entry->designators[i];
+    psx_type_shape_t shape = {0};
+    if (!psx_semantic_type_table_describe(
+            semantic_types, target->qual_type.type_id, &shape))
+      return 0;
+    psx_initializer_shape_span_t child;
+    if (designator->kind == PSX_INIT_DESIGNATOR_INDEX) {
+      long long index = 0;
+      if (shape.kind != PSX_TYPE_ARRAY ||
+          !initializer_shape_index(
+              designator, resolve_index, resolve_index_context,
+              &index) ||
+          index >= shape.array_len || index > INT_MAX ||
+          !initializer_shape_child_span(
+              semantic_context, target, (int)index, &child))
+        return 0;
+    } else if (designator->kind == PSX_INIT_DESIGNATOR_MEMBER) {
+      if (!initializer_shape_designated_member_span(
+              semantic_context, target, designator, &child))
+        return 0;
+    } else {
+      return 0;
+    }
+    *target = child;
+  }
+  return 1;
+}
+
+static int initializer_shape_child_containing_leaf(
+    psx_semantic_context_t *semantic_context,
+    const psx_initializer_shape_span_t *parent, long long leaf_index,
+    psx_initializer_shape_span_t *child) {
+  if (!semantic_context || !parent || !child ||
+      leaf_index < parent->leaf_begin || leaf_index >= parent->leaf_end)
+    return 0;
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, parent->qual_type.type_id, &shape))
+    return 0;
+  if (shape.kind == PSX_TYPE_ARRAY) {
+    psx_qual_type_t element = psx_semantic_type_table_base(
+        semantic_types, parent->qual_type.type_id);
+    int child_slots = object_scalar_slots_by_id(
+        semantic_context, element.type_id);
+    if (child_slots <= 0) return 0;
+    long long child_index =
+        (leaf_index - parent->leaf_begin) / child_slots;
+    return child_index <= INT_MAX &&
+           initializer_shape_child_span(
+               semantic_context, parent, (int)child_index, child);
+  }
+  if (!psx_type_kind_is_aggregate(shape.kind)) return 0;
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      semantic_context, shape.record_id);
+  if (!record) return 0;
+  for (int i = 0; i < record->member_count; i++) {
+    psx_initializer_shape_span_t candidate;
+    if (!initializer_shape_child_span(
+            semantic_context, parent, i, &candidate))
+      continue;
+    if (leaf_index >= candidate.leaf_begin &&
+        leaf_index < candidate.leaf_end) {
+      *child = candidate;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int initializer_shape_positional_aggregate_span(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t element, int element_slots, long long cursor,
+    const node_t *value,
+    psx_incomplete_array_value_type_resolver_t resolve_value_type,
+    void *resolver_context, psx_initializer_shape_span_t *target) {
+  if (!semantic_context || element.type_id == PSX_TYPE_ID_INVALID ||
+      element_slots <= 0 || cursor < 0 || !value ||
+      !resolve_value_type || !target)
+    return 0;
+  psx_qual_type_t value_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!resolve_value_type(resolver_context, value, &value_type) ||
+      value_type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  long long outer_index = cursor / element_slots;
+  if (outer_index > (LLONG_MAX - element_slots) / element_slots)
+    return 0;
+  psx_initializer_shape_span_t candidate = {
+      .qual_type = element,
+      .leaf_begin = outer_index * element_slots,
+      .leaf_end = outer_index * element_slots + element_slots,
+  };
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  for (;;) {
+    psx_type_shape_t shape = {0};
+    if (!psx_semantic_type_table_describe(
+            semantic_types, candidate.qual_type.type_id, &shape))
+      return 0;
+    if ((shape.kind == PSX_TYPE_ARRAY ||
+         psx_type_kind_is_aggregate(shape.kind)) &&
+        candidate.qual_type.type_id == value_type.type_id) {
+      *target = candidate;
+      return 1;
+    }
+    psx_initializer_shape_span_t child;
+    if (!initializer_shape_child_containing_leaf(
+            semantic_context, &candidate, cursor, &child) ||
+        (child.qual_type.type_id == candidate.qual_type.type_id &&
+         child.leaf_begin == candidate.leaf_begin &&
+         child.leaf_end == candidate.leaf_end))
+      return 0;
+    candidate = child;
+  }
+}
+
 static long long initializer_list_count(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t incomplete_type,
     const node_init_list_t *list,
     psx_incomplete_array_constant_index_resolver_t resolve_index,
+    psx_incomplete_array_value_type_resolver_t resolve_value_type,
     void *resolve_index_context,
     int *entries_initialize_outer_elements) {
-  if (!list || !resolve_index || !entries_initialize_outer_elements)
+  if (!semantic_context || !list || !resolve_index ||
+      !entries_initialize_outer_elements)
     return 0;
   if (list->entry_count == 1 && list->entries[0].designator_count == 0) {
     const node_t *value = list->entries[0].value;
     if (value && value->kind == ND_STRING) return -1;
   }
 
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_qual_type_t element = psx_semantic_type_table_base(
+      semantic_types, incomplete_type.type_id);
+  int element_slots = object_scalar_slots_by_id(
+      semantic_context, element.type_id);
+  if (element.type_id == PSX_TYPE_ID_INVALID || element_slots <= 0)
+    return 0;
+
   long long cursor = 0;
-  long long max_index = -1;
+  long long max_leaf_end = 0;
   for (int i = 0; i < list->entry_count; i++) {
     const psx_initializer_entry_t *entry = &list->entries[i];
-    if (entry->value && entry->value->kind == ND_INIT_LIST)
-      *entries_initialize_outer_elements = 1;
-    if (entry->designator_count > 0 &&
-        entry->designators[0].kind == PSX_INIT_DESIGNATOR_INDEX) {
-      long long index = 0;
-      if (!entry->designators[0].index_expr ||
-          !resolve_index(
-              resolve_index_context,
-              entry->designators[0].index_expr, &index) ||
-          index < 0)
+    if (!entry->value) return 0;
+    psx_initializer_shape_span_t target = {0};
+    if (entry->designator_count > 0) {
+      if (!initializer_shape_designated_span(
+              semantic_context, incomplete_type, entry,
+              resolve_index, resolve_index_context, element_slots,
+              &target))
         return 0;
-      long long end = index;
-      if (entry->designators[0].is_range) {
-        if (!entry->designators[0].range_end_expr ||
-            !resolve_index(
-                resolve_index_context,
-                entry->designators[0].range_end_expr, &end) ||
-            end < index)
+    } else if (entry->has_index || entry->has_member ||
+               cursor == LLONG_MAX) {
+      return 0;
+    } else {
+      target = (psx_initializer_shape_span_t){
+          .qual_type = element,
+          .leaf_begin = cursor,
+          .leaf_end = cursor + 1,
+      };
+      int consumes_outer_element =
+          entry->value->kind == ND_INIT_LIST ||
+          (entry->value->kind == ND_STRING &&
+           cursor % element_slots == 0 &&
+           initializer_string_count(
+               semantic_types, ps_ctx_data_layout(semantic_context),
+               element, entry->value) > 0);
+      if (consumes_outer_element) {
+        long long outer_index = cursor / element_slots;
+        if (outer_index >
+            (LLONG_MAX - element_slots) / element_slots)
           return 0;
+        target.leaf_begin = outer_index * element_slots;
+        target.leaf_end = target.leaf_begin + element_slots;
+      } else if (initializer_shape_positional_aggregate_span(
+                     semantic_context, element, element_slots,
+                     cursor, entry->value, resolve_value_type,
+                     resolve_index_context, &target)) {
+        /* Compatible aggregate expressions consume one complete subobject. */
       }
-      cursor = end;
-      *entries_initialize_outer_elements = 1;
     }
-    if (cursor > max_index) max_index = cursor;
-    cursor++;
+    if (target.leaf_end <= target.leaf_begin) return 0;
+    cursor = target.leaf_end;
+    if (cursor > max_leaf_end) max_leaf_end = cursor;
   }
-  return max_index + 1;
+  if (max_leaf_end <= 0 ||
+      max_leaf_end > LLONG_MAX - (element_slots - 1))
+    return 0;
+  *entries_initialize_outer_elements = 1;
+  return (max_leaf_end + element_slots - 1) / element_slots;
 }
 
 int psx_resolve_incomplete_array_initializer_shape_in(
@@ -404,6 +770,7 @@ int psx_resolve_incomplete_array_initializer_shape_in(
     psx_decl_init_kind_t initializer_kind,
     const node_t *initializer,
     psx_incomplete_array_constant_index_resolver_t resolve_index,
+    psx_incomplete_array_value_type_resolver_t resolve_value_type,
     void *resolve_index_context,
     psx_incomplete_array_resolution_t *resolution) {
   if (resolution)
@@ -429,7 +796,8 @@ int psx_resolve_incomplete_array_initializer_shape_in(
     const node_init_list_t *list =
         (const node_init_list_t *)initializer;
     count = initializer_list_count(
-        list, resolve_index, resolve_index_context,
+        semantic_context, incomplete_type, list,
+        resolve_index, resolve_value_type, resolve_index_context,
         &entries_initialize_outer_elements);
     if (count < 0) {
       count = initializer_string_count(

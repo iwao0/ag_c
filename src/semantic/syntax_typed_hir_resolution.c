@@ -4741,7 +4741,9 @@ static psx_qual_type_t resolve_direct_completed_array_qual_type(
   if (!psx_resolve_incomplete_array_initializer_shape_in(
           context->semantic_context, type,
           initializer->kind, initializer->value,
-          resolve_direct_initializer_index, context, &resolution))
+          resolve_direct_initializer_index,
+          resolve_direct_initializer_value_type,
+          context, &resolution))
     return invalid;
   psx_qual_type_t completed = invalid;
   return psx_resolve_completed_incomplete_array_qual_type_in(

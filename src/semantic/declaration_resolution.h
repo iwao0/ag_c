@@ -21,6 +21,8 @@ typedef struct {
 
 typedef int (*psx_incomplete_array_constant_index_resolver_t)(
     void *context, const node_t *expression, long long *value);
+typedef int (*psx_incomplete_array_value_type_resolver_t)(
+    void *context, const node_t *expression, psx_qual_type_t *type);
 
 psx_qual_type_t psx_resolve_decl_qual_type(
     const psx_decl_type_request_t *request);
@@ -38,6 +40,7 @@ int psx_resolve_incomplete_array_initializer_shape_in(
     psx_decl_init_kind_t initializer_kind,
     const node_t *initializer,
     psx_incomplete_array_constant_index_resolver_t resolve_index,
+    psx_incomplete_array_value_type_resolver_t resolve_value_type,
     void *resolve_index_context,
     psx_incomplete_array_resolution_t *resolution);
 #endif

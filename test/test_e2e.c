@@ -1380,6 +1380,7 @@ static const test_case_t test_cases[] = {
     {"probes", "aggregate_repeated_designator_last_wins", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_repeated_designator_last_wins.c", 0, 0},
     {"probes", "aggregate_copy_designator_override", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_copy_designator_override.c", 0, 0},
     {"probes", "deep_initializer_designator_chain", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_initializer_designator_chain.c", 0, 0},
+    {"probes", "incomplete_array_designator_positional", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_array_designator_positional.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

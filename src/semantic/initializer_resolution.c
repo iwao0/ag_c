@@ -730,6 +730,17 @@ static int flat_initializer_apply_value(
     const psx_initializer_object_span_t *target,
     const node_t *value, int range_grouped);
 
+static int flat_initializer_next_active_cursor(
+    const psx_flat_initializer_context_t *context,
+    const psx_initializer_object_span_t *object, int cursor) {
+  if (!context || !context->plan || !context->plan->items || !object)
+    return cursor;
+  while (cursor >= object->leaf_begin && cursor < object->leaf_end &&
+         !context->plan->items[cursor].is_active)
+    cursor++;
+  return cursor;
+}
+
 static int flat_initializer_relocate_whole_object_value(
     psx_flat_initializer_context_t *context, int item_index) {
   if (!context || !context->plan || item_index < 0 ||
@@ -909,6 +920,8 @@ static int flat_initializer_apply_list(
       }
       const psx_initializer_object_span_t *cursor_object =
           positional_union_active ? &positional_object : object;
+      cursor = flat_initializer_next_active_cursor(
+          context, cursor_object, cursor);
       if (cursor < cursor_object->leaf_begin ||
           cursor >= cursor_object->leaf_end)
         return 0;
