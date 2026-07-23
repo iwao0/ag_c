@@ -1382,6 +1382,8 @@ static const test_case_t test_cases[] = {
     {"probes", "deep_initializer_designator_chain", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_initializer_designator_chain.c", 0, 0},
     {"probes", "incomplete_array_designator_positional", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_array_designator_positional.c", 0, 0},
     {"probes", "union_aggregate_positional_continuation", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/union_aggregate_positional_continuation.c", 0, 0},
+    {"probes", "nested_union_initializer_cursor", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nested_union_initializer_cursor.c", 0, 0},
+    {"probes", "anonymous_union_relocation_initializer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/anonymous_union_relocation_initializer.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

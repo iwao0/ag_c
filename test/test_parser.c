@@ -9798,8 +9798,21 @@ static void test_wasm_target_global_pointer_data_layout() {
           ag_compilation_session_tokenizer(&session),
           (char *)"int layout_first; "
                   "int layout_second; "
+                  "int layout_callback(int value); "
                   "int *layout_pointers[2] = {"
                   "  &layout_first, &layout_second"
+                  "}; "
+                  "union LayoutAnonymousReferences { "
+                  "  struct { "
+                  "    int *data; "
+                  "    int (*callback)(int); "
+                  "  }; "
+                  "  long long raw[2]; "
+                  "}; "
+                  "union LayoutAnonymousReferences "
+                  "layout_anonymous_references = { "
+                  "  .data = &layout_first, "
+                  "  .callback = layout_callback "
                   "};")));
 
   const psx_scope_declaration_t *declaration =
@@ -9855,6 +9868,23 @@ static void test_wasm_target_global_pointer_data_layout() {
   ASSERT_TRUE(object->relocs->next != NULL);
   ASSERT_EQ(4, object->relocs->next->offset);
   ASSERT_EQ(4, object->relocs->next->width);
+
+  ir_data_object_t *anonymous_object =
+      ir_data_module_find_object(
+          module, "layout_anonymous_references", 27);
+  ASSERT_TRUE(anonymous_object != NULL);
+  ASSERT_EQ(16, anonymous_object->byte_size);
+  ASSERT_EQ(8, anonymous_object->alignment);
+  ASSERT_TRUE(anonymous_object->relocs != NULL);
+  ASSERT_EQ(0, anonymous_object->relocs->offset);
+  ASSERT_EQ(4, anonymous_object->relocs->width);
+  ASSERT_EQ(IR_DATA_RELOC_DATA,
+            anonymous_object->relocs->kind);
+  ASSERT_TRUE(anonymous_object->relocs->next != NULL);
+  ASSERT_EQ(4, anonymous_object->relocs->next->offset);
+  ASSERT_EQ(4, anonymous_object->relocs->next->width);
+  ASSERT_EQ(IR_DATA_RELOC_FUNCTION,
+            anonymous_object->relocs->next->kind);
 
   ir_data_module_free(module);
   ASSERT_TRUE(ag_compilation_session_dispose(&session));
@@ -11825,7 +11855,20 @@ static void test_initializer_resolution_boundary(
       "    struct { unsigned a : 3; unsigned b : 3; "
       "             unsigned c : 3; } fields; long long wide; }; "
       "union InitBitfieldsFirst union_bitfield_array[] = "
-      "    {1, 2, 3, 4, 5, 6};"));
+      "    {1, 2, 3, 4, 5, 6}; "
+      "struct InitAnonymousCursor { "
+      "    union { struct { int first; int second; }; "
+      "            long long wide; }; "
+      "    int tail; }; "
+      "struct InitAnonymousCursor anonymous_union_cursor = "
+      "    {.first = 50, 51, 52}; "
+      "union InitSmallAnonymousCursor { "
+      "    struct { short first; short second; }; "
+      "    long long wide; }; "
+      "union InitSmallAnonymousCursor small_anonymous_cursor = "
+      "    {60, 61}; "
+      "struct InitAnonymousCursor anonymous_union_switch = "
+      "    {.wide = -1, .second = 70, 71};"));
 
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
@@ -11876,6 +11919,18 @@ static void test_initializer_resolution_boundary(
       find_test_scope_declaration(
           test_scope_graph(test_suite_session), "union_bitfield_array",
           PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *anonymous_union_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "anonymous_union_cursor",
+          PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *small_anonymous_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "small_anonymous_cursor",
+          PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *anonymous_switch_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "anonymous_union_switch",
+          PSX_DECL_GLOBAL_OBJECT, 0);
   ASSERT_TRUE(designated_declaration != NULL);
   ASSERT_TRUE(qualified_declaration != NULL);
   ASSERT_TRUE(recursive_declaration != NULL);
@@ -11885,6 +11940,9 @@ static void test_initializer_resolution_boundary(
   ASSERT_TRUE(union_pair_continue_declaration != NULL);
   ASSERT_TRUE(union_text_array_declaration != NULL);
   ASSERT_TRUE(union_bitfield_array_declaration != NULL);
+  ASSERT_TRUE(anonymous_union_declaration != NULL);
+  ASSERT_TRUE(small_anonymous_declaration != NULL);
+  ASSERT_TRUE(anonymous_switch_declaration != NULL);
   global_var_t *designated =
       (global_var_t *)designated_declaration->payload;
   global_var_t *qualified =
@@ -11903,6 +11961,12 @@ static void test_initializer_resolution_boundary(
       (global_var_t *)union_text_array_declaration->payload;
   global_var_t *union_bitfield_array =
       (global_var_t *)union_bitfield_array_declaration->payload;
+  global_var_t *anonymous_union =
+      (global_var_t *)anonymous_union_declaration->payload;
+  global_var_t *small_anonymous =
+      (global_var_t *)small_anonymous_declaration->payload;
+  global_var_t *anonymous_switch =
+      (global_var_t *)anonymous_switch_declaration->payload;
   ASSERT_TRUE(designated != NULL);
   ASSERT_TRUE(qualified != NULL);
   ASSERT_TRUE(recursive != NULL);
@@ -11912,6 +11976,9 @@ static void test_initializer_resolution_boundary(
   ASSERT_TRUE(union_pair_continue != NULL);
   ASSERT_TRUE(union_text_array != NULL);
   ASSERT_TRUE(union_bitfield_array != NULL);
+  ASSERT_TRUE(anonymous_union != NULL);
+  ASSERT_TRUE(small_anonymous != NULL);
+  ASSERT_TRUE(anonymous_switch != NULL);
 
   psx_type_shape_t union_array_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
@@ -11991,6 +12058,23 @@ static void test_initializer_resolution_boundary(
 
   ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
       types, records, record_layouts, data_layout,
+      ps_gvar_decl_qual_type(anonymous_union), 0, &leaves));
+  ASSERT_EQ(3, leaves.count);
+  ASSERT_EQ(0, leaves.items[0].relative_offset);
+  ASSERT_EQ(4, leaves.items[1].relative_offset);
+  ASSERT_EQ(8, leaves.items[2].relative_offset);
+  psx_initializer_scalar_leaf_list_dispose(&leaves);
+
+  ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
+      types, records, record_layouts, data_layout,
+      ps_gvar_decl_qual_type(small_anonymous), 0, &leaves));
+  ASSERT_EQ(2, leaves.count);
+  ASSERT_EQ(0, leaves.items[0].relative_offset);
+  ASSERT_EQ(2, leaves.items[1].relative_offset);
+  psx_initializer_scalar_leaf_list_dispose(&leaves);
+
+  ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
+      types, records, record_layouts, data_layout,
       ps_gvar_decl_qual_type(qualified), 0, &leaves));
   ASSERT_EQ(3, leaves.count);
   for (int i = 0; i < leaves.count; i++) {
@@ -12042,6 +12126,15 @@ static void test_initializer_resolution_boundary(
   ir_data_object_t *union_bitfield_array_data =
       ir_data_module_find_object(
           module, "union_bitfield_array", 20);
+  ir_data_object_t *anonymous_union_data =
+      ir_data_module_find_object(
+          module, "anonymous_union_cursor", 22);
+  ir_data_object_t *small_anonymous_data =
+      ir_data_module_find_object(
+          module, "small_anonymous_cursor", 22);
+  ir_data_object_t *anonymous_switch_data =
+      ir_data_module_find_object(
+          module, "anonymous_union_switch", 22);
   ASSERT_TRUE(designated_data != NULL);
   ASSERT_TRUE(qualified_data != NULL);
   ASSERT_TRUE(recursive_data != NULL);
@@ -12051,6 +12144,9 @@ static void test_initializer_resolution_boundary(
   ASSERT_TRUE(union_pair_continue_data != NULL);
   ASSERT_TRUE(union_text_array_data != NULL);
   ASSERT_TRUE(union_bitfield_array_data != NULL);
+  ASSERT_TRUE(anonymous_union_data != NULL);
+  ASSERT_TRUE(small_anonymous_data != NULL);
+  ASSERT_TRUE(anonymous_switch_data != NULL);
   ASSERT_EQ(12, designated_data->byte_size);
   ASSERT_EQ(0, designated_data->bytes[4]);
   ASSERT_EQ(9, designated_data->bytes[8]);
@@ -12083,6 +12179,17 @@ static void test_initializer_resolution_boundary(
   ASSERT_EQ(209, union_bitfield_array_data->bytes[0]);
   ASSERT_EQ(172, union_bitfield_array_data->bytes[8]);
   ASSERT_EQ(1, union_bitfield_array_data->bytes[9]);
+  ASSERT_EQ(16, anonymous_union_data->byte_size);
+  ASSERT_EQ(50, anonymous_union_data->bytes[0]);
+  ASSERT_EQ(51, anonymous_union_data->bytes[4]);
+  ASSERT_EQ(52, anonymous_union_data->bytes[8]);
+  ASSERT_EQ(8, small_anonymous_data->byte_size);
+  ASSERT_EQ(60, small_anonymous_data->bytes[0]);
+  ASSERT_EQ(61, small_anonymous_data->bytes[2]);
+  ASSERT_EQ(16, anonymous_switch_data->byte_size);
+  ASSERT_EQ(0, anonymous_switch_data->bytes[0]);
+  ASSERT_EQ(70, anonymous_switch_data->bytes[4]);
+  ASSERT_EQ(71, anonymous_switch_data->bytes[8]);
   ir_data_module_free(module);
 }
 

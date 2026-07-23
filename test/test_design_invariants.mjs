@@ -8755,6 +8755,9 @@ if (!/static\s+int\s+flat_initializer_next_active_cursor\s*\([^]*?!context->plan
     ) ||
     !/union_capacity_slots/.test(initializerResolutionSource) ||
     !/capacity_leaves\.items\[i\]/.test(initializerResolutionSource) ||
+    !/canonical_member_flat_slot_count\s*\([^]*?\)\s*\{\s*if\s*\(\s*!member\s*\)\s*return\s+0\s*;/.test(
+      initializerResolutionSource,
+    ) ||
     !/flat_initializer_innermost_union_activation_at_cursor\s*\(/.test(
       initializerResolutionSource,
     ) ||
@@ -8765,7 +8768,7 @@ if (!/static\s+int\s+flat_initializer_next_active_cursor\s*\([^]*?!context->plan
       initializerResolutionSource,
     )) {
   throw new Error(
-    "positional initialization must follow the active union aggregate and skip inactive canonical union leaves",
+    "positional initialization must preserve anonymous aggregate capacity, follow the active union aggregate, and skip inactive canonical union leaves",
   );
 }
 if (!/\}\s*psx_initializer_designator_range_t\s*;/.test(
@@ -8963,9 +8966,18 @@ if (!/\bint\s*\*\s*init_offsets\s*;/.test(gvarStruct[1]) ||
     !/gv->init_offsets\s*\)\s*gv->init_offsets\[idx\]\s*=\s*-1/.test(
       nodeUtilsSource,
     ) ||
-    !/\bgvar_init_cursor_advance_at_offset\s*\(/.test(nodeUtilsSource)) {
+    !/\bgvar_init_cursor_advance_at_offset\s*\(/.test(nodeUtilsSource) ||
+    !/\baggregate_prepare_union_target\s*\(/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/\bpsx_initializer_flat_slot_count_with_records\s*\(/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/\bactivation\.selected_leaves\.items\s*\[\s*i\s*\]\.relative_offset\b/.test(
+      staticHirInitializerSource,
+    )) {
   throw new Error(
-    "static aggregate initializer slots must preserve resolved byte offsets through recursive union walking",
+    "static aggregate initializer slots must preserve resolved byte offsets and remap active union member layouts through recursive union walking",
   );
 }
 const canonicalArrayCompletion = globalRegistrySource.match(
