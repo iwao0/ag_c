@@ -71,5 +71,8 @@ int ps_global_registry_bind_decl_qual_type(
 int ps_global_registry_complete_array_qual_type(
     psx_global_registry_t *registry, global_var_t *global,
     psx_qual_type_t complete_type);
+int ps_global_registry_adopt_composite_qual_type(
+    psx_global_registry_t *registry, global_var_t *global,
+    psx_qual_type_t composite_type);
 
 #endif

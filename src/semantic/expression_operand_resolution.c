@@ -226,61 +226,6 @@ static int pointer_types_are_compatible(
               semantic_context, right_base.type_id));
 }
 
-static psx_qual_type_t composite_array_type(
-    psx_semantic_context_t *semantic_context,
-    psx_qual_type_t left, psx_qual_type_t right) {
-  if (!array_types_are_compatible(
-          semantic_context,
-          (psx_qual_type_t){
-              left.type_id, PSX_TYPE_QUALIFIER_NONE},
-          (psx_qual_type_t){
-              right.type_id, PSX_TYPE_QUALIFIER_NONE},
-          0))
-    return invalid_qual_type();
-  const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(semantic_context);
-  psx_type_shape_t left_shape = {0};
-  psx_type_shape_t right_shape = {0};
-  if (!describe_type(semantic_context, left, &left_shape) ||
-      !describe_type(semantic_context, right, &right_shape))
-    return invalid_qual_type();
-  psx_qual_type_t left_element =
-      psx_semantic_type_table_base(types, left.type_id);
-  psx_qual_type_t right_element =
-      psx_semantic_type_table_base(types, right.type_id);
-  psx_type_shape_t left_element_shape = {0};
-  psx_type_shape_t right_element_shape = {0};
-  if (!describe_type(
-          semantic_context, left_element, &left_element_shape) ||
-      !describe_type(
-          semantic_context, right_element, &right_element_shape))
-    return invalid_qual_type();
-  psx_qual_type_t element = left_element;
-  if (left_element_shape.kind == PSX_TYPE_ARRAY &&
-      right_element_shape.kind == PSX_TYPE_ARRAY &&
-      left_element.type_id != right_element.type_id) {
-    element = composite_array_type(
-        semantic_context, left_element, right_element);
-    if (element.type_id == PSX_TYPE_ID_INVALID)
-      return invalid_qual_type();
-  }
-
-  int array_len = 0;
-  int is_vla = 0;
-  if (!left_shape.is_vla && left_shape.array_len > 0) {
-    array_len = left_shape.array_len;
-  } else if (!right_shape.is_vla && right_shape.array_len > 0) {
-    array_len = right_shape.array_len;
-  } else if (left_shape.is_vla || right_shape.is_vla) {
-    is_vla = 1;
-  }
-  psx_qual_type_t composite =
-      ps_ctx_intern_array_of_qual_type_in(
-          semantic_context, element, array_len, is_vla);
-  composite.qualifiers = left.qualifiers | right.qualifiers;
-  return composite;
-}
-
 static psx_qual_type_t usual_arithmetic_result(
     psx_semantic_context_t *semantic_context,
     const psx_type_shape_t *lhs, const psx_type_shape_t *rhs) {
@@ -578,21 +523,15 @@ psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
           semantic_context, else_base, &else_base_shape))
     return invalid_qual_type();
 
-  psx_qual_type_t common_base = then_base;
+  psx_qual_type_t common_base = invalid_qual_type();
   if (then_base_shape.kind == PSX_TYPE_VOID) {
     common_base = then_base;
   } else if (else_base_shape.kind == PSX_TYPE_VOID) {
     common_base = else_base;
-  } else if (then_base_shape.kind == PSX_TYPE_FUNCTION &&
-             else_base_shape.kind == PSX_TYPE_FUNCTION &&
-             !then_base_shape.has_function_prototype &&
-             else_base_shape.has_function_prototype) {
-    common_base = else_base;
-  } else if (then_base_shape.kind == PSX_TYPE_ARRAY &&
-             else_base_shape.kind == PSX_TYPE_ARRAY &&
-             then_base.type_id != else_base.type_id) {
-    common_base = composite_array_type(
-        semantic_context, then_base, else_base);
+  } else {
+    common_base = ps_ctx_composite_qual_type_in(
+        semantic_context, unqualified(then_base),
+        unqualified(else_base));
     if (common_base.type_id == PSX_TYPE_ID_INVALID)
       return invalid_qual_type();
   }

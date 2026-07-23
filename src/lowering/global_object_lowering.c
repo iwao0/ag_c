@@ -26,6 +26,11 @@ int lower_resolved_global_object_declaration(
             global_registry, existing,
             request->resolution->declaration_qual_type))
       return 0;
+    if (request->resolution->adopt_composite_type &&
+        !ps_global_registry_adopt_composite_qual_type(
+            global_registry, existing,
+            request->resolution->declaration_qual_type))
+      return 0;
     result->global = existing;
     return 1;
   }

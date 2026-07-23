@@ -63,8 +63,14 @@ int main(void) {
   int (*known_bound)[3] = &complete_array;
   _Static_assert(
       IS_TYPE(choose_left ? unknown_bound : known_bound,
-              int (*)[3]),
+      int (*)[3]),
       "unknown and known array bounds produce the known composite bound");
+  incomplete_array **unknown_handle = &unknown_bound;
+  int (**known_handle)[3] = &known_bound;
+  _Static_assert(
+      sizeof **(choose_left ? unknown_handle : known_handle) ==
+          sizeof complete_array,
+      "nested compatible pointers recursively retain the known bound");
 
   struct incomplete_value *incomplete_pointer = 0;
   const void *const_void_pointer = 0;

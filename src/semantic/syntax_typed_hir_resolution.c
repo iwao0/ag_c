@@ -693,6 +693,7 @@ static int resolve_direct_generic_selection(
   }
   psx_generic_selection_resolution_t resolution;
   psx_resolve_generic_selection_qual_types_in(
+      ps_ctx_semantic_type_table_in(context->semantic_context),
       control_type, association_types, is_default,
       selection->association_count, &resolution);
   switch (resolution.status) {

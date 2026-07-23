@@ -263,6 +263,26 @@ int ps_global_registry_complete_array_qual_type(
   return 1;
 }
 
+int ps_global_registry_adopt_composite_qual_type(
+    psx_global_registry_t *registry, global_var_t *global,
+    psx_qual_type_t composite_type) {
+  if (!registry || !registry->semantic_types || !global ||
+      global->decl_qual_type.type_id == PSX_TYPE_ID_INVALID ||
+      composite_type.type_id == PSX_TYPE_ID_INVALID ||
+      !psx_semantic_type_table_types_compatible(
+          registry->semantic_types, global->decl_qual_type,
+          composite_type))
+    return 0;
+  if (global->decl_qual_type.type_id == composite_type.type_id &&
+      global->decl_qual_type.qualifiers == composite_type.qualifiers)
+    return 1;
+  if (!psx_global_registry_note_global_mutation(registry, global))
+    return 0;
+  global->decl_type_table = registry->semantic_types;
+  global->decl_qual_type = composite_type;
+  return 1;
+}
+
 void ps_register_global_var_in(
     psx_global_registry_t *registry, global_var_t *gv) {
   if (!registry || !gv) return;

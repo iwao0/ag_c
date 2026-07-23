@@ -6197,6 +6197,9 @@ static void test_generic_selection_typed_hir_boundary(
   psx_qual_type_t floating_type =
       ps_ctx_intern_floating_qual_type_in(
           test_semantic_context(test_suite_session), PSX_FLOATING_KIND_DOUBLE, 0);
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session));
   psx_qual_type_t association_types[2] = {
       integer_type,
       {PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
@@ -6204,18 +6207,20 @@ static void test_generic_selection_typed_hir_boundary(
   unsigned char is_default[2] = {0, 1};
   psx_generic_selection_resolution_t resolution;
   psx_resolve_generic_selection_qual_types_in(
+      types,
       integer_type, association_types, is_default, 2, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_OK, resolution.status);
   ASSERT_EQ(0, resolution.selected_index);
   psx_type_shape_t selected_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
+      types,
       association_types[resolution.selected_index].type_id,
       &selected_shape));
   ASSERT_EQ(PSX_TYPE_INTEGER, selected_shape.kind);
 
   is_default[0] = 1;
   psx_resolve_generic_selection_qual_types_in(
+      types,
       integer_type, association_types, is_default, 2, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_DEFAULT,
             resolution.status);
@@ -6225,12 +6230,14 @@ static void test_generic_selection_typed_hir_boundary(
   is_default[1] = 0;
   association_types[1] = integer_type;
   psx_resolve_generic_selection_qual_types_in(
+      types,
       integer_type, association_types, is_default, 2, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE,
             resolution.status);
   ASSERT_EQ(1, resolution.conflict_index);
 
   psx_resolve_generic_selection_qual_types_in(
+      types,
       floating_type, association_types, is_default, 1, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_NO_MATCH,
             resolution.status);
@@ -6238,10 +6245,40 @@ static void test_generic_selection_typed_hir_boundary(
   association_types[0] = (psx_qual_type_t){
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   psx_resolve_generic_selection_qual_types_in(
+      types,
       integer_type, association_types, is_default, 1, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED,
             resolution.status);
   ASSERT_EQ(0, resolution.conflict_index);
+
+  psx_semantic_context_t *semantic_context =
+      test_semantic_context(test_suite_session);
+  psx_qual_type_t vla_array =
+      ps_ctx_intern_array_of_qual_type_in(
+          semantic_context, integer_type, 0, 1);
+  psx_qual_type_t fixed_array =
+      ps_ctx_intern_array_of_qual_type_in(
+          semantic_context, integer_type, 3, 0);
+  psx_qual_type_t vla_pointer =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          semantic_context, vla_array);
+  psx_qual_type_t fixed_pointer =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          semantic_context, fixed_array);
+  psx_qual_type_t vla_handle =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          semantic_context, vla_pointer);
+  psx_qual_type_t fixed_handle =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          semantic_context, fixed_pointer);
+  association_types[0] = fixed_handle;
+  is_default[0] = 0;
+  is_default[1] = 1;
+  psx_resolve_generic_selection_qual_types_in(
+      types, vla_handle, association_types, is_default, 2,
+      &resolution);
+  ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_OK, resolution.status);
+  ASSERT_EQ(0, resolution.selected_index);
 
   reset_test_locals(test_suite_session);
   lvar_t *value = register_test_storage_fixture(test_suite_session,
@@ -7909,6 +7946,18 @@ static void test_direct_function_typed_hir_resolution_boundary(
       "int __direct_nested_vla_pointer_comparison("
       "int count, int (**runtime)[count], int (**fixed)[3]) { "
       "return runtime == fixed; }");
+  assert_direct_function_resolution(test_suite_session,
+      "int __direct_generic_vla_pointer_compatibility("
+      "int count, int (**runtime)[count]) { "
+      "return _Generic(runtime, int (**)[3]: 1, default: 0); }");
+  assert_direct_function_resolution(test_suite_session,
+      "int __direct_nested_pointer_conditional_composite("
+      "int choose) { int values[3]; "
+      "int (*unknown_row)[] = (void *)values; "
+      "int (**unknown)[] = &unknown_row; "
+      "int (*known_row)[3] = &values; "
+      "int (**known)[3] = &known_row; "
+      "return sizeof **(choose ? unknown : known); }");
   assert_direct_function_resolution(test_suite_session,
       "int __direct_first_level_pointer_qualifier_addition("
       "int **source) { int * const *target = source; "
@@ -10468,6 +10517,10 @@ static void test_global_declaration_resolution_boundary(
       "int boundary_global[3]; "
       "extern int boundary_inferred[]; "
       "int boundary_inferred[] = {1, 2, 3}; "
+      "extern int (*boundary_rows)[]; "
+      "extern int (*boundary_rows)[3]; "
+      "int boundary_row_storage[2][3]; "
+      "int (*boundary_rows)[3] = boundary_row_storage; "
       "static int *boundary_static; "
       "struct BoundaryRecord; "
       "struct BoundaryRecord { int values[4]; }; "
@@ -10500,6 +10553,10 @@ static void test_global_declaration_resolution_boundary(
       find_test_scope_declaration(
           test_scope_graph(test_suite_session), "boundary_static",
           PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *rows_declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "boundary_rows",
+          PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *record_declaration =
       find_test_scope_declaration(
           test_scope_graph(test_suite_session), "boundary_record",
@@ -10507,6 +10564,7 @@ static void test_global_declaration_resolution_boundary(
   ASSERT_TRUE(global_declaration != NULL);
   ASSERT_TRUE(inferred_declaration != NULL);
   ASSERT_TRUE(static_declaration != NULL);
+  ASSERT_TRUE(rows_declaration != NULL);
   ASSERT_TRUE(record_declaration != NULL);
 
   global_var_t *global =
@@ -10515,11 +10573,14 @@ static void test_global_declaration_resolution_boundary(
       (global_var_t *)inferred_declaration->payload;
   global_var_t *internal =
       (global_var_t *)static_declaration->payload;
+  global_var_t *rows =
+      (global_var_t *)rows_declaration->payload;
   global_var_t *record =
       (global_var_t *)record_declaration->payload;
   ASSERT_TRUE(global != NULL);
   ASSERT_TRUE(inferred != NULL);
   ASSERT_TRUE(internal != NULL);
+  ASSERT_TRUE(rows != NULL);
   ASSERT_TRUE(record != NULL);
 
   psx_type_shape_t shape = {0};
@@ -10551,6 +10612,19 @@ static void test_global_declaration_resolution_boundary(
                    ps_gvar_decl_type_id(internal),
                    data_layout));
   ASSERT_TRUE(ps_gvar_is_static_storage(internal));
+
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, ps_gvar_decl_type_id(rows), &shape));
+  ASSERT_EQ(PSX_TYPE_POINTER, shape.kind);
+  psx_qual_type_t row_array =
+      psx_semantic_type_table_base(
+          types, ps_gvar_decl_type_id(rows));
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, row_array.type_id, &shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, shape.kind);
+  ASSERT_EQ(3, shape.array_len);
+  ASSERT_TRUE(!shape.is_vla);
+  ASSERT_TRUE(!ps_gvar_is_extern_decl(rows));
 
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, ps_gvar_decl_type_id(record), &shape));
@@ -15471,6 +15545,15 @@ static void test_multiple_funcdefs(
 
   reset_test_translation_unit_state(test_suite_session);
   ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
+      "int read_vla_row(int columns, int (*row)[columns]); "
+      "int read_vla_row(int columns, int (*row)[3]) { "
+      "return columns == 3 ? (*row)[2] : -1; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  assert_test_hir_function_root(hir, 0, "read_vla_row");
+
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int log(const char *fmt, ...); int main() { return 0; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
@@ -16714,6 +16797,71 @@ static void test_semantic_type_identity(
   psx_qual_type_t pointer_to_vla =
       ps_ctx_intern_pointer_to_qual_type_in(
           context, vla);
+  psx_qual_type_t fixed_three =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, plain_int, 3, 0);
+  psx_qual_type_t fixed_four =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, plain_int, 4, 0);
+  ASSERT_TRUE(psx_semantic_type_table_types_compatible(
+      types, vla, fixed_three));
+  ASSERT_TRUE(!psx_semantic_type_table_types_compatible(
+      types, fixed_three, fixed_four));
+  ASSERT_TRUE(!psx_semantic_type_table_types_compatible(
+      types, vla, ps_ctx_intern_array_of_qual_type_in(
+                      context, const_int, 3, 0)));
+  psx_qual_type_t pointer_to_fixed_three =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, fixed_three);
+  psx_qual_type_t handle_to_vla =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, pointer_to_vla);
+  psx_qual_type_t handle_to_fixed_three =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, pointer_to_fixed_three);
+  ASSERT_TRUE(psx_semantic_type_table_types_compatible(
+      types, handle_to_vla, handle_to_fixed_three));
+  psx_qual_type_t composite_handle =
+      ps_ctx_composite_qual_type_in(
+          context, handle_to_vla, handle_to_fixed_three);
+  ASSERT_TRUE(composite_handle.type_id != PSX_TYPE_ID_INVALID);
+  psx_qual_type_t composite_pointer =
+      psx_semantic_type_table_base(
+          types, composite_handle.type_id);
+  psx_qual_type_t composite_array =
+      psx_semantic_type_table_base(
+          types, composite_pointer.type_id);
+  psx_type_shape_t composite_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, composite_array.type_id, &composite_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, composite_shape.kind);
+  ASSERT_EQ(3, composite_shape.array_len);
+  ASSERT_TRUE(!composite_shape.is_vla);
+  const psx_qual_type_t vla_parameters[2] = {
+      plain_int, pointer_to_vla};
+  const psx_qual_type_t fixed_parameters[2] = {
+      plain_int, pointer_to_fixed_three};
+  psx_qual_type_t vla_function =
+      ps_ctx_intern_function_qual_type_in(
+          context, plain_int, vla_parameters, 2, 1, 0);
+  psx_qual_type_t fixed_function =
+      ps_ctx_intern_function_qual_type_in(
+          context, plain_int, fixed_parameters, 2, 1, 0);
+  ASSERT_TRUE(psx_semantic_type_table_function_types_compatible(
+      types, vla_function, fixed_function));
+  psx_qual_type_t composite_function =
+      ps_ctx_composite_qual_type_in(
+          context, vla_function, fixed_function);
+  ASSERT_TRUE(composite_function.type_id != PSX_TYPE_ID_INVALID);
+  psx_qual_type_t composite_parameter =
+      psx_semantic_type_table_parameter(
+          types, composite_function.type_id, 1);
+  composite_array = psx_semantic_type_table_base(
+      types, composite_parameter.type_id);
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, composite_array.type_id, &composite_shape));
+  ASSERT_EQ(3, composite_shape.array_len);
+  ASSERT_TRUE(!composite_shape.is_vla);
   ASSERT_TRUE(psx_semantic_type_table_contains_vla_array(
       types, vla.type_id));
   ASSERT_TRUE(psx_semantic_type_table_contains_vla_array(

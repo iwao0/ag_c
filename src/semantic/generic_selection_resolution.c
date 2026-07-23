@@ -1,5 +1,7 @@
 #include "generic_selection_resolution.h"
 
+#include "type_identity.h"
+
 #include <string.h>
 
 static void initialize_resolution(
@@ -11,20 +13,16 @@ static void initialize_resolution(
   resolution->conflict_index = -1;
 }
 
-static int qual_types_match(
-    psx_qual_type_t left, psx_qual_type_t right) {
-  return left.type_id == right.type_id &&
-         left.qualifiers == right.qualifiers;
-}
-
 void psx_resolve_generic_selection_qual_types_in(
+    const psx_semantic_type_table_t *types,
     psx_qual_type_t control_type,
     const psx_qual_type_t *association_types,
     const unsigned char *is_default,
     int association_count,
     psx_generic_selection_resolution_t *resolution) {
   initialize_resolution(resolution);
-  if (!resolution || control_type.type_id == PSX_TYPE_ID_INVALID ||
+  if (!resolution || !types ||
+      control_type.type_id == PSX_TYPE_ID_INVALID ||
       !association_types || !is_default || association_count <= 0)
     return;
 
@@ -46,8 +44,8 @@ void psx_resolve_generic_selection_qual_types_in(
     }
     for (int j = 0; j < i; j++) {
       if (!is_default[j] &&
-          qual_types_match(
-              association_types[i], association_types[j])) {
+          psx_semantic_type_table_types_compatible(
+              types, association_types[i], association_types[j])) {
         resolution->status =
             PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE;
         resolution->conflict_index = i;
@@ -59,7 +57,8 @@ void psx_resolve_generic_selection_qual_types_in(
   int selected = -1;
   for (int i = 0; i < association_count; i++) {
     if (!is_default[i] &&
-        qual_types_match(control_type, association_types[i])) {
+        psx_semantic_type_table_types_compatible(
+            types, control_type, association_types[i])) {
       selected = i;
       break;
     }

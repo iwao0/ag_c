@@ -70,6 +70,9 @@ psx_qual_type_t ps_ctx_intern_function_qual_type_in(
     psx_semantic_context_t *context, psx_qual_type_t result,
     const psx_qual_type_t *parameters, int parameter_count,
     int has_prototype, int is_variadic);
+psx_qual_type_t ps_ctx_composite_qual_type_in(
+    psx_semantic_context_t *context,
+    psx_qual_type_t left, psx_qual_type_t right);
 psx_qual_type_t ps_ctx_intern_implicit_function_qual_type_in(
     psx_semantic_context_t *context);
 const psx_semantic_type_table_t *ps_ctx_semantic_type_table_in(

@@ -32,6 +32,7 @@ typedef struct {
   psx_qual_type_t declaration_qual_type;
   global_var_t *existing;
   int complete_existing_array;
+  int adopt_composite_type;
   int clear_existing_extern;
 } psx_global_declaration_resolution_t;
 

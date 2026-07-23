@@ -4009,6 +4009,12 @@ if (!/\bps_ctx_get_record_decl_in\s*\(/.test(
       globalDeclarationResolutionSource,
     ) ||
     !/record->is_complete/.test(globalDeclarationResolutionSource) ||
+    !/psx_semantic_type_table_types_compatible\s*\(/.test(
+      globalDeclarationResolutionSource,
+    ) ||
+    !/ps_ctx_composite_qual_type_in\s*\(/.test(
+      globalDeclarationResolutionSource,
+    ) ||
     /\bps_type_sizeof\s*\(/.test(globalDeclarationResolutionSource)) {
   throw new Error(
     "global object completeness must come from recursive type meaning and RecordDecl state",
@@ -4166,6 +4172,9 @@ if (!/psx_scope_graph_lookup_declaration_in_scope\s*\(/.test(
     ) ||
     !/!request->global_registry\b/.test(globalObjectLoweringSource) ||
     !/request->resolution->status\s*!=\s*PSX_GLOBAL_DECLARATION_OK/.test(
+      globalObjectLoweringSource,
+    ) ||
+    !/ps_global_registry_adopt_composite_qual_type\s*\(/.test(
       globalObjectLoweringSource,
     ) ||
     /\b(?:semantic_context|psx_resolve_global_declaration)\b/.test(
@@ -7513,7 +7522,10 @@ if (!/\bpsx_type_shape_t\b/.test(integerConversionHeader) ||
     !/\bpsx_resolve_conditional_result_qual_type_in\s*\([^]*?pointer_types_are_compatible\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
-    !/\bpsx_resolve_conditional_result_qual_type_in\s*\([^]*?composite_array_type\s*\(/.test(
+    !/\bpsx_resolve_conditional_result_qual_type_in\s*\([^]*?ps_ctx_composite_qual_type_in\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    /\bcomposite_array_type\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
     !/left_atomic\s*!=\s*right_atomic/.test(
@@ -7703,6 +7715,39 @@ if (!semanticTypeEntry ||
     )) {
   throw new Error(
     "semantic TypeId shape must own target-independent identity, use scope DeclId for enum identity, and resolve record relations through RecordDeclTable",
+  );
+}
+const compatibleTypeImplementation = semanticTypeIdentitySource.match(
+  /static\s+int\s+semantic_qual_types_compatible\s*\([^;{]*\)\s*\{[^]*?\n\}/,
+)?.[0] ?? "";
+const compositeTypeImplementation = semanticTypeIdentitySource.match(
+  /static\s+psx_qual_type_t\s+semantic_composite_qual_types\s*\([^]*?\)\s*\{[^]*?\n\}/,
+)?.[0] ?? "";
+if (!compatibleTypeImplementation ||
+    !compositeTypeImplementation ||
+    !/left_has_constant_bound[^]*?right_has_constant_bound[^]*?array_len\s*!=\s*right_shape->array_len/.test(
+      compatibleTypeImplementation,
+    ) ||
+    !/semantic_function_entries_compatible\s*\(/.test(
+      compatibleTypeImplementation,
+    ) ||
+    !/psx_semantic_type_table_intern_array_of\s*\(/.test(
+      compositeTypeImplementation,
+    ) ||
+    !/psx_semantic_type_table_intern_function\s*\(/.test(
+      compositeTypeImplementation,
+    ) ||
+    !/psx_semantic_type_table_types_compatible\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
+    !/psx_semantic_type_table_composite_type\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
+    !/ps_ctx_composite_qual_type_in\s*\([^]*?psx_semantic_type_table_composite_type\s*\(/.test(
+      parserSemanticContextImplementation,
+    )) {
+  throw new Error(
+    "C compatible and composite types must be derived recursively from canonical TypeId relations",
   );
 }
 for (const [contextInterner, tableInterner] of [
@@ -10512,6 +10557,9 @@ if (!genericQualTypeResolution ||
     ) ||
     /\bpsx_(?:generic_selection_resolution_state_t|resolution_store_t)\b|\bps_node_resolution_state/.test(
       genericSelectionResolutionSource,
+    ) ||
+    !/psx_semantic_type_table_types_compatible\s*\(/.test(
+      genericQualTypeResolution,
     ) ||
     !/psx_resolve_generic_selection_qual_types_in\s*\(/.test(
       syntaxTypedHirResolutionSource,

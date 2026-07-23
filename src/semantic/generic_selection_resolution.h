@@ -3,6 +3,8 @@
 
 #include "../type_system/type_ids.h"
 
+typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
+
 typedef enum {
   PSX_GENERIC_SELECTION_RESOLUTION_OK = 0,
   PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_DEFAULT,
@@ -18,6 +20,7 @@ typedef struct {
 } psx_generic_selection_resolution_t;
 
 void psx_resolve_generic_selection_qual_types_in(
+    const psx_semantic_type_table_t *types,
     psx_qual_type_t control_type,
     const psx_qual_type_t *association_types,
     const unsigned char *is_default,

@@ -18,22 +18,8 @@ static int qual_types_equal(
 static int global_types_compatible(
     const psx_semantic_type_table_t *types,
     psx_qual_type_t existing, psx_qual_type_t incoming) {
-  if (qual_types_equal(existing, incoming)) return 1;
-  psx_type_shape_t existing_shape = {0};
-  psx_type_shape_t incoming_shape = {0};
-  if (!psx_semantic_type_table_describe(
-          types, existing.type_id, &existing_shape) ||
-      !psx_semantic_type_table_describe(
-          types, incoming.type_id, &incoming_shape) ||
-      existing.qualifiers != incoming.qualifiers ||
-      existing_shape.kind != PSX_TYPE_ARRAY ||
-      incoming_shape.kind != PSX_TYPE_ARRAY ||
-      (existing_shape.array_len > 0 && incoming_shape.array_len > 0)) {
-    return 0;
-  }
-  return qual_types_equal(
-      psx_semantic_type_table_base(types, existing.type_id),
-      psx_semantic_type_table_base(types, incoming.type_id));
+  return psx_semantic_type_table_types_compatible(
+      types, existing, incoming);
 }
 
 static int record_type_is_complete(
@@ -175,14 +161,29 @@ void psx_resolve_global_declaration(
       resolution->status = PSX_GLOBAL_DECLARATION_TYPE_CONFLICT;
       return;
     }
+    psx_qual_type_t composite = ps_ctx_composite_qual_type_in(
+        semantic_context, existing_type, request->type);
+    if (composite.type_id == PSX_TYPE_ID_INVALID) {
+      resolution->status = PSX_GLOBAL_DECLARATION_TYPE_CONFLICT;
+      return;
+    }
+    resolution->declaration_qual_type = composite;
     psx_type_shape_t existing_shape = {0};
+    psx_type_shape_t composite_shape = {0};
     if (!psx_semantic_type_table_describe(
-            types, existing_type.type_id, &existing_shape))
+            types, existing_type.type_id, &existing_shape) ||
+        !psx_semantic_type_table_describe(
+            types, composite.type_id, &composite_shape))
       return;
     int existing_is_incomplete = existing_shape.kind == PSX_TYPE_ARRAY &&
                                  existing_shape.array_len <= 0;
     resolution->complete_existing_array =
-        existing_is_incomplete && !incoming_is_incomplete_array;
+        existing_is_incomplete &&
+        composite_shape.kind == PSX_TYPE_ARRAY &&
+        composite_shape.array_len > 0 && !composite_shape.is_vla;
+    resolution->adopt_composite_type =
+        !resolution->complete_existing_array &&
+        !qual_types_equal(existing_type, composite);
     resolution->clear_existing_extern =
         resolution->existing->is_extern_decl && !request->is_extern_decl;
   }

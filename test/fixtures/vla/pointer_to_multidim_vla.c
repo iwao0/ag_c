@@ -1,9 +1,23 @@
 static int backing[64];
 static int extent_evaluations;
+static int global_rows_storage[2][3] = {
+    {1, 2, 3}, {4, 5, 6}};
+
+extern int (*global_rows)[];
+extern int (*global_rows)[3];
+int (*global_rows)[3] = global_rows_storage;
 
 static int note_extent(int value) {
   extent_evaluations++;
   return value;
+}
+
+static int redeclared_vla_row(
+    int columns, int (*row)[columns]);
+
+static int redeclared_vla_row(
+    int columns, int (*row)[3]) {
+  return columns == 3 ? (*row)[2] : -1;
 }
 
 static int automatic_2d(int rows, int columns) {
@@ -149,6 +163,12 @@ static int call_triple_pointer_parameter(int columns) {
   return triple_pointer_parameter(columns, &handle);
 }
 
+static int generic_nested_vla_pointer(
+    int columns, int (**handle)[columns]) {
+  return _Generic(
+      handle, int (**)[3]: 1, default: 0);
+}
+
 int main(void) {
   for (int i = 0; i < 64; i++) backing[i] = i + 1;
 
@@ -181,5 +201,13 @@ int main(void) {
   if (!call_nested_pointer_ops(0, 5)) return 26;
   if (call_triple_pointer_parameter(3) != 6) return 27;
   if (call_triple_pointer_parameter(5) != 8) return 28;
+  {
+    int row[3] = {4, 5, 6};
+    if (redeclared_vla_row(3, &row) != 6) return 29;
+    int (*pointer)[3] = &row;
+    if (!generic_nested_vla_pointer(3, &pointer)) return 30;
+    if (!generic_nested_vla_pointer(5, &pointer)) return 31;
+  }
+  if (global_rows[1][2] != 6) return 32;
   return 0;
 }
