@@ -80,7 +80,10 @@ void psx_resolve_global_declaration(
   resolution->status = PSX_GLOBAL_DECLARATION_INVALID;
   if (!request || !request->semantic_context || !request->name ||
       request->name_len <= 0 ||
-      request->type.type_id == PSX_TYPE_ID_INVALID) {
+      request->type.type_id == PSX_TYPE_ID_INVALID ||
+      request->requested_alignment < 0 ||
+      (!request->has_alignment_specifier &&
+       request->requested_alignment != 0)) {
     return;
   }
   psx_semantic_context_t *semantic_context = request->semantic_context;
@@ -159,6 +162,27 @@ void psx_resolve_global_declaration(
         ps_gvar_decl_qual_type(resolution->existing);
     if (!global_types_compatible(types, existing_type, request->type)) {
       resolution->status = PSX_GLOBAL_DECLARATION_TYPE_CONFLICT;
+      return;
+    }
+    int existing_has_alignment =
+        resolution->existing->has_alignment_specifier != 0;
+    int incoming_has_alignment =
+        request->has_alignment_specifier != 0;
+    if (existing_has_alignment && incoming_has_alignment &&
+        resolution->existing->requested_alignment !=
+            request->requested_alignment) {
+      resolution->status =
+          PSX_GLOBAL_DECLARATION_ALIGNMENT_CONFLICT;
+      return;
+    }
+    int incoming_is_definition =
+        !request->is_extern_decl || request->has_initializer;
+    if ((incoming_is_definition && existing_has_alignment &&
+         !incoming_has_alignment) ||
+        (resolution->existing->has_init &&
+         !existing_has_alignment && incoming_has_alignment)) {
+      resolution->status =
+          PSX_GLOBAL_DECLARATION_DEFINITION_ALIGNMENT_MISSING;
       return;
     }
     psx_qual_type_t composite = ps_ctx_composite_qual_type_in(

@@ -139,6 +139,14 @@ int psx_resolve_type_name_qual_type_in_contexts(
         "incomplete type");
     return 0;
   }
+  if (psx_semantic_type_has_invalid_atomic_qualification_in(
+          semantic_context, resolved)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        type_name->syntax->diagnostic_token, "type-name",
+        "atomic qualifier requires a complete non-array object type");
+    return 0;
+  }
   if (psx_semantic_type_has_incomplete_array_element_in(
           semantic_context, resolved.type_id)) {
     ps_diag_ctx_in(

@@ -139,6 +139,20 @@ static void diagnose_global_declaration(
           "declaration of '%.*s' changes its language linkage",
           request->name_len, request->name);
       return;
+    case PSX_GLOBAL_DECLARATION_ALIGNMENT_CONFLICT:
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "alignas",
+          "declaration of '%.*s' has an alignment different from "
+          "an earlier declaration",
+          request->name_len, request->name);
+      return;
+    case PSX_GLOBAL_DECLARATION_DEFINITION_ALIGNMENT_MISSING:
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "alignas",
+          "every definition of '%.*s' must repeat the alignment "
+          "specified by another declaration",
+          request->name_len, request->name);
+      return;
     default:
       ps_diag_ctx_in(
           diagnostics, request->diag_tok, "decl",
@@ -202,6 +216,9 @@ int psx_begin_global_declaration_pipeline(
           .is_extern_decl = request->is_extern_decl,
           .is_static = request->is_static,
           .has_initializer = request->initializer->has_initializer,
+          .has_alignment_specifier =
+              request->has_alignment_specifier,
+          .requested_alignment = request->requested_alignment,
       },
       &resolution);
   if (resolution.status != PSX_GLOBAL_DECLARATION_OK)
@@ -239,9 +256,10 @@ int psx_begin_global_declaration_pipeline(
   result->created = lowered.created;
   if (result->created && result->global)
     result->global->is_thread_local = request->is_thread_local ? 1 : 0;
-  if (result->global &&
-      request->requested_alignment > result->global->requested_alignment)
+  if (result->global && request->has_alignment_specifier) {
+    result->global->has_alignment_specifier = 1;
     result->global->requested_alignment = request->requested_alignment;
+  }
   note_pipeline_declaration_source(
       request->semantic_context, PSX_SCOPE_ID_TRANSLATION_UNIT,
       PSX_NAMESPACE_ORDINARY, request->name, request->name_len,
@@ -1403,6 +1421,8 @@ int psx_apply_block_extern_declaration_pipeline(
               .type = request->type,
               .is_extern_decl = 1,
               .is_thread_local = request->is_thread_local,
+              .has_alignment_specifier =
+                  request->has_alignment_specifier,
               .requested_alignment = request->requested_alignment,
               .initializer = &initializer,
               .diag_tok = request->diag_tok,

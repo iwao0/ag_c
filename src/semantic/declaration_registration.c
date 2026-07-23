@@ -200,6 +200,11 @@ int psx_apply_aggregate_member_declaration(
     ps_diag_ctx_in(diagnostics, diag_tok, "member",
                  "bit-field has non-integer canonical type");
   }
+  if (resolution.status ==
+      PSX_AGGREGATE_MEMBER_ATOMIC_BITFIELD_UNSUPPORTED) {
+    ps_diag_ctx_in(diagnostics, diag_tok, "member",
+                 "atomic-qualified bit-fields are not supported");
+  }
   if (resolution.status == PSX_AGGREGATE_MEMBER_NEGATIVE_BIT_WIDTH) {
     ps_diag_ctx_in(diagnostics, diag_tok, "member",
                  "bit-field width %d is negative",

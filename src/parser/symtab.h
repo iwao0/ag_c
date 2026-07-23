@@ -52,6 +52,7 @@ struct global_var_t {
   unsigned int is_thread_local : 1; // 1: _Thread_local
   unsigned int is_compiler_generated : 1;
   unsigned int is_compound_literal : 1;
+  unsigned int has_alignment_specifier : 1;
   const psx_semantic_type_table_t *decl_type_table;
   psx_qual_type_t decl_qual_type;
 };

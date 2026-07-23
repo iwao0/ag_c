@@ -5851,6 +5851,41 @@ const declarationPipelineHeader = await readFile(
   "src/declaration_pipeline.h",
   "utf8",
 );
+const globalSymbolLayoutHeader = await readFile(
+  "src/parser/symtab.h",
+  "utf8",
+);
+if (!/unsigned\s+int\s+has_alignment_specifier\s*:\s*1\s*;/.test(
+      globalSymbolLayoutHeader,
+    ) ||
+    !/int\s+has_alignment_specifier\s*;\s*int\s+requested_alignment\s*;/.test(
+      globalDeclarationResolutionHeader,
+    ) ||
+    !/PSX_GLOBAL_DECLARATION_ALIGNMENT_CONFLICT/.test(
+      globalDeclarationResolutionHeader,
+    ) ||
+    !/PSX_GLOBAL_DECLARATION_DEFINITION_ALIGNMENT_MISSING/.test(
+      globalDeclarationResolutionHeader,
+    ) ||
+    !/existing_has_alignment\s*&&\s*incoming_has_alignment[^]*?requested_alignment/.test(
+      globalDeclarationResolutionSource,
+    ) ||
+    !/incoming_is_definition[^]*?existing_has_alignment[^]*?!incoming_has_alignment/.test(
+      globalDeclarationResolutionSource,
+    ) ||
+    !/request->has_alignment_specifier[^]*?global->has_alignment_specifier\s*=\s*1[^]*?global->requested_alignment\s*=\s*request->requested_alignment/.test(
+      declarationPipelineSource,
+    ) ||
+    !/has_alignment_specifier\s*=\s*declaration->specifier\.alignas_specifier_count\s*>\s*0/.test(
+      toplevelDeclarationFrontendSource,
+    ) ||
+    !/has_alignment_specifier\s*=\s*declaration->specifier\.alignas_specifier_count\s*>\s*0/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "global alignment redeclarations must preserve specifier presence and validate the defining declaration",
+  );
+}
 const functionDeclarationPipelineRequest = declarationPipelineHeader.match(
   /typedef\s+struct\s*\{([^{}]*)\}\s*psx_function_declaration_pipeline_request_t\s*;/,
 );
@@ -8988,6 +9023,41 @@ if (!/psx_semantic_type_table_pointer_can_be_restrict_qualified\s*\([^]*?pointer
     )) {
   throw new Error(
     "restrict qualifiers must be validated against canonical pointer pointee identity and reject function pointers",
+  );
+}
+if (!/semantic_type_has_invalid_atomic_qualification\s*\([^]*?PSX_TYPE_QUALIFIER_ATOMIC[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?!psx_semantic_type_is_complete_object_in[^]*?shape\.kind\s*==\s*PSX_TYPE_POINTER[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?shape\.kind\s*==\s*PSX_TYPE_FUNCTION/.test(
+      typeCompletenessSource,
+    ) ||
+    !/psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?psx_semantic_type_has_invalid_atomic_qualification_in[^]*?atomic qualifier requires a complete non-array object type/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_resolve_parameter_declaration\s*\([^]*?psx_semantic_type_has_invalid_atomic_qualification_in\s*\(\s*request->type\.semantic_context,\s*identity\s*\)/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?psx_semantic_type_has_invalid_atomic_qualification_in[^]*?atomic qualifier requires a complete non-array object type/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/validate_direct_type_query_type\s*\([^]*?psx_semantic_type_has_invalid_atomic_qualification_in[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "atomic qualifiers must reject canonical array, function, void, and incomplete object identities before adjustment or lowering",
+  );
+}
+if (!/PSX_AGGREGATE_MEMBER_ATOMIC_BITFIELD_UNSUPPORTED/.test(
+      aggregateMemberResolutionHeader,
+    ) ||
+    !/request->has_bitfield\s*&&[^]*?identity\.qualifiers\s*&\s*PSX_TYPE_QUALIFIER_ATOMIC[^]*?PSX_AGGREGATE_MEMBER_ATOMIC_BITFIELD_UNSUPPORTED/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/is_bitfield\s*&&[^]*?declared_type\.qualifiers\s*&\s*PSX_TYPE_QUALIFIER_ATOMIC[^]*?atomic-qualified bit-fields are not supported/.test(
+      declarationApplicationSource,
+    ) ||
+    !/PSX_AGGREGATE_MEMBER_ATOMIC_BITFIELD_UNSUPPORTED[^]*?atomic-qualified bit-fields are not supported/.test(
+      declarationRegistrationSource,
+    )) {
+  throw new Error(
+    "atomic-qualified bit-fields must be rejected before non-atomic bit-field lowering",
   );
 }
 if (!/parsed_declarator_has_explicit_vla_star\s*\([^]*?op->kind\s*!=\s*PSX_DECL_OP_ARRAY\s*\|\|\s*!op->is_vla_array[^]*?declarator->array_bound_count[^]*?!has_bound_expression\s*\)\s*return\s+1/.test(

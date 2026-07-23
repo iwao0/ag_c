@@ -1087,6 +1087,12 @@ static int validate_direct_type_query_type(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
         source);
+  if (psx_semantic_type_has_invalid_atomic_qualification_in(
+          context->semantic_context, queried_qual_type))
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+        source);
   if (is_sizeof && shape.kind == PSX_TYPE_VOID)
     return 1;
   if (shape.kind == PSX_TYPE_VOID || shape.kind == PSX_TYPE_FUNCTION)
@@ -5242,6 +5248,8 @@ static int preflight_direct_local_declaration(
                   .type = decl_qual_type,
                   .is_thread_local =
                       declaration->specifier.type_spec.is_thread_local,
+                  .has_alignment_specifier =
+                      declaration->specifier.alignas_specifier_count > 0,
                   .requested_alignment =
                       specifier_resolution.requested_alignment,
                   .has_initializer = initializer->has_initializer,

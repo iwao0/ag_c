@@ -240,6 +240,16 @@ psx_qual_type_t psx_apply_parsed_type_name_qual_type_in_contexts(
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   }
   if (resolved.type_id != PSX_TYPE_ID_INVALID &&
+      psx_semantic_type_has_invalid_atomic_qualification_in(
+          semantic_context, resolved)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        type_name->diagnostic_token, "type-name",
+        "atomic qualifier requires a complete non-array object type");
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  }
+  if (resolved.type_id != PSX_TYPE_ID_INVALID &&
       psx_semantic_type_has_incomplete_array_element_in(
           semantic_context, resolved.type_id)) {
     ps_diag_ctx_in(
@@ -612,6 +622,22 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
         "declaration-specifier",
         "restrict qualifier requires a pointer to an object or "
         "incomplete type");
+    return 0;
+  }
+  if (psx_semantic_type_has_invalid_atomic_qualification_in(
+          semantic_context, declared_type)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "atomic qualifier requires a complete non-array object type");
+    return 0;
+  }
+  if (is_bitfield &&
+      (declared_type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "atomic-qualified bit-fields are not supported");
     return 0;
   }
   if (psx_semantic_type_has_incomplete_array_element_in(

@@ -26,6 +26,7 @@ typedef struct {
   int is_extern_decl;
   int is_static;
   int is_thread_local;
+  int has_alignment_specifier;
   int requested_alignment;
   int is_compiler_generated;
   int is_compound_literal;
@@ -175,6 +176,7 @@ typedef struct {
   int name_len;
   psx_qual_type_t type;
   int is_thread_local;
+  int has_alignment_specifier;
   int requested_alignment;
   int has_initializer;
   token_t *diag_tok;

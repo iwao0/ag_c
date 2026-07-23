@@ -404,6 +404,12 @@ void psx_resolve_aggregate_member_declaration(
     resolution->status = PSX_AGGREGATE_MEMBER_MISSING_NAME;
     return;
   }
+  if (request->has_bitfield &&
+      (identity.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0) {
+    resolution->status =
+        PSX_AGGREGATE_MEMBER_ATOMIC_BITFIELD_UNSUPPORTED;
+    return;
+  }
   if (request->has_bitfield && request->bit_width < 0) {
     resolution->status = PSX_AGGREGATE_MEMBER_NEGATIVE_BIT_WIDTH;
     return;

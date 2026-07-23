@@ -15,6 +15,8 @@ typedef enum {
   PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT,
   PSX_GLOBAL_DECLARATION_TYPE_CONFLICT,
   PSX_GLOBAL_DECLARATION_LINKAGE_CONFLICT,
+  PSX_GLOBAL_DECLARATION_ALIGNMENT_CONFLICT,
+  PSX_GLOBAL_DECLARATION_DEFINITION_ALIGNMENT_MISSING,
 } psx_global_declaration_status_t;
 
 typedef struct {
@@ -25,6 +27,8 @@ typedef struct {
   int is_extern_decl;
   int is_static;
   int has_initializer;
+  int has_alignment_specifier;
+  int requested_alignment;
 } psx_global_declaration_resolution_request_t;
 
 typedef struct {

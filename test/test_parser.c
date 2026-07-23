@@ -10708,6 +10708,38 @@ static void test_global_declaration_resolution_boundary(
       "enum ConflictEnum { conflicting_enum }; "
       "int conflicting_enum; "
       "int main(void) { return 0; }");
+  expect_parse_ok(test_suite_session,
+      "extern int plain_extern_then_aligned; "
+      "_Alignas(16) int plain_extern_then_aligned; "
+      "_Alignas(32) extern int aligned_with_plain_extern; "
+      "extern int aligned_with_plain_extern; "
+      "_Alignas(32) int aligned_with_plain_extern; "
+      "int main(void) { return plain_extern_then_aligned + "
+      "aligned_with_plain_extern; }");
+  expect_parse_fail(test_suite_session,
+      "_Alignas(16) extern int missing_definition_alignment; "
+      "int missing_definition_alignment; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "_Alignas(8) extern int conflicting_alignment; "
+      "_Alignas(16) int conflicting_alignment; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "_Alignas(0) extern int zero_alignment; "
+      "int zero_alignment; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "_Alignas(0) extern int zero_conflict; "
+      "_Alignas(16) int zero_conflict; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "_Alignas(16) int aligned_tentative; "
+      "int aligned_tentative; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int defined_without_alignment = 1; "
+      "_Alignas(16) extern int defined_without_alignment; "
+      "int main(void) { return 0; }");
 }
 
 static void test_declaration_pipeline_order_boundary(
@@ -11961,6 +11993,38 @@ static void test_aggregate_member_resolution_boundary(
   ASSERT_TRUE(width20_count >= 1);
   ASSERT_TRUE(width16_count >= 1);
   ASSERT_TRUE(promoted_bitfield_count >= 1);
+
+  psx_semantic_context_t *semantic_context =
+      test_semantic_context(test_suite_session);
+  const psx_record_decl_t *atomic_bitfield_owner =
+      ps_ctx_get_record_decl_in(semantic_context, record_ids[0]);
+  ASSERT_TRUE(atomic_bitfield_owner != NULL);
+  psx_aggregate_layout_state_t atomic_bitfield_layout;
+  psx_aggregate_layout_init(
+      &atomic_bitfield_layout, atomic_bitfield_owner);
+  psx_qual_type_t atomic_bitfield_base =
+      ps_ctx_intern_integer_qual_type_in(
+          semantic_context, PSX_INTEGER_KIND_INT, 1, 0);
+  atomic_bitfield_base.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
+  psx_declarator_shape_t atomic_bitfield_shape;
+  ps_declarator_shape_init(&atomic_bitfield_shape);
+  psx_aggregate_member_declaration_resolution_t
+      atomic_bitfield_resolution;
+  psx_resolve_aggregate_member_declaration(
+      &atomic_bitfield_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = semantic_context,
+          .base_qual_type = atomic_bitfield_base,
+          .declarator_shape = &atomic_bitfield_shape,
+          .member_name = (char *)"atomic_bits",
+          .member_name_len = 11,
+          .has_bitfield = 1,
+          .bit_width = 3,
+      },
+      &atomic_bitfield_resolution);
+  ASSERT_EQ(
+      PSX_AGGREGATE_MEMBER_ATOMIC_BITFIELD_UNSUPPORTED,
+      atomic_bitfield_resolution.status);
 
   expect_parse_fail(test_suite_session,
       "struct BadWidth { int value : 33; }; "
@@ -15782,6 +15846,70 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session,
       "typedef int function_type(void); "
       "typedef function_type *restrict callback_type; "
+      "int main(void) { return 0; }");
+  expect_parse_ok(test_suite_session,
+      "typedef int function_type(void); "
+      "typedef int array_type[2]; typedef int *int_pointer; "
+      "typedef _Atomic int atomic_int; typedef const int const_int; "
+      "struct pair { int left; int right; }; "
+      "int answer(void) { return 42; } "
+      "int main(void) { int value=42; array_type values={20,22}; "
+      "_Atomic int_pointer pointer=&value; "
+      "function_type * _Atomic callback=answer; "
+      "array_type * _Atomic array_pointer=&values; "
+      "_Atomic atomic_int duplicate=7; _Atomic const_int qualified=8; "
+      "_Atomic struct pair pair; "
+      "struct qualified_bits { const unsigned int left:3; "
+      "volatile unsigned int right:4; }; "
+      "struct qualified_bits bits={5,9}; "
+      "return *pointer+callback()+(*array_pointer)[0]+"
+      "(*array_pointer)[1]+duplicate+qualified+sizeof(pair)+"
+      "bits.left+bits.right==0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int function_type(void); "
+      "_Atomic function_type function; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int function_type(void); int main(void) { "
+      "_Atomic function_type function; return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int function_type(void); "
+      "struct callbacks { _Atomic function_type callback; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int function_type(void); "
+      "int apply(_Atomic function_type callback); "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int function_type(void); "
+      "typedef _Atomic function_type atomic_function_type; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int function_type(void); "
+      "_Atomic function_type *pointer; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int array_type[2]; "
+      "_Atomic array_type values; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int array_type[2]; "
+      "_Atomic array_type *pointer; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int array_type[2]; "
+      "int main(void) { return sizeof(_Atomic array_type); }");
+  expect_parse_fail(test_suite_session,
+      "struct item; _Atomic struct item *pointer; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct flags { _Atomic unsigned int value : 3; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct flags { _Atomic(unsigned int) value : 3; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef _Atomic unsigned int atomic_uint; "
+      "struct flags { atomic_uint value : 3; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct flags { _Atomic unsigned int : 0; }; "
       "int main(void) { return 0; }");
   expect_parse_ok(test_suite_session,
       "int first(int values[1]) { return values[0]; } "

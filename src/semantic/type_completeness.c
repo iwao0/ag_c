@@ -207,3 +207,49 @@ int psx_semantic_pointer_points_to_complete_object_in(
   return psx_semantic_type_is_complete_object_in(
       semantic_context, pointee.type_id);
 }
+
+static int semantic_type_has_invalid_atomic_qualification(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t type, int depth) {
+  if (!semantic_context || type.type_id == PSX_TYPE_ID_INVALID ||
+      depth > 128)
+    return 1;
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          types, type.type_id, &shape))
+    return 1;
+  if ((type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0 &&
+      (shape.kind == PSX_TYPE_ARRAY ||
+       !psx_semantic_type_is_complete_object_in(
+           semantic_context, type.type_id)))
+    return 1;
+  if (shape.kind == PSX_TYPE_POINTER ||
+      shape.kind == PSX_TYPE_ARRAY ||
+      shape.kind == PSX_TYPE_FUNCTION) {
+    psx_qual_type_t base =
+        psx_semantic_type_table_base(types, type.type_id);
+    if (semantic_type_has_invalid_atomic_qualification(
+            semantic_context, base, depth + 1))
+      return 1;
+  }
+  if (shape.kind == PSX_TYPE_FUNCTION) {
+    for (int i = 0; i < shape.parameter_count; i++) {
+      psx_qual_type_t parameter =
+          psx_semantic_type_table_parameter(
+              types, type.type_id, i);
+      if (semantic_type_has_invalid_atomic_qualification(
+              semantic_context, parameter, depth + 1))
+        return 1;
+    }
+  }
+  return 0;
+}
+
+int psx_semantic_type_has_invalid_atomic_qualification_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t type) {
+  return semantic_type_has_invalid_atomic_qualification(
+      semantic_context, type, 0);
+}

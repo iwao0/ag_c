@@ -196,6 +196,8 @@ static void begin_declarator(
           .is_extern_decl = declaration->is_extern,
           .is_static = declaration->is_static,
           .is_thread_local = declaration->is_thread_local,
+          .has_alignment_specifier =
+              declaration->specifier.alignas_specifier_count > 0,
           .requested_alignment = application->requested_alignment,
           .initializer = &application->current_initializer,
           .diag_tok = declarator->diagnostic_token,
