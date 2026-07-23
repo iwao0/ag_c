@@ -228,6 +228,16 @@ psx_qual_type_t psx_apply_parsed_type_name_qual_type_in_contexts(
           .declarator_shape = &shape,
       });
   if (resolved.type_id != PSX_TYPE_ID_INVALID &&
+      psx_semantic_type_has_incomplete_array_element_in(
+          semantic_context, resolved.type_id)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        type_name->diagnostic_token, "type-name",
+        "an array element type must be a complete object type");
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  }
+  if (resolved.type_id != PSX_TYPE_ID_INVALID &&
       psx_semantic_type_has_flexible_array_element_in(
           semantic_context, resolved.type_id)) {
     ps_diag_ctx_in(
@@ -582,6 +592,14 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
           ps_ctx_semantic_type_table_in(semantic_context),
           declared_type.type_id, &shape))
     return 0;
+  if (psx_semantic_type_has_incomplete_array_element_in(
+          semantic_context, declared_type.type_id)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "an array element type must be a complete object type");
+    return 0;
+  }
   if (psx_semantic_type_has_flexible_array_element_in(
           semantic_context, declared_type.type_id)) {
     ps_diag_ctx_in(

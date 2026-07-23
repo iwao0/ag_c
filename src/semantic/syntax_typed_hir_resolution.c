@@ -44,6 +44,7 @@
 #include "semantic_node_builder.h"
 #include "source_cast_type_resolution.h"
 #include "static_assert_resolution.h"
+#include "type_completeness.h"
 #include "type_name_resolution.h"
 #include "type_query_semantics.h"
 #include "typed_hir_tree_internal.h"
@@ -1078,6 +1079,12 @@ static int validate_direct_type_query_type(
   if (is_sizeof && shape.kind == PSX_TYPE_VOID)
     return 1;
   if (shape.kind == PSX_TYPE_VOID || shape.kind == PSX_TYPE_FUNCTION)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+        source);
+  if (psx_semantic_type_has_incomplete_array_element_in(
+          context->semantic_context, queried_qual_type.type_id))
     return note_direct_semantic_rejection(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,

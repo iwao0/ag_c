@@ -8927,11 +8927,42 @@ if (!/semantic_record_contains_flexible_array_member\s*\([^]*?record->member_cou
     !/psx_resolve_parameter_declaration\s*\([^]*?psx_semantic_type_has_flexible_array_element_in\s*\(\s*request->type\.semantic_context,\s*identity\.type_id\s*\)[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(
       parameterDeclarationResolutionSource,
     ) ||
+    !/semantic_type_has_incomplete_array_element\s*\([^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?!psx_semantic_type_is_complete_object_in\s*\(\s*semantic_context,\s*element\.type_id\s*\)[^]*?shape\.kind\s*==\s*PSX_TYPE_POINTER[^]*?shape\.kind\s*==\s*PSX_TYPE_FUNCTION/.test(
+      typeCompletenessSource,
+    ) ||
+    !/psx_resolve_parameter_declaration\s*\([^]*?psx_semantic_type_has_incomplete_array_element_in\s*\(\s*request->type\.semantic_context,\s*identity\.type_id\s*\)/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?psx_semantic_type_has_incomplete_array_element_in\s*\(\s*semantic_context,\s*declared_type\.type_id\s*\)/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?psx_semantic_type_has_incomplete_array_element_in\s*\(\s*semantic_context,\s*resolved\.type_id\s*\)/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/psx_resolve_aggregate_member_declaration\s*\([^]*?psx_semantic_type_has_incomplete_array_element_in\s*\(\s*semantic_context,\s*identity\.type_id\s*\)[^]*?PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/validate_direct_type_query_type\s*\([^]*?psx_semantic_type_has_incomplete_array_element_in\s*\(\s*context->semantic_context,\s*queried_qual_type\.type_id\s*\)[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/resolve_definition_parameter\s*\([^]*?first_inner_array_op_index\s*=\s*op_index[^]*?op->is_incomplete_array\s*\)\s*continue[^]*?parameter_bound_for_op/.test(
+      declarationPipelineSource,
+    ) ||
     !/canonical_member_flat_slot_count\s*\([^]*?member_shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?member_shape\.array_len\s*<=\s*0\s*\)\s*return\s+0/.test(
       initializerResolutionSource,
     )) {
   throw new Error(
     "flexible array constraints must follow RecordDecl containment and flexible members must contribute zero initializer slots",
+  );
+}
+if (!/int\s+op_index\s*=\s*declarator->declarator_shape\.count[^]*?parse_context->allow_vla_star\s*&&\s*op_index\s*>\s*0[^]*?has_static\s*\|\|\s*is_const\s*\|\|\s*is_volatile\s*\|\|\s*is_restrict\s*\|\|\s*is_atomic/.test(
+      parserDeclarationSyntaxSource,
+    ) ||
+    !/current_token\(runtime_context\)->kind\s*==\s*TK_STATIC[^]*?if\s*\(has_static\)[^]*?has_static\s*=\s*1/.test(
+      parserDeclarationSyntaxSource,
+    )) {
+  throw new Error(
+    "array parameter qualifiers and static must be restricted to the outermost array type derivation and static must not repeat",
   );
 }
 if (!/static\s+int\s+flat_initializer_next_active_cursor\s*\([^]*?!context->plan->items\[cursor\]\.is_active[^]*?cursor\+\+/.test(

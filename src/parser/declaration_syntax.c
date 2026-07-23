@@ -396,6 +396,7 @@ static int consume_declarator_suffix(
       parse_context->runtime_context;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   if (current_token(runtime_context)->kind == TK_LBRACKET) {
+    int op_index = declarator->declarator_shape.count;
     tk_expect_ctx(tk_ctx, '[');
     int has_static = 0;
     int is_const = 0;
@@ -404,6 +405,13 @@ static int consume_declarator_suffix(
     int is_atomic = 0;
     for (;;) {
       if (current_token(runtime_context)->kind == TK_STATIC) {
+        if (has_static) {
+          ps_diag_ctx_in(
+              diagnostics(runtime_context),
+              current_token(runtime_context),
+              "declaration-syntax",
+              "'static' may appear only once in an array parameter");
+        }
         has_static = 1;
       } else if (current_token(runtime_context)->kind == TK_CONST) {
         is_const = 1;
@@ -426,6 +434,15 @@ static int consume_declarator_suffix(
           diagnostics(runtime_context), current_token(runtime_context),
           "declaration-syntax",
           "array qualifiers and 'static' require a function parameter declarator");
+    }
+    if (parse_context->allow_vla_star && op_index > 0 &&
+        (has_static || is_const || is_volatile || is_restrict ||
+         is_atomic)) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context), current_token(runtime_context),
+          "declaration-syntax",
+          "array qualifiers and 'static' are only permitted in the "
+          "outermost array type derivation of a function parameter");
     }
     if (has_static &&
         (current_token(runtime_context)->kind == TK_RBRACKET ||
@@ -457,7 +474,6 @@ static int consume_declarator_suffix(
       tk_set_current_token_ctx(tk_ctx, expression_end);
     }
     tk_expect_ctx(tk_ctx, ']');
-    int op_index = declarator->declarator_shape.count;
     int appended = has_vla_star
         ? ps_declarator_shape_append_vla_array_in(
               ps_parser_runtime_arena(parse_context->runtime_context),

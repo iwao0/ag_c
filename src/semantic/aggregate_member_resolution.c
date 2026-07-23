@@ -422,6 +422,11 @@ void psx_resolve_aggregate_member_declaration(
   int is_flexible_array =
       type_shape.kind == PSX_TYPE_ARRAY &&
       !type_shape.is_vla && type_shape.array_len <= 0;
+  if (psx_semantic_type_has_incomplete_array_element_in(
+          semantic_context, identity.type_id)) {
+    resolution->status = PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE;
+    return;
+  }
   if (is_flexible_array) {
     if (layout->record_kind == PSX_TYPE_UNION) {
       resolution->status =

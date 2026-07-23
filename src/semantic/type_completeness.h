@@ -21,4 +21,8 @@ int psx_semantic_type_has_flexible_array_element_in(
     psx_semantic_context_t *semantic_context,
     psx_type_id_t type_id);
 
+int psx_semantic_type_has_incomplete_array_element_in(
+    psx_semantic_context_t *semantic_context,
+    psx_type_id_t type_id);
+
 #endif

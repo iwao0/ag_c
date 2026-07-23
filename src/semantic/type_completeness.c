@@ -112,6 +112,56 @@ int psx_semantic_type_has_flexible_array_element_in(
       semantic_context, type_id, 0);
 }
 
+static int semantic_type_has_incomplete_array_element(
+    psx_semantic_context_t *semantic_context,
+    psx_type_id_t type_id, int depth) {
+  if (!semantic_context || type_id == PSX_TYPE_ID_INVALID ||
+      depth > 128)
+    return 0;
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(types, type_id, &shape))
+    return 0;
+  if (shape.kind == PSX_TYPE_ARRAY) {
+    psx_qual_type_t element =
+        psx_semantic_type_table_base(types, type_id);
+    if (!psx_semantic_type_is_complete_object_in(
+            semantic_context, element.type_id))
+      return 1;
+    return semantic_type_has_incomplete_array_element(
+        semantic_context, element.type_id, depth + 1);
+  }
+  if (shape.kind == PSX_TYPE_POINTER) {
+    psx_qual_type_t pointee =
+        psx_semantic_type_table_base(types, type_id);
+    return semantic_type_has_incomplete_array_element(
+        semantic_context, pointee.type_id, depth + 1);
+  }
+  if (shape.kind == PSX_TYPE_FUNCTION) {
+    psx_qual_type_t return_type =
+        psx_semantic_type_table_base(types, type_id);
+    if (semantic_type_has_incomplete_array_element(
+            semantic_context, return_type.type_id, depth + 1))
+      return 1;
+    for (int i = 0; i < shape.parameter_count; i++) {
+      psx_qual_type_t parameter =
+          psx_semantic_type_table_parameter(types, type_id, i);
+      if (semantic_type_has_incomplete_array_element(
+              semantic_context, parameter.type_id, depth + 1))
+        return 1;
+    }
+  }
+  return 0;
+}
+
+int psx_semantic_type_has_incomplete_array_element_in(
+    psx_semantic_context_t *semantic_context,
+    psx_type_id_t type_id) {
+  return semantic_type_has_incomplete_array_element(
+      semantic_context, type_id, 0);
+}
+
 int psx_semantic_type_is_complete_object_in(
     psx_semantic_context_t *semantic_context,
     psx_type_id_t type_id) {

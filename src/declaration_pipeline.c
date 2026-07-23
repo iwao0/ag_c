@@ -562,10 +562,13 @@ static int resolve_definition_parameter(
   int saw_array = 0;
   int first_inner_array_op_index = -1;
   for (int op_index = 0; op_index < application->shape.count; op_index++) {
-    if (application->shape.ops[op_index].kind != PSX_DECL_OP_ARRAY) continue;
+    const psx_declarator_op_t *op =
+        &application->shape.ops[op_index];
+    if (op->kind != PSX_DECL_OP_ARRAY) continue;
     if (skip_outer_array && saw_array++ == 0) continue;
     if (first_inner_array_op_index < 0)
       first_inner_array_op_index = op_index;
+    if (op->is_incomplete_array) continue;
     const psx_runtime_array_bound_t *bound =
         parameter_bound_for_op(application, op_index);
     psx_parameter_dimension_t *dimension =

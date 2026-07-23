@@ -7959,6 +7959,18 @@ static void test_direct_function_typed_hir_resolution_boundary(
       "int (**known)[3] = &known_row; "
       "return sizeof **(choose ? unknown : known); }");
   assert_direct_function_resolution(test_suite_session,
+      "int __direct_incomplete_array_pointer_parameter("
+      "int (**pointer)[]) { return (**pointer)[2]; }");
+  assert_direct_function_resolution(test_suite_session,
+      "int __direct_adjusted_incomplete_array_parameter("
+      "int (*pointers[])[]) { return (*pointers[0])[1]; }");
+  assert_direct_function_resolution(test_suite_session,
+      "int __direct_outer_const_array_parameter("
+      "int values[const 3]) { return values[0]; }");
+  assert_direct_function_resolution(test_suite_session,
+      "int __direct_outer_atomic_array_parameter("
+      "int values[_Atomic 3]) { return values[2]; }");
+  assert_direct_function_resolution(test_suite_session,
       "int __direct_first_level_pointer_qualifier_addition("
       "int **source) { int * const *target = source; "
       "return **target; }");
