@@ -8,6 +8,7 @@
 #define SIGSEGV 11
 #define SIGTERM 15
 
+typedef int sig_atomic_t;
 typedef void (*sig_handler_t)(int);
 
 #define SIG_DFL ((sig_handler_t)0)

@@ -752,6 +752,11 @@ static const test_case_t test_cases[] = {
     {"probes", "inttypes_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_function_pointer_abi_boundaries.c", 0, 0},
     {"probes", "aggregate_return_register_width_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_return_register_width_boundaries.c", 0, 0},
     {"probes", "fenv_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fenv_function_pointer_boundaries.c", 0, 0},
+    {"probes", "signal_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/signal_function_pointer_boundaries.c", 0, 0},
+    {"probes", "stdlib_algorithm_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_algorithm_function_pointer_boundaries.c", 0, 0},
+    {"probes", "stdlib_integer_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_integer_function_pointer_abi_boundaries.c", 0, 0},
+    {"probes", "stdlib_conversion_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_conversion_function_pointer_boundaries.c", 0, 0},
+    {"probes", "math_output_pointer_function_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/math_output_pointer_function_boundaries.c", 0, 0},
     {"stdheader", "stdlib_strto_float", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_float.c", 0, 0},
     {"stdheader", "stdlib_env_system", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_env_system.c", 0, 0},
     {"stdheader", "stdlib_realpath", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_realpath.c", 0, 0},
@@ -3006,6 +3011,8 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_sscanf") == 0 || strcmp(sym, "_vsscanf") == 0 ||
             strcmp(sym, "_va_start") == 0 || strcmp(sym, "_va_end") == 0 ||
             strcmp(sym, "_abs") == 0 || strcmp(sym, "_labs") == 0 ||
+            strcmp(sym, "_llabs") == 0 || strcmp(sym, "_div") == 0 ||
+            strcmp(sym, "_ldiv") == 0 || strcmp(sym, "_lldiv") == 0 ||
             strcmp(sym, "_rand") == 0 || strcmp(sym, "_srand") == 0 ||
             strcmp(sym, "_qsort") == 0 || strcmp(sym, "_bsearch") == 0 ||
             strcmp(sym, "_atexit") == 0 || strcmp(sym, "_at_quick_exit") == 0 ||
