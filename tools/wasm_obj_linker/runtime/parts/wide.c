@@ -703,11 +703,13 @@ long __agc_runtime_mbsrtowcs(long dst_addr, long srcp_addr, long len, long ps_ad
     count++;
     pos += r;
   }
-  if (src[pos] == 0) {
-    if (dst && count < len) dst[count] = 0;
-    *srcp = 0;
-  } else if (dst) {
-    *srcp = src + pos;
+  if (dst) {
+    if (src[pos] == 0 && count < len) {
+      dst[count] = 0;
+      *srcp = 0;
+    } else {
+      *srcp = src + pos;
+    }
   }
   return count;
 }
@@ -737,9 +739,13 @@ long __agc_runtime_wcsrtombs(long dst_addr, long srcp_addr, long len, long ps_ad
     bytes += r;
     count++;
   }
-  if (dst && bytes < len) dst[bytes] = 0;
-  if (!dst || bytes < len) {
-    *srcp = 0;
+  if (dst) {
+    if (src[count] == 0 && bytes < len) {
+      dst[bytes] = 0;
+      *srcp = 0;
+    } else {
+      *srcp = src + count;
+    }
   }
   return bytes;
 }
