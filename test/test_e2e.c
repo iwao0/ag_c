@@ -1487,6 +1487,8 @@ static const test_case_t test_cases[] = {
     {"probes", "stdatomic_typedef_order_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdatomic_typedef_order_boundaries.c", 0, 0},
     {"probes", "atomic_qualified_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_qualified_layout.c", 0, 0},
     {"probes", "atomic_float_complex_value_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_float_complex_value_boundaries.c", 0, 0},
+    {"probes", "atomic_wide_complex_value_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_wide_complex_value_boundaries.c", 0, 0},
+    {"probes", "atomic_aggregate_value_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_aggregate_value_boundaries.c", 0, 0},
     {"probes", "atomic_aggregate_member_array_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_aggregate_member_array_layout.c", 0, 0},
     {"probes", "atomic_union_member_array_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_union_member_array_layout.c", 0, 0},
     {"probes", "union_padded_struct_initializer_offsets", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/union_padded_struct_initializer_offsets.c", 0, 0},

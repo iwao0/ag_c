@@ -145,6 +145,14 @@ ir_val_t hir_ir_materialize_complex_operand(
     ir_mir_type_info_t target_type);
 ir_val_t hir_ir_aggregate_value_address(
     hir_ir_context_t *context, const psx_hir_node_t *node);
+int hir_ir_atomic_object_storage_width(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t type);
+ir_val_t hir_ir_load_atomic_object_value(
+    hir_ir_context_t *context, ir_val_t pointer, int width);
+int hir_ir_store_atomic_object_value(
+    hir_ir_context_t *context, ir_val_t pointer, ir_val_t value,
+    int value_size, int width);
 ir_val_t hir_ir_coerce_direct_value_to_qual_type(
     hir_ir_context_t *context, ir_val_t value,
     ir_mir_type_info_t source, ir_mir_type_info_t target,

@@ -2728,7 +2728,7 @@ if (!directProgramHirHelper ||
     /compatibility|psx_test_frontend_next_function/.test(
       directProgramHirHelper[1],
     ) ||
-    directProgramHirTests.length !== 36) {
+    directProgramHirTests.length !== 38) {
   throw new Error(
     "Typed HIR program tests must enter through the production frontend",
   );

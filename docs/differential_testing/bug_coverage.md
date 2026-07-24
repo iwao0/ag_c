@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-24（wide formatted I/O境界まで）
+最終更新: 2026-07-25（atomic aggregate値境界まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -306,6 +306,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | `restrict` 修飾ポインタ（値の正しさ） | ✅ | call_conversion_qualifier_boundaries | `restrict`付きdestination/source parameterによる配列更新をnative/Wasmで固定 |
 | `_Atomic` キーワード（`_Atomic int`/`long` の値） | ✅ | call_conversion_qualifier_boundaries, stdheader/stdatomic_ops | `_Atomic int`/`long`のload/store・compound assignment・incrementと標準atomic APIを固定 |
 | 8-byte `_Atomic(float complex)`の値load/store・compound境界 | 🔧 | atomic_float_complex_value_boundaries, test_typed_hir_atomic_complex_lowering_without_ast | atomic-qualified complex lvalueを通常complexと同じaddressとして返していたため、実部・虚部を別々の`ldr/str`で読み書きし、8-byte objectとしてのatomic性を失っていた。float complex全体をI64 bit列としてIR_ATOMIC load/storeし、一時領域との変換後に通常のcomplex loweringへ渡す。compound assignmentは右辺を1回だけ評価し、旧値全体のloadから複素演算、I64 CASまでをretry loopにする。global/local、atomic同士の代入、代入式と`+=`/`*=`の値をnative/WAT/objectで実行し、IR unit testで8-byte atomic load/store/CAS命令数を固定する。16-byte double complexは単一word経路へ混入させない |
+| 16-byte `_Atomic(double/long double complex)`の値load/store境界 | 🔧 | atomic_wide_complex_value_boundaries, test_typed_hir_atomic_wide_complex_lowering_without_ast | double/long double complexのatomic lvalueも通常の2成分load/storeになっていた。Apple ARM64では16-byte aggregateと同じpair atomic storage経路へ統合し、aligned `LDP/STP` + `dmb ish`で値全体を読み書きする。global/local、pointer・配列、atomic同士の代入、代入式の値、関数return、lhs/rhs単一評価をnative/WAT/objectで固定する。16-byte complex compound assignmentは128-bit CASを必要とするため別境界として維持する |
+| 1/2/4/8/16-byte `_Atomic(struct/union)`の値load/store境界 | 🔧 | atomic_aggregate_value_boundaries, test_typed_hir_atomic_aggregate_lowering_without_ast | atomic-qualified aggregate lvalueを通常aggregateのaddressとして返し、代入も`IR_MEMCPY`だったため、値load/storeが分割された通常memory accessになっていた。qualified `DataLayout`からatomic storage幅を求め、1/2/4/8-byte object全体を単一`IR_ATOMIC` load/storeで一時領域と往復する。Apple ARM64の16-byte objectはClangのi128 seq_cst loweringと同じaligned `LDP/STP` + `dmb ish`を用い、12-byte recordも16-byte一時領域へpaddingする。Wasm32は128-bit atomic命令を持たない単一thread backendのため既存copy contractを維持する。struct/union、global/local、member・配列・pointer dereference、代入式の値とlhs/rhs単一評価をnative/WAT/objectで固定する |
 | 同梱 `<stdatomic.h>` | 🔧 | stdheader/stdatomic_ops | **本物の LSE アトミックに更新済** (浮動小数の節「本物の <stdatomic.h>」行を参照)。旧・単一スレッド退化版から置き換え、fetch 系は規格通り旧値返却 |
 | `stdatomic.h` typedef identity・explicit引数評価 | 🔧 | stdatomic_typedef_order_boundaries | `atomic_char16_t`/`atomic_char32_t`を誤ってsigned `int`へ、Wasmの`atomic_intmax_t`/`atomic_uintmax_t`を`long`へ固定していた定義を、それぞれ`uint_least16_t`/`uint_least32_t`/target別`intmax_t`へ同期する。全`_explicit`操作・flag・fenceが無視していた`memory_order`式を各1回評価するgeneric関数契約と`kill_dependency`の単一評価をnative/WAT/objectで固定する |
 | ワイド文字/文字列リテラル `L'A'` `L"hi"[i]` | ✅ | literal_vla_boundaries, wide_string_literal_init | wide characterとwide string subscript・終端、UTF-16/32配列初期化を正式fixture化 |

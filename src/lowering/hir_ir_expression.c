@@ -18,12 +18,6 @@ static ir_val_t build_string_reference(
 static int node_has_atomic_qualifier(const psx_hir_node_t *node);
 static int atomic_complex_uses_single_word(
     ir_mir_type_info_t value_type);
-static ir_val_t load_atomic_complex_value(
-    hir_ir_context_t *context, ir_val_t pointer,
-    ir_mir_type_info_t value_type);
-static int store_atomic_complex_value(
-    hir_ir_context_t *context, ir_val_t pointer, ir_val_t value,
-    ir_mir_type_info_t value_type);
 static ir_val_t build_atomic_complex_compound_assignment(
     hir_ir_context_t *context, ir_val_t pointer,
     const psx_hir_node_t *rhs_node,
@@ -328,13 +322,15 @@ static ir_val_t build_complex_assignment(
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   ir_mir_type_info_t source_type = hir_ir_classify_node_type(
       context, source_node);
-  if (node_has_atomic_qualifier(target) &&
-      atomic_complex_uses_single_word(target_type)) {
+  int atomic_width = hir_ir_atomic_object_storage_width(
+      context, target, target_type);
+  if (atomic_width != 0) {
     ir_val_t source = hir_ir_materialize_complex_operand(
         context, source_node, target_type);
     if (context->status != IR_HIR_BUILD_OK || source.type != IR_TY_PTR ||
-        !store_atomic_complex_value(
-            context, destination, source, target_type))
+        !hir_ir_store_atomic_object_value(
+            context, destination, source,
+            target_type.source_size, atomic_width))
       return ir_val_none();
     return source;
   }
@@ -1712,43 +1708,6 @@ static int atomic_complex_uses_single_word(
          value_type.source_size == 8;
 }
 
-static ir_val_t load_atomic_complex_value(
-    hir_ir_context_t *context, ir_val_t pointer,
-    ir_mir_type_info_t value_type) {
-  if (pointer.type != IR_TY_PTR ||
-      !atomic_complex_uses_single_word(value_type))
-    return hir_ir_unsupported_expr(context);
-  int slot = hir_ir_allocate_scalar_temp(context, 8, 8);
-  if (slot < 0) return ir_val_none();
-  ir_val_t bits = emit_atomic_load_value(context, pointer, 8, 1);
-  if (context->status != IR_HIR_BUILD_OK ||
-      !store_scalar_temp(context, slot, bits))
-    return ir_val_none();
-  return ir_val_vreg(slot, IR_TY_PTR);
-}
-
-static int store_atomic_complex_value(
-    hir_ir_context_t *context, ir_val_t pointer, ir_val_t value,
-    ir_mir_type_info_t value_type) {
-  if (pointer.type != IR_TY_PTR || value.type != IR_TY_PTR ||
-      !atomic_complex_uses_single_word(value_type)) {
-    (void)hir_ir_unsupported_expr(context);
-    return 0;
-  }
-  ir_val_t bits = load_direct_value(context, value, IR_TY_I64);
-  if (context->status != IR_HIR_BUILD_OK) return 0;
-  ir_inst_t *atomic = ir_inst_new(IR_ATOMIC);
-  if (!atomic) {
-    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-    return 0;
-  }
-  atomic->atomic_kind = IR_ATOMIC_STORE;
-  atomic->atomic_width = 8;
-  atomic->src1 = pointer;
-  atomic->src2 = bits;
-  return hir_ir_append_instruction(context, atomic);
-}
-
 static ir_val_t build_atomic_complex_compound_assignment(
     hir_ir_context_t *context, ir_val_t pointer,
     const psx_hir_node_t *rhs_node,
@@ -2647,9 +2606,11 @@ ir_val_t hir_ir_build_expr(
     if (hir_ir_node_is_lvalue(node)) {
       ir_val_t pointer = hir_ir_lvalue_address(context, node);
       if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-      return node_has_atomic_qualifier(node) &&
-                     atomic_complex_uses_single_word(type)
-                 ? load_atomic_complex_value(context, pointer, type)
+      int atomic_width = hir_ir_atomic_object_storage_width(
+          context, node, type);
+      return atomic_width != 0
+                 ? hir_ir_load_atomic_object_value(
+                       context, pointer, atomic_width)
                  : pointer;
     }
     if (kind == PSX_HIR_CALL)

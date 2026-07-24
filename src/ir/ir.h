@@ -130,7 +130,9 @@ typedef enum {
   IR_VLA_ALLOC,
 
   /* C11 アトミック操作 (Apple ARM64 LSE 命令 / バリアにマップ)。
-   * atomic_width = 1/2/4/8 (操作幅)。atomic_kind = 下記 IR_ATOMIC_* のいずれか。
+   * atomic_width = 1/2/4/8/16 (操作幅)。atomic_kind = 下記
+   * IR_ATOMIC_* のいずれか。16-byte load/store は scalar IR 型を持たないため、
+   * src2 をそれぞれ出力先/入力元の16-byte storage pointerとして使う。
    *  - IR_ATOMIC_LOAD:  dst = *src1 (LDAR)。
    *  - IR_ATOMIC_STORE: *src1 = src2 (STLR)。
    *  - IR_ATOMIC_RMW:   dst = old(*src1); *src1 op= src2 (LDADDAL/LDSETAL/...)。
@@ -276,7 +278,7 @@ typedef struct ir_inst_t {
     struct {            /* IR_ATOMIC */
       unsigned char atomic_kind;   /* ir_atomic_kind_t */
       unsigned char atomic_rmw_op; /* ir_atomic_rmw_op_t (RMW のとき) */
-      unsigned char atomic_width;  /* 1/2/4/8 バイト */
+      unsigned char atomic_width;  /* 1/2/4/8/16 バイト */
     };
   };
 } ir_inst_t;

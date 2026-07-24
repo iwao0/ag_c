@@ -1382,13 +1382,12 @@ static void atomic_store_result(gen_ctx_t *ctx, ir_val_t dst, const char *RL) {
 
 /* C11 アトミック操作を Apple ARM64 の LSE 命令 + バリアで生成する。
  * 全操作を seq_cst 強度 (ldar/stlr/ld...al/swpal/casal/dmb ish) で出す
- * (規格上、要求より強い順序付けは常に安全)。scratch は x9..x14 (regalloc は
- * x19..x28 のみ使うので衝突しない)。幅は 1/2/4/8 バイト。 */
+ * (規格上、要求より強い順序付けは常に安全)。16-byte load/store は
+ * Apple ARM64 の aligned pair single-copy contract に従い LDP/STP +
+ * dmb ish で出す。scratch は x9..x14 (regalloc は x19..x28 のみ使うので
+ * 衝突しない)。幅は 1/2/4/8/16 バイト。 */
 static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
   int w = inst->atomic_width ? inst->atomic_width : 4;
-  const char *wsfx = (w == 1) ? "b" : (w == 2) ? "h" : "";  /* 命令の幅サフィックス */
-  int x64 = (w == 8);
-  const char *RL = x64 ? "x" : "w";  /* データレジスタの幅レター */
   char buf[8];
 
   if (inst->atomic_kind == IR_ATOMIC_FENCE) {
@@ -1399,6 +1398,35 @@ static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
   /* ptr を x9 に。 */
   const char *p = ensure_val_in(ctx, inst->src1, "x9", buf, sizeof(buf));
   if (strcmp(p, "x9") != 0) arm64_cg_emitf(ctx, "  mov x9, %s\n", p);
+
+  if (w == 16) {
+    char bpair[8];
+    if (inst->atomic_kind == IR_ATOMIC_LOAD) {
+      const char *destination =
+          ensure_val_in(ctx, inst->src2, "x10", bpair, sizeof(bpair));
+      if (strcmp(destination, "x10") != 0)
+        arm64_cg_emitf(ctx, "  mov x10, %s\n", destination);
+      arm64_cg_emitf(ctx, "  ldp x11, x12, [x9]\n");
+      arm64_cg_emitf(ctx, "  dmb ish\n");
+      arm64_cg_emitf(ctx, "  stp x11, x12, [x10]\n");
+      return;
+    }
+    if (inst->atomic_kind == IR_ATOMIC_STORE) {
+      const char *source =
+          ensure_val_in(ctx, inst->src2, "x10", bpair, sizeof(bpair));
+      if (strcmp(source, "x10") != 0)
+        arm64_cg_emitf(ctx, "  mov x10, %s\n", source);
+      arm64_cg_emitf(ctx, "  ldp x11, x12, [x10]\n");
+      arm64_cg_emitf(ctx, "  dmb ish\n");
+      arm64_cg_emitf(ctx, "  stp x11, x12, [x9]\n");
+      arm64_cg_emitf(ctx, "  dmb ish\n");
+      return;
+    }
+  }
+
+  const char *wsfx = (w == 1) ? "b" : (w == 2) ? "h" : "";  /* 命令の幅サフィックス */
+  int x64 = (w == 8);
+  const char *RL = x64 ? "x" : "w";  /* データレジスタの幅レター */
 
   if (inst->atomic_kind == IR_ATOMIC_LOAD) {
     arm64_cg_emitf(ctx, "  ldar%s %s11, [x9]\n", wsfx, RL);
