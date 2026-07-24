@@ -7,11 +7,14 @@
  * stderr 出力)。従来は abort() のみで診断を書き出しておらず C11 非適合だった。 */
 void __assert_rtn(const char *, const char *, int, const char *);
 
+#define static_assert _Static_assert
+
+#endif
+
+#undef assert
 #ifdef NDEBUG
 #define assert(expr) ((void)0)
 #else
 #define assert(expr) \
   ((expr) ? (void)0 : __assert_rtn(__func__, __FILE__, __LINE__, #expr))
-#endif
-
 #endif

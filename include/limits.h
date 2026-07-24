@@ -3,6 +3,12 @@
 
 #define CHAR_BIT   8
 
+#ifdef __wasm32__
+#define MB_LEN_MAX 4
+#else
+#define MB_LEN_MAX 6
+#endif
+
 #define SCHAR_MIN  (-128)
 #define SCHAR_MAX  127
 #define UCHAR_MAX  255

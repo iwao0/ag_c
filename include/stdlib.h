@@ -6,6 +6,14 @@
 #define NULL ((void *)0)
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
+#ifdef __wasm32__
+#define RAND_MAX 32767
+#define MB_CUR_MAX 4
+#else
+#define RAND_MAX 0x7fffffff
+extern int __mb_cur_max;
+#define MB_CUR_MAX __mb_cur_max
+#endif
 
 typedef struct { int quot; int rem; } div_t;
 typedef struct { long quot; long rem; } ldiv_t;

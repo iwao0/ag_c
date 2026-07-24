@@ -752,12 +752,8 @@ static int write_transformed_source(const wasm_e2e_case_t *tc, const char *out_p
     fprintf(stderr, "FAIL: create %s\n", out_path);
     return 1;
   }
-  fprintf(out, "#define assert(expr) do { if (!(expr)) return 100; } while (0)\n");
   char line[4096];
   while (fgets(line, sizeof(line), in)) {
-    char *p = line;
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p == '#' && strstr(p, "include") && strstr(p, "assert.h")) continue;
     fputs(line, out);
   }
   fclose(in);
@@ -850,7 +846,6 @@ static int write_link2_wrapper_source(const wasm_link2_case_t *tc, const char *c
     fprintf(stderr, "FAIL: create %s\n", out_path);
     return 1;
   }
-  fprintf(out, "#define assert(expr) do { if (!(expr)) return 100; } while (0)\n");
   fprintf(out, "#define s __ag_%s_other_s\n", case_id);
   fprintf(out, "#define base __ag_%s_other_base\n", case_id);
   if (tc->rename_other_symbol) {

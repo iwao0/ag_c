@@ -24,13 +24,19 @@ typedef long long fpos_t;
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
-#define BUFSIZ 8192
 #ifdef __wasm32__
+#define BUFSIZ 8192
+#define FOPEN_MAX 11
+#define FILENAME_MAX 64
 #define L_tmpnam 32
-#else
-#define L_tmpnam 1024
-#endif
 #define TMP_MAX 10000
+#else
+#define BUFSIZ 1024
+#define FOPEN_MAX 20
+#define FILENAME_MAX 1024
+#define L_tmpnam 1024
+#define TMP_MAX 308915776
+#endif
 #define _IOFBF 0
 #define _IOLBF 1
 #define _IONBF 2
