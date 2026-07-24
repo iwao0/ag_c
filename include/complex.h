@@ -21,6 +21,13 @@
 #define _Imaginary_I ((double _Complex){0.0, 1.0})
 #define I            _Complex_I
 
+/* C11 7.3.9.3: real/imaginary parts are converted independently, so both
+ * arguments are evaluated exactly once and infinite components do not pass
+ * through arithmetic such as x + y * I. */
+#define CMPLX(x, y)  ((double _Complex){(double)(x), (double)(y)})
+#define CMPLXF(x, y) ((float _Complex){(float)(x), (float)(y)})
+#define CMPLXL(x, y) ((long double _Complex){(long double)(x), (long double)(y)})
+
 /* 実部・虚部の取り出し。__real__/__imag__ は任意の複素数式に効く
  * (実数オペランドでは __real__ x = x, __imag__ x = 0)。 */
 #define creal(z)  (__real__ (z))

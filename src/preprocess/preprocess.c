@@ -1052,6 +1052,28 @@ static token_t *make_int_token(
   return (token_t *)t;
 }
 
+static token_t *make_float_token(
+    ag_preprocessor_context_t *context, const char *spelling,
+    double value, tk_float_kind_t fp_kind,
+    tk_float_suffix_kind_t suffix_kind, token_t *ref) {
+  int slen = (int)strlen(spelling);
+  token_num_float_t *t = tk_allocator_calloc_in(
+      pp_token_allocator(context), 1, sizeof(token_num_float_t));
+  t->base.pp.base.kind = TK_NUM;
+  if (ref) {
+    copy_source_location(&t->base.pp.base, ref);
+    t->base.pp.base.at_bol = ref->at_bol;
+    t->base.pp.base.has_space = ref->has_space;
+  }
+  t->base.str = my_strndup(spelling, (size_t)slen);
+  t->base.len = slen;
+  t->base.num_kind = TK_NUM_KIND_FLOAT;
+  t->fval = value;
+  t->fp_kind = fp_kind;
+  t->float_suffix_kind = suffix_kind;
+  return (token_t *)t;
+}
+
 static token_t *make_string_token(
     ag_preprocessor_context_t *context, const char *s, token_t *ref) {
   int slen = (int)strlen(s);
@@ -1077,6 +1099,16 @@ static void add_int_macro(
             tok, NULL);
 }
 
+static void add_float_macro(
+    ag_preprocessor_context_t *context, const char *name,
+    double value, tk_float_kind_t fp_kind,
+    tk_float_suffix_kind_t suffix_kind) {
+  token_t *tok = make_float_token(
+      context, name, value, fp_kind, suffix_kind, NULL);
+  add_macro(context, my_strndup(name, strlen(name)), false, false, NULL, 0,
+            tok, NULL);
+}
+
 static void add_string_macro(
     ag_preprocessor_context_t *context, const char *name, const char *s) {
   token_t *tok = make_string_token(context, s, NULL);
@@ -1090,6 +1122,18 @@ static void pp_init_predefined_macros(
       ag_data_layout_pointer_size(ag_target_info_data_layout(target));
   add_int_macro(context, "__STDC__", 1);
   add_int_macro(context, "__STDC_VERSION__", 201112LL);
+  add_float_macro(
+      context, "__AGC_HUGE_VAL__", __builtin_huge_val(),
+      TK_FLOAT_KIND_DOUBLE, TK_FLOAT_SUFFIX_NONE);
+  add_float_macro(
+      context, "__AGC_HUGE_VALF__", (double)__builtin_huge_valf(),
+      TK_FLOAT_KIND_FLOAT, TK_FLOAT_SUFFIX_F);
+  add_float_macro(
+      context, "__AGC_HUGE_VALL__", (double)__builtin_huge_vall(),
+      TK_FLOAT_KIND_LONG_DOUBLE, TK_FLOAT_SUFFIX_L);
+  add_float_macro(
+      context, "__AGC_NANF__", (double)__builtin_nanf(""),
+      TK_FLOAT_KIND_FLOAT, TK_FLOAT_SUFFIX_F);
   if (pointer_size == 8) {
     add_int_macro(context, "__LP64__", 1);
   }

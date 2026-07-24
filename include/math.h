@@ -1,6 +1,19 @@
 #ifndef _MATH_H
 #define _MATH_H
 
+#ifndef __AGC_HUGE_VAL__
+#define __AGC_HUGE_VAL__ __builtin_huge_val()
+#define __AGC_HUGE_VALF__ __builtin_huge_valf()
+#define __AGC_HUGE_VALL__ __builtin_huge_vall()
+#define __AGC_NANF__ __builtin_nanf("")
+#endif
+
+#define HUGE_VAL  __AGC_HUGE_VAL__
+#define HUGE_VALF __AGC_HUGE_VALF__
+#define HUGE_VALL __AGC_HUGE_VALL__
+#define INFINITY  HUGE_VALF
+#define NAN       __AGC_NANF__
+
 #define FP_NAN 0
 #define FP_INFINITE 1
 #define FP_ZERO 2
@@ -8,6 +21,15 @@
 #define FP_NORMAL 4
 #define FP_ILOGB0 (-2147483647 - 1)
 #define FP_ILOGBNAN (-2147483647 - 1)
+
+#define MATH_ERRNO 1
+#define MATH_ERREXCEPT 2
+#ifdef __wasm32__
+#define math_errhandling MATH_ERREXCEPT
+#else
+int __math_errhandling(void);
+#define math_errhandling (__math_errhandling())
+#endif
 
 double acos(double x);
 double asin(double x);
