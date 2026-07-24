@@ -33,6 +33,7 @@ typedef enum {
   PSX_DECL_PARAMETER,
   PSX_DECL_GLOBAL_OBJECT,
   PSX_DECL_FUNCTION,
+  PSX_DECL_LINKAGE_ALIAS,
   PSX_DECL_TYPEDEF,
   PSX_DECL_ENUM_CONSTANT,
   PSX_DECL_TAG,
@@ -56,10 +57,12 @@ typedef struct {
   int name_len;
   uint32_t declaration_order;
   void *payload;
+  psx_decl_id_t aliased_declaration_id;
   const char *source_input;
   char *source_name;
   int source_byte_offset;
   int source_byte_length;
+  unsigned int hidden_from_lookup : 1;
 } psx_scope_declaration_t;
 
 typedef struct {
@@ -68,6 +71,8 @@ typedef struct {
   psx_scope_id_t current_scope;
   uint32_t *declaration_orders;
   size_t declaration_order_count;
+  unsigned char *declaration_lookup_hidden;
+  size_t declaration_lookup_hidden_count;
   unsigned char active;
 } psx_scope_graph_checkpoint_t;
 
@@ -112,6 +117,10 @@ psx_decl_id_t psx_scope_graph_declare_synthetic_at(
     psx_scope_graph_t *graph, psx_scope_id_t scope_id,
     psx_c_namespace_t name_space, psx_scope_decl_kind_t kind,
     const char *name, int name_len, void *payload);
+psx_decl_id_t psx_scope_graph_declare_linkage_alias_at(
+    psx_scope_graph_t *graph, psx_scope_id_t scope_id,
+    const char *name, int name_len,
+    psx_decl_id_t aliased_declaration_id);
 psx_decl_id_t psx_scope_graph_lookup(
     const psx_scope_graph_t *graph, psx_c_namespace_t name_space,
     const char *name, int name_len, psx_scope_lookup_point_t point);
@@ -131,6 +140,9 @@ int psx_scope_graph_note_declaration_source(
     psx_scope_graph_t *graph, psx_decl_id_t declaration_id,
     const char *source_name, const char *source_input,
     int byte_offset, int byte_length);
+int psx_scope_graph_set_declaration_hidden_from_lookup(
+    psx_scope_graph_t *graph, psx_decl_id_t declaration_id,
+    int hidden);
 void psx_scope_graph_forget_declaration(
     psx_scope_graph_t *graph, psx_decl_id_t declaration_id);
 int psx_scope_graph_rehome_declaration_at(

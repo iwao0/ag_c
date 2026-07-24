@@ -191,9 +191,18 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
           ctx->lowering->semantic_context,
           value.symbol_ref, &name, &name_len)) {
     kind = IR_DATA_RELOC_FUNCTION;
-    (void)ir_function_type_from_type_id(
-        ctx->lowering->semantic_types,
-        callable_type_id, &function_type);
+    if (!ir_function_type_from_type_id(
+            ctx->lowering->semantic_types,
+            callable_type_id, &function_type)) {
+      const psx_function_symbol_t *function =
+          ps_ctx_find_function_symbol_in(
+              ctx->lowering->semantic_context, name, name_len);
+      psx_qual_type_t function_qual_type =
+          ps_function_symbol_qual_type(function);
+      (void)ir_function_type_from_type_id(
+          ctx->lowering->semantic_types,
+          function_qual_type.type_id, &function_type);
+    }
   } else if (!ps_gvar_symbol_ref_named(
                  value.symbol_ref, &name, &name_len)) {
     return 0;

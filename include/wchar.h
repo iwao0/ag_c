@@ -67,8 +67,18 @@ size_t mbsrtowcs(wchar_t *dst, const char **src, size_t len, mbstate_t *ps);
 size_t wcsrtombs(char *dst, const wchar_t **src, size_t len, mbstate_t *ps);
 size_t wcsftime(wchar_t *wcs, size_t maxsize, const wchar_t *format, const struct tm *timeptr);
 /* I/O (可変長) */
+int fwprintf(FILE *stream, const wchar_t *fmt, ...);
+int wprintf(const wchar_t *fmt, ...);
 int swprintf(wchar_t *s, size_t n, const wchar_t *fmt, ...);
+int vfwprintf(FILE *stream, const wchar_t *fmt, va_list arg);
+int vwprintf(const wchar_t *fmt, va_list arg);
+int vswprintf(wchar_t *s, size_t n, const wchar_t *fmt, va_list arg);
+int fwscanf(FILE *stream, const wchar_t *fmt, ...);
+int wscanf(const wchar_t *fmt, ...);
 int swscanf(const wchar_t *s, const wchar_t *fmt, ...);
+int vfwscanf(FILE *stream, const wchar_t *fmt, va_list arg);
+int vwscanf(const wchar_t *fmt, va_list arg);
+int vswscanf(const wchar_t *s, const wchar_t *fmt, va_list arg);
 wint_t fgetwc(FILE *stream);
 wint_t getwc(FILE *stream);
 wint_t getwchar(void);

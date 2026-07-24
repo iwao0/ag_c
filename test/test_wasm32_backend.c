@@ -20,6 +20,33 @@ static int slurp(const char *path, char *buf, size_t cap) {
   return 0;
 }
 
+static char *slurp_alloc(const char *path) {
+  FILE *fp = fopen(path, "rb");
+  if (!fp) return NULL;
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    fclose(fp);
+    return NULL;
+  }
+  long length = ftell(fp);
+  if (length < 0 || fseek(fp, 0, SEEK_SET) != 0) {
+    fclose(fp);
+    return NULL;
+  }
+  char *buf = malloc((size_t)length + 1);
+  if (!buf) {
+    fclose(fp);
+    return NULL;
+  }
+  size_t n = fread(buf, 1, (size_t)length, fp);
+  fclose(fp);
+  if (n != (size_t)length) {
+    free(buf);
+    return NULL;
+  }
+  buf[n] = '\0';
+  return buf;
+}
+
 static int command_available(const char *cmd) {
   char probe[256];
   snprintf(probe, sizeof(probe), "command -v %s > /dev/null 2>&1", cmd);
@@ -82,17 +109,19 @@ static int run_case(const char *name, const char *src, const char **needles, int
     fprintf(stderr, "FAIL: ag_c_wasm failed for %s (rc=%d)\n", name, rc);
     return 1;
   }
-  char buf[65536];
-  if (slurp(out, buf, sizeof(buf)) != 0) {
+  char *buf = slurp_alloc(out);
+  if (!buf) {
     fprintf(stderr, "FAIL: read %s\n", out);
     return 1;
   }
   for (int i = 0; i < nneedles; i++) {
     if (!strstr(buf, needles[i])) {
       fprintf(stderr, "FAIL: %s missing '%s'\n", name, needles[i]);
+      free(buf);
       return 1;
     }
   }
+  free(buf);
   return run_wabt_case(name, expected_ret);
 }
 
@@ -115,23 +144,26 @@ static int run_case_without(const char *name, const char *src,
     fprintf(stderr, "FAIL: ag_c_wasm failed for %s (rc=%d)\n", name, rc);
     return 1;
   }
-  char buf[65536];
-  if (slurp(out, buf, sizeof(buf)) != 0) {
+  char *buf = slurp_alloc(out);
+  if (!buf) {
     fprintf(stderr, "FAIL: read %s\n", out);
     return 1;
   }
   for (int i = 0; i < nneedles; i++) {
     if (!strstr(buf, needles[i])) {
       fprintf(stderr, "FAIL: %s missing '%s'\n", name, needles[i]);
+      free(buf);
       return 1;
     }
   }
   for (int i = 0; i < nforbidden; i++) {
     if (strstr(buf, forbidden[i])) {
       fprintf(stderr, "FAIL: %s unexpectedly contains '%s'\n", name, forbidden[i]);
+      free(buf);
       return 1;
     }
   }
+  free(buf);
   return run_wabt_case(name, expected_ret);
 }
 

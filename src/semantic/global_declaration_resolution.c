@@ -1,6 +1,7 @@
 #include "global_declaration_resolution.h"
 
 #include "scope_graph.h"
+#include "type_completeness.h"
 
 #include "../diag/diag.h"
 #include "../parser/global_registry.h"
@@ -54,22 +55,8 @@ static int type_contains_incomplete_record(
 
 static int type_is_complete_object(
     psx_semantic_context_t *semantic_context, psx_type_id_t type_id) {
-  const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(semantic_context);
-  psx_type_shape_t type = {0};
-  if (!psx_semantic_type_table_describe(types, type_id, &type) ||
-      type.kind == PSX_TYPE_INVALID || type.kind == PSX_TYPE_VOID ||
-      type.kind == PSX_TYPE_FUNCTION)
-    return 0;
-  if (type.kind == PSX_TYPE_POINTER) return 1;
-  if (psx_type_kind_is_aggregate(type.kind))
-    return record_type_is_complete(semantic_context, &type);
-  if (type.kind == PSX_TYPE_ARRAY) {
-    psx_qual_type_t base = psx_semantic_type_table_base(types, type_id);
-    return type.array_len > 0 && base.type_id != PSX_TYPE_ID_INVALID &&
-           type_is_complete_object(semantic_context, base.type_id);
-  }
-  return 1;
+  return psx_semantic_type_is_complete_object_in(
+      semantic_context, type_id);
 }
 
 void psx_resolve_global_declaration(

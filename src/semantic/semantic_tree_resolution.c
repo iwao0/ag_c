@@ -60,6 +60,15 @@ static int diagnose_direct_syntax_rejection(
               diagnostics, DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED),
           failure->source_name_length, failure->source_name);
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE:
+      if (!failure->source_name || failure->source_name_length <= 0)
+        return 0;
+      ps_diag_ctx_in(
+          diagnostics, token, "goto",
+          "goto to label '%.*s' enters the scope of a variably "
+          "modified identifier",
+          failure->source_name_length, failure->source_name);
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH:
       ps_diag_only_in_context(
           diagnostics, token,
@@ -84,6 +93,11 @@ static int diagnose_direct_syntax_rejection(
           diagnostics, token,
           diag_text_for_in(diagnostics, DIAG_TEXT_DEFAULT),
           diag_text_for_in(diagnostics, DIAG_TEXT_SWITCH_SCOPE));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE:
+      ps_diag_ctx_in(
+          diagnostics, token, "switch",
+          "switch label enters the scope of a variably modified identifier");
       return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE:
       diag_emit_tokf_in(
@@ -176,11 +190,23 @@ static int diagnose_direct_syntax_rejection(
           "void* の deref はできません — キャストが必要です "
           "(C11 6.5.3.2)");
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_LVALUE_CONVERSION_INCOMPLETE_OBJECT:
+      ps_diag_ctx_in(
+          diagnostics, token, "lvalue",
+          "不完全なオブジェクト型の lvalue を値へ変換できません "
+          "(C11 6.3.2.1p2)");
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_INVALID_SUBSCRIPT_OPERANDS:
       ps_diag_ctx_in(
           diagnostics, token, "subscript",
           "サブスクリプトの両辺ともポインタ/配列ではありません "
           "(C11 6.5.2.1p1)");
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT:
+      ps_diag_ctx_in(
+          diagnostics, token, "subscript",
+          "添字演算の基底は完全なオブジェクト型へのポインタで"
+          "なければなりません (C11 6.5.2.1p1)");
       return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC: {
       const char *operator_name =
@@ -463,6 +489,12 @@ static int diagnose_direct_syntax_rejection(
           diag_message_for_in(
               diagnostics,
               DIAG_ERR_PARSER_CAST_OPERAND_NOT_SCALAR));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_SCALAR_CATEGORIES_INCOMPATIBLE:
+      ps_diag_ctx_in(
+          diagnostics, token, "cast",
+          "ポインタ型と浮動小数点型または複素数型の間には"
+          "キャストできません (C11 6.5.4p3-p5)");
       return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE:
       diag_emit_tokf_in(

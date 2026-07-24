@@ -73,6 +73,68 @@ function callBodies(source, functionName) {
 }
 
 const allSourceFiles = (await sourceFilesUnder("src")).sort();
+const probeFixtureDirectory = "test/fixtures/probes_found_bugs";
+const probeFixtureNames = (await readdir(probeFixtureDirectory))
+  .filter((name) => name.endsWith(".c"))
+  .sort();
+const nativeE2ESource = await readFile("test/test_e2e.c", "utf8");
+const wasm32E2EExtraCases = new Set(
+  (await readFile("test/wasm32_e2e_extra_cases.txt", "utf8"))
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean),
+);
+const expectedNativeProbeRegistrationExclusions = [
+  "gnu_attribute_parse.c",
+  "gnu_statement_expression.c",
+  "unsupported_gnu_extensions_warn_skip.c",
+];
+const expectedWasmProbeRegistrationExclusions = [
+  "extern_funcptr_xtu_main.c",
+  "extern_funcptr_xtu_other.c",
+  "inherited_static_linkage_xtu_main.c",
+  "inherited_static_linkage_xtu_other.c",
+  "static_internal_linkage_xtu_main.c",
+  "static_internal_linkage_xtu_other.c",
+];
+const missingNativeProbeRegistrations = probeFixtureNames.filter(
+  (name) =>
+    !nativeE2ESource.includes(`"${probeFixtureDirectory}/${name}"`),
+);
+const missingWasmProbeRegistrations = probeFixtureNames.filter(
+  (name) => !wasm32E2EExtraCases.has(`probes_found_bugs/${name}`),
+);
+const wasm32ObjectLinkFixtureScan = await readFile(
+  "scripts/run_wasm32_object_link_fixture_scan.sh",
+  "utf8",
+);
+if (JSON.stringify(missingNativeProbeRegistrations) !==
+      JSON.stringify(expectedNativeProbeRegistrationExclusions)) {
+  throw new Error(
+    "native E2E probe fixture registration drift:\n" +
+      missingNativeProbeRegistrations.join("\n"),
+  );
+}
+if (JSON.stringify(missingWasmProbeRegistrations) !==
+      JSON.stringify(expectedWasmProbeRegistrationExclusions)) {
+  throw new Error(
+    "Wasm E2E probe fixture registration drift:\n" +
+      missingWasmProbeRegistrations.join("\n"),
+  );
+}
+const missingWasmMultiTuLinkRegistrations =
+  expectedWasmProbeRegistrationExclusions.filter(
+    (name) =>
+      !wasm32ObjectLinkFixtureScan.includes(
+        `${probeFixtureDirectory}/${name}`,
+      ),
+  );
+if (missingWasmMultiTuLinkRegistrations.length) {
+  throw new Error(
+    "Wasm multi-TU fixtures excluded from WAT must run in the object link scan:\n" +
+      missingWasmMultiTuLinkRegistrations.join("\n"),
+  );
+}
 const removedMutableAstCompatibilityFiles = [
   "src/parser/node_vla_public.h",
   "src/semantic/resolution_state.h",
@@ -362,6 +424,9 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
       scopeGraphSemanticContextSource,
     ) ||
     !/ps_ctx_intern_enum_qual_type_in\s*\([^]*?psx_scope_graph_declaration\s*\([^]*?tag_type_from_declaration_in\s*\([^]*?tag->kind\s*!=\s*TK_ENUM[^]*?psx_semantic_type_table_intern_enum\s*\([^]*?declaration->id/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/ps_ctx_set_enum_compatible_unsigned_in\s*\([^]*?tag->enum_is_unsigned\s*=\s*is_unsigned\s*\?\s*1\s*:\s*0/.test(
       scopeGraphSemanticContextSource,
     ) ||
     !/ps_ctx_find_tag_kind_at_current_scope_in\s*\([^]*?psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_TAG/.test(
@@ -1715,6 +1780,9 @@ if (!/lower_ir_translation_unit_data_in_session\s*\(/.test(
     !/ps_gvar_symbol_ref_named_function_in\s*\(/.test(
       translationUnitDataLoweringSource,
     ) ||
+    !/lower_symbol_reloc\s*\([^]*?ir_function_type_from_type_id\s*\([^]*?callable_type_id[^]*?ps_ctx_find_function_symbol_in\s*\([^]*?ps_function_symbol_qual_type\s*\([^]*?ir_function_type_from_type_id\s*\(/.test(
+      translationUnitDataLoweringSource,
+    ) ||
     !/ps_gvar_walk_resolved_aggregate_initializer\s*\(/.test(
       translationUnitDataLoweringSource,
     ) ||
@@ -2660,7 +2728,7 @@ if (!directProgramHirHelper ||
     /compatibility|psx_test_frontend_next_function/.test(
       directProgramHirHelper[1],
     ) ||
-    directProgramHirTests.length !== 33) {
+    directProgramHirTests.length !== 35) {
   throw new Error(
     "Typed HIR program tests must enter through the production frontend",
   );
@@ -3367,6 +3435,9 @@ if (!aggregateMemberResolutionType ||
       aggregateMemberResolutionSource,
     ) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/bit_is_signed\s*=\s*type\.kind\s*!=\s*PSX_TYPE_BOOL\s*&&\s*!type\.is_unsigned/.test(
       aggregateMemberResolutionSource,
     ) ||
     !/\bps_ctx_get_record_decl_in\s*\(/.test(
@@ -4926,6 +4997,188 @@ if (!/psx_scope_graph_declare_synthetic_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_
     legacySemanticLabelApi.test(ordinarySemanticContextHeaderSource)) {
   throw new Error(
     "function labels must use the shared scope graph instead of resolver-local or semantic-context symbol tables",
+  );
+}
+if (!/struct\s+direct_vm_scope_marker_t\s*\{[^]*?direct_vm_scope_marker_t\s*\*parent\s*;[^]*?\}/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_scope_graph_declare_synthetic_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL[^]*?state\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_semantic_type_table_contains_vla_array\s*\([^]*?decl_qual_type\.type_id[^]*?declares_variably_modified_identifier\s*=\s*1/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/has_vla_type[^]*?declares_variably_modified_identifier\s*=\s*1/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_GOTO[^]*?binding->vm_scope\s*=\s*context->active_vm_scope/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_LABEL[^]*?state->vm_scope\s*=\s*context->active_vm_scope/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/validate_direct_function_vm_jumps\s*\([^]*?label->vm_scope[^]*?direct_vm_scope_contains[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE[^]*?variably[^]*?modified identifier/.test(
+      semanticTreeResolutionSource,
+    )) {
+  throw new Error(
+    "goto validation must reject entry into scopes of variably modified identifiers while preserving label identity in the scope graph",
+  );
+}
+if (!/struct\s+direct_switch_scope_t\s*\{[^]*?direct_vm_scope_marker_t\s*\*entry_vm_scope\s*;[^]*?\}/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_SWITCH[^]*?entry_vm_scope\s*=\s*context->active_vm_scope/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_CASE[^]*?active_vm_scope\s*!=[^]*?entry_vm_scope[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_DEFAULT[^]*?active_vm_scope\s*!=[^]*?entry_vm_scope[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE[^]*?switch label enters the scope of a variably modified identifier/.test(
+      semanticTreeResolutionSource,
+    )) {
+  throw new Error(
+    "switch labels must not bypass declarations of variably modified identifiers",
+  );
+}
+if (!/#include\s+"\.\.\/type_system\/integer_conversion\.h"/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/struct\s+direct_switch_scope_t\s*\{[^]*?psx_type_shape_t\s+promoted_control_type\s*;[^]*?\}/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/direct_promoted_integer_shape\s*\([^]*?psx_integer_promotion_for_data_layout\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_SWITCH[^]*?direct_promoted_integer_shape\s*\([^]*?promoted_control_type\s*=\s*promoted_control_type/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_CASE[^]*?psx_normalize_integer_constant_cast\s*\([^]*?promoted_control_type[^]*?bind_direct_case_value/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "duplicate switch cases must be compared after conversion to the promoted controlling type",
+  );
+}
+if (!/struct\s+direct_expression_type_binding_t\s*\{[^]*?const\s+node_t\s*\*syntax\s*;[^]*?psx_qual_type_t\s+qual_type\s*;[^]*?\}/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/preflight_direct_expression\s*\([^]*?psx_resolve_value_decay_qual_type_in\s*\([^]*?record_direct_expression_type\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/direct_integer_constant_shape\s*\([^]*?find_direct_expression_type\s*\([^]*?direct_describe_qual_type\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/direct_integer_constant_shape\s*\([^]*?syntax->lhs[^]*?direct_integer_constant_shape\s*\([^]*?syntax->rhs[^]*?psx_apply_typed_integer_constant_binary\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_usual_integer_conversion_for_data_layout\s*\(/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/psx_integer_promotion_for_data_layout\s*\(/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/case\s+PSX_INTEGER_CONSTANT_OP_SHR\s*:[^]*?conversion\.is_unsigned[^]*?unsigned_lhs\s*>>\s*normalized_rhs/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/psx_apply_typed_integer_constant_binary\s*\([^]*?ps_lowering_data_layout\s*\(/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/PSX_HIR_LOGAND\s*\|\|[^]*?PSX_HIR_LOGOR[^]*?eval_const_truth\s*\(\s*eval\s*,\s*lhs[^]*?PSX_HIR_LOGAND[^]*?return\s+0\s*;[^]*?PSX_HIR_LOGOR[^]*?return\s+1\s*;[^]*?eval_const_truth\s*\(\s*eval\s*,\s*rhs/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/case\s+PSX_HIR_TERNARY\s*:[^]*?eval_const_truth\s*\(\s*eval\s*,\s*lhs/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/type_uses_floating_value\s*\(\s*&lhs_shape\s*\)[^]*?eval_const_fp\s*\(\s*eval\s*,\s*lhs[^]*?case\s+PSX_HIR_EQ[^]*?case\s+PSX_HIR_GE/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/case\s+PSX_HIR_CAST\s*:[^]*?node_type_shape\s*\(\s*eval\s*,\s*lhs\s*,\s*&source\s*\)[^]*?!type_uses_floating_value\s*\(\s*&source\s*\)[^]*?eval_const_int\s*\(\s*eval\s*,\s*lhs/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/target\.kind\s*==\s*PSX_TYPE_BOOL[^]*?type_uses_floating_value\s*\(\s*&source\s*\)[^]*?eval_const_fp\s*\(\s*eval\s*,\s*lhs[^]*?value\s*!=\s*0\.0/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/static\s+double\s+integer_constant_as_double\s*\([^]*?type\.is_unsigned[^]*?psx_type_layout_sizeof\s*\([^]*?uint64_t\s+normalized[^]*?return\s+\(double\)normalized/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/static\s+int\s+floating_constant_as_integer\s*\([^]*?target\.is_unsigned[^]*?upper_exclusive[^]*?uint64_t\s+converted[^]*?memcpy\s*\(\s*result/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/static\s+int\s+eval_const_integer_target\s*\([^]*?target\.kind\s*==\s*PSX_TYPE_BOOL[^]*?eval_const_truth\s*\([^]*?type_uses_floating_value\s*\(\s*&source\s*\)[^]*?floating_constant_as_integer/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/static\s+int\s+resolve_address\s*\([^]*?case\s+PSX_HIR_TERNARY\s*:[^]*?eval_const_truth\s*\(\s*eval\s*,\s*lhs[^]*?condition\s*\?\s*rhs\s*:\s*otherwise/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/resolved_symbols_equal\s*\([^]*?type_is_pointer_like\s*\(\s*eval\s*,\s*lhs\s*\)[^]*?resolve_address\s*\(\s*eval\s*,\s*lhs[^]*?resolve_address\s*\(\s*eval\s*,\s*rhs[^]*?case\s+PSX_HIR_EQ\s*:\s*return\s+left_offset\s*==\s*right_offset/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/left_is_null[^]*?right_is_null[^]*?has_left\s*&&\s*right_is_null[^]*?left_is_null\s*&&\s*right_is_null/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/resolved_address_is_strictly_within_object\s*\([^]*?psx_type_layout_sizeof\s*\([^]*?offset\s*<\s*size/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/!resolved_symbols_equal\s*\([^]*?resolved_address_is_strictly_within_object\s*\([^]*?pointer_points_to_function\s*\([^]*?left_is_stable\s*&&\s*right_is_stable[^]*?PSX_HIR_NE/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/is_pointer_to_integer_address_cast\s*\([^]*?PSX_HIR_CAST[^]*?target\.kind\s*!=\s*PSX_TYPE_INTEGER[^]*?integer_size[^]*?pointer_size[^]*?integer_size\s*>=\s*pointer_size/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/aggregate_write_scalar\s*\([^]*?is_pointer_to_integer_address_cast\s*\([^]*?resolve_address\s*\([^]*?persist_symbol_name/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/psx_lower_static_scalar_hir_initializer\s*\([^]*?type\.kind\s*==\s*PSX_TYPE_INTEGER[^]*?is_pointer_to_integer_address_cast/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/aggregate_write_scalar\s*\([^]*?eval_const_integer_target\s*\(\s*&aggregate->eval/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/psx_lower_static_scalar_hir_initializer\s*\([^]*?eval_const_integer_target\s*\(\s*&eval\s*,\s*initializer/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/static\s+double\s+eval_const_fp\s*\([^]*?expression_type\.kind\s*==\s*PSX_TYPE_BOOL[^]*?expression_type\.kind\s*==\s*PSX_TYPE_INTEGER[^]*?eval_const_int\s*\(\s*eval\s*,\s*node[^]*?integer_constant_as_double\s*\(\s*eval\s*,\s*node/.test(
+      staticHirInitializerSource,
+    )) {
+  throw new Error(
+    "integer constant evaluation must use canonical expression types and target DataLayout in semantic and static-initializer paths",
+  );
+}
+if (!/static\s+int\s+signed_integer_conversion_bounds\s*\([^]*?psx_integer_conversion_size_for_data_layout\s*\([^]*?LLONG_MIN[^]*?LLONG_MAX/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/PSX_INTEGER_CONSTANT_OP_NEGATE\s*:[^]*?normalized\s*==\s*minimum[^]*?return\s+0/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/PSX_INTEGER_CONSTANT_OP_ADD\s*:[^]*?signed_maximum\s*-\s*normalized_rhs[^]*?signed_minimum\s*-\s*normalized_rhs/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/PSX_INTEGER_CONSTANT_OP_SUB\s*:[^]*?signed_minimum\s*\+\s*normalized_rhs[^]*?signed_maximum\s*\+\s*normalized_rhs/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/PSX_INTEGER_CONSTANT_OP_MUL\s*:[^]*?normalized_lhs\s*>\s*0\s*&&\s*normalized_rhs\s*>\s*0[^]*?normalized_lhs\s*>\s*0\s*&&\s*normalized_rhs\s*<\s*0[^]*?normalized_lhs\s*<\s*0\s*&&\s*normalized_rhs\s*>\s*0[^]*?normalized_lhs\s*<\s*0\s*&&\s*normalized_rhs\s*<\s*0/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/PSX_INTEGER_CONSTANT_OP_DIV\s*:[^]*?normalized_lhs\s*==\s*signed_minimum[^]*?normalized_rhs\s*==\s*-1/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/PSX_INTEGER_CONSTANT_OP_SHL\s*:[^]*?unsigned_maximum[^]*?normalized_lhs\s*<\s*0[^]*?unsigned_lhs\s*>[^]*?unsigned_maximum\s*>>\s*normalized_rhs/.test(
+      integerConstantEvaluationSource,
+    )) {
+  throw new Error(
+    "typed integer constant evaluation must reject signed overflow without rejecting C11 boundary shifts",
   );
 }
 const directFunctionRejections = [
@@ -7747,6 +8000,12 @@ if (!semanticTypeEntry ||
     ) ||
     !/canonical->enum_decl_id\s*!=\s*PSX_DECL_ID_INVALID[^]*?canonical->enum_decl_id\s*==\s*candidate->enum_decl_id/.test(
       semanticTypeIdentitySource,
+    ) ||
+    !/semantic_integer_shapes_compatible\s*\([^]*?PSX_INTEGER_KIND_ENUM[^]*?conversion\.rank\s*==\s*3[^]*?conversion\.is_unsigned\s*==\s*enumeration->is_unsigned/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/psx_semantic_type_table_intern_enum\s*\([^]*?\.is_unsigned\s*=\s*is_unsigned\s*\?\s*1\s*:\s*0/.test(
+      semanticTypeIdentitySource,
     )) {
   throw new Error(
     "semantic TypeId shape must own target-independent identity, use scope DeclId for enum identity, and resolve record relations through RecordDeclTable",
@@ -10099,7 +10358,10 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
     !/\bpsx_semantic_type_table_parameter\s*\(/.test(
       callArgumentQualTypeRule?.[0] ?? "",
     ) ||
-    !/\bpsx_resolve_assignment_qual_types_in\s*\(/.test(
+    !/\bpsx_resolve_assignment_conversion_qual_types_in\s*\(/.test(
+      callArgumentQualTypeRule?.[0] ?? "",
+    ) ||
+    /\bpsx_resolve_assignment_qual_types_in\s*\(/.test(
       callArgumentQualTypeRule?.[0] ?? "",
     ) ||
     /\bpsx_resolve_function_call_type\b|\bpsx_function_call_resolution_t\b|\bPSX_FUNCTION_CALL_RESOLUTION_/.test(
@@ -10838,7 +11100,7 @@ if (!/direct_type_query_binding_t/.test(
     !/psx_resolve_sizeof_runtime_slot_plan_in\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/resolve_direct_sizeof_vla_derived_expression\s*\([^]*?base->kind\s*==\s*ND_SUBSCRIPT\s*\|\|[^]*?base->kind\s*==\s*ND_UNARY_DEREF/.test(
+    !/resolve_direct_sizeof_vla_derived_expression\s*\([^]*?base->kind\s*==\s*ND_SUBSCRIPT[^]*?base->kind\s*==\s*ND_UNARY_DEREF[^]*?base->kind\s*==\s*ND_ADD\s*\|\|\s*base->kind\s*==\s*ND_SUB/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/direct_vla_runtime_view\s*\(\s*context,\s*query->operand->lhs\s*\)/.test(
@@ -11179,6 +11441,9 @@ if (!/psx_resolve_syntax_function_direct_to_typed_hir_in_contexts\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/void\s+psx_resolve_decl_specifier_value_in_contexts\s*\(/.test(
+      declarationSpecifierResolutionSource,
+    ) ||
+    !/resolve_enum_body_value\s*\([^]*?value\s*<\s*0[^]*?ps_ctx_set_enum_compatible_unsigned_in\s*\(/.test(
       declarationSpecifierResolutionSource,
     ) ||
     !/psx_resolve_declarator_bound_in_contexts\s*\(/.test(

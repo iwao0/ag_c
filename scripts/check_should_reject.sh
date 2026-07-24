@@ -26,8 +26,9 @@ spurious=0
 for f in "$dir"/*.c; do
   [ -e "$f" ] || continue
   total=$((total + 1))
-  # cc は -Werror=implicit-function-declaration で「暗黙宣言」も error 扱いにする
-  cc -fsyntax-only -Werror=implicit-function-declaration "$f" 2>/dev/null
+  # ISO C11の制約違反と「暗黙宣言」をいずれもerrorとして比較する。
+  cc -std=c11 -pedantic-errors -fsyntax-only \
+    -Werror=implicit-function-declaration "$f" 2>/dev/null
   cc_rc=$?
   ./build/ag_c "$f" >/dev/null 2>&1
   agc_rc=$?

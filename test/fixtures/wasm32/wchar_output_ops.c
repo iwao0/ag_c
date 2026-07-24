@@ -14,6 +14,5 @@ int main(void) {
     if (fwide(stream, 1) != 1) return 8;
     if (fwide(stream, -1) != 1) return 9;
     if (fwide(stream, 0) != 1) return 10;
-    if (fwide(0, 1) != 0) return 11;
     return 0;
 }

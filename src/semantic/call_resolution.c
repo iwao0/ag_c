@@ -112,7 +112,7 @@ void psx_resolve_call_argument_qual_types_in(
    * to the canonical assignment rule. */
   parameter_type.qualifiers &= PSX_TYPE_QUALIFIER_ATOMIC;
   psx_assignment_types_resolution_t assignment;
-  psx_resolve_assignment_qual_types_in(
+  psx_resolve_assignment_conversion_qual_types_in(
       semantic_context, parameter_type, argument_qual_type,
       argument_is_null_pointer_constant, &assignment);
   switch (assignment.status) {

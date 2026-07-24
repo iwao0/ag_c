@@ -13,6 +13,10 @@ int psx_semantic_pointer_points_to_complete_object_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t pointer_type);
 
+int psx_semantic_qual_type_has_const_subobject_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t type);
+
 int psx_semantic_record_contains_flexible_array_member_in(
     psx_semantic_context_t *semantic_context,
     psx_record_id_t record_id);

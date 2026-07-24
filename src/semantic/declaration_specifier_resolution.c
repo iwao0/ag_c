@@ -245,6 +245,7 @@ static psx_decl_specifier_value_status_t resolve_enum_body_value(
     const decl_specifier_value_context_t *context,
     const psx_parsed_tag_action_t *action, int *member_count) {
   long long next_value = 0;
+  int is_unsigned = 1;
   for (int i = 0; i < action->enum_body->member_count; i++) {
     const psx_parsed_enum_member_t *member =
         &action->enum_body->members[i];
@@ -259,8 +260,13 @@ static psx_decl_specifier_value_status_t resolve_enum_body_value(
         context->semantic_context, member->enumerator->str,
         member->enumerator->len, value,
         (token_t *)member->enumerator);
+    if (value < 0) is_unsigned = 0;
     next_value = value + 1;
   }
+  if (!ps_ctx_set_enum_compatible_unsigned_in(
+          context->semantic_context, action->name,
+          action->name_len, is_unsigned))
+    return PSX_DECL_SPECIFIER_VALUE_INVALID;
   *member_count = action->enum_body->member_count;
   return PSX_DECL_SPECIFIER_VALUE_OK;
 }

@@ -23,6 +23,7 @@
 #include "../parser/vla_runtime.h"
 #include "../target_info.h"
 #include "../type_layout.h"
+#include "../type_system/integer_conversion.h"
 #include "assignment_resolution.h"
 #include "call_resolution.h"
 #include "character_array_initializer.h"
@@ -57,9 +58,13 @@ typedef struct direct_generic_binding_t direct_generic_binding_t;
 typedef struct direct_type_query_binding_t direct_type_query_binding_t;
 typedef struct direct_compound_literal_binding_t
     direct_compound_literal_binding_t;
+typedef struct direct_expression_type_binding_t
+    direct_expression_type_binding_t;
 typedef struct direct_case_binding_t direct_case_binding_t;
 typedef struct direct_case_value_t direct_case_value_t;
 typedef struct direct_switch_scope_t direct_switch_scope_t;
+typedef struct direct_vm_scope_marker_t direct_vm_scope_marker_t;
+typedef struct direct_label_scope_state_t direct_label_scope_state_t;
 typedef struct direct_goto_binding_t direct_goto_binding_t;
 typedef struct direct_local_declaration_binding_t
     direct_local_declaration_binding_t;
@@ -169,6 +174,12 @@ struct direct_compound_literal_binding_t {
   direct_compound_literal_binding_t *next;
 };
 
+struct direct_expression_type_binding_t {
+  const node_t *syntax;
+  psx_qual_type_t qual_type;
+  direct_expression_type_binding_t *next;
+};
+
 struct direct_case_binding_t {
   const node_case_t *syntax;
   long long value;
@@ -183,11 +194,24 @@ struct direct_case_value_t {
 struct direct_switch_scope_t {
   direct_case_value_t *case_values;
   direct_switch_scope_t *parent;
+  psx_type_shape_t promoted_control_type;
+  direct_vm_scope_marker_t *entry_vm_scope;
   unsigned char has_default;
+};
+
+struct direct_vm_scope_marker_t {
+  const node_local_declaration_t *syntax;
+  direct_vm_scope_marker_t *parent;
+};
+
+struct direct_label_scope_state_t {
+  const node_jump_t *syntax;
+  direct_vm_scope_marker_t *vm_scope;
 };
 
 struct direct_goto_binding_t {
   const node_jump_t *syntax;
+  direct_vm_scope_marker_t *vm_scope;
   direct_goto_binding_t *next;
 };
 
@@ -206,9 +230,11 @@ typedef struct {
   direct_generic_binding_t *generic_bindings;
   direct_type_query_binding_t *type_query_bindings;
   direct_compound_literal_binding_t *compound_literal_bindings;
+  direct_expression_type_binding_t *expression_type_bindings;
   direct_case_binding_t *case_bindings;
   direct_switch_scope_t *switch_scope;
   size_t label_declaration_start;
+  direct_vm_scope_marker_t *active_vm_scope;
   direct_goto_binding_t *gotos;
   direct_local_declaration_binding_t *local_declarations;
   direct_function_declaration_checkpoint_t *function_declarations;
@@ -345,6 +371,47 @@ static int resolve_direct_declarator_application(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application);
 
+static int record_direct_expression_type(
+    direct_resolution_context_t *context,
+    const node_t *syntax, psx_qual_type_t qual_type) {
+  if (!context || !syntax ||
+      qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  direct_expression_type_binding_t *binding = arena_alloc_in(
+      ps_ctx_arena(context->semantic_context), sizeof(*binding));
+  if (!binding) {
+    context->preflight_failed = 1;
+    set_failure(
+        context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        syntax);
+    return 0;
+  }
+  *binding = (direct_expression_type_binding_t){
+      .syntax = syntax,
+      .qual_type = qual_type,
+      .next = context->expression_type_bindings,
+  };
+  context->expression_type_bindings = binding;
+  return 1;
+}
+
+static int find_direct_expression_type(
+    const direct_resolution_context_t *context,
+    const node_t *syntax, psx_qual_type_t *qual_type) {
+  if (qual_type)
+    *qual_type = (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!context || !syntax || !qual_type) return 0;
+  for (const direct_expression_type_binding_t *binding =
+           context->expression_type_bindings;
+       binding; binding = binding->next) {
+    if (binding->syntax != syntax) continue;
+    *qual_type = binding->qual_type;
+    return 1;
+  }
+  return 0;
+}
+
 static int resolve_direct_source_cast(
     direct_resolution_context_t *context,
     const node_source_cast_t *cast,
@@ -410,6 +477,10 @@ static int note_direct_source_cast_rejection(
       rejection =
           PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_OPERAND_NOT_SCALAR;
       break;
+    case PSX_SOURCE_CAST_SCALAR_CATEGORIES_INCOMPATIBLE:
+      rejection =
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_SCALAR_CATEGORIES_INCOMPATIBLE;
+      break;
     case PSX_SOURCE_CAST_AGGREGATE_TYPE_MISMATCH:
       rejection =
           PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH;
@@ -454,6 +525,7 @@ static int resolve_direct_function_call(
   }
 
   const node_identifier_t *direct_identifier = NULL;
+  int direct_identifier_is_implicit = 0;
   psx_qual_type_t callee_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   if (call->callee->kind == ND_IDENTIFIER) {
@@ -468,6 +540,9 @@ static int resolve_direct_function_call(
         callee_resolution.symbol.kind ==
             PSX_IDENTIFIER_UNDECLARED_CALL)
       direct_identifier = identifier;
+    direct_identifier_is_implicit =
+        callee_resolution.symbol.kind ==
+        PSX_IDENTIFIER_UNDECLARED_CALL;
   } else if (!preflight_direct_expression(
                  context, call->callee, &callee_type)) {
     return 0;
@@ -560,13 +635,7 @@ static int resolve_direct_function_call(
       .syntax = call,
       .resolution = resolution,
       .direct_identifier = direct_identifier,
-      .is_implicit =
-          direct_identifier &&
-          callee_type.type_id != PSX_TYPE_ID_INVALID &&
-          ps_ctx_find_function_symbol_in(
-              context->semantic_context,
-              direct_identifier->name,
-              direct_identifier->name_len) == NULL,
+      .is_implicit = direct_identifier_is_implicit,
       .next = context->call_bindings,
   };
   context->call_bindings = binding;
@@ -1100,6 +1169,14 @@ static int validate_direct_type_query_type(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
         source);
+  if (shape.kind == PSX_TYPE_INTEGER &&
+      shape.integer_kind == PSX_INTEGER_KIND_ENUM &&
+      !psx_semantic_type_is_complete_object_in(
+          context->semantic_context, queried_qual_type.type_id))
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+        source);
   if (psx_semantic_type_has_incomplete_array_element_in(
           context->semantic_context, queried_qual_type.type_id))
     return note_direct_semantic_rejection(
@@ -1303,13 +1380,32 @@ static int resolve_direct_sizeof_vla_derived_expression(
     return 0;
   const node_t *base = query->operand;
   int derived_operation_count = 0;
-  int subscript_count = 0;
-  while (base &&
-         (base->kind == ND_SUBSCRIPT ||
-          base->kind == ND_UNARY_DEREF)) {
-    if (base->kind == ND_SUBSCRIPT) subscript_count++;
-    derived_operation_count++;
-    base = base->lhs;
+  int evaluated_prefix_count = 0;
+  while (base) {
+    if (base->kind == ND_SUBSCRIPT) {
+      evaluated_prefix_count++;
+      derived_operation_count++;
+      base = base->lhs;
+      continue;
+    }
+    if (base->kind == ND_UNARY_DEREF) {
+      derived_operation_count++;
+      base = base->lhs;
+      continue;
+    }
+    if (base->kind == ND_ADD || base->kind == ND_SUB) {
+      int lhs_has_vla =
+          direct_syntax_has_vla_binding(context, base->lhs);
+      int rhs_has_vla =
+          direct_syntax_has_vla_binding(context, base->rhs);
+      if (lhs_has_vla == rhs_has_vla ||
+          (base->kind == ND_SUB && !lhs_has_vla))
+        return 0;
+      evaluated_prefix_count++;
+      base = lhs_has_vla ? base->lhs : base->rhs;
+      continue;
+    }
+    break;
   }
   if (!base || base->kind != ND_IDENTIFIER ||
       derived_operation_count <= 0)
@@ -1325,10 +1421,10 @@ static int resolve_direct_sizeof_vla_derived_expression(
       !identifier.symbol.local)
     return 0;
 
-  if (subscript_count > 0) {
+  if (evaluated_prefix_count > 0) {
     binding->evaluated_prefixes = arena_alloc_in(
         ps_ctx_arena(context->semantic_context),
-        (size_t)subscript_count *
+        (size_t)evaluated_prefix_count *
         sizeof(*binding->evaluated_prefixes));
     if (!binding->evaluated_prefixes) {
       context->preflight_failed = 1;
@@ -1338,17 +1434,36 @@ static int resolve_direct_sizeof_vla_derived_expression(
       return 0;
     }
   }
-  int prefix_index = subscript_count;
+  int prefix_index = evaluated_prefix_count;
   const node_t *derived = query->operand;
-  while (derived &&
-         (derived->kind == ND_SUBSCRIPT ||
-          derived->kind == ND_UNARY_DEREF)) {
-    if (derived->kind == ND_SUBSCRIPT)
+  while (derived) {
+    if (derived->kind == ND_SUBSCRIPT) {
       binding->evaluated_prefixes[--prefix_index] = derived->rhs;
-    derived = derived->lhs;
+      derived = derived->lhs;
+      continue;
+    }
+    if (derived->kind == ND_UNARY_DEREF) {
+      derived = derived->lhs;
+      continue;
+    }
+    if (derived->kind == ND_ADD || derived->kind == ND_SUB) {
+      int lhs_has_vla =
+          direct_syntax_has_vla_binding(context, derived->lhs);
+      int rhs_has_vla =
+          direct_syntax_has_vla_binding(context, derived->rhs);
+      if (lhs_has_vla == rhs_has_vla ||
+          (derived->kind == ND_SUB && !lhs_has_vla))
+        return 0;
+      binding->evaluated_prefixes[--prefix_index] =
+          lhs_has_vla ? derived->rhs : derived->lhs;
+      derived = lhs_has_vla ? derived->lhs : derived->rhs;
+      continue;
+    }
+    break;
   }
-  binding->evaluated_prefix_count = subscript_count;
-  for (int i = 0; i < subscript_count; i++) {
+  if (prefix_index != 0) return 0;
+  binding->evaluated_prefix_count = evaluated_prefix_count;
+  for (int i = 0; i < evaluated_prefix_count; i++) {
     psx_qual_type_t index_qual_type;
     if (!binding->evaluated_prefixes[i] ||
         !preflight_direct_expression(
@@ -1726,6 +1841,26 @@ static int resolve_direct_deref_operand(
   return 1;
 }
 
+static psx_qual_type_t direct_string_array_qual_type(
+    direct_resolution_context_t *context,
+    psx_qual_type_t decayed_pointer_type,
+    int code_unit_count) {
+  if (!context || code_unit_count < 0 ||
+      code_unit_count == INT_MAX)
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  psx_qual_type_t element_type =
+      psx_semantic_type_table_base(
+          ps_ctx_semantic_type_table_in(
+              context->semantic_context),
+          decayed_pointer_type.type_id);
+  if (element_type.type_id == PSX_TYPE_ID_INVALID)
+    return element_type;
+  return ps_ctx_intern_array_of_qual_type_in(
+      context->semantic_context, element_type,
+      code_unit_count + 1, 0);
+}
+
 static int preflight_direct_lvalue(
     direct_resolution_context_t *context,
     const node_t *syntax, psx_qual_type_t *qual_type) {
@@ -1778,6 +1913,21 @@ static int preflight_direct_lvalue(
             &binding) || !binding)
       return 0;
     if (qual_type) *qual_type = binding->plan.object_qual_type;
+    return 1;
+  }
+  if (syntax->kind == ND_STRING) {
+    psx_literal_semantic_resolution_t resolution;
+    if (!psx_resolve_string_literal_semantics_in_contexts(
+            context->semantic_context, NULL,
+            (const node_string_t *)syntax, &resolution))
+      return 0;
+    psx_qual_type_t array_type =
+        direct_string_array_qual_type(
+            context, resolution.qual_type,
+            ((const node_string_t *)syntax)->byte_len);
+    if (array_type.type_id == PSX_TYPE_ID_INVALID)
+      return 0;
+    if (qual_type) *qual_type = array_type;
     return 1;
   }
   if (syntax->kind == ND_SOURCE_CAST) {
@@ -2044,7 +2194,9 @@ static int note_direct_assignment_rejection(
   switch (status) {
     case PSX_ASSIGNMENT_TARGET_NOT_MODIFIABLE: {
       if ((target_type.qualifiers &
-           PSX_TYPE_QUALIFIER_CONST) != 0) {
+           PSX_TYPE_QUALIFIER_CONST) != 0 ||
+          psx_semantic_qual_type_has_const_subobject_in(
+              context->semantic_context, target_type)) {
         rejection =
             PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_CONST_TARGET;
         break;
@@ -2098,25 +2250,48 @@ static int preflight_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax,
     psx_qual_type_t *qual_type) {
+  psx_qual_type_t resolved_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   int resolved = preflight_direct_expression_impl(
-      context, syntax, qual_type);
-  if (resolved && qual_type && context &&
+      context, syntax, &resolved_type);
+  if (resolved && context &&
       context->suppress_value_decay_depth == 0) {
+    int designates_lvalue =
+        direct_syntax_designates_lvalue(context, syntax);
+    psx_type_shape_t source_shape = {0};
+    if (designates_lvalue &&
+        direct_describe_qual_type(
+            context, resolved_type, &source_shape) &&
+        source_shape.kind != PSX_TYPE_ARRAY &&
+        source_shape.kind != PSX_TYPE_FUNCTION &&
+        !psx_semantic_type_is_complete_object_in(
+            context->semantic_context, resolved_type.type_id)) {
+      resolved = note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_LVALUE_CONVERSION_INCOMPLETE_OBJECT,
+          syntax);
+    }
+    if (!resolved) goto finish;
     psx_qual_type_t converted =
         psx_resolve_value_decay_qual_type_in(
-            context->semantic_context, *qual_type);
+            context->semantic_context, resolved_type);
     if (converted.type_id == PSX_TYPE_ID_INVALID)
       resolved = 0;
     else {
       psx_type_shape_t shape = {0};
-      if (direct_syntax_designates_lvalue(context, syntax) &&
+      if (designates_lvalue &&
           direct_describe_qual_type(context, converted, &shape) &&
           shape.kind != PSX_TYPE_ARRAY &&
           shape.kind != PSX_TYPE_FUNCTION)
         converted.qualifiers = PSX_TYPE_QUALIFIER_NONE;
-      *qual_type = converted;
+      resolved_type = converted;
     }
   }
+finish:
+  if (resolved)
+    resolved = record_direct_expression_type(
+        context, syntax, resolved_type);
+  if (resolved && qual_type) *qual_type = resolved_type;
   if (!resolved && context && context->failure &&
       context->failure->status == PSX_RESOLVED_HIR_BUILD_OK &&
       context->failure->source_node_kind < 0) {
@@ -2337,6 +2512,12 @@ static int preflight_direct_expression_impl(
     psx_resolve_subscript_qual_types_in(
         context->semantic_context, left_type, right_type,
         &resolution);
+    if (resolution.status ==
+        PSX_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT,
+          syntax);
     if (resolution.status != PSX_SUBSCRIPT_OPERANDS_OK)
       return note_direct_semantic_rejection(
           context,
@@ -2571,7 +2752,8 @@ static psx_semantic_node_t *build_direct_string_value(
     direct_resolution_context_t *context,
     const node_t *syntax,
     const psx_string_literal_value_t *value,
-    int code_unit_count) {
+    int code_unit_count,
+    int preserve_array_type) {
   if (!context || !syntax || !value || code_unit_count < 0)
     return NULL;
   psx_literal_semantic_resolution_t resolution;
@@ -2585,6 +2767,17 @@ static psx_semantic_node_t *build_direct_string_value(
   }
   int character_width = value->character_width;
   if (character_width <= 0) character_width = 1;
+  psx_qual_type_t expression_type = resolution.qual_type;
+  if (preserve_array_type) {
+    expression_type = direct_string_array_qual_type(
+        context, resolution.qual_type, code_unit_count);
+    if (expression_type.type_id == PSX_TYPE_ID_INVALID) {
+      set_failure(
+          context->failure,
+          PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
+      return NULL;
+    }
+  }
   psx_hir_node_spec_t spec = {
       .kind = PSX_HIR_STRING,
       .attached_qual_type = {
@@ -2599,7 +2792,7 @@ static psx_semantic_node_t *build_direct_string_value(
       .object_align = character_width,
   };
   return psx_semantic_node_builder_leaf_expression(
-      &context->builder, &spec, resolution.qual_type, NULL,
+      &context->builder, &spec, expression_type, NULL,
       syntax->kind);
 }
 
@@ -2620,7 +2813,7 @@ static psx_semantic_node_t *build_direct_literal(
             .character_width = string->char_width,
             .prefix_kind = string->str_prefix_kind,
         },
-        string->byte_len);
+        string->byte_len, 0);
   }
 
   psx_literal_semantic_resolution_t resolution;
@@ -2772,7 +2965,7 @@ static psx_semantic_node_t *build_direct_identifier(
             .character_width = TK_CHAR_WIDTH_CHAR,
             .prefix_kind = TK_STR_PREFIX_NONE,
         },
-        context->function_name_len);
+        context->function_name_len, 0);
   psx_identifier_expression_resolution_t resolution;
   if (!resolve_direct_identifier(context, identifier, &resolution))
     return NULL;
@@ -3063,6 +3256,19 @@ static psx_semantic_node_t *build_direct_lvalue(
     return build_direct_expression_impl(context, syntax);
   if (syntax->kind == ND_MEMBER_ACCESS)
     return build_direct_expression_impl(context, syntax);
+  if (syntax->kind == ND_STRING) {
+    const node_string_t *string =
+        (const node_string_t *)syntax;
+    return build_direct_string_value(
+        context, syntax,
+        &(psx_string_literal_value_t){
+            .contents = string->literal_contents,
+            .length = string->literal_length,
+            .character_width = string->char_width,
+            .prefix_kind = string->str_prefix_kind,
+        },
+        string->byte_len, 1);
+  }
   if (syntax->kind == ND_COMPOUND_LITERAL) {
     direct_compound_literal_binding_t *binding = NULL;
     if (resolve_direct_compound_literal(
@@ -3819,7 +4025,8 @@ static psx_semantic_node_t *build_direct_expression_impl(
 static int preflight_direct_control_expression(
     direct_resolution_context_t *context,
     const node_t *control, const node_t *expression,
-    psx_control_expression_requirement_t requirement) {
+    psx_control_expression_requirement_t requirement,
+    psx_qual_type_t *resolved_type) {
   psx_qual_type_t condition_type;
   if (!control || !expression ||
       !preflight_direct_expression(
@@ -3839,13 +4046,207 @@ static int preflight_direct_control_expression(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_CONDITION_NOT_INTEGER,
         control);
+  if (status == PSX_CONTROL_EXPRESSION_OK && resolved_type)
+    *resolved_type = condition_type;
   return status == PSX_CONTROL_EXPRESSION_OK;
+}
+
+static int direct_integer_constant_shape(
+    const direct_resolution_context_t *context,
+    const node_t *syntax, psx_type_shape_t *shape) {
+  psx_qual_type_t qual_type;
+  return shape &&
+         find_direct_expression_type(
+             context, syntax, &qual_type) &&
+         direct_describe_qual_type(context, qual_type, shape) &&
+         (shape->kind == PSX_TYPE_BOOL ||
+          shape->kind == PSX_TYPE_INTEGER);
+}
+
+static int direct_integer_constant_binary_operation(
+    psx_syntax_node_kind_t kind,
+    psx_integer_constant_operation_t *operation);
+
+static int direct_integer_constant_has_allowed_operands(
+    direct_resolution_context_t *context,
+    const node_t *syntax, int evaluated) {
+  if (!context || !syntax) return 0;
+  if (syntax->kind == ND_NUM) {
+    return !syntax->tok || syntax->tok->kind != TK_NUM ||
+           tk_as_num(syntax->tok)->num_kind != TK_NUM_KIND_FLOAT;
+  }
+  if (syntax->kind == ND_IDENTIFIER) {
+    psx_identifier_expression_resolution_t resolution;
+    return resolve_direct_identifier(
+               context, (const node_identifier_t *)syntax,
+               &resolution) &&
+           resolution.symbol.kind == PSX_IDENTIFIER_ENUM_CONSTANT;
+  }
+  if (syntax->kind == ND_SIZEOF_QUERY ||
+      syntax->kind == ND_ALIGNOF_QUERY) {
+    direct_type_query_binding_t *binding =
+        find_direct_type_query_binding(context, syntax);
+    return binding &&
+           binding->plan.kind == PSX_TYPE_QUERY_PLAN_CONSTANT;
+  }
+  if (syntax->kind == ND_GENERIC_SELECTION) {
+    const node_generic_selection_t *selection =
+        (const node_generic_selection_t *)syntax;
+    direct_generic_binding_t *binding =
+        find_direct_generic_binding(context, selection);
+    return binding && binding->selected_index >= 0 &&
+           binding->selected_index < selection->association_count &&
+           direct_integer_constant_has_allowed_operands(
+               context,
+               selection->associations[
+                   binding->selected_index].expression,
+               evaluated);
+  }
+  if (syntax->kind == ND_SOURCE_CAST) {
+    psx_type_shape_t target = {0};
+    if (!direct_integer_constant_shape(
+            context, syntax, &target))
+      return 0;
+    if (syntax->lhs && syntax->lhs->kind == ND_NUM &&
+        syntax->lhs->tok && syntax->lhs->tok->kind == TK_NUM &&
+        tk_as_num(syntax->lhs->tok)->num_kind == TK_NUM_KIND_FLOAT)
+      return 1;
+    return direct_integer_constant_has_allowed_operands(
+        context, syntax->lhs, evaluated);
+  }
+  if (syntax->kind == ND_TERNARY) {
+    const node_ctrl_t *conditional = (const node_ctrl_t *)syntax;
+    if (!direct_integer_constant_has_allowed_operands(
+            context, syntax->lhs, evaluated))
+      return 0;
+    if (!evaluated)
+      return direct_integer_constant_has_allowed_operands(
+                 context, syntax->rhs, 0) &&
+             direct_integer_constant_has_allowed_operands(
+                 context, conditional->els, 0);
+    long long condition = 0;
+    if (!direct_integer_constant(
+            context, syntax->lhs, &condition))
+      return 0;
+    return direct_integer_constant_has_allowed_operands(
+               context, syntax->rhs, condition != 0) &&
+           direct_integer_constant_has_allowed_operands(
+               context, conditional->els, condition == 0);
+  }
+  if (syntax->kind == ND_FUNCALL) {
+    const node_function_call_t *call =
+        (const node_function_call_t *)syntax;
+    const node_t *operand = psx_builtin_expect_value_operand(call);
+    return operand &&
+           direct_integer_constant_has_allowed_operands(
+               context, operand, evaluated);
+  }
+  if (syntax->kind == ND_UNARY_PLUS ||
+      syntax->kind == ND_UNARY_NEGATE ||
+      syntax->kind == ND_LOGICAL_NOT ||
+      syntax->kind == ND_BITWISE_NOT)
+    return direct_integer_constant_has_allowed_operands(
+        context, syntax->lhs, evaluated);
+
+  if (syntax->kind == ND_COMMA) {
+    return !evaluated &&
+           direct_integer_constant_has_allowed_operands(
+               context, syntax->lhs, 0) &&
+           direct_integer_constant_has_allowed_operands(
+               context, syntax->rhs, 0);
+  }
+  if (syntax->kind == ND_LOGAND ||
+      syntax->kind == ND_LOGOR) {
+    if (!direct_integer_constant_has_allowed_operands(
+            context, syntax->lhs, evaluated))
+      return 0;
+    if (!evaluated)
+      return direct_integer_constant_has_allowed_operands(
+          context, syntax->rhs, 0);
+    long long lhs = 0;
+    if (!direct_integer_constant(
+            context, syntax->lhs, &lhs))
+      return 0;
+    int rhs_evaluated =
+        syntax->kind == ND_LOGAND ? lhs != 0 : lhs == 0;
+    return direct_integer_constant_has_allowed_operands(
+        context, syntax->rhs, rhs_evaluated);
+  }
+
+  psx_integer_constant_operation_t operation =
+      PSX_INTEGER_CONSTANT_OP_INVALID;
+  return direct_integer_constant_binary_operation(
+             syntax->kind, &operation) &&
+         direct_integer_constant_has_allowed_operands(
+             context, syntax->lhs, evaluated) &&
+         direct_integer_constant_has_allowed_operands(
+             context, syntax->rhs, evaluated);
+}
+
+static int direct_integer_constant_binary_operation(
+    psx_syntax_node_kind_t kind,
+    psx_integer_constant_operation_t *operation) {
+  if (!operation) return 0;
+  switch (kind) {
+    case ND_ADD: *operation = PSX_INTEGER_CONSTANT_OP_ADD; return 1;
+    case ND_SUB: *operation = PSX_INTEGER_CONSTANT_OP_SUB; return 1;
+    case ND_MUL: *operation = PSX_INTEGER_CONSTANT_OP_MUL; return 1;
+    case ND_DIV: *operation = PSX_INTEGER_CONSTANT_OP_DIV; return 1;
+    case ND_MOD: *operation = PSX_INTEGER_CONSTANT_OP_MOD; return 1;
+    case ND_SHL: *operation = PSX_INTEGER_CONSTANT_OP_SHL; return 1;
+    case ND_SHR: *operation = PSX_INTEGER_CONSTANT_OP_SHR; return 1;
+    case ND_BITAND: *operation = PSX_INTEGER_CONSTANT_OP_BITAND; return 1;
+    case ND_BITXOR: *operation = PSX_INTEGER_CONSTANT_OP_BITXOR; return 1;
+    case ND_BITOR: *operation = PSX_INTEGER_CONSTANT_OP_BITOR; return 1;
+    case ND_EQ: *operation = PSX_INTEGER_CONSTANT_OP_EQ; return 1;
+    case ND_NE: *operation = PSX_INTEGER_CONSTANT_OP_NE; return 1;
+    case ND_LT: *operation = PSX_INTEGER_CONSTANT_OP_LT; return 1;
+    case ND_LE: *operation = PSX_INTEGER_CONSTANT_OP_LE; return 1;
+    case ND_GT: *operation = PSX_INTEGER_CONSTANT_OP_GT; return 1;
+    case ND_GE: *operation = PSX_INTEGER_CONSTANT_OP_GE; return 1;
+    case ND_LOGAND: *operation = PSX_INTEGER_CONSTANT_OP_LOGAND; return 1;
+    case ND_LOGOR: *operation = PSX_INTEGER_CONSTANT_OP_LOGOR; return 1;
+    case ND_COMMA: *operation = PSX_INTEGER_CONSTANT_OP_COMMA; return 1;
+    default: return 0;
+  }
+}
+
+static int direct_promoted_integer_shape(
+    const direct_resolution_context_t *context,
+    psx_qual_type_t type, psx_type_shape_t *promoted_shape) {
+  psx_type_shape_t shape = {0};
+  if (!promoted_shape ||
+      !direct_describe_qual_type(context, type, &shape))
+    return 0;
+  psx_integer_conversion_t promoted =
+      psx_integer_promotion_for_data_layout(
+          psx_integer_conversion_from_shape(&shape),
+          ps_ctx_data_layout(context->semantic_context));
+  if (!promoted.is_integer) return 0;
+  psx_integer_kind_t integer_kind = PSX_INTEGER_KIND_INT;
+  if (promoted.rank == 1)
+    integer_kind = PSX_INTEGER_KIND_CHAR;
+  else if (promoted.rank == 2)
+    integer_kind = PSX_INTEGER_KIND_SHORT;
+  else if (promoted.rank == 4)
+    integer_kind = PSX_INTEGER_KIND_LONG;
+  else if (promoted.rank >= 5)
+    integer_kind = PSX_INTEGER_KIND_LONG_LONG;
+  *promoted_shape = (psx_type_shape_t){
+      .kind = PSX_TYPE_INTEGER,
+      .integer_kind = integer_kind,
+      .is_unsigned = promoted.is_unsigned,
+  };
+  return 1;
 }
 
 static int direct_integer_constant(
     direct_resolution_context_t *context,
     const node_t *syntax, long long *value) {
-  if (!context || !syntax || !value) return 0;
+  if (!context || !syntax || !value ||
+      !direct_integer_constant_has_allowed_operands(
+          context, syntax, 1))
+    return 0;
   if (syntax->kind == ND_NUM) {
     if (syntax->tok && syntax->tok->kind == TK_NUM &&
         tk_as_num(syntax->tok)->num_kind == TK_NUM_KIND_FLOAT)
@@ -3881,35 +4282,73 @@ static int direct_integer_constant(
     if (!binding || binding->selected_index < 0 ||
         binding->selected_index >= selection->association_count)
       return 0;
-    return direct_integer_constant(
-        context,
-        selection->associations[binding->selected_index].expression,
-        value);
+    long long selected_value = 0;
+    if (!direct_integer_constant(
+            context,
+            selection->associations[binding->selected_index].expression,
+            &selected_value))
+      return 0;
+    psx_type_shape_t result_type = {0};
+    if (!direct_integer_constant_shape(
+            context, syntax, &result_type)) {
+      *value = selected_value;
+      return 1;
+    }
+    return psx_normalize_integer_constant_cast(
+        &result_type, selected_value, value);
   }
   if (syntax->kind == ND_UNARY_PLUS) {
-    return direct_integer_constant(
-        context, syntax->lhs, value);
+    long long operand = 0;
+    if (!direct_integer_constant(
+            context, syntax->lhs, &operand))
+      return 0;
+    psx_type_shape_t result_type = {0};
+    return direct_integer_constant_shape(
+               context, syntax, &result_type)
+               ? psx_apply_typed_integer_constant_unary(
+                     PSX_INTEGER_CONSTANT_OP_UNARY_PLUS, &result_type,
+                     ps_ctx_data_layout(context->semantic_context),
+                     operand, value)
+               : (*value = operand, 1);
   }
   if (syntax->kind == ND_UNARY_NEGATE) {
     long long operand;
     if (!direct_integer_constant(context, syntax->lhs, &operand))
       return 0;
-    *value = -operand;
-    return 1;
+    psx_type_shape_t result_type = {0};
+    return direct_integer_constant_shape(
+               context, syntax, &result_type)
+               ? psx_apply_typed_integer_constant_unary(
+                     PSX_INTEGER_CONSTANT_OP_NEGATE, &result_type,
+                     ps_ctx_data_layout(context->semantic_context),
+                     operand, value)
+               : (*value = -operand, 1);
   }
   if (syntax->kind == ND_LOGICAL_NOT) {
     long long operand;
     if (!direct_integer_constant(context, syntax->lhs, &operand))
       return 0;
-    *value = !operand;
-    return 1;
+    psx_type_shape_t result_type = {0};
+    return direct_integer_constant_shape(
+               context, syntax, &result_type)
+               ? psx_apply_typed_integer_constant_unary(
+                     PSX_INTEGER_CONSTANT_OP_LOGICAL_NOT, &result_type,
+                     ps_ctx_data_layout(context->semantic_context),
+                     operand, value)
+               : (*value = !operand, 1);
   }
   if (syntax->kind == ND_BITWISE_NOT) {
     long long operand;
     if (!direct_integer_constant(context, syntax->lhs, &operand))
       return 0;
-    *value = ~operand;
-    return 1;
+    psx_type_shape_t result_type = {0};
+    return direct_integer_constant_shape(
+               context, syntax, &result_type)
+               ? psx_apply_typed_integer_constant_unary(
+                     PSX_INTEGER_CONSTANT_OP_BITWISE_NOT, &result_type,
+                     ps_ctx_data_layout(context->semantic_context),
+                     operand, value)
+               : (*value = ~operand, 1);
   }
   if (syntax->kind == ND_SOURCE_CAST) {
     psx_qual_type_t target_qual_type;
@@ -3940,8 +4379,19 @@ static int direct_integer_constant(
     if (!direct_integer_constant(
             context, syntax->lhs, &condition))
       return 0;
-    return direct_integer_constant(
-        context, condition ? syntax->rhs : conditional->els, value);
+    long long selected_value = 0;
+    if (!direct_integer_constant(
+            context, condition ? syntax->rhs : conditional->els,
+            &selected_value))
+      return 0;
+    psx_type_shape_t result_type = {0};
+    if (!direct_integer_constant_shape(
+            context, syntax, &result_type)) {
+      *value = selected_value;
+      return 1;
+    }
+    return psx_normalize_integer_constant_cast(
+        &result_type, selected_value, value);
   }
   if (syntax->kind == ND_FUNCALL) {
     const node_function_call_t *call =
@@ -3965,6 +4415,24 @@ static int direct_integer_constant(
   long long rhs;
   if (!direct_integer_constant(context, syntax->rhs, &rhs))
     return 0;
+  psx_type_shape_t lhs_type = {0};
+  psx_type_shape_t rhs_type = {0};
+  psx_type_shape_t result_type = {0};
+  psx_integer_constant_operation_t operation =
+      PSX_INTEGER_CONSTANT_OP_INVALID;
+  if (direct_integer_constant_shape(
+          context, syntax->lhs, &lhs_type) &&
+      direct_integer_constant_shape(
+          context, syntax->rhs, &rhs_type) &&
+      direct_integer_constant_shape(
+          context, syntax, &result_type) &&
+      direct_integer_constant_binary_operation(
+          syntax->kind, &operation)) {
+    return psx_apply_typed_integer_constant_binary(
+        operation, &lhs_type, &rhs_type, &result_type,
+        ps_ctx_data_layout(context->semantic_context),
+        lhs, rhs, value);
+  }
   return psx_apply_integer_constant_binary(
       syntax->kind, lhs, rhs, value);
 }
@@ -4153,6 +4621,73 @@ static psx_scope_id_t direct_label_scope(
              ? function_scope : current;
 }
 
+static direct_label_scope_state_t *find_direct_label_scope_state(
+    const direct_resolution_context_t *context,
+    const char *name, int name_len) {
+  psx_scope_graph_t *graph = context
+      ? ps_ctx_scope_graph(context->semantic_context) : NULL;
+  psx_scope_id_t label_scope = direct_label_scope(context);
+  if (!graph || label_scope == PSX_SCOPE_ID_INVALID ||
+      !name || name_len <= 0)
+    return NULL;
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          graph, label_scope, PSX_NAMESPACE_LABEL, name, name_len);
+  return declaration && declaration->kind == PSX_DECL_LABEL
+             ? declaration->payload : NULL;
+}
+
+static direct_label_scope_state_t *find_direct_label_scope_state_for(
+    const direct_resolution_context_t *context,
+    const node_jump_t *syntax) {
+  direct_label_scope_state_t *state =
+      syntax ? find_direct_label_scope_state(
+                   context, syntax->name, syntax->name_len)
+             : NULL;
+  return state && state->syntax == syntax ? state : NULL;
+}
+
+static direct_goto_binding_t *find_direct_goto_binding(
+    const direct_resolution_context_t *context,
+    const node_jump_t *syntax) {
+  for (direct_goto_binding_t *binding =
+           context ? context->gotos : NULL;
+       binding; binding = binding->next) {
+    if (binding->syntax == syntax) return binding;
+  }
+  return NULL;
+}
+
+static int push_direct_vm_scope_marker(
+    direct_resolution_context_t *context,
+    const node_local_declaration_t *syntax) {
+  if (!context || !syntax) return 0;
+  direct_vm_scope_marker_t *marker = arena_alloc_in(
+      ps_ctx_arena(context->semantic_context), sizeof(*marker));
+  if (!marker) {
+    context->preflight_failed = 1;
+    set_failure(
+        context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        &syntax->base);
+    return 0;
+  }
+  *marker = (direct_vm_scope_marker_t){
+      .syntax = syntax,
+      .parent = context->active_vm_scope,
+  };
+  context->active_vm_scope = marker;
+  return 1;
+}
+
+static int direct_vm_scope_contains(
+    const direct_vm_scope_marker_t *scope,
+    const direct_vm_scope_marker_t *target) {
+  for (; scope; scope = scope->parent) {
+    if (scope == target) return 1;
+  }
+  return 0;
+}
+
 static void forget_direct_label_declarations(
     direct_resolution_context_t *context) {
   psx_scope_graph_t *graph = context
@@ -4214,10 +4749,22 @@ static int collect_direct_function_jumps(
             context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL,
             syntax, label->name, label->name_len);
       }
+      direct_label_scope_state_t *state = arena_alloc_in(
+          ps_ctx_arena(context->semantic_context), sizeof(*state));
+      if (!state) {
+        context->preflight_failed = 1;
+        set_failure(
+            context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+            syntax);
+        return 0;
+      }
+      *state = (direct_label_scope_state_t){
+          .syntax = label,
+      };
       psx_decl_id_t declaration_id =
           psx_scope_graph_declare_synthetic_at(
               graph, label_scope, PSX_NAMESPACE_LABEL, PSX_DECL_LABEL,
-              label->name, label->name_len, (void *)label);
+              label->name, label->name_len, state);
       if (declaration_id == PSX_DECL_ID_INVALID) {
         context->preflight_failed = 1;
         set_failure(
@@ -4268,6 +4815,32 @@ static int validate_direct_function_jumps(
             jump->name, jump->name_len) == PSX_DECL_ID_INVALID) {
       return note_direct_named_rejection(
           context, PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO,
+          &jump->base, jump->name, jump->name_len);
+    }
+  }
+  return 1;
+}
+
+static int validate_direct_function_vm_jumps(
+    direct_resolution_context_t *context) {
+  if (!context) return 0;
+  for (const direct_goto_binding_t *reference = context->gotos;
+       reference; reference = reference->next) {
+    const node_jump_t *jump = reference->syntax;
+    direct_label_scope_state_t *label =
+        jump ? find_direct_label_scope_state(
+                   context, jump->name, jump->name_len)
+             : NULL;
+    if (!jump || !label)
+      return note_direct_rejection(
+          context, jump ? &jump->base : NULL);
+    for (const direct_vm_scope_marker_t *required = label->vm_scope;
+         required; required = required->parent) {
+      if (direct_vm_scope_contains(reference->vm_scope, required))
+        continue;
+      return note_direct_named_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE,
           &jump->base, jump->name, jump->name_len);
     }
   }
@@ -4692,7 +5265,7 @@ static int preflight_direct_flat_initializer(
             context, item->value, &constant_value) &&
         constant_value == 0;
     psx_assignment_types_resolution_t assignment;
-    psx_resolve_assignment_qual_types_in(
+    psx_resolve_assignment_conversion_qual_types_in(
         context->semantic_context,
         (psx_qual_type_t){
             item->target_qual_type.type_id,
@@ -5102,6 +5675,7 @@ static int preflight_direct_local_declaration(
   }
   memset(declarators, 0,
          (size_t)declaration->declarator_count * sizeof(*declarators));
+  int declares_variably_modified_identifier = 0;
 
   if (declaration->is_typedef) {
     for (int i = 0; i < declaration->declarator_count; i++) {
@@ -5158,6 +5732,11 @@ static int preflight_direct_local_declaration(
           },
           &resolution);
       if (resolution.status != PSX_TYPEDEF_DECLARATION_OK) return 0;
+      if (psx_semantic_type_table_contains_vla_array(
+              ps_ctx_semantic_type_table_in(
+                  context->semantic_context),
+              decl_qual_type.type_id))
+        declares_variably_modified_identifier = 1;
       declarators[i] = (direct_local_declarator_binding_t){
           .typedef_bound_captures = captures,
           .typedef_bound_capture_count = capture_count,
@@ -5171,7 +5750,8 @@ static int preflight_direct_local_declaration(
         .next = context->local_declarations,
     };
     context->local_declarations = binding;
-    return 1;
+    return !declares_variably_modified_identifier ||
+           push_direct_vm_scope_marker(context, syntax);
   }
 
   for (int i = 0; i < declaration->declarator_count; i++) {
@@ -5403,6 +5983,8 @@ static int preflight_direct_local_declaration(
             &request, &result) || !result.var ||
         (has_vla_type && !result.vla_runtime_plan))
       return 0;
+    if (has_vla_type)
+      declares_variably_modified_identifier = 1;
     if (declaration->specifier.type_spec.is_register)
       ps_local_registry_mark_register(result.var);
     psx_qual_type_t declaration_qual_type =
@@ -5463,7 +6045,7 @@ static int preflight_direct_local_declaration(
                 context, initializer->value, &constant_value) &&
             constant_value == 0;
         psx_assignment_types_resolution_t assignment;
-        psx_resolve_assignment_qual_types_in(
+        psx_resolve_assignment_conversion_qual_types_in(
             context->semantic_context,
             (psx_qual_type_t){
                 declaration_qual_type.type_id,
@@ -5493,7 +6075,8 @@ static int preflight_direct_local_declaration(
       .next = context->local_declarations,
   };
   context->local_declarations = binding;
-  return 1;
+  return !declares_variably_modified_identifier ||
+         push_direct_vm_scope_marker(context, syntax);
 }
 
 static int preflight_direct_statement(
@@ -5518,18 +6101,22 @@ static int preflight_direct_statement_impl(
     case ND_BLOCK: {
       const node_block_t *block = (const node_block_t *)syntax;
       int nested_scope = context->block_depth > 0;
+      direct_vm_scope_marker_t *vm_scope =
+          context->active_vm_scope;
       if (nested_scope)
         ps_decl_enter_scope_in(context->local_registry);
       context->block_depth++;
       for (size_t i = 0; block->body && block->body[i]; i++) {
         if (!preflight_direct_statement(context, block->body[i])) {
           context->block_depth--;
+          context->active_vm_scope = vm_scope;
           if (nested_scope)
             ps_decl_leave_scope_in(context->local_registry);
           return 0;
         }
       }
       context->block_depth--;
+      context->active_vm_scope = vm_scope;
       if (nested_scope)
         ps_decl_leave_scope_in(context->local_registry);
       return 1;
@@ -5624,7 +6211,7 @@ static int preflight_direct_statement_impl(
       const node_ctrl_t *control = (const node_ctrl_t *)syntax;
       return preflight_direct_control_expression(
                  context, syntax, syntax->lhs,
-                 PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR) &&
+                 PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL) &&
              preflight_direct_statement(context, syntax->rhs) &&
              (!control->els ||
               preflight_direct_statement(context, control->els));
@@ -5633,7 +6220,7 @@ static int preflight_direct_statement_impl(
     case ND_DO_WHILE: {
       if (!preflight_direct_control_expression(
               context, syntax, syntax->lhs,
-              PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR))
+              PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL))
         return 0;
       context->loop_depth++;
       int resolved =
@@ -5645,6 +6232,8 @@ static int preflight_direct_statement_impl(
       const node_ctrl_t *control = (const node_ctrl_t *)syntax;
       int declaration_scope = control->init &&
           control->init->kind == ND_LOCAL_DECLARATION;
+      direct_vm_scope_marker_t *vm_scope =
+          context->active_vm_scope;
       if (declaration_scope) {
         ps_decl_enter_scope_in(context->local_registry);
       }
@@ -5657,7 +6246,7 @@ static int preflight_direct_statement_impl(
       if (resolved && syntax->lhs)
         resolved = preflight_direct_control_expression(
             context, syntax, syntax->lhs,
-            PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR);
+            PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL);
       if (resolved && control->inc)
         resolved = preflight_direct_expression(
             context, control->inc, NULL);
@@ -5668,17 +6257,26 @@ static int preflight_direct_statement_impl(
         context->loop_depth--;
       }
       if (declaration_scope) {
+        context->active_vm_scope = vm_scope;
         ps_decl_leave_scope_in(context->local_registry);
       }
       return resolved;
     }
     case ND_SWITCH: {
+      psx_qual_type_t control_type;
       if (!preflight_direct_control_expression(
               context, syntax, syntax->lhs,
-              PSX_CONTROL_EXPRESSION_REQUIRES_INTEGER))
+              PSX_CONTROL_EXPRESSION_REQUIRES_INTEGER,
+              &control_type))
+        return 0;
+      psx_type_shape_t promoted_control_type = {0};
+      if (!direct_promoted_integer_shape(
+              context, control_type, &promoted_control_type))
         return 0;
       direct_switch_scope_t scope = {
           .parent = context->switch_scope,
+          .promoted_control_type = promoted_control_type,
+          .entry_vm_scope = context->active_vm_scope,
       };
       context->switch_scope = &scope;
       context->switch_depth++;
@@ -5696,6 +6294,12 @@ static int preflight_direct_statement_impl(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH,
             syntax);
+      if (context->active_vm_scope !=
+          context->switch_scope->entry_vm_scope)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE,
+            syntax);
       if (!preflight_direct_expression(
               context, syntax->lhs, &case_qual_type))
         return 0;
@@ -5705,6 +6309,10 @@ static int preflight_direct_statement_impl(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT,
             syntax);
+      if (!psx_normalize_integer_constant_cast(
+              &context->switch_scope->promoted_control_type,
+              value, &value))
+        return note_direct_rejection(context, syntax);
       return bind_direct_case_value(
                  context, (const node_case_t *)syntax, value) &&
              preflight_direct_statement(context, syntax->rhs);
@@ -5715,17 +6323,34 @@ static int preflight_direct_statement_impl(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH,
             syntax);
+      if (context->active_vm_scope !=
+          context->switch_scope->entry_vm_scope)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE,
+            syntax);
       if (context->switch_scope->has_default)
         return note_direct_semantic_rejection(
             context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
             syntax);
       context->switch_scope->has_default = 1;
       return preflight_direct_statement(context, syntax->rhs);
-    case ND_GOTO:
+    case ND_GOTO: {
+      direct_goto_binding_t *binding = find_direct_goto_binding(
+          context, (const node_jump_t *)syntax);
+      if (!binding) return note_direct_rejection(context, syntax);
+      binding->vm_scope = context->active_vm_scope;
       return 1;
-    case ND_LABEL:
+    }
+    case ND_LABEL: {
+      direct_label_scope_state_t *state =
+          find_direct_label_scope_state_for(
+              context, (const node_jump_t *)syntax);
+      if (!state) return note_direct_rejection(context, syntax);
+      state->vm_scope = context->active_vm_scope;
       return !syntax->rhs ||
              preflight_direct_statement(context, syntax->rhs);
+    }
     case ND_BREAK:
       if (context->loop_depth == 0 && context->switch_depth == 0)
         return note_direct_semantic_rejection(
@@ -5921,7 +6546,7 @@ static psx_semantic_node_t *build_direct_flat_initializer(
         psx_semantic_node_expression_qual_type(target);
     initialization_target_type.qualifiers &=
         PSX_TYPE_QUALIFIER_ATOMIC;
-    psx_resolve_assignment_qual_types_in(
+    psx_resolve_assignment_conversion_qual_types_in(
         context->semantic_context,
         initialization_target_type,
         psx_semantic_node_expression_qual_type(value),
@@ -6021,7 +6646,7 @@ static psx_semantic_node_t *build_direct_flat_initializer(
           psx_semantic_node_expression_qual_type(target);
       initialization_target_type.qualifiers &=
           PSX_TYPE_QUALIFIER_ATOMIC;
-      psx_resolve_assignment_qual_types_in(
+      psx_resolve_assignment_conversion_qual_types_in(
           context->semantic_context,
           initialization_target_type,
           psx_semantic_node_expression_qual_type(value),
@@ -7012,7 +7637,8 @@ psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
       semantic_context, failure);
   if (!collect_direct_function_jumps(&context, syntax_statement) ||
       !validate_direct_function_jumps(&context) ||
-      !preflight_direct_statement(&context, syntax_statement)) {
+      !preflight_direct_statement(&context, syntax_statement) ||
+      !validate_direct_function_vm_jumps(&context)) {
     psx_syntax_typed_hir_resolution_status_t status =
         context.preflight_failed
             ? PSX_SYNTAX_TYPED_HIR_FAILED
@@ -7176,7 +7802,8 @@ psx_collect_syntax_function_declarations_for_analysis_in_contexts(
   int preflight_ok =
       collect_direct_function_jumps(&context, syntax_function->body) &&
       validate_direct_function_jumps(&context) &&
-      preflight_direct_statement(&context, syntax_function->body);
+      preflight_direct_statement(&context, syntax_function->body) &&
+      validate_direct_function_vm_jumps(&context);
   *lookup_point = psx_scope_graph_capture_lookup_point(
       ps_ctx_scope_graph(semantic_context));
   if (!preflight_ok && context.preflight_failed) {
@@ -7263,7 +7890,8 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
           &context, syntax_function->body) ||
       !validate_direct_function_jumps(&context) ||
       !preflight_direct_statement(
-          &context, syntax_function->body)) {
+          &context, syntax_function->body) ||
+      !validate_direct_function_vm_jumps(&context)) {
     rollback_direct_function_resolution(
         &transaction, context.function_declarations, 1);
     return context.preflight_failed

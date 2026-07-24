@@ -59,6 +59,12 @@ psx_qual_type_t ps_ctx_intern_void_qual_type_in(
     psx_semantic_context_t *context);
 psx_qual_type_t ps_ctx_intern_enum_qual_type_in(
     psx_semantic_context_t *context, psx_decl_id_t declaration_id);
+int ps_ctx_enum_declaration_is_complete_in(
+    psx_semantic_context_t *context,
+    psx_decl_id_t declaration_id);
+int ps_ctx_set_enum_compatible_unsigned_in(
+    psx_semantic_context_t *context, char *name, int len,
+    int is_unsigned);
 psx_qual_type_t ps_ctx_intern_record_qual_type_in(
     psx_semantic_context_t *context, psx_record_id_t record_id);
 psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
@@ -153,7 +159,8 @@ psx_record_id_t ps_ctx_resolve_tag_record_id_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);
 const psx_record_decl_t *ps_ctx_get_record_decl_in(
-    psx_semantic_context_t *context, psx_record_id_t record_id);
+    const psx_semantic_context_t *context,
+    psx_record_id_t record_id);
 int ps_ctx_get_tag_size_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);

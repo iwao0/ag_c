@@ -32,10 +32,12 @@ int psx_apply_parsed_enum_body_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    const psx_parsed_enum_body_t *body) {
+    const psx_parsed_enum_body_t *body,
+    char *tag_name, int tag_len) {
   if (!semantic_context || !global_registry || !local_registry || !body)
     return 0;
   long long next_value = 0;
+  int is_unsigned = 1;
   for (int i = 0; i < body->member_count; i++) {
     const psx_parsed_enum_member_t *member = &body->members[i];
     long long value = next_value;
@@ -49,8 +51,12 @@ int psx_apply_parsed_enum_body_in_contexts(
         semantic_context,
         member->enumerator->str, member->enumerator->len, value,
         (token_t *)member->enumerator);
+    if (value < 0) is_unsigned = 0;
     next_value = value + 1;
   }
+  if (!ps_ctx_set_enum_compatible_unsigned_in(
+          semantic_context, tag_name, tag_len, is_unsigned))
+    return 0;
   return body->member_count;
 }
 
@@ -165,7 +171,7 @@ static void apply_decl_tag_action(
   if (action->kind == TK_ENUM) {
     member_count = psx_apply_parsed_enum_body_in_contexts(
         semantic_context, global_registry, local_registry,
-        action->enum_body);
+        action->enum_body, action->name, action->name_len);
   } else {
     member_count = psx_apply_parsed_aggregate_body_layout_in_contexts(
         semantic_context, global_registry, local_registry,

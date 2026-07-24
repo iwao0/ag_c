@@ -2124,6 +2124,65 @@ static void test_typed_hir_local_lowering_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_typed_hir_narrow_return_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_hir_narrow_return_lowering_without_ast...\n");
+  const struct {
+    const char *source;
+    ir_op_t extension;
+  } cases[] = {
+      {"unsigned char narrow(int value) { return value; }", IR_ZEXT},
+      {"signed char narrow(int value) { return value; }", IR_SEXT},
+      {"unsigned short narrow(int value) { return value; }", IR_ZEXT},
+  };
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    reset_test_translation_unit_state(test_suite_session);
+    ASSERT_TRUE(resolve_program_input_hir(
+        test_suite_session, cases[i].source));
+    psx_hir_module_t *hir =
+        ag_compilation_session_hir_module(test_suite_session);
+    ASSERT_EQ(1, psx_hir_module_root_count(hir));
+    psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+    ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+        test_suite_session));
+
+    ir_build_options_t options = {
+        .target = ag_compilation_session_target(test_suite_session),
+        .semantic_types = ps_ctx_semantic_type_table_in(
+            test_semantic_context(test_suite_session)),
+        .record_decls = ps_ctx_record_decl_table_in(
+            test_semantic_context(test_suite_session)),
+        .record_layouts = ps_ctx_record_layout_table_in(
+            test_semantic_context(test_suite_session)),
+        .diagnostic_context =
+            ag_compilation_session_diagnostic_context(test_suite_session),
+    };
+    ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+    ir_module_t *ir = ir_build_function_module_from_hir(
+        hir, root_id, &options, &status);
+    ASSERT_EQ(IR_HIR_BUILD_OK, status);
+    ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+    ASSERT_EQ(1, count_ir_op(ir->funcs, IR_TRUNC));
+    ASSERT_EQ(1, count_ir_op(ir->funcs, cases[i].extension));
+
+    const ir_inst_t *return_instruction = NULL;
+    for (const ir_block_t *block = ir->funcs->entry;
+         block && !return_instruction; block = block->next) {
+      for (const ir_inst_t *instruction = block->head;
+           instruction; instruction = instruction->next) {
+        if (instruction->op == IR_RET) {
+          return_instruction = instruction;
+          break;
+        }
+      }
+    }
+    ASSERT_TRUE(return_instruction != NULL);
+    ASSERT_EQ(IR_TY_I32, return_instruction->src1.type);
+    ir_module_free(ir);
+  }
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_overaligned_local_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_overaligned_local_without_ast...\n");
@@ -2697,6 +2756,87 @@ static void test_typed_hir_variadic_aggregate_call_without_ast(
   ASSERT_EQ(call->args[1].value.id, physical_arguments[2].source.id);
   ir_abi_module_free(call_abi);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_MEMCPY));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void test_typed_hir_variadic_complex_call_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_hir_variadic_complex_call_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
+      "int sink(int marker, ...); "
+      "int invoke_sink(void) { "
+      "float _Complex narrow = {1.0f, 2.0f}; "
+      "double _Complex wide = {3.0, 4.0}; "
+      "return sink(1, narrow, wide); }");
+  ASSERT_TRUE(program_resolved);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  const ir_inst_t *call = NULL;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block && !call; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_CALL) {
+        call = instruction;
+        break;
+      }
+    }
+  }
+  ASSERT_TRUE(call != NULL);
+  ASSERT_EQ(3, call->nargs);
+  ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS, call->args[1].representation);
+  ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS, call->args[2].representation);
+  ASSERT_TRUE(test_call_abi_value(test_suite_session, ir, call, 2, 0));
+  ASSERT_EQ(1, test_call_abi_value(test_suite_session, ir, call, 0, 0));
+  ASSERT_EQ(IR_TY_I32,
+            test_call_abi_value(test_suite_session, ir, call, 1, 0));
+  ASSERT_EQ(IR_TY_I64,
+            test_call_abi_value(test_suite_session, ir, call, 1, 1));
+  ASSERT_EQ(IR_TY_I64,
+            test_call_abi_value(test_suite_session, ir, call, 1, 2));
+  ASSERT_EQ(IR_TY_I64,
+            test_call_abi_value(test_suite_session, ir, call, 1, 3));
+
+  ir_abi_module_t *call_abi = test_lower_ir_abi(test_suite_session, ir);
+  size_t physical_argument_count = 0;
+  const ir_abi_argument_t *physical_arguments = ir_abi_call_arguments(
+      call_abi, call, &physical_argument_count);
+  ASSERT_TRUE(call_abi != NULL && physical_arguments != NULL);
+  ASSERT_EQ(4, physical_argument_count);
+  ASSERT_EQ(IR_ABI_ARGUMENT_DIRECT, physical_arguments[0].access);
+  ASSERT_EQ(IR_ABI_ARGUMENT_LOAD, physical_arguments[1].access);
+  ASSERT_EQ(IR_ABI_ARGUMENT_LOAD, physical_arguments[2].access);
+  ASSERT_EQ(IR_ABI_ARGUMENT_LOAD, physical_arguments[3].access);
+  ASSERT_EQ(0, physical_arguments[1].byte_offset);
+  ASSERT_EQ(0, physical_arguments[2].byte_offset);
+  ASSERT_EQ(8, physical_arguments[3].byte_offset);
+  ASSERT_EQ(call->args[1].value.id, physical_arguments[1].source.id);
+  ASSERT_EQ(call->args[2].value.id, physical_arguments[2].source.id);
+  ASSERT_EQ(call->args[2].value.id, physical_arguments[3].source.id);
+  ir_abi_module_free(call_abi);
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
 }
@@ -3788,7 +3928,9 @@ static void test_typed_hir_unprototyped_indirect_call_without_ast(
   int program_resolved = resolve_program_input_hir(test_suite_session,
       "typedef int (*callback_t)(); "
       "int apply_unprototyped(callback_t callback) { "
-      "return callback(7); }");
+      "float _Complex complex_value = {3.0f, 4.0f}; "
+      "return callback(7, (float)1.5, (signed char)-2, "
+      "(_Bool)1, complex_value); }");
   ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -3826,11 +3968,21 @@ static void test_typed_hir_unprototyped_indirect_call_without_ast(
   }
   ASSERT_TRUE(call != NULL);
   ASSERT_TRUE(call->sym == NULL);
-  ASSERT_EQ(1, call->nargs);
-  ASSERT_EQ(1, test_call_abi_value(test_suite_session, ir, call, 0, 0));
+  ASSERT_EQ(5, call->nargs);
+  ASSERT_EQ(6, test_call_abi_value(test_suite_session, ir, call, 0, 0));
   ASSERT_TRUE(call->has_function_type);
-  ASSERT_EQ(1, test_call_abi_value(test_suite_session, ir, call, 0, 0));
+  ASSERT_TRUE(!call->function_type.has_prototype);
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 0));
+  ASSERT_EQ(IR_TY_F64, test_call_abi_value(test_suite_session, ir, call, 1, 1));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 2));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 3));
+  ASSERT_EQ(IR_TY_F32, test_call_abi_value(test_suite_session, ir, call, 1, 4));
+  ASSERT_EQ(IR_TY_F32, test_call_abi_value(test_suite_session, ir, call, 1, 5));
+  ASSERT_EQ(IR_CALL_ARGUMENT_VALUE, call->args[0].representation);
+  ASSERT_EQ(IR_CALL_ARGUMENT_VALUE, call->args[1].representation);
+  ASSERT_EQ(IR_CALL_ARGUMENT_VALUE, call->args[2].representation);
+  ASSERT_EQ(IR_CALL_ARGUMENT_VALUE, call->args[3].representation);
+  ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS, call->args[4].representation);
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
 }
@@ -4375,6 +4527,168 @@ static void assert_direct_function_resolution(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_goto_variably_modified_scope_boundary(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_goto_variably_modified_scope_boundary...\n");
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n) { goto target; int values[n]; "
+      "target: return sizeof(values); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_GOTO);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n) { goto target; { int values[n]; "
+      "target: return sizeof(values); } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_GOTO);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n) { { goto target; } { int values[n]; "
+      "target: return sizeof(values); } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_GOTO);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n) { goto target; int (*pointer)[n]; "
+      "target: return pointer != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_GOTO);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n) { goto target; typedef int row[n]; "
+      "target: return sizeof(row); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_GOTO);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n) { goto target; for (int values[n];;) { "
+      "target: return sizeof(values); } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_GOTO);
+
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(int n) { goto target; { target: ; int values[n]; "
+      "return sizeof(values); } }");
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(int n) { target: if (n < 0) return 0; "
+      "{ int values[n]; if (sizeof(values)) goto target; } "
+      "return 0; }");
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(int n) { int values[n]; goto target; "
+      "target: return sizeof(values); }");
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(void) { goto target; int values[2]; "
+      "target: return sizeof(values); }");
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(int n) { target: if (n < 0) return 0; "
+      "{ typedef int row[n]; if (sizeof(row)) goto target; } "
+      "return 0; }");
+
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n, int x) { switch (x) { int values[n]; "
+      "case 1: return sizeof(values); default: return 0; } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_CASE);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n, int x) { switch (x) { int values[n]; "
+      "default: return sizeof(values); } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_DEFAULT);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n, int x) { switch (x) { int (*pointer)[n]; "
+      "case 1: return pointer != 0; default: return 0; } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_CASE);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n, int x) { switch (x) { typedef int row[n]; "
+      "case 1: return sizeof(row); default: return 0; } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_CASE);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int n, int x) { switch (x) { { int values[n]; "
+      "case 1: return sizeof(values); } default: return 0; } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE,
+      ND_CASE);
+
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(int n, int x) { int values[n]; switch (x) { "
+      "case 1: return sizeof(values); default: return 0; } }");
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(int n, int x) { switch (x) { case 1: ; default: ; "
+      "int values[n]; return sizeof(values); } }");
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(int x) { switch (x) { int values[2]; "
+      "case 1: return 1; default: return 0; } }");
+}
+
+static void test_switch_case_conversion_boundary(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_switch_case_conversion_boundary...\n");
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(unsigned x) { switch (x) { case -1: return 1; "
+      "case 4294967295u: return 2; default: return 0; } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,
+      ND_CASE);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(int x) { switch (x) { case -2: return 1; "
+      "case 4294967294u: return 2; default: return 0; } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,
+      ND_CASE);
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(unsigned char x) { switch (x) { case -1: return 1; "
+      "case 4294967295u: return 2; default: return 0; } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,
+      ND_CASE);
+  expect_parse_fail(test_suite_session,
+      "enum PositiveSwitch { PositiveSwitchZero, "
+      "PositiveSwitchOne }; "
+      "int f(enum PositiveSwitch x) { switch (x) { "
+      "case -1: return 1; case 4294967295u: return 2; } "
+      "return 0; }");
+  expect_parse_fail(test_suite_session,
+      "enum NegativeSwitch { NegativeSwitchOne = -1, "
+      "NegativeSwitchZero }; "
+      "int f(enum NegativeSwitch x) { switch (x) { "
+      "case -1: return 1; case 4294967295u: return 2; } "
+      "return 0; }");
+  assert_direct_function_rejection(
+      test_suite_session,
+      "int f(unsigned x) { switch (x) { case 1: return 1; "
+      "case 4294967295u + 2u: return 2; default: return 0; } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,
+      ND_CASE);
+
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(unsigned x) { switch (x) { case -1: return 1; "
+      "case 0: return 2; default: return 0; } }");
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(unsigned char x) { switch (x) { case -1: return 1; "
+      "case 255: return 2; default: return 0; } }");
+  assert_direct_function_resolution(
+      test_suite_session,
+      "int f(int x) { switch (x) { case -1: return 1; "
+      "case 4294967294u: return 2; default: return 0; } }");
+}
+
 static void test_typed_hir_build_failure_first_cause_boundary(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_build_failure_first_cause_boundary...\n");
@@ -4575,6 +4889,89 @@ static void test_builtin_expect_typed_hir_boundary(
       failure.rejection);
 
   reset_test_translation_unit_state(test_suite_session);
+}
+
+static void assert_typed_integer_constant_value(
+    ag_compilation_session_t *test_suite_session,
+    const char *source, long long expected) {
+  reset_test_translation_unit_state(test_suite_session);
+  node_t *syntax =
+      parse_expr_input_with_existing_locals(
+          test_suite_session, source);
+  psx_resolved_hir_build_failure_t failure = {0};
+  const psx_typed_hir_tree_t *typed_hir = NULL;
+  psx_syntax_integer_constant_result_t constant = {0};
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(test_suite_session),
+          test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), NULL, syntax,
+          &typed_hir, &constant, &failure));
+  ASSERT_TRUE(typed_hir != NULL);
+  ASSERT_TRUE(constant.is_constant);
+  ASSERT_EQ(expected, constant.value);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void test_typed_integer_constant_conversion_boundary(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_integer_constant_conversion_boundary...\n");
+  assert_typed_integer_constant_value(
+      test_suite_session, "~0u >> 1", 2147483647LL);
+  assert_typed_integer_constant_value(
+      test_suite_session, "~0ul >> 1", 9223372036854775807LL);
+  assert_typed_integer_constant_value(
+      test_suite_session, "0xffffffffu > -1", 0);
+  assert_typed_integer_constant_value(
+      test_suite_session, "0xffffffffu == -1", 1);
+  assert_typed_integer_constant_value(
+      test_suite_session, "1u / -1", 0);
+  assert_typed_integer_constant_value(
+      test_suite_session, "1u % -1", 1);
+  assert_typed_integer_constant_value(
+      test_suite_session, "1 ? -1 : 0u", 4294967295LL);
+  assert_typed_integer_constant_value(
+      test_suite_session, "0xffffffffu + 2u", 1);
+  assert_typed_integer_constant_value(
+      test_suite_session, "0u - 1u", 4294967295LL);
+  assert_typed_integer_constant_value(
+      test_suite_session, "(unsigned char)257", 1);
+  assert_typed_integer_constant_value(
+      test_suite_session, "(unsigned short)65537", 1);
+  assert_typed_integer_constant_value(
+      test_suite_session, "(_Bool)-27", 1);
+  assert_typed_integer_constant_value(
+      test_suite_session, "sizeof(int) - 5", -1);
+  assert_typed_integer_constant_value(
+      test_suite_session, "sizeof(int) - 5 > 0", 1);
+  assert_typed_integer_constant_value(
+      test_suite_session, "'A' + '\\n' + '\\0'", 75);
+  assert_typed_integer_constant_value(
+      test_suite_session, "sizeof(1 / 0)", 4);
+  assert_typed_integer_constant_value(
+      test_suite_session, "sizeof(*(int *)0)", 4);
+  assert_typed_integer_constant_value(
+      test_suite_session, "_Alignof(int[3])", 4);
+  assert_typed_integer_constant_value(
+      test_suite_session,
+      "_Generic(1, int: 7, default: 1 / 0)", 7);
+  assert_typed_integer_constant_value(
+      test_suite_session,
+      "_Generic(1.0, int: 1 / 0, default: 9)", 9);
+  assert_typed_integer_constant_value(
+      test_suite_session, "1 ? 7 : 1 / 0", 7);
+  assert_typed_integer_constant_value(
+      test_suite_session, "0 ? 1 / 0 : 9", 9);
+  assert_typed_integer_constant_value(
+      test_suite_session, "1 ? 2 : (3, 4)", 2);
+  assert_typed_integer_constant_value(
+      test_suite_session, "0 && (3, 4)", 0);
+  assert_typed_integer_constant_value(
+      test_suite_session, "1 || (3, 4)", 1);
+  assert_typed_integer_constant_value(
+      test_suite_session,
+      "1 ? (0 ? (3, 4) : 5) : (6, 7)", 5);
 }
 
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
@@ -5253,6 +5650,20 @@ static void test_member_access_typed_hir_boundary(
       semantic_context, integer_qual_type,
       integer_qual_type, &subscript);
   ASSERT_EQ(PSX_SUBSCRIPT_OPERANDS_INVALID, subscript.status);
+  psx_qual_type_t void_qual_type =
+      ps_ctx_intern_void_qual_type_in(semantic_context);
+  psx_qual_type_t void_pointer_qual_type =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          semantic_context, void_qual_type);
+  ASSERT_TRUE(void_pointer_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
+  psx_resolve_subscript_qual_types_in(
+      semantic_context, void_pointer_qual_type,
+      integer_qual_type, &subscript);
+  ASSERT_EQ(PSX_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT,
+            subscript.status);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            subscript.result_qual_type.type_id);
 
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -6338,10 +6749,12 @@ static void test_sizeof_typed_hir_boundary(
   printf("test_sizeof_typed_hir_boundary...\n");
   reset_test_translation_unit_state(test_suite_session);
   ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
-      "unsigned long sizeof_probe(int n, int i) { "
+      "unsigned long sizeof_probe("
+      "int n, int i, int (*pointer)[n]) { "
       "  int x = 0; int fixed[3] = {0}; int vla[n][n]; "
       "  return sizeof(x) + sizeof(int[3]) "
       "      + sizeof(int[n]) + sizeof(&fixed) + sizeof(vla[i]) "
+      "      + sizeof *(pointer + i++) "
       "      + _Alignof(int[3]) + _Alignof(void *); "
       "}"));
 
@@ -6391,6 +6804,7 @@ static void test_sizeof_typed_hir_boundary(
   int found_pointer_size_literal = 0;
   int found_alignment_literal = 0;
   int found_vla_size_query = 0;
+  int found_vla_pointer_add_size_query = 0;
   int found_unsigned_long_arithmetic = 0;
   for (size_t i = 1;
        i <= psx_hir_module_node_count(hir); i++) {
@@ -6421,6 +6835,14 @@ static void test_sizeof_typed_hir_boundary(
         hir, psx_hir_node_child_at(hir_node, 0));
     const psx_hir_node_t *runtime_size = psx_hir_module_lookup(
         hir, psx_hir_node_child_at(hir_node, 1));
+    if (prefix && runtime_size &&
+        psx_hir_node_kind(prefix) == PSX_HIR_POST_INC &&
+        psx_hir_node_kind(runtime_size) == PSX_HIR_LOCAL &&
+        psx_hir_node_object_size(runtime_size) ==
+            PSX_VLA_RUNTIME_SLOT_SIZE) {
+      found_vla_pointer_add_size_query = 1;
+      continue;
+    }
     if (!prefix || !runtime_size ||
         psx_hir_node_kind(prefix) != PSX_HIR_LOCAL ||
         psx_hir_node_kind(runtime_size) != PSX_HIR_LOCAL ||
@@ -6447,6 +6869,7 @@ static void test_sizeof_typed_hir_boundary(
   ASSERT_TRUE(found_pointer_size_literal);
   ASSERT_TRUE(found_alignment_literal);
   ASSERT_TRUE(found_vla_size_query);
+  ASSERT_TRUE(found_vla_pointer_add_size_query);
   ASSERT_TRUE(found_unsigned_long_arithmetic);
 
   psx_hir_node_id_t root_id =
@@ -8024,6 +8447,11 @@ static void test_direct_function_typed_hir_resolution_boundary(
       "struct S { int x; }; struct S value={1}; return (int)value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_OPERAND_NOT_SCALAR,
       ND_SOURCE_CAST);
+  assert_direct_function_resolution(test_suite_session,
+      "int __direct_address_string_array(void) { "
+      "char (*pointer)[4] = &\"abc\"; "
+      "return _Generic(&\"abc\", char (*)[4]: 0, default: 1) || "
+      "sizeof *pointer != 4 || (*pointer)[2] != 'c'; }");
   assert_direct_function_rejection(test_suite_session,
       "int __direct_address_rvalue(void) { return &1 != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
@@ -8049,6 +8477,22 @@ static void test_direct_function_typed_hir_resolution_boundary(
       "return &_Generic(0, int: value.bits, default: value.bits) != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
       ND_ADDRESS_OF);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_address_register_scalar(void) { "
+      "register int value=1; return &value != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_REGISTER,
+      ND_ADDRESS_OF);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_address_register_parameter(register int value) { "
+      "return &value != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_REGISTER,
+      ND_ADDRESS_OF);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_address_register_member(void) { "
+      "struct S { int value; }; register struct S object={1}; "
+      "return &object.value != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_REGISTER,
+      ND_ADDRESS_OF);
   test_compilation_options(test_suite_session)->enable_struct_scalar_pointer_cast = false;
   assert_direct_function_rejection(test_suite_session,
       "int __direct_cast_struct_extension_disabled(void) { "
@@ -8063,6 +8507,27 @@ static void test_direct_function_typed_hir_resolution_boundary(
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_UNION_EXTENSION_DISABLED,
       ND_SOURCE_CAST);
   test_compilation_options(test_suite_session)->enable_union_scalar_pointer_cast = true;
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_pointer_to_floating_cast(void) { "
+      "int value=1; return (double)&value != 0.0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_SCALAR_CATEGORIES_INCOMPATIBLE,
+      ND_SOURCE_CAST);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_floating_to_pointer_cast(void) { "
+      "int *value=(int *)1.0; return value != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_SCALAR_CATEGORIES_INCOMPATIBLE,
+      ND_SOURCE_CAST);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_pointer_to_complex_cast(void) { "
+      "int value=1; return (double _Complex)&value != 0.0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_SCALAR_CATEGORIES_INCOMPATIBLE,
+      ND_SOURCE_CAST);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_complex_to_pointer_cast(void) { "
+      "double _Complex source=1.0; int *value=(int *)source; "
+      "return value != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_SCALAR_CATEGORIES_INCOMPATIBLE,
+      ND_SOURCE_CAST);
   assert_direct_function_rejection(test_suite_session,
       "int __direct_static_assert_not_constant(void) { "
       "int value = 1; _Static_assert(value, \"ng\"); return 0; }",
@@ -8103,9 +8568,34 @@ static void test_direct_function_typed_hir_resolution_boundary(
       PSX_SYNTAX_TYPED_HIR_REJECTION_DEREF_VOID_POINTER,
       ND_UNARY_DEREF);
   assert_direct_function_rejection(test_suite_session,
+      "int __direct_incomplete_lvalue_conversion(void) { "
+      "struct __DirectIncomplete; "
+      "struct __DirectIncomplete *value = 0; *value; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_LVALUE_CONVERSION_INCOMPLETE_OBJECT,
+      ND_UNARY_DEREF);
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_invalid_subscript(void) { "
       "int value = 1; return value[0]; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_INVALID_SUBSCRIPT_OPERANDS,
+      ND_SUBSCRIPT);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_void_pointer_subscript(void) { "
+      "void *value = 0; return value[0]; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT,
+      ND_SUBSCRIPT);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_incomplete_pointer_subscript(void) { "
+      "struct __DirectSubscriptIncomplete; "
+      "struct __DirectSubscriptIncomplete *value = 0; "
+      "return &value[0] == value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT,
+      ND_SUBSCRIPT);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_function_pointer_subscript(void) { "
+      "int __direct_subscript_target(int); "
+      "int (*value)(int) = __direct_subscript_target; "
+      "return value[0](1); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT,
       ND_SUBSCRIPT);
   assert_direct_function_rejection(test_suite_session,
       "int __direct_plus_pointer(void) { "
@@ -8152,6 +8642,27 @@ static void test_direct_function_typed_hir_resolution_boundary(
       PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_INVALID_OPERAND_TYPE,
       ND_PRE_INC);
   assert_direct_function_rejection(test_suite_session,
+      "int __direct_incdec_array(void) { "
+      "int values[2]={1,2}; ++values; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_INVALID_OPERAND_TYPE,
+      ND_PRE_INC);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_incdec_void_pointer(void) { "
+      "void *pointer=0; ++pointer; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_POINTER_NOT_COMPLETE_OBJECT,
+      ND_PRE_INC);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_incdec_incomplete_pointer(void) { "
+      "struct S; struct S *pointer=0; ++pointer; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_POINTER_NOT_COMPLETE_OBJECT,
+      ND_PRE_INC);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_incdec_const_bitfield(void) { "
+      "struct S { const unsigned int value:3; }; "
+      "struct S object={1}; object.value++; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_CONST_OPERAND,
+      ND_POST_INC);
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_assign_non_lvalue(void) { 1 = 2; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE,
       ND_ASSIGN);
@@ -8184,6 +8695,22 @@ static void test_direct_function_typed_hir_resolution_boundary(
   assert_direct_function_rejection(test_suite_session,
       "int __direct_compound_assign_incompatible(void) { "
       "int *pointer = 0; pointer *= 2; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
+      ND_COMPOUND_ASSIGN);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_compound_assign_const(void) { "
+      "const int value=1; value += 2; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_CONST_TARGET,
+      ND_COMPOUND_ASSIGN);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_compound_assign_array(void) { "
+      "int values[2]={1,2}; values += 1; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_TARGET_NOT_MODIFIABLE,
+      ND_COMPOUND_ASSIGN);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_compound_assign_struct(void) { "
+      "struct S { int value; }; struct S object={1}; "
+      "object += object; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
       ND_COMPOUND_ASSIGN);
   assert_direct_function_rejection(test_suite_session,
@@ -12225,6 +12752,10 @@ static void test_enum_constant_resolution_boundary(
   reset_test_translation_unit_state(test_suite_session);
   ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "enum { __EnumBoundary = 7 }; "
+      "enum PositiveEnumBoundary { PositiveEnumValue = 1 }; "
+      "enum NegativeEnumBoundary { NegativeEnumValue = -1 }; "
+      "enum PositiveEnumBoundary positive_enum_boundary; "
+      "enum NegativeEnumBoundary negative_enum_boundary; "
       "int enum_boundary_probe(void) { "
       "  enum { __EnumBoundary = 11 }; "
       "  return __EnumBoundary; "
@@ -12256,6 +12787,32 @@ static void test_enum_constant_resolution_boundary(
       test_semantic_context(test_suite_session), inner->id, &value));
   ASSERT_EQ(11, value);
 
+  const psx_scope_declaration_t *positive_enum_object =
+      find_test_scope_declaration(
+          graph, "positive_enum_boundary",
+          PSX_DECL_GLOBAL_OBJECT, 0);
+  const psx_scope_declaration_t *negative_enum_object =
+      find_test_scope_declaration(
+          graph, "negative_enum_boundary",
+          PSX_DECL_GLOBAL_OBJECT, 0);
+  ASSERT_TRUE(positive_enum_object != NULL);
+  ASSERT_TRUE(negative_enum_object != NULL);
+  psx_type_shape_t enum_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      ps_gvar_decl_type_id(positive_enum_object->payload),
+      &enum_shape));
+  ASSERT_EQ(PSX_INTEGER_KIND_ENUM, enum_shape.integer_kind);
+  ASSERT_TRUE(enum_shape.is_unsigned);
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      ps_gvar_decl_type_id(negative_enum_object->payload),
+      &enum_shape));
+  ASSERT_EQ(PSX_INTEGER_KIND_ENUM, enum_shape.integer_kind);
+  ASSERT_TRUE(!enum_shape.is_unsigned);
+
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   int found_inner_value = 0;
@@ -12284,6 +12841,90 @@ static void test_enum_constant_resolution_boundary(
   expect_parse_fail(test_suite_session,
       "int main(void) { int __EnumLocal; "
       "enum { __EnumLocal = 1 }; return 0; }");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedAddOverflow = 2147483647 + 1 };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedSubOverflow = -2147483647 - 2 };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedMulOverflow = 1073741824 * 2 };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedNegateOverflow = -(-2147483647 - 1) };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedDivOverflow = (-2147483647 - 1) / -1 };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedModOverflow = (-2147483647 - 1) % -1 };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedShiftOverflow = 2 << 31 };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedNegativeShift = -1 << 1 };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedLongLongAddOverflow = "
+      "(int)(9223372036854775807LL + 1LL) };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedLongLongDivOverflow = "
+      "(int)((-9223372036854775807LL - 1LL) / -1LL) };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedLongLongShiftOverflow = "
+      "(int)(2LL << 63) };");
+  expect_parse_fail(test_suite_session,
+      "_Static_assert((18446744073709551615ULL / 0ULL) == "
+      "0ULL, \"division by zero\");");
+  expect_parse_fail(test_suite_session,
+      "enum { UnsignedLongLongShiftWidth = "
+      "(int)(1ULL << 64) };");
+  expect_parse_fail(test_suite_session,
+      "int unsigned_long_long_negative_shift_bound["
+      "(1ULL << -1) ? 1 : -1];");
+  expect_parse_fail(test_suite_session,
+      "_Static_assert((2147483647 + 1) == "
+      "(-2147483647 - 1), \"overflow\");");
+  expect_parse_fail(test_suite_session,
+      "_Alignas(2147483647 + 1) int aligned_value;");
+  expect_parse_fail(test_suite_session,
+      "struct SignedOverflowWidth { "
+      "int value : 2147483647 + 1; };");
+  expect_parse_fail(test_suite_session,
+      "int signed_overflow_bound[2147483647 + 1];");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedAddUnderflow = "
+      "(-2147483647 - 1) + -1 };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedSubNegativeOverflow = "
+      "2147483647 - -1 };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedMulNegativeRhsOverflow = "
+      "1073741824 * -3 };");
+  expect_parse_fail(test_suite_session,
+      "enum { SignedMulBothNegativeOverflow = "
+      "-1073741824 * -3 };");
+  expect_parse_fail(test_suite_session,
+      "enum PositiveGeneric { PositiveGenericZero, "
+      "PositiveGenericOne }; "
+      "int f(enum PositiveGeneric value) { "
+      "return _Generic(value, enum PositiveGeneric: 1, "
+      "unsigned int: 2, default: 0); }");
+  expect_parse_fail(test_suite_session,
+      "enum NegativeGeneric { NegativeGenericOne = -1, "
+      "NegativeGenericZero }; "
+      "int f(enum NegativeGeneric value) { "
+      "return _Generic(value, enum NegativeGeneric: 1, "
+      "int: 2, default: 0); }");
+  expect_parse_fail(test_suite_session,
+      "enum PositiveFunction { PositiveFunctionZero, "
+      "PositiveFunctionOne }; "
+      "enum PositiveFunction positive_result(void); "
+      "int signed_result(void); "
+      "int f(void) { int (*function)(void) = "
+      "1 ? positive_result : signed_result; "
+      "return function(); }");
+  expect_parse_fail(test_suite_session,
+      "enum NegativeFunction { NegativeFunctionOne = -1, "
+      "NegativeFunctionZero }; "
+      "enum NegativeFunction negative_result(void); "
+      "unsigned int unsigned_result(void); "
+      "int f(void) { unsigned int (*function)(void) = "
+      "1 ? negative_result : unsigned_result; "
+      "return (int)function(); }");
 }
 
 static void test_initializer_resolution_boundary(
@@ -12797,6 +13438,8 @@ static void test_static_data_initializer_boundary(
       "    {.second = 22, .first = 11}; "
       "int callback_target(void) { return 3; } "
       "int (*initialized_callback)(void) = callback_target; "
+      "unsigned long initialized_function_address = "
+      "    (unsigned long)callback_target; "
       "int *initialized_address = &inferred_array[1]; "
       "static int internal_value = 9;"));
 
@@ -12891,6 +13534,9 @@ static void test_static_data_initializer_boundary(
   ir_data_object_t *callback =
       ir_data_module_find_object(
           module, "initialized_callback", 20);
+  ir_data_object_t *function_address =
+      ir_data_module_find_object(
+          module, "initialized_function_address", 28);
   ir_data_object_t *address =
       ir_data_module_find_object(
           module, "initialized_address", 19);
@@ -12907,6 +13553,7 @@ static void test_static_data_initializer_boundary(
   ASSERT_TRUE(pointers != NULL);
   ASSERT_TRUE(pair != NULL);
   ASSERT_TRUE(callback != NULL);
+  ASSERT_TRUE(function_address != NULL);
   ASSERT_TRUE(address != NULL);
   ASSERT_TRUE(internal != NULL);
 
@@ -12958,6 +13605,13 @@ static void test_static_data_initializer_boundary(
             callback->relocs->kind);
   ASSERT_TRUE(callback->relocs->has_function_type);
   ASSERT_EQ(0, callback->relocs->addend);
+
+  ASSERT_EQ(8, function_address->byte_size);
+  ASSERT_TRUE(function_address->relocs != NULL);
+  ASSERT_EQ(IR_DATA_RELOC_FUNCTION,
+            function_address->relocs->kind);
+  ASSERT_TRUE(function_address->relocs->has_function_type);
+  ASSERT_EQ(0, function_address->relocs->addend);
 
   ASSERT_EQ(8, address->byte_size);
   ASSERT_TRUE(address->relocs != NULL);
@@ -15977,6 +16631,66 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session, "int f(void); enum E { f }; int main(void) { return 0; }");
   expect_parse_fail(test_suite_session, "typedef int T; enum E { T }; int main(void) { return 0; }");
   expect_parse_fail(test_suite_session, "int main(void) { int x; enum E { x }; return 0; }");
+  expect_parse_fail(test_suite_session,
+      "enum Empty {}; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "enum Incomplete; enum Incomplete object; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "enum Incomplete; struct Holder { enum Incomplete member; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "enum Recursive { RecursiveSize = sizeof(enum Recursive) }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "auto int file_object; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int function(extern int parameter); int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Holder { static int member; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "inline int object; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int main(void) { _Thread_local int object; return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int values[static 3]; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int count; int values[count]; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int function(int count) { static int values[count]; "
+      "return values[0]; } int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "union Flexible { int scalar; int values[]; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Flexible { int values[]; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Flexible { int count; int values[]; int tail; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Bits { double value : 1; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Bits { _Bool value : 2; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "enum Incomplete; "
+      "struct Bits { enum Incomplete value : 1; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int width_mismatch(int); "
+      "int width_mismatch(long value) { return (int)value; }");
+  expect_parse_fail(test_suite_session,
+      "int signedness_mismatch(int); "
+      "int signedness_mismatch(unsigned int value) { return (int)value; }");
+  expect_parse_fail(test_suite_session,
+      "int floating_mismatch(float); "
+      "int floating_mismatch(double value) { return value != 0; }");
+  expect_parse_fail(test_suite_session,
+      "int pointee_mismatch(const int *); "
+      "int pointee_mismatch(int *value) { return value != 0; }");
   expect_parse_ok(test_suite_session, "int X; int main(void) { enum E { X }; return 0; }");
   expect_parse_ok(test_suite_session, "typedef int T; int main(void) { enum E { T }; return 0; }");
   expect_parse_ok(test_suite_session, "int main() { { struct T { int x; }; } struct T *p; return 0; }"); // 外側スコープで新規前方宣言
@@ -16035,6 +16749,25 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session, "enum E { A = 2147483648 }; int main(void){ return 0; }"); // enum定数はint幅
   expect_parse_fail(test_suite_session, "int main() { int x={1,2}; return x; }"); // スカラ波括弧初期化は単一要素のみ
   expect_parse_fail(test_suite_session, "int main() { int a[2]={1,2,3}; return 0; }"); // 配列初期化子過多
+  expect_parse_fail_with_message(test_suite_session, "char text[2]=\"abc\";", "E3027"); // 終端NUL省略を考慮しても文字列が長い
+  expect_parse_fail_with_message(test_suite_session, "int main(void){ static char text[1]=\"a\\0\"; return text[0]; }", "E3027"); // 埋め込みNULも配列要素を消費
+  expect_parse_fail_with_message(test_suite_session,
+      "struct S { const int value; }; int main(void){ struct S a={1}, b={2}; a=b; return a.value; }",
+      "E3077");
+  expect_parse_fail_with_message(test_suite_session,
+      "struct I { const int value; }; struct O { struct I inner; }; int main(void){ struct O a={{1}}, b={{2}}; a=b; return a.inner.value; }",
+      "E3077");
+  expect_parse_fail_with_message(test_suite_session,
+      "struct S { const int values[2]; }; int main(void){ struct S a={{1,2}}, b={{3,4}}; a=b; return a.values[0]; }",
+      "E3077");
+  expect_parse_fail_with_message(test_suite_session,
+      "struct I { const int value; }; struct O { struct I values[1]; }; int main(void){ struct O a={{{1}}}, b={{{2}}}; a=b; return a.values[0].value; }",
+      "E3077");
+  expect_parse_fail_with_message(test_suite_session,
+      "union U { int integer; const double real; }; int main(void){ union U a={.integer=1}, b={.integer=2}; a=b; return a.integer; }",
+      "E3077");
+  expect_parse_ok(test_suite_session,
+      "struct S { const int value; }; struct S id(struct S value){ return value; } int main(void){ struct S a={3}; struct S b=id(a); return b.value; }");
   expect_parse_fail(test_suite_session, "int main() { struct S { int x; }; struct S s=1; return 0; }"); // 構造体単一式初期化は未対応
   expect_parse_fail(test_suite_session, "int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }"); // 最終値が同型オブジェクトでない
   expect_parse_fail(test_suite_session, "int main() { union U { int x; char y; }; union U u={1,2}; return 0; }"); // 共用体は1要素のみ
@@ -16488,12 +17221,10 @@ static void test_parse_evil_edge_cases(
 
   // enumの値パース
   expect_parse_ok(test_suite_session, "int main() { enum Color { RED, GREEN, BLUE }; enum Color c = GREEN; return c; }");
-  // 匿名enumの値指定は既知のバグ（enum初期化子パース未対応）で現在パースエラー
-  // expect_parse_ok("int main() { enum { A=10, B=20, C=30 }; return B; }");
+  expect_parse_ok(test_suite_session, "int main() { enum { A=10, B=20, C=30 }; return B; }");
 
   // 構造体の前方参照と自己参照ポインタ
-  // 自己参照ポインタメンバは現在パースエラー（不完全型ポインタ未対応の可能性）
-  // expect_parse_ok("int main() { struct Node { int val; struct Node *next; }; struct Node n; n.val=42; n.next=0; return n.val; }");
+  expect_parse_ok(test_suite_session, "int main() { struct Node { int val; struct Node *next; }; struct Node n; n.val=42; n.next=0; return n.val; }");
 
   // void* の宣言と使用
   expect_parse_ok(test_suite_session, "int main() { void *p = 0; return p == 0 ? 42 : 0; }");
@@ -16510,8 +17241,7 @@ static void test_parse_evil_edge_cases(
   expect_parse_fail(test_suite_session, "void f(char *); void f(const char *p){(void)p;}");
   expect_parse_fail(test_suite_session, "void f(const char **); void f(char **p){(void)p;}");
   expect_parse_ok(test_suite_session, "struct __PtrSubSym814{char *name; int len;}; struct __PtrSubData814{struct __PtrSubSym814 *symbols;}; static struct __PtrSubData814 __ptr_sub_g814; int main(void){__ptr_sub_g814.symbols[0].name=\"main\";return __ptr_sub_g814.symbols[0].name[0];}");
-  // 後置const (int const x) は変数宣言で現在パースエラー
-  // expect_parse_ok("int main() { int const x = 42; return x; }");
+  expect_parse_ok(test_suite_session, "int main() { int const x = 42; return x; }");
 
   // 配列の宣言と初期化
   expect_parse_ok(test_suite_session, "int main() { int a[3] = {1, 2, 3}; return a[0] + a[1] + a[2]; }");
@@ -16529,20 +17259,16 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok(test_suite_session, "int main() { union U { int x; char c; }; union U u; u.x=42; return u.x; }");
 
   // _Static_assert 正常系
-  // _Static_assert with sizeof==4 — 定数式評価で==未対応の可能性
-  // expect_parse_ok("_Static_assert(sizeof(int)==4, \"int is 4 bytes\"); int main() { return 42; }");
+  expect_parse_ok(test_suite_session, "_Static_assert(sizeof(int)==4, \"int is 4 bytes\"); int main() { return 42; }");
 
   // _Generic の複雑なケース
   expect_parse_ok(test_suite_session, "int main() { double d=1.0; return _Generic(d, int:0, double:42, default:99); }");
 
-  // 複合リテラルの使用 — 現在パースエラーの可能性があるため個別検証
-  //expect_parse_ok("int main() { struct P { int x; int y; }; struct P p = (struct P){10, 32}; return p.x + p.y; }");
+  expect_parse_ok(test_suite_session, "int main() { struct P { int x; int y; }; struct P p = (struct P){10, 32}; return p.x + p.y; }");
 
   // 意地悪テスト: 異常系の追加
-  // 自己参照は不完全型エラーにならない（ポインタ非ポインタを問わずパース通過する可能性）
-  // expect_parse_fail("int main() { struct S { int x; struct S s; }; return 0; }");
-  // 負のサイズは現在エラーにならない
-  // expect_parse_fail("int main() { int a[-1]; return 0; }");
+  expect_parse_fail(test_suite_session, "int main() { struct S { int x; struct S s; }; return 0; }");
+  expect_parse_fail(test_suite_session, "int main() { int a[-1]; return 0; }");
 }
 
 static void test_parser_config_matrix(
@@ -17110,25 +17836,67 @@ static void test_semantic_type_identity(
 
   psx_qual_type_t first_enum =
       psx_semantic_type_table_intern_enum(
-          types, 0x1001u, "SemanticMode", 12);
+          types, 0x1001u, "SemanticMode", 12, 1);
   psx_qual_type_t equivalent_enum =
       psx_semantic_type_table_intern_enum(
-          types, 0x1001u, "SemanticMode", 12);
+          types, 0x1001u, "SemanticMode", 12, 1);
   psx_qual_type_t shadowed_enum =
       psx_semantic_type_table_intern_enum(
-          types, 0x1002u, "SemanticMode", 12);
+          types, 0x1002u, "SemanticMode", 12, 0);
+  psx_qual_type_t second_unsigned_enum =
+      psx_semantic_type_table_intern_enum(
+          types, 0x1004u, "OtherSemanticMode", 17, 1);
   ASSERT_EQ(first_enum.type_id, equivalent_enum.type_id);
   ASSERT_TRUE(first_enum.type_id != shadowed_enum.type_id);
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, first_enum.type_id, &shape));
   ASSERT_EQ(PSX_INTEGER_KIND_ENUM, shape.integer_kind);
+  ASSERT_TRUE(shape.is_unsigned);
   ASSERT_EQ(12, shape.enum_tag_length);
   ASSERT_EQ(0x1001u, shape.enum_decl_id);
+  ASSERT_TRUE(psx_semantic_type_table_types_compatible(
+      types, first_enum, unsigned_int));
+  ASSERT_TRUE(!psx_semantic_type_table_types_compatible(
+      types, first_enum, plain_int));
+  ASSERT_TRUE(psx_semantic_type_table_types_compatible(
+      types, shadowed_enum, plain_int));
+  ASSERT_TRUE(!psx_semantic_type_table_types_compatible(
+      types, shadowed_enum, unsigned_int));
+  ASSERT_TRUE(!psx_semantic_type_table_types_compatible(
+      types, first_enum, second_unsigned_enum));
+  psx_qual_type_t first_enum_pointer =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, first_enum);
+  psx_qual_type_t unsigned_int_pointer =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, unsigned_int);
+  psx_qual_type_t plain_int_pointer =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, plain_int);
+  ASSERT_TRUE(psx_semantic_type_table_types_compatible(
+      types, first_enum_pointer, unsigned_int_pointer));
+  ASSERT_TRUE(!psx_semantic_type_table_types_compatible(
+      types, first_enum_pointer, plain_int_pointer));
+  psx_qual_type_t nested_first_enum_pointer =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, first_enum_pointer);
+  psx_qual_type_t nested_unsigned_int_pointer =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, unsigned_int_pointer);
+  psx_qual_type_t nested_plain_int_pointer =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, plain_int_pointer);
+  ASSERT_TRUE(psx_semantic_type_table_types_compatible(
+      types, nested_first_enum_pointer,
+      nested_unsigned_int_pointer));
+  ASSERT_TRUE(!psx_semantic_type_table_types_compatible(
+      types, nested_first_enum_pointer,
+      nested_plain_int_pointer));
 
   char owned_enum_name[] = "OwnedSemanticMode";
   psx_qual_type_t owned_enum =
       psx_semantic_type_table_intern_enum(
-          types, 0x1003u, owned_enum_name, 17);
+          types, 0x1003u, owned_enum_name, 17, 1);
   owned_enum_name[0] = 'X';
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, owned_enum.type_id, &shape));
@@ -18202,6 +18970,35 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   ASSERT_EQ(after_synthetic.declaration_order,
             after_prototype.declaration_order);
 
+  int block_only_function_payload = 15;
+  psx_decl_id_t block_only_backing_id =
+      psx_scope_graph_declare_at(
+          graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, PSX_DECL_FUNCTION,
+          "block_only", 10, &block_only_function_payload);
+  ASSERT_TRUE(block_only_backing_id != PSX_DECL_ID_INVALID);
+  ASSERT_TRUE(psx_scope_graph_set_declaration_hidden_from_lookup(
+      graph, block_only_backing_id, 1));
+  ASSERT_EQ(block_only_backing_id, psx_scope_graph_lookup_in_scope(
+      graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+      PSX_NAMESPACE_ORDINARY, "block_only", 10));
+  ASSERT_EQ(PSX_DECL_ID_INVALID, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "block_only", 10,
+      psx_scope_graph_capture_lookup_point(graph)));
+  psx_scope_graph_checkpoint_t visibility_checkpoint = {0};
+  ASSERT_TRUE(psx_scope_graph_checkpoint_begin(
+      graph, &visibility_checkpoint));
+  ASSERT_TRUE(psx_scope_graph_set_declaration_hidden_from_lookup(
+      graph, block_only_backing_id, 0));
+  ASSERT_EQ(block_only_backing_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "block_only", 10,
+      psx_scope_graph_capture_lookup_point(graph)));
+  psx_scope_graph_checkpoint_rollback(
+      graph, &visibility_checkpoint);
+  ASSERT_EQ(PSX_DECL_ID_INVALID, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "block_only", 10,
+      psx_scope_graph_capture_lookup_point(graph)));
+
   psx_scope_id_t function_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_FUNCTION);
   ASSERT_TRUE(function_scope != PSX_SCOPE_ID_INVALID);
@@ -18260,6 +19057,17 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
       graph, PSX_NAMESPACE_ORDINARY, "same", 4, before_inner));
   ASSERT_EQ(inner_id, psx_scope_graph_lookup(
       graph, PSX_NAMESPACE_ORDINARY, "same", 4, after_inner));
+  psx_decl_id_t block_only_alias_id =
+      psx_scope_graph_declare_linkage_alias_at(
+          graph, block_scope, "block_only", 10,
+          block_only_backing_id);
+  ASSERT_TRUE(block_only_alias_id != PSX_DECL_ID_INVALID);
+  ASSERT_EQ(block_only_alias_id, psx_scope_graph_lookup_in_scope(
+      graph, block_scope, PSX_NAMESPACE_ORDINARY,
+      "block_only", 10));
+  ASSERT_EQ(block_only_backing_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "block_only", 10,
+      psx_scope_graph_capture_lookup_point(graph)));
 
   int promoted_tag_payload = 10;
   psx_decl_id_t promoted_tag_id = psx_scope_graph_declare(
@@ -18296,6 +19104,14 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
 
   ASSERT_TRUE(psx_scope_graph_leave_scope(graph));
   ASSERT_TRUE(psx_scope_graph_leave_scope(graph));
+  ASSERT_EQ(PSX_DECL_ID_INVALID, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "block_only", 10,
+      psx_scope_graph_capture_lookup_point(graph)));
+  ASSERT_TRUE(psx_scope_graph_set_declaration_hidden_from_lookup(
+      graph, block_only_backing_id, 0));
+  ASSERT_EQ(block_only_backing_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "block_only", 10,
+      psx_scope_graph_capture_lookup_point(graph)));
   ASSERT_EQ(promoted_tag_id, psx_scope_graph_lookup(
       graph, PSX_NAMESPACE_TAG, "__promoted", 10,
       psx_scope_graph_capture_lookup_point(graph)));
@@ -18352,6 +19168,7 @@ int main() {
   test_parser_name_classifier_boundary(test_suite_session);
   test_typed_hir_ownership_and_type_boundary(test_suite_session);
   test_typed_hir_local_lowering_without_ast(test_suite_session);
+  test_typed_hir_narrow_return_lowering_without_ast(test_suite_session);
   test_typed_hir_overaligned_local_without_ast(test_suite_session);
   test_typed_hir_parameter_lowering_without_ast(test_suite_session);
   test_typed_hir_pointer_lowering_without_ast(test_suite_session);
@@ -18362,6 +19179,7 @@ int main() {
   test_typed_hir_vla_allocation_without_ast(test_suite_session);
   test_typed_hir_direct_call_lowering_without_ast(test_suite_session);
   test_typed_hir_variadic_aggregate_call_without_ast(test_suite_session);
+  test_typed_hir_variadic_complex_call_without_ast(test_suite_session);
   test_typed_hir_atomic_lowering_without_ast(test_suite_session);
   test_typed_hir_atomic_compound_lowering_without_ast(test_suite_session);
   test_typed_hir_va_arg_area_lowering_without_ast(test_suite_session);
@@ -18396,7 +19214,10 @@ int main() {
   test_direct_literal_typed_hir_resolution_boundary(test_suite_session);
   test_predefined_function_name_typed_hir_boundary(test_suite_session);
   test_builtin_expect_typed_hir_boundary(test_suite_session);
+  test_typed_integer_constant_conversion_boundary(test_suite_session);
   test_direct_statement_typed_hir_resolution_boundary(test_suite_session);
+  test_goto_variably_modified_scope_boundary(test_suite_session);
+  test_switch_case_conversion_boundary(test_suite_session);
   test_typed_hir_build_failure_first_cause_boundary(test_suite_session);
   test_expr_number(test_suite_session);
   test_expr_add_sub(test_suite_session);

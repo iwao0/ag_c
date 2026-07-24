@@ -108,7 +108,7 @@ static int atomic_builtin_assignment_is_valid(
     int value_is_null_pointer_constant) {
   psx_assignment_types_resolution_t assignment;
   target.qualifiers = PSX_TYPE_QUALIFIER_NONE;
-  psx_resolve_assignment_qual_types_in(
+  psx_resolve_assignment_conversion_qual_types_in(
       semantic_context, target, value,
       value_is_null_pointer_constant, &assignment);
   return assignment.status == PSX_ASSIGNMENT_TYPES_OK;

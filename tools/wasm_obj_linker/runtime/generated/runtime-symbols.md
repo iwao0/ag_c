@@ -195,7 +195,9 @@ Do not edit it directly.
 | `fstat` | `__agc_runtime_fstat` | `env.fstat` | `i32,i64->i32` | read/write | wasm32-object-runtime | runtime |
 | `ftell` | `__agc_runtime_ftell` | `env.ftell` | `i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `fwide` | `__agc_runtime_fwide` | `env.fwide (stdio)` | `i64,i32->i32` | read/write | wasm32-js, wasm32-object-runtime | runtime |
+| `fwprintf` | `__agc_runtime_fwprintf` | `env.fwprintf` | `i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
 | `fwrite` | `__agc_runtime_fwrite` | `env.fwrite (stdio)` | `i64,i64,i64,i64->i64` | read/write | wasm32-js, wasm32-object-runtime | runtime |
+| `fwscanf` | `__agc_runtime_fwscanf` | `env.fwscanf` | `i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
 | `getc` | `__agc_runtime_getc` | `env.getc (stdio)` | `i64->i32` | read/write | wasm32-js, wasm32-object-runtime | runtime |
 | `getchar` | `__agc_runtime_getchar` | `env.getchar (stdio)` | `->i32` | read/write | wasm32-js, wasm32-object-runtime | runtime |
 | `getenv` | `__agc_runtime_getenv` | `env.getenv` | `i64->i64` | read/write | wasm32-object-runtime | runtime |
@@ -419,11 +421,17 @@ Do not edit it directly.
 | `ungetwc` | `__agc_runtime_ungetwc` | `env.ungetwc (stdio)` | `i32,i64->i32` | read/write | wasm32-js, wasm32-object-runtime | runtime |
 | `vfprintf` | `__agc_runtime_vfprintf` | `env.vfprintf (stdio)` | `i64,i64,i64->i32` | read/write | wasm32-js, wasm32-object-runtime | runtime |
 | `vfscanf` | `__agc_runtime_vfscanf` | `env.vfscanf` | `i64,i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
+| `vfwprintf` | `__agc_runtime_vfwprintf` | `env.vfwprintf` | `i64,i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
+| `vfwscanf` | `__agc_runtime_vfwscanf` | `env.vfwscanf` | `i64,i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
 | `vprintf` | `__agc_runtime_vprintf` | `env.vprintf` | `i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
 | `vscanf` | `__agc_runtime_vscanf` | `env.vscanf` | `i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
 | `vsnprintf` | `__agc_runtime_vsnprintf` | `env.vsnprintf (stdio)` | `i64,i64,i64,i64->i32` | read/write | wasm32-js, wasm32-object-runtime | runtime |
 | `vsprintf` | `__agc_runtime_vsprintf` | `env.vsprintf` | `i64,i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
 | `vsscanf` | `__agc_runtime_vsscanf` | `env.vsscanf` | `i64,i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
+| `vswprintf` | `__agc_runtime_vswprintf` | `env.vswprintf` | `i64,i64,i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
+| `vswscanf` | `__agc_runtime_vswscanf` | `env.vswscanf` | `i64,i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
+| `vwprintf` | `__agc_runtime_vwprintf` | `env.vwprintf` | `i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
+| `vwscanf` | `__agc_runtime_vwscanf` | `env.vwscanf` | `i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
 | `wcrtomb` | `__agc_runtime_wcrtomb` | `env.wcrtomb` | `i64,i32,i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `wcscat` | `__agc_runtime_wcscat` | `env.wcscat` | `i64,i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `wcschr` | `__agc_runtime_wcschr` | `env.wcschr` | `i64,i32->i64` | read/write | wasm32-object-runtime | runtime |
@@ -460,4 +468,6 @@ Do not edit it directly.
 | `wmemcpy` | `__agc_runtime_wmemcpy` | `env.wmemcpy` | `i64,i64,i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `wmemmove` | `__agc_runtime_wmemmove` | `env.wmemmove` | `i64,i64,i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `wmemset` | `__agc_runtime_wmemset` | `env.wmemset` | `i64,i32,i64->i64` | read/write | wasm32-object-runtime | runtime |
+| `wprintf` | `__agc_runtime_wprintf` | `env.wprintf` | `i64->i32` | read/write | wasm32-object-runtime | runtime |
 | `write` | `__agc_runtime_write` | `env.write (stdio)` | `i32,i64,i64->i64` | read/write | wasm32-js, wasm32-object-runtime | runtime |
+| `wscanf` | `__agc_runtime_wscanf` | `env.wscanf` | `i64->i32` | read/write | wasm32-object-runtime | runtime |

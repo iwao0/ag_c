@@ -5,6 +5,7 @@
 #include "../parser/gvar_public.h"
 #include "../parser/symtab.h"
 #include "../semantic/initializer_resolution.h"
+#include "../semantic/integer_constant_evaluation.h"
 #include "static_initializer_plan.h"
 #include "../semantic/type_identity.h"
 #include "../type_layout.h"
@@ -56,6 +57,90 @@ static int type_uses_floating_value(const psx_type_shape_t *type) {
                   type->kind == PSX_TYPE_COMPLEX);
 }
 
+static int integer_constant_unary_operation_for_hir(
+    psx_hir_node_kind_t kind,
+    psx_integer_constant_operation_t *operation) {
+  if (!operation) return 0;
+  switch (kind) {
+    case PSX_HIR_UNARY_PLUS:
+      *operation = PSX_INTEGER_CONSTANT_OP_UNARY_PLUS;
+      return 1;
+    case PSX_HIR_NEGATE:
+      *operation = PSX_INTEGER_CONSTANT_OP_NEGATE;
+      return 1;
+    case PSX_HIR_LOGICAL_NOT:
+      *operation = PSX_INTEGER_CONSTANT_OP_LOGICAL_NOT;
+      return 1;
+    case PSX_HIR_BITWISE_NOT:
+      *operation = PSX_INTEGER_CONSTANT_OP_BITWISE_NOT;
+      return 1;
+    default: return 0;
+  }
+}
+
+static int integer_constant_binary_operation_for_hir(
+    psx_hir_node_kind_t kind,
+    psx_integer_constant_operation_t *operation) {
+  if (!operation) return 0;
+  switch (kind) {
+    case PSX_HIR_ADD:
+      *operation = PSX_INTEGER_CONSTANT_OP_ADD;
+      return 1;
+    case PSX_HIR_SUB:
+      *operation = PSX_INTEGER_CONSTANT_OP_SUB;
+      return 1;
+    case PSX_HIR_MUL:
+      *operation = PSX_INTEGER_CONSTANT_OP_MUL;
+      return 1;
+    case PSX_HIR_DIV:
+      *operation = PSX_INTEGER_CONSTANT_OP_DIV;
+      return 1;
+    case PSX_HIR_MOD:
+      *operation = PSX_INTEGER_CONSTANT_OP_MOD;
+      return 1;
+    case PSX_HIR_SHL:
+      *operation = PSX_INTEGER_CONSTANT_OP_SHL;
+      return 1;
+    case PSX_HIR_SHR:
+      *operation = PSX_INTEGER_CONSTANT_OP_SHR;
+      return 1;
+    case PSX_HIR_BITAND:
+      *operation = PSX_INTEGER_CONSTANT_OP_BITAND;
+      return 1;
+    case PSX_HIR_BITXOR:
+      *operation = PSX_INTEGER_CONSTANT_OP_BITXOR;
+      return 1;
+    case PSX_HIR_BITOR:
+      *operation = PSX_INTEGER_CONSTANT_OP_BITOR;
+      return 1;
+    case PSX_HIR_EQ:
+      *operation = PSX_INTEGER_CONSTANT_OP_EQ;
+      return 1;
+    case PSX_HIR_NE:
+      *operation = PSX_INTEGER_CONSTANT_OP_NE;
+      return 1;
+    case PSX_HIR_LT:
+      *operation = PSX_INTEGER_CONSTANT_OP_LT;
+      return 1;
+    case PSX_HIR_LE:
+      *operation = PSX_INTEGER_CONSTANT_OP_LE;
+      return 1;
+    case PSX_HIR_GT:
+      *operation = PSX_INTEGER_CONSTANT_OP_GT;
+      return 1;
+    case PSX_HIR_GE:
+      *operation = PSX_INTEGER_CONSTANT_OP_GE;
+      return 1;
+    case PSX_HIR_LOGAND:
+      *operation = PSX_INTEGER_CONSTANT_OP_LOGAND;
+      return 1;
+    case PSX_HIR_LOGOR:
+      *operation = PSX_INTEGER_CONSTANT_OP_LOGOR;
+      return 1;
+    default: return 0;
+  }
+}
+
 static long long normalize_integer_cast(
     const static_hir_eval_t *eval, long long value,
     psx_qual_type_t target_type) {
@@ -77,10 +162,73 @@ static long long normalize_integer_cast(
   return (long long)normalized;
 }
 
+static double integer_constant_as_double(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node,
+    long long value) {
+  psx_type_shape_t type = {0};
+  if (!node_type_shape(eval, node, &type) ||
+      type.kind != PSX_TYPE_INTEGER || !type.is_unsigned)
+    return (double)value;
+  int byte_width = psx_type_layout_sizeof(
+      ps_lowering_semantic_types(eval->lowering_context),
+      ps_lowering_record_layouts(eval->lowering_context),
+      psx_hir_node_qual_type(node).type_id,
+      ag_target_info_data_layout(ps_lowering_target(eval->lowering_context)));
+  int bits = byte_width * 8;
+  uint64_t normalized = (uint64_t)value;
+  if (bits > 0 && bits < 64)
+    normalized &= (UINT64_C(1) << bits) - 1;
+  return (double)normalized;
+}
+
+static int floating_constant_as_integer(
+    const static_hir_eval_t *eval, psx_qual_type_t target_type,
+    double value, long long *result) {
+  psx_type_shape_t target = {0};
+  if (!eval || !result ||
+      !type_shape(eval, target_type.type_id, &target))
+    return 0;
+  if (target.kind == PSX_TYPE_BOOL) {
+    *result = value != 0.0;
+    return 1;
+  }
+  if (target.kind != PSX_TYPE_INTEGER) return 0;
+  int byte_width = psx_type_layout_sizeof(
+      ps_lowering_semantic_types(eval->lowering_context),
+      ps_lowering_record_layouts(eval->lowering_context),
+      target_type.type_id,
+      ag_target_info_data_layout(ps_lowering_target(eval->lowering_context)));
+  int bits = byte_width * 8;
+  if (bits <= 0 || bits > 64) return 0;
+  if (target.is_unsigned) {
+    double upper_exclusive =
+        bits == 64 ? 18446744073709551616.0
+                   : (double)(UINT64_C(1) << bits);
+    if (!(value > -1.0) || !(value < upper_exclusive))
+      return 0;
+    uint64_t converted = (uint64_t)value;
+    memcpy(result, &converted, sizeof(converted));
+    return 1;
+  }
+  double magnitude =
+      bits == 64 ? 9223372036854775808.0
+                 : (double)(UINT64_C(1) << (bits - 1));
+  int above_lower_bound =
+      bits == 64 ? value >= -magnitude
+                 : value > -magnitude - 1.0;
+  if (!above_lower_bound || !(value < magnitude))
+    return 0;
+  *result = (long long)value;
+  return 1;
+}
+
 static long long eval_const_int(
     const static_hir_eval_t *eval, const psx_hir_node_t *node, int *ok);
 static double eval_const_fp(
     const static_hir_eval_t *eval, const psx_hir_node_t *node, int *ok);
+static int eval_const_truth(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node,
+    int *truth);
 static int resolve_address(
     const static_hir_eval_t *eval, const psx_hir_node_t *node,
     const char **symbol, int *symbol_len, long long *offset);
@@ -88,6 +236,19 @@ static int pointer_stride(
     const static_hir_eval_t *eval, const psx_hir_node_t *pointer);
 static int type_is_pointer_like(
     const static_hir_eval_t *eval, const psx_hir_node_t *node);
+static int pointer_points_to_function(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node);
+static int is_pointer_to_integer_address_cast(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node);
+
+static int resolved_symbols_equal(
+    const char *left, int left_len,
+    const char *right, int right_len) {
+  if (!left || !right || left_len != right_len) return 0;
+  if (left_len == -1) return strcmp(left, right) == 0;
+  return left_len > 0 &&
+         memcmp(left, right, (size_t)left_len) == 0;
+}
 
 static global_var_t *find_global_named(
     const static_hir_eval_t *eval, const char *name, int name_len) {
@@ -112,6 +273,20 @@ static global_var_t *find_global(
       name_length == 0 || name_length > INT32_MAX)
     return NULL;
   return find_global_named(eval, name, (int)name_length);
+}
+
+static int resolved_address_is_strictly_within_object(
+    const static_hir_eval_t *eval, const char *symbol,
+    int symbol_len, long long offset) {
+  global_var_t *global =
+      find_global_named(eval, symbol, symbol_len);
+  if (!global || offset < 0) return 0;
+  int size = psx_type_layout_sizeof(
+      ps_lowering_semantic_types(eval->lowering_context),
+      ps_lowering_record_layouts(eval->lowering_context),
+      ps_gvar_decl_type_id(global),
+      ag_target_info_data_layout(ps_lowering_target(eval->lowering_context)));
+  return size > 0 && offset < size;
 }
 
 static int global_value_is_foldable_extension(
@@ -157,11 +332,31 @@ static long long eval_const_int(
       psx_type_shape_t source = {0};
       int has_target = node_type_shape(eval, node, &target);
       int has_source = node_type_shape(eval, lhs, &source);
+      if (has_target && target.kind == PSX_TYPE_BOOL) {
+        if (has_source && type_uses_floating_value(&source)) {
+          double value = eval_const_fp(eval, lhs, ok);
+          return (!ok || *ok) && value != 0.0;
+        }
+        long long value = eval_const_int(eval, lhs, ok);
+        return (!ok || *ok) && value != 0;
+      }
+      if (has_target && target.kind == PSX_TYPE_INTEGER &&
+          has_source && type_uses_floating_value(&source)) {
+        double value = eval_const_fp(eval, lhs, ok);
+        long long converted = 0;
+        if ((ok && !*ok) ||
+            !floating_constant_as_integer(
+                eval, psx_hir_node_qual_type(node), value,
+                &converted)) {
+          if (ok) *ok = 0;
+          return 0;
+        }
+        return converted;
+      }
       long long value = has_source && type_uses_floating_value(&source)
                             ? (long long)eval_const_fp(eval, lhs, ok)
                             : eval_const_int(eval, lhs, ok);
       if (ok && !*ok) return 0;
-      if (has_target && target.kind == PSX_TYPE_BOOL) return value != 0;
       if (has_target && target.kind == PSX_TYPE_INTEGER)
         return normalize_integer_cast(
             eval, value, psx_hir_node_qual_type(node));
@@ -170,23 +365,35 @@ static long long eval_const_int(
       return value;
     }
     case PSX_HIR_UNARY_PLUS:
-      return eval_const_int(eval, lhs, ok);
-    case PSX_HIR_NEGATE: {
+    case PSX_HIR_NEGATE:
+    case PSX_HIR_BITWISE_NOT: {
+      psx_type_shape_t result_type = {0};
+      psx_type_shape_t operand_type = {0};
+      psx_integer_constant_operation_t operation =
+          PSX_INTEGER_CONSTANT_OP_INVALID;
       long long value = eval_const_int(eval, lhs, ok);
-      return !ok || *ok ? -value : 0;
+      long long result = 0;
+      if ((ok && !*ok) ||
+          !node_type_shape(eval, node, &result_type) ||
+          !node_type_shape(eval, lhs, &operand_type) ||
+          !integer_constant_unary_operation_for_hir(
+              psx_hir_node_kind(node), &operation) ||
+          !psx_apply_typed_integer_constant_unary(
+              operation, &result_type,
+              ps_lowering_data_layout(eval->lowering_context),
+              value, &result)) {
+        if (ok) *ok = 0;
+        return 0;
+      }
+      return result;
     }
     case PSX_HIR_LOGICAL_NOT: {
-      psx_type_shape_t operand_type = {0};
-      long long value =
-          node_type_shape(eval, lhs, &operand_type) &&
-                  type_uses_floating_value(&operand_type)
-              ? eval_const_fp(eval, lhs, ok) != 0.0
-              : eval_const_int(eval, lhs, ok) != 0;
-      return !ok || *ok ? !value : 0;
-    }
-    case PSX_HIR_BITWISE_NOT: {
-      long long value = eval_const_int(eval, lhs, ok);
-      return !ok || *ok ? ~value : 0;
+      int truth = 0;
+      if (!eval_const_truth(eval, lhs, &truth)) {
+        if (ok) *ok = 0;
+        return 0;
+      }
+      return !truth;
     }
     case PSX_HIR_GLOBAL: {
       global_var_t *global = find_global(eval, node);
@@ -207,8 +414,11 @@ static long long eval_const_int(
       if (ok && !*ok) return 0;
       return eval_const_int(eval, rhs, ok);
     case PSX_HIR_TERNARY: {
-      long long condition = eval_const_int(eval, lhs, ok);
-      if (ok && !*ok) return 0;
+      int condition = 0;
+      if (!eval_const_truth(eval, lhs, &condition)) {
+        if (ok) *ok = 0;
+        return 0;
+      }
       const psx_hir_node_t *otherwise =
           child_for_edge(eval, node, PSX_HIR_EDGE_ELSE, 0);
       return condition ? eval_const_int(eval, rhs, ok)
@@ -237,6 +447,24 @@ static long long eval_const_int(
       if (ok) *ok = 0;
       return 0;
   }
+  if (psx_hir_node_kind(node) == PSX_HIR_LOGAND ||
+      psx_hir_node_kind(node) == PSX_HIR_LOGOR) {
+    int left_truth = 0;
+    if (!eval_const_truth(eval, lhs, &left_truth)) {
+      if (ok) *ok = 0;
+      return 0;
+    }
+    if (psx_hir_node_kind(node) == PSX_HIR_LOGAND && !left_truth)
+      return 0;
+    if (psx_hir_node_kind(node) == PSX_HIR_LOGOR && left_truth)
+      return 1;
+    int right_truth = 0;
+    if (!eval_const_truth(eval, rhs, &right_truth)) {
+      if (ok) *ok = 0;
+      return 0;
+    }
+    return right_truth;
+  }
   if (psx_hir_node_kind(node) == PSX_HIR_SUB) {
     const char *left_symbol = NULL;
     const char *right_symbol = NULL;
@@ -248,13 +476,8 @@ static long long eval_const_int(
             eval, lhs, &left_symbol, &left_len, &left_offset) &&
         resolve_address(
             eval, rhs, &right_symbol, &right_len, &right_offset) &&
-        left_symbol && right_symbol && left_len == right_len &&
-        (left_len == -1
-             ? strcmp(left_symbol, right_symbol) == 0
-             : (left_len > 0 &&
-                memcmp(
-                    left_symbol, right_symbol,
-                    (size_t)left_len) == 0))) {
+        resolved_symbols_equal(
+            left_symbol, left_len, right_symbol, right_len)) {
       long long difference = left_offset - right_offset;
       if (type_is_pointer_like(eval, lhs) &&
           type_is_pointer_like(eval, rhs)) {
@@ -268,6 +491,94 @@ static long long eval_const_int(
       return difference;
     }
   }
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  if ((kind == PSX_HIR_EQ || kind == PSX_HIR_NE ||
+       kind == PSX_HIR_LT || kind == PSX_HIR_LE ||
+       kind == PSX_HIR_GT || kind == PSX_HIR_GE) &&
+      (type_is_pointer_like(eval, lhs) ||
+       type_is_pointer_like(eval, rhs))) {
+    const char *left_symbol = NULL;
+    const char *right_symbol = NULL;
+    int left_len = 0;
+    int right_len = 0;
+    long long left_offset = 0;
+    long long right_offset = 0;
+    int has_left = resolve_address(
+        eval, lhs, &left_symbol, &left_len, &left_offset);
+    int has_right = resolve_address(
+        eval, rhs, &right_symbol, &right_len, &right_offset);
+    if (has_left && has_right &&
+        resolved_symbols_equal(
+            left_symbol, left_len, right_symbol, right_len)) {
+      switch (kind) {
+        case PSX_HIR_EQ: return left_offset == right_offset;
+        case PSX_HIR_NE: return left_offset != right_offset;
+        case PSX_HIR_LT: return left_offset < right_offset;
+        case PSX_HIR_LE: return left_offset <= right_offset;
+        case PSX_HIR_GT: return left_offset > right_offset;
+        case PSX_HIR_GE: return left_offset >= right_offset;
+        default: break;
+      }
+    }
+    if (has_left && has_right &&
+        (kind == PSX_HIR_EQ || kind == PSX_HIR_NE) &&
+        !resolved_symbols_equal(
+            left_symbol, left_len, right_symbol, right_len)) {
+      int left_is_stable =
+          resolved_address_is_strictly_within_object(
+              eval, left_symbol, left_len, left_offset) ||
+          (left_offset == 0 &&
+           pointer_points_to_function(eval, lhs));
+      int right_is_stable =
+          resolved_address_is_strictly_within_object(
+              eval, right_symbol, right_len, right_offset) ||
+          (right_offset == 0 &&
+           pointer_points_to_function(eval, rhs));
+      if (left_is_stable && right_is_stable)
+        return kind == PSX_HIR_NE;
+    }
+    if (kind == PSX_HIR_EQ || kind == PSX_HIR_NE) {
+      int left_null_ok = 1;
+      int right_null_ok = 1;
+      long long left_null_value =
+          eval_const_int(eval, lhs, &left_null_ok);
+      long long right_null_value =
+          eval_const_int(eval, rhs, &right_null_ok);
+      int left_is_null =
+          left_null_ok && left_null_value == 0;
+      int right_is_null =
+          right_null_ok && right_null_value == 0;
+      if ((has_left && right_is_null) ||
+          (left_is_null && has_right))
+        return kind == PSX_HIR_NE;
+      if (left_is_null && right_is_null)
+        return kind == PSX_HIR_EQ;
+    }
+    if (ok) *ok = 0;
+    return 0;
+  }
+  psx_type_shape_t lhs_shape = {0};
+  psx_type_shape_t rhs_shape = {0};
+  if (node_type_shape(eval, lhs, &lhs_shape) &&
+      node_type_shape(eval, rhs, &rhs_shape) &&
+      (type_uses_floating_value(&lhs_shape) ||
+       type_uses_floating_value(&rhs_shape))) {
+    double left = eval_const_fp(eval, lhs, ok);
+    if (ok && !*ok) return 0;
+    double right = eval_const_fp(eval, rhs, ok);
+    if (ok && !*ok) return 0;
+    switch (psx_hir_node_kind(node)) {
+      case PSX_HIR_EQ: return left == right;
+      case PSX_HIR_NE: return left != right;
+      case PSX_HIR_LT: return left < right;
+      case PSX_HIR_LE: return left <= right;
+      case PSX_HIR_GT: return left > right;
+      case PSX_HIR_GE: return left >= right;
+      default:
+        if (ok) *ok = 0;
+        return 0;
+    }
+  }
   long long left = eval_const_int(eval, lhs, ok);
   if (ok && !*ok) return 0;
   long long right = eval_const_int(eval, rhs, ok);
@@ -277,29 +588,25 @@ static long long eval_const_int(
     if (ok) *ok = 0;
     return 0;
   }
-  switch (psx_hir_node_kind(node)) {
-    case PSX_HIR_ADD: return left + right;
-    case PSX_HIR_SUB: return left - right;
-    case PSX_HIR_MUL: return left * right;
-    case PSX_HIR_DIV: return left / right;
-    case PSX_HIR_MOD: return left % right;
-    case PSX_HIR_SHL: return left << right;
-    case PSX_HIR_SHR: return left >> right;
-    case PSX_HIR_BITAND: return left & right;
-    case PSX_HIR_BITXOR: return left ^ right;
-    case PSX_HIR_BITOR: return left | right;
-    case PSX_HIR_EQ: return left == right;
-    case PSX_HIR_NE: return left != right;
-    case PSX_HIR_LT: return left < right;
-    case PSX_HIR_LE: return left <= right;
-    case PSX_HIR_GT: return left > right;
-    case PSX_HIR_GE: return left >= right;
-    case PSX_HIR_LOGAND: return left && right;
-    case PSX_HIR_LOGOR: return left || right;
-    default:
-      if (ok) *ok = 0;
-      return 0;
+  psx_type_shape_t lhs_type = {0};
+  psx_type_shape_t rhs_type = {0};
+  psx_type_shape_t result_type = {0};
+  psx_integer_constant_operation_t operation =
+      PSX_INTEGER_CONSTANT_OP_INVALID;
+  long long result = 0;
+  if (node_type_shape(eval, lhs, &lhs_type) &&
+      node_type_shape(eval, rhs, &rhs_type) &&
+      node_type_shape(eval, node, &result_type) &&
+      integer_constant_binary_operation_for_hir(
+          psx_hir_node_kind(node), &operation) &&
+      psx_apply_typed_integer_constant_binary(
+          operation, &lhs_type, &rhs_type, &result_type,
+          ps_lowering_data_layout(eval->lowering_context),
+          left, right, &result)) {
+    return result;
   }
+  if (ok) *ok = 0;
+  return 0;
 }
 
 static double eval_const_fp(
@@ -307,6 +614,13 @@ static double eval_const_fp(
   if (!node) {
     if (ok) *ok = 0;
     return 0.0;
+  }
+  psx_type_shape_t expression_type = {0};
+  if (node_type_shape(eval, node, &expression_type) &&
+      (expression_type.kind == PSX_TYPE_BOOL ||
+       expression_type.kind == PSX_TYPE_INTEGER)) {
+    long long value = eval_const_int(eval, node, ok);
+    return integer_constant_as_double(eval, node, value);
   }
   const psx_hir_node_t *lhs =
       child_for_edge(eval, node, PSX_HIR_EDGE_LHS, 0);
@@ -318,14 +632,23 @@ static double eval_const_fp(
       return node_type_shape(eval, node, &number_type) &&
                      type_uses_floating_value(&number_type)
                  ? psx_hir_node_floating_value(node)
-                 : (double)psx_hir_node_integer_value(node);
+                 : integer_constant_as_double(
+                       eval, node, psx_hir_node_integer_value(node));
     }
     case PSX_HIR_CAST: {
       psx_type_shape_t target = {0};
+      psx_type_shape_t source = {0};
       if (node_type_shape(eval, node, &target) &&
           (target.kind == PSX_TYPE_BOOL ||
-           target.kind == PSX_TYPE_INTEGER))
-        return (double)eval_const_int(eval, node, ok);
+           target.kind == PSX_TYPE_INTEGER)) {
+        long long value = eval_const_int(eval, node, ok);
+        return integer_constant_as_double(eval, node, value);
+      }
+      if (node_type_shape(eval, lhs, &source) &&
+          !type_uses_floating_value(&source)) {
+        long long value = eval_const_int(eval, lhs, ok);
+        return integer_constant_as_double(eval, lhs, value);
+      }
       return eval_const_fp(eval, lhs, ok);
     }
     case PSX_HIR_UNARY_PLUS:
@@ -338,6 +661,17 @@ static double eval_const_fp(
       return (double)eval_const_int(eval, node, ok);
     case PSX_HIR_BITWISE_NOT:
       return (double)eval_const_int(eval, node, ok);
+    case PSX_HIR_TERNARY: {
+      int condition = 0;
+      if (!eval_const_truth(eval, lhs, &condition)) {
+        if (ok) *ok = 0;
+        return 0.0;
+      }
+      const psx_hir_node_t *otherwise =
+          child_for_edge(eval, node, PSX_HIR_EDGE_ELSE, 0);
+      return condition ? eval_const_fp(eval, rhs, ok)
+                       : eval_const_fp(eval, otherwise, ok);
+    }
     case PSX_HIR_GLOBAL: {
       global_var_t *global = find_global(eval, node);
       psx_type_shape_t type = {0};
@@ -377,6 +711,50 @@ static double eval_const_fp(
   }
 }
 
+static int eval_const_truth(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node,
+    int *truth) {
+  psx_type_shape_t type = {0};
+  if (!eval || !node || !truth ||
+      !node_type_shape(eval, node, &type))
+    return 0;
+  int ok = 1;
+  if (type_uses_floating_value(&type))
+    *truth = eval_const_fp(eval, node, &ok) != 0.0;
+  else
+    *truth = eval_const_int(eval, node, &ok) != 0;
+  return ok;
+}
+
+static int eval_const_integer_target(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node,
+    psx_qual_type_t target_type, long long *result) {
+  psx_type_shape_t target = {0};
+  psx_type_shape_t source = {0};
+  if (!eval || !node || !result ||
+      !type_shape(eval, target_type.type_id, &target) ||
+      !node_type_shape(eval, node, &source))
+    return 0;
+  if (target.kind == PSX_TYPE_BOOL) {
+    int truth = 0;
+    if (!eval_const_truth(eval, node, &truth)) return 0;
+    *result = truth;
+    return 1;
+  }
+  if (target.kind != PSX_TYPE_INTEGER) return 0;
+  if (type_uses_floating_value(&source)) {
+    int ok = 1;
+    double value = eval_const_fp(eval, node, &ok);
+    return ok && floating_constant_as_integer(
+                     eval, target_type, value, result);
+  }
+  int ok = 1;
+  long long value = eval_const_int(eval, node, &ok);
+  if (!ok) return 0;
+  *result = normalize_integer_cast(eval, value, target_type);
+  return 1;
+}
+
 static int pointer_stride(
     const static_hir_eval_t *eval, const psx_hir_node_t *pointer) {
   if (!eval || !pointer) return 0;
@@ -397,6 +775,47 @@ static int type_is_pointer_like(
          (type.kind == PSX_TYPE_POINTER || type.kind == PSX_TYPE_ARRAY);
 }
 
+static int pointer_points_to_function(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node) {
+  psx_type_shape_t pointer = {0};
+  if (!node_type_shape(eval, node, &pointer) ||
+      pointer.kind != PSX_TYPE_POINTER)
+    return 0;
+  psx_qual_type_t pointee = psx_semantic_type_table_base(
+      ps_lowering_semantic_types(eval->lowering_context),
+      psx_hir_node_qual_type(node).type_id);
+  psx_type_shape_t pointee_shape = {0};
+  return pointee.type_id != PSX_TYPE_ID_INVALID &&
+         type_shape(eval, pointee.type_id, &pointee_shape) &&
+         pointee_shape.kind == PSX_TYPE_FUNCTION;
+}
+
+static int is_pointer_to_integer_address_cast(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node) {
+  if (!eval || !node ||
+      psx_hir_node_kind(node) != PSX_HIR_CAST)
+    return 0;
+  psx_type_shape_t target = {0};
+  const psx_hir_node_t *operand =
+      child_for_edge(eval, node, PSX_HIR_EDGE_LHS, 0);
+  if (!node_type_shape(eval, node, &target) ||
+      target.kind != PSX_TYPE_INTEGER ||
+      !type_is_pointer_like(eval, operand))
+    return 0;
+  int integer_size = psx_type_layout_sizeof(
+      ps_lowering_semantic_types(eval->lowering_context),
+      ps_lowering_record_layouts(eval->lowering_context),
+      psx_hir_node_qual_type(node).type_id,
+      ag_target_info_data_layout(ps_lowering_target(eval->lowering_context)));
+  int pointer_size = psx_type_layout_sizeof(
+      ps_lowering_semantic_types(eval->lowering_context),
+      ps_lowering_record_layouts(eval->lowering_context),
+      psx_hir_node_qual_type(operand).type_id,
+      ag_target_info_data_layout(ps_lowering_target(eval->lowering_context)));
+  return integer_size > 0 && pointer_size > 0 &&
+         integer_size >= pointer_size;
+}
+
 static int resolve_address(
     const static_hir_eval_t *eval, const psx_hir_node_t *node,
     const char **symbol, int *symbol_len, long long *offset) {
@@ -411,6 +830,15 @@ static int resolve_address(
     case PSX_HIR_DEREF:
     case PSX_HIR_CAST:
       return resolve_address(eval, lhs, symbol, symbol_len, offset);
+    case PSX_HIR_TERNARY: {
+      int condition = 0;
+      if (!eval_const_truth(eval, lhs, &condition)) return 0;
+      const psx_hir_node_t *otherwise =
+          child_for_edge(eval, node, PSX_HIR_EDGE_ELSE, 0);
+      return resolve_address(
+          eval, condition ? rhs : otherwise,
+          symbol, symbol_len, offset);
+    }
     case PSX_HIR_FUNCTION_REF:
     case PSX_HIR_GLOBAL:
     case PSX_HIR_STRING: {
@@ -1031,14 +1459,26 @@ static int aggregate_write_scalar(
       return 0;
     }
   } else {
-    int ok = 1;
-    integer = eval_const_int(&aggregate->eval, value, &ok);
-    if (!ok) {
-      aggregate->failure =
-          PSX_STATIC_AGGREGATE_INITIALIZER_FAILURE_NON_CONSTANT;
-      return 0;
+    if (!eval_const_integer_target(
+            &aggregate->eval, value,
+            (psx_qual_type_t){
+                target->type_id, PSX_TYPE_QUALIFIER_NONE},
+            &integer)) {
+      if (target_type.kind != PSX_TYPE_INTEGER ||
+          !is_pointer_to_integer_address_cast(
+              &aggregate->eval, value) ||
+          !resolve_address(
+              &aggregate->eval, value, &symbol, &symbol_len,
+              &offset)) {
+        aggregate->failure =
+            PSX_STATIC_AGGREGATE_INITIALIZER_FAILURE_NON_CONSTANT;
+        return 0;
+      }
+      integer = offset;
+      symbol = persist_symbol_name(
+          &aggregate->eval, symbol, symbol_len);
+      if (!symbol) return 0;
     }
-    if (target_type.kind == PSX_TYPE_BOOL) integer = integer != 0;
   }
   if (target->bit_width > 0) {
     unsigned int width = target->bit_width;
@@ -1338,12 +1778,20 @@ int psx_lower_static_scalar_hir_initializer(
       return 1;
     }
   }
+  if (type.kind == PSX_TYPE_BOOL || type.kind == PSX_TYPE_INTEGER)
+    integer_ok = eval_const_integer_target(
+        &eval, initializer,
+        (psx_qual_type_t){type_id, PSX_TYPE_QUALIFIER_NONE},
+        &integer);
   if (integer_ok) {
-    global->init_val = type.kind == PSX_TYPE_BOOL ? integer != 0 : integer;
+    global->init_val = integer;
     return 1;
   }
 
-  if (type.kind != PSX_TYPE_POINTER) return 0;
+  if (type.kind != PSX_TYPE_POINTER &&
+      !(type.kind == PSX_TYPE_INTEGER &&
+        is_pointer_to_integer_address_cast(&eval, initializer)))
+    return 0;
 
   const char *symbol = NULL;
   int symbol_len = 0;

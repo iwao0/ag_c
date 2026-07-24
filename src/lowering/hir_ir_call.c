@@ -439,6 +439,26 @@ ir_val_t hir_ir_build_call(
       };
       continue;
     }
+    if (i >= parameter_count &&
+        hir_ir_is_complex_type(argument_type)) {
+      if (emitted_count >= argument_count) {
+        free(arguments);
+        return hir_ir_unsupported_expr(context);
+      }
+      ir_val_t pointer = hir_ir_materialize_complex_operand(
+          context, argument, argument_type);
+      if (context->status != IR_HIR_BUILD_OK ||
+          pointer.type != IR_TY_PTR) {
+        free(arguments);
+        return ir_val_none();
+      }
+      arguments[emitted_count++] = (ir_call_argument_t){
+          .value = pointer,
+          .type = lowered_argument_type,
+          .representation = IR_CALL_ARGUMENT_ADDRESS,
+      };
+      continue;
+    }
     if (i < parameter_count &&
         hir_ir_is_complex_type(parameter_type)) {
       if (!hir_ir_is_complex_type(argument_type) ||

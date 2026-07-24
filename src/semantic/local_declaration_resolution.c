@@ -1,4 +1,5 @@
 #include "local_declaration_resolution.h"
+#include "type_completeness.h"
 #include "../parser/arena.h"
 #include "../type_layout.h"
 
@@ -148,8 +149,11 @@ void psx_resolve_local_declaration(
     }
   }
 
-  if (psx_type_layout_sizeof(request->semantic_types, request->record_layouts,
-                        request->type_id, request->data_layout) <= 0) {
+  if (!psx_semantic_type_is_complete_object_in(
+          request->semantic_context, request->type_id) ||
+      psx_type_layout_sizeof(
+          request->semantic_types, request->record_layouts,
+          request->type_id, request->data_layout) <= 0) {
     resolution->status = PSX_LOCAL_DECLARATION_INCOMPLETE_OBJECT;
     return;
   }

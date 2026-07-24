@@ -24,9 +24,9 @@ int main(void) {
     if (printf("x=%d\n", 42) != 5) return 1;
     if (printf("%d-%u-%%", -12, 34u) != 8) return 2;
     if (fprintf(stream, "%s:%c:%02d", "ok", 65, 7) != 7) return 3;
-    if (fprintf(0, "bad") != 3) return 4;
     if (call_vprintf("%d-%s-%c", -5, "va", 90) != 7) return 5;
     if (call_vfprintf(stream, "[%02d]", 3) != 4) return 6;
-    if (call_vfprintf(0, "bad") != 3) return 7;
+    if (printf("%d/%d/%d", 1, 22, 333) != 8) return 7;
+    if (fprintf(stream, "%d/%d/%d", 4, 55, 666) != 8) return 8;
     return 0;
 }

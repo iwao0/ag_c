@@ -23,6 +23,7 @@ struct tag_type_t {
   char *name;
   int len;
   unsigned char enum_is_complete;
+  unsigned char enum_is_unsigned;
   psx_scope_id_t member_scope_id;
   psx_record_decl_t *record_decl;
   psx_record_member_decl_t *record_decl_members;
@@ -357,7 +358,17 @@ psx_qual_type_t ps_ctx_intern_enum_qual_type_in(
                              PSX_TYPE_QUALIFIER_NONE};
   return psx_semantic_type_table_intern_enum(
       context->semantic_types, declaration->id,
-      declaration->name, declaration->name_len);
+      declaration->name, declaration->name_len,
+      tag->enum_is_unsigned);
+}
+
+int ps_ctx_enum_declaration_is_complete_in(
+    psx_semantic_context_t *context,
+    psx_decl_id_t declaration_id) {
+  tag_type_t *tag = tag_type_from_declaration_in(
+      context, declaration_id);
+  return tag && tag->kind == TK_ENUM &&
+         tag->enum_is_complete;
 }
 
 psx_qual_type_t ps_ctx_intern_record_qual_type_in(
@@ -720,6 +731,16 @@ static tag_type_t *find_tag_type_in(
   return tag && tag->kind == kind ? tag : NULL;
 }
 
+int ps_ctx_set_enum_compatible_unsigned_in(
+    psx_semantic_context_t *context, char *name, int len,
+    int is_unsigned) {
+  tag_type_t *tag = find_tag_type_in(
+      context, TK_ENUM, name, len);
+  if (!tag) return 0;
+  tag->enum_is_unsigned = is_unsigned ? 1 : 0;
+  return 1;
+}
+
 static tag_type_t *find_tag_type_by_record_id_in(
     psx_semantic_context_t *context, psx_record_id_t record_id) {
   if (!context || !context->scope_graph ||
@@ -816,6 +837,7 @@ int ps_ctx_register_tag_type_in(
   t->name = name;
   t->len = len;
   t->enum_is_complete = kind == TK_ENUM && is_complete ? 1 : 0;
+  t->enum_is_unsigned = kind == TK_ENUM ? 1 : 0;
   t->member_scope_id = PSX_SCOPE_ID_INVALID;
   if (kind == TK_STRUCT || kind == TK_UNION) {
     t->record_decl = ctx_calloc_in(
@@ -914,7 +936,8 @@ psx_record_id_t ps_ctx_resolve_tag_record_id_in(
 }
 
 const psx_record_decl_t *ps_ctx_get_record_decl_in(
-    psx_semantic_context_t *context, psx_record_id_t record_id) {
+    const psx_semantic_context_t *context,
+    psx_record_id_t record_id) {
   return psx_record_decl_table_lookup(
       ps_ctx_record_decl_table_in(context), record_id);
 }

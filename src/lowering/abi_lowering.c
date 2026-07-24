@@ -285,7 +285,8 @@ static size_t count_symbol_references(const ir_module_t *module) {
 
 static size_t logical_variadic_piece_count(
     const ir_abi_type_context_t *context,
-    const ir_call_argument_t *argument) {
+    const ir_call_argument_t *argument,
+    int pack_complex_for_variadic_call) {
   if (!context || !argument ||
       argument->type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
@@ -294,7 +295,13 @@ static size_t logical_variadic_piece_count(
   if (info.param_class == IR_ABI_PARAM_UNKNOWN ||
       info.type == IR_TY_VOID)
     return 0;
-  if (type_is_complex(context, argument->type.type_id)) return 2;
+  if (type_is_complex(context, argument->type.type_id)) {
+    if (!pack_complex_for_variadic_call) return 2;
+    const ir_abi_target_policy_t *policy =
+        ir_abi_target_policy_for(context->target);
+    return ir_abi_policy_variadic_aggregate_piece_count(
+        policy, info.source_size);
+  }
   if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
     const ir_abi_target_policy_t *policy =
         ir_abi_target_policy_for(context->target);
@@ -322,7 +329,7 @@ static int lower_logical_call_arguments(
   size_t physical_count = declared_piece_count;
   for (size_t i = declared_source_count; i < source_count; i++) {
     size_t pieces = logical_variadic_piece_count(
-        context, &instruction->args[i]);
+        context, &instruction->args[i], declared_variadic);
     if (pieces == 0 || physical_count > SIZE_MAX - pieces) return 0;
     physical_count += pieces;
   }
@@ -370,13 +377,24 @@ static int lower_logical_call_arguments(
     ir_abi_param_info_t info = ir_abi_classify_type_id(
         context, logical_argument->type.type_id);
     size_t piece_count = logical_variadic_piece_count(
-        context, logical_argument);
+        context, logical_argument, declared_variadic);
     for (size_t piece_index = 0; piece_index < piece_count;
          piece_index++, physical_index++) {
       int offset = 0;
       ir_type_t type = logical_argument->value.type;
       ir_abi_argument_access_t access = IR_ABI_ARGUMENT_DIRECT;
-      if (type_is_complex(context, logical_argument->type.type_id)) {
+      if (type_is_complex(context, logical_argument->type.type_id) &&
+          declared_variadic) {
+        if (logical_argument->representation != IR_CALL_ARGUMENT_ADDRESS)
+          return 0;
+        const ir_abi_target_policy_t *policy =
+            ir_abi_target_policy_for(context->target);
+        if (!ir_abi_policy_variadic_aggregate_piece(
+                policy, piece_index, &type, &offset))
+          return 0;
+        access = IR_ABI_ARGUMENT_LOAD;
+      } else if (type_is_complex(
+                     context, logical_argument->type.type_id)) {
         if (logical_argument->representation != IR_CALL_ARGUMENT_ADDRESS)
           return 0;
         type = info.type;

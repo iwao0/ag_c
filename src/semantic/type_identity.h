@@ -31,7 +31,7 @@ psx_qual_type_t psx_semantic_type_table_intern_void(
     psx_semantic_type_table_t *table);
 psx_qual_type_t psx_semantic_type_table_intern_enum(
     psx_semantic_type_table_t *table, psx_decl_id_t declaration_id,
-    const char *tag_name, int tag_length);
+    const char *tag_name, int tag_length, int is_unsigned);
 psx_qual_type_t psx_semantic_type_table_intern_record(
     psx_semantic_type_table_t *table, psx_record_id_t record_id);
 psx_qual_type_t psx_semantic_type_table_intern_pointer_to(

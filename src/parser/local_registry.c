@@ -200,7 +200,7 @@ static int has_local_object_in_current_scope(
           registry->scope_graph,
           psx_scope_graph_current_scope(registry->scope_graph),
           PSX_NAMESPACE_ORDINARY, name, name_len);
-  return declaration && declaration->kind == PSX_DECL_LOCAL_OBJECT;
+  return declaration != NULL;
 }
 
 static psx_decl_id_t index_add(psx_local_registry_t *registry, lvar_t *var) {
@@ -244,7 +244,8 @@ lvar_t *ps_local_registry_create_storage_object_qual_type_in(
       !psx_semantic_type_table_describe(
           registry->semantic_types, decl_qual_type.type_id, &shape))
     return NULL;
-  if (has_local_object_in_current_scope(registry, name, name_len)) {
+  if (has_local_object_in_current_scope(
+          registry, name, name_len)) {
     ps_diag_duplicate_with_name_in(
         registry->diagnostic_context, diagnostic_token,
         "variable", name, name_len);

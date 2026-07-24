@@ -63,6 +63,8 @@ typedef enum {
   WASM32_MI_F64_LE,
   WASM32_MI_COPY,
   WASM32_MI_I32_WRAP_I64,
+  WASM32_MI_I32_EXTEND8_S,
+  WASM32_MI_I32_EXTEND16_S,
   WASM32_MI_I64_EXTEND_I32_S,
   WASM32_MI_I64_EXTEND_I32_U,
   WASM32_MI_F32_CONVERT_I32_S,
@@ -124,6 +126,8 @@ typedef struct {
   wasm32_machine_opcode_t opcode;
   ir_type_t source_type;
   ir_type_t result_type;
+  int immediate;
+  unsigned char has_immediate;
 } wasm32_machine_conversion_t;
 
 typedef enum {
@@ -204,6 +208,9 @@ int wasm32_machine_select_binary(
 int wasm32_machine_select_conversion(
     ir_type_t source_type, ir_type_t result_type, int is_unsigned,
     wasm32_machine_conversion_t *selected);
+int wasm32_machine_select_ir_conversion(
+    ir_op_t source_op, ir_type_t source_type, ir_type_t result_type,
+    int is_unsigned, wasm32_machine_conversion_t *selected);
 int wasm32_machine_select_unary(
     ir_op_t source_op, ir_type_t operand_type,
     wasm32_machine_unary_t *selected);

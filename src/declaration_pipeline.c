@@ -23,6 +23,7 @@
 #include "semantic/function_parameter_resolution.h"
 #include "semantic/global_declaration_resolution.h"
 #include "semantic/initializer_resolution.h"
+#include "semantic/character_array_initializer.h"
 #include "semantic/assignment_resolution.h"
 #include "semantic/scope_graph.h"
 #include "source_manager.h"
@@ -51,6 +52,65 @@ static void note_pipeline_declaration_source(
       graph, declaration_id,
       ag_source_manager_name(sources, token->file_name_id),
       token->source_input, token->byte_offset, token->byte_length);
+}
+
+static const psx_scope_declaration_t *
+pipeline_current_ordinary_declaration(
+    psx_semantic_context_t *semantic_context,
+    const char *name, int name_len) {
+  psx_scope_graph_t *graph =
+      semantic_context ? ps_ctx_scope_graph(semantic_context) : NULL;
+  if (!graph || !name || name_len <= 0) return NULL;
+  return psx_scope_graph_lookup_declaration_in_scope(
+      graph, psx_scope_graph_current_scope(graph),
+      PSX_NAMESPACE_ORDINARY, name, name_len);
+}
+
+static int validate_block_linkage_declaration_name(
+    psx_semantic_context_t *semantic_context,
+    const char *name, int name_len,
+    psx_scope_decl_kind_t expected_kind, token_t *diag_tok) {
+  const psx_scope_declaration_t *existing =
+      pipeline_current_ordinary_declaration(
+          semantic_context, name, name_len);
+  psx_scope_decl_kind_t existing_kind =
+      existing ? existing->kind : PSX_DECL_UNKNOWN;
+  if (existing_kind == PSX_DECL_LINKAGE_ALIAS) {
+    const psx_scope_declaration_t *target =
+        psx_scope_graph_declaration(
+            ps_ctx_scope_graph(semantic_context),
+            existing->aliased_declaration_id);
+    existing_kind = target ? target->kind : PSX_DECL_UNKNOWN;
+  }
+  if (!existing || existing_kind == expected_kind) return 1;
+  ps_diag_ctx_in(
+      ps_ctx_diagnostics(semantic_context), diag_tok, "block-extern",
+      "declaration of '%.*s' with linkage conflicts with a declaration "
+      "in the same scope (C11 6.2.2, 6.7p3)",
+      name_len, name);
+  return 0;
+}
+
+static int declare_pipeline_scope_alias(
+    psx_semantic_context_t *semantic_context,
+    psx_scope_id_t scope_id, const char *name, int name_len,
+    psx_decl_id_t backing_declaration_id,
+    token_t *diag_tok) {
+  psx_scope_graph_t *graph =
+      semantic_context ? ps_ctx_scope_graph(semantic_context) : NULL;
+  if (!graph || scope_id == PSX_SCOPE_ID_INVALID ||
+      !name || name_len <= 0 ||
+      backing_declaration_id == PSX_DECL_ID_INVALID)
+    return 0;
+  psx_decl_id_t declaration_id =
+      psx_scope_graph_declare_linkage_alias_at(
+          graph, scope_id, name, name_len,
+          backing_declaration_id);
+  if (declaration_id == PSX_DECL_ID_INVALID) return 0;
+  note_pipeline_declaration_source(
+      semantic_context, scope_id, PSX_NAMESPACE_ORDINARY,
+      name, name_len, diag_tok);
+  return 1;
 }
 
 static int prepare_local_vla_dimensions(
@@ -206,6 +266,28 @@ int psx_begin_global_declaration_pipeline(
       request->type.type_id == PSX_TYPE_ID_INVALID ||
       !request->initializer) return 0;
 
+  psx_scope_graph_t *scope_graph =
+      ps_ctx_scope_graph(request->semantic_context);
+  if (!scope_graph) return 0;
+  psx_scope_id_t declaration_scope =
+      request->is_block_scope
+          ? psx_scope_graph_current_scope(scope_graph)
+          : PSX_SCOPE_ID_TRANSLATION_UNIT;
+  if (request->is_block_scope &&
+      !validate_block_linkage_declaration_name(
+          request->semantic_context, request->name,
+          request->name_len, PSX_DECL_GLOBAL_OBJECT,
+          request->diag_tok))
+    return 0;
+  const psx_scope_declaration_t *existing_tu_declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, request->name,
+          request->name_len);
+  int existing_tu_was_hidden =
+      existing_tu_declaration &&
+      existing_tu_declaration->hidden_from_lookup;
+
   psx_global_declaration_resolution_t resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
@@ -260,10 +342,40 @@ int psx_begin_global_declaration_pipeline(
     result->global->has_alignment_specifier = 1;
     result->global->requested_alignment = request->requested_alignment;
   }
-  note_pipeline_declaration_source(
-      request->semantic_context, PSX_SCOPE_ID_TRANSLATION_UNIT,
-      PSX_NAMESPACE_ORDINARY, request->name, request->name_len,
-      request->diag_tok);
+  const psx_scope_declaration_t *backing_declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, request->name,
+          request->name_len);
+  if (!backing_declaration ||
+      backing_declaration->kind != PSX_DECL_GLOBAL_OBJECT ||
+      backing_declaration->payload != result->global)
+    return 0;
+  if (request->is_block_scope) {
+    if (result->created &&
+        !psx_scope_graph_set_declaration_hidden_from_lookup(
+            scope_graph, backing_declaration->id, 1))
+      return 0;
+    if (!declare_pipeline_scope_alias(
+            request->semantic_context, declaration_scope,
+            request->name, request->name_len,
+            backing_declaration->id,
+            request->diag_tok))
+      return 0;
+  } else if (existing_tu_was_hidden) {
+    if (!psx_scope_graph_set_declaration_hidden_from_lookup(
+            scope_graph, backing_declaration->id, 0))
+      return 0;
+    note_pipeline_declaration_source(
+        request->semantic_context, PSX_SCOPE_ID_TRANSLATION_UNIT,
+        PSX_NAMESPACE_ORDINARY, request->name, request->name_len,
+        request->diag_tok);
+  } else {
+    note_pipeline_declaration_source(
+        request->semantic_context, PSX_SCOPE_ID_TRANSLATION_UNIT,
+        PSX_NAMESPACE_ORDINARY, request->name, request->name_len,
+        request->diag_tok);
+  }
   return 1;
 }
 
@@ -324,8 +436,30 @@ static int validate_static_scalar_initializer_assignment(
           &value_shape))
     return 0;
   if (psx_hir_node_kind(root) == PSX_HIR_STRING &&
-      object_shape.kind == PSX_TYPE_ARRAY)
-    return 1;
+      object_shape.kind == PSX_TYPE_ARRAY) {
+    if (initializer->kind != ND_STRING) return 0;
+    const node_string_t *string = (const node_string_t *)initializer;
+    psx_character_array_initializer_plan_t plan = {0};
+    psx_character_array_initializer_status_t status =
+        psx_plan_character_array_string_initializer(
+            ps_ctx_arena(semantic_context), semantic_types,
+            ps_ctx_data_layout(semantic_context), object_qual_type,
+            string->literal_contents, string->literal_length,
+            (int)string->char_width, &plan);
+    if (status == PSX_CHARACTER_ARRAY_INITIALIZER_OK) return 1;
+    diag_error_id_t diagnostic =
+        status == PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG
+            ? DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS
+            : DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE;
+    ag_diagnostic_context_t *diagnostics =
+        ps_ctx_diagnostics(semantic_context);
+    token_t *token = initializer->tok
+        ? initializer->tok : fallback_diag_tok;
+    diag_emit_tokf_in(
+        diagnostics, diagnostic, token, "%s",
+        diag_message_for_in(diagnostics, diagnostic));
+    return 0;
+  }
   int is_null_pointer_constant =
       object_shape.kind == PSX_TYPE_POINTER &&
       (value_shape.kind == PSX_TYPE_BOOL ||
@@ -335,7 +469,7 @@ static int validate_static_scalar_initializer_assignment(
           initializer);
   object_qual_type.qualifiers &= PSX_TYPE_QUALIFIER_ATOMIC;
   psx_assignment_types_resolution_t assignment;
-  psx_resolve_assignment_qual_types_in(
+  psx_resolve_assignment_conversion_qual_types_in(
       semantic_context, object_qual_type,
       psx_hir_node_qual_type(root),
       is_null_pointer_constant,
@@ -527,6 +661,29 @@ int psx_apply_function_declaration_pipeline(
   if (!request || !request->semantic_context || !request->name ||
       request->name_len <= 0 ||
       request->function_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  psx_scope_graph_t *scope_graph =
+      ps_ctx_scope_graph(request->semantic_context);
+  if (!scope_graph) return 0;
+  psx_scope_id_t declaration_scope =
+      request->is_block_scope
+          ? psx_scope_graph_current_scope(scope_graph)
+          : PSX_SCOPE_ID_TRANSLATION_UNIT;
+  if (request->is_block_scope &&
+      !validate_block_linkage_declaration_name(
+          request->semantic_context, request->name,
+          request->name_len, PSX_DECL_FUNCTION,
+          request->diag_tok))
+    return 0;
+  const psx_scope_declaration_t *existing_tu_declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, request->name,
+          request->name_len);
+  int had_existing_tu_declaration =
+      existing_tu_declaration != NULL;
+  int existing_tu_was_hidden =
+      existing_tu_declaration &&
+      existing_tu_declaration->hidden_from_lookup;
   psx_function_declaration_resolution_t resolution;
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
@@ -540,10 +697,39 @@ int psx_apply_function_declaration_pipeline(
       &resolution);
   if (resolution.status != PSX_FUNCTION_DECLARATION_OK)
     diagnose_function_declaration(request, resolution.status);
-  note_pipeline_declaration_source(
-      request->semantic_context, PSX_SCOPE_ID_TRANSLATION_UNIT,
-      PSX_NAMESPACE_ORDINARY, request->name, request->name_len,
-      request->diag_tok);
+  const psx_scope_declaration_t *backing_declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, request->name,
+          request->name_len);
+  if (!backing_declaration ||
+      backing_declaration->kind != PSX_DECL_FUNCTION ||
+      backing_declaration->payload != resolution.function)
+    return 0;
+  if (request->is_block_scope) {
+    if (!had_existing_tu_declaration &&
+        !psx_scope_graph_set_declaration_hidden_from_lookup(
+            scope_graph, backing_declaration->id, 1))
+      return 0;
+    if (!declare_pipeline_scope_alias(
+            request->semantic_context, declaration_scope,
+            request->name, request->name_len,
+            backing_declaration->id, request->diag_tok))
+      return 0;
+  } else if (existing_tu_was_hidden) {
+    if (!psx_scope_graph_set_declaration_hidden_from_lookup(
+            scope_graph, backing_declaration->id, 0))
+      return 0;
+    note_pipeline_declaration_source(
+        request->semantic_context, PSX_SCOPE_ID_TRANSLATION_UNIT,
+        PSX_NAMESPACE_ORDINARY, request->name, request->name_len,
+        request->diag_tok);
+  } else {
+    note_pipeline_declaration_source(
+        request->semantic_context, PSX_SCOPE_ID_TRANSLATION_UNIT,
+        PSX_NAMESPACE_ORDINARY, request->name, request->name_len,
+        request->diag_tok);
+  }
   return 1;
 }
 
@@ -854,6 +1040,15 @@ int psx_begin_static_local_declaration_pipeline(
       !request->name || request->name_len <= 0 ||
       request->type.type_id == PSX_TYPE_ID_INVALID ||
       !request->initializer) return 0;
+  if (pipeline_current_ordinary_declaration(
+          request->semantic_context, request->name,
+          request->name_len)) {
+    ps_diag_duplicate_with_name_in(
+        ps_ctx_diagnostics(request->semantic_context),
+        request->diag_tok, "variable",
+        request->name, request->name_len);
+    return 0;
+  }
   psx_qual_type_t declaration_identity = request->type;
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(request->semantic_context);
@@ -965,6 +1160,7 @@ int psx_begin_static_local_declaration_pipeline(
         &(psx_local_declaration_resolution_request_t){
             .arena_context =
                 ps_lowering_arena(request->lowering_context),
+            .semantic_context = request->semantic_context,
             .semantic_types = semantic_types,
             .record_layouts =
                 ps_ctx_record_layout_table_in(
@@ -1270,6 +1466,7 @@ int psx_begin_automatic_local_declaration_hir_pipeline(
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
           .arena_context = ps_lowering_arena(request->lowering_context),
+          .semantic_context = request->semantic_context,
           .semantic_types =
               ps_ctx_semantic_type_table_in(request->semantic_context),
           .record_layouts =
@@ -1388,6 +1585,7 @@ int psx_apply_block_extern_declaration_pipeline(
                 .name = request->name,
                 .name_len = request->name_len,
                 .function_qual_type = request->type,
+                .is_block_scope = 1,
                 .diag_context = "block-extern",
                 .diag_tok = request->diag_tok,
             })) {
@@ -1424,6 +1622,7 @@ int psx_apply_block_extern_declaration_pipeline(
               .has_alignment_specifier =
                   request->has_alignment_specifier,
               .requested_alignment = request->requested_alignment,
+              .is_block_scope = 1,
               .initializer = &initializer,
               .diag_tok = request->diag_tok,
           },

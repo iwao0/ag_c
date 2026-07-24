@@ -170,7 +170,7 @@ static obj_data_t *intern_data(
 static int align_log2_for_size(int size) {
   int a = 0;
   int v = 1;
-  while (v < size && v < 8) {
+  while (v < size) {
     v <<= 1;
     a++;
   }
@@ -1445,6 +1445,10 @@ static void gen_func_body(
           emit_val(
               context, &body, i->src1, selected->conversion.source_type,
               param_count);
+          if (selected->conversion.has_immediate) {
+            wb_u8(&body, 0x41);
+            wb_sleb(&body, selected->conversion.immediate);
+          }
           if (selected->conversion.opcode != WASM32_MI_COPY) {
             unsigned opcode = wasm32_machine_opcode_binary(
                 selected->conversion.opcode);

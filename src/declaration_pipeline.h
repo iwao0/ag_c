@@ -30,6 +30,7 @@ typedef struct {
   int requested_alignment;
   int is_compiler_generated;
   int is_compound_literal;
+  int is_block_scope;
   const psx_parsed_initializer_t *initializer;
   token_t *diag_tok;
 } psx_global_declaration_pipeline_request_t;
@@ -57,6 +58,7 @@ typedef struct {
   psx_qual_type_t function_qual_type;
   int is_definition;
   int is_static;
+  int is_block_scope;
   const char *diag_context;
   token_t *diag_tok;
 } psx_function_declaration_pipeline_request_t;

@@ -387,6 +387,24 @@ int main(void) {
     fprintf(stderr, "FAIL: machine conversion normalization boundary\n");
     return 1;
   }
+  wasm32_machine_conversion_t narrow;
+  if (!wasm32_machine_select_ir_conversion(
+          IR_TRUNC, IR_TY_I32, IR_TY_I8, 0, &narrow) ||
+      narrow.opcode != WASM32_MI_COPY || narrow.has_immediate ||
+      !wasm32_machine_select_ir_conversion(
+          IR_ZEXT, IR_TY_I16, IR_TY_I32, 1, &narrow) ||
+      narrow.opcode != WASM32_MI_I32_AND ||
+      !narrow.has_immediate || narrow.immediate != 0xffff ||
+      !wasm32_machine_select_ir_conversion(
+          IR_SEXT, IR_TY_I8, IR_TY_I32, 0, &narrow) ||
+      narrow.opcode != WASM32_MI_I32_EXTEND8_S ||
+      narrow.has_immediate ||
+      strcmp(wasm32_machine_opcode_wat(narrow.opcode),
+             "i32.extend8_s") != 0 ||
+      wasm32_machine_opcode_binary(narrow.opcode) != 0xc0) {
+    fprintf(stderr, "FAIL: machine narrow integer conversion boundary\n");
+    return 1;
+  }
   for (size_t i = 0; i < sizeof(load_cases) / sizeof(load_cases[0]); i++) {
     const load_case_t *test = &load_cases[i];
     wasm32_machine_memory_t selected;

@@ -740,6 +740,9 @@ static const test_case_t test_cases[] = {
     {"stdheader", "stdlib_abs", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_abs.c", 0, 0},
     {"stdheader", "stdlib_convert_rand", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_convert_rand.c", 0, 0},
     {"stdheader", "stdlib_strto_int", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_int.c", 0, 0},
+    {"probes", "strto_integer_base_detection_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/strto_integer_base_detection_boundaries.c", 0, 0},
+    {"probes", "stdlib_const_input_qualifier_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_const_input_qualifier_boundaries.c", 0, 0},
+    {"probes", "stdlib_multibyte_const_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_multibyte_const_boundaries.c", 0, 0},
     {"stdheader", "stdlib_strto_float", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_float.c", 0, 0},
     {"stdheader", "stdlib_env_system", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_env_system.c", 0, 0},
     {"stdheader", "stdlib_realpath", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_realpath.c", 0, 0},
@@ -924,6 +927,12 @@ static const test_case_t test_cases[] = {
     {"probes", "bitfield_brace_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/bitfield_brace_init.c", 0, 0},
     {"probes", "char_ptr_postinc_deref", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/char_ptr_postinc_deref.c", 0, 0},
     {"probes", "const_struct", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/const_struct.c", 0, 0},
+    {"probes", "aggregate_const_subobject_conversion", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_const_subobject_conversion.c", 0, 0},
+    {"probes", "address_of_string_literal_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/address_of_string_literal_array.c", 0, 0},
+    {"probes", "update_expression_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/update_expression_boundaries.c", 0, 0},
+    {"probes", "indirection_subscript_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/indirection_subscript_boundaries.c", 0, 0},
+    {"probes", "explicit_cast_category_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/explicit_cast_category_boundaries.c", 0, 0},
+    {"probes", "pointer_arithmetic_comparison_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_arithmetic_comparison_boundaries.c", 0, 0},
     {"probes", "double_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/double_array.c", 0, 0},
     {"probes", "func_returning_funcptr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_returning_funcptr.c", 0, 0},
     {"probes", "funcret_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcret_subscript.c", 0, 0},
@@ -945,6 +954,7 @@ static const test_case_t test_cases[] = {
     {"probes", "typedef_funcptr_retptr_global_local", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_funcptr_retptr_global_local.c", 0, 0},
     {"probes", "func_return_funcptr_ptrptr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_return_funcptr_ptrptr.c", 0, 0},
     {"probes", "global_char_array_string_size", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_char_array_string_size.c", 0, 0},
+    {"probes", "static_character_array_string_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_character_array_string_boundaries.c", 0, 0},
     {"probes", "global_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_designator.c", 0, 0},
     {"probes", "global_const_int_expr_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_const_int_expr_init.c", 0, 0},
     {"probes", "global_double_scalar", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_double_scalar.c", 0, 0},
@@ -997,6 +1007,7 @@ static const test_case_t test_cases[] = {
     {"probes", "int_literal_top_bit_set", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/int_literal_top_bit_set.c", 0, 0},
     {"probes", "compound_assign_index_side_effect", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_assign_index_side_effect.c", 0, 0},
     {"probes", "switch_case_long_label", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/switch_case_long_label.c", 0, 0},
+    {"probes", "switch_case_promoted_values", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/switch_case_promoted_values.c", 0, 0},
     {"probes", "macro_arg_nested_same_name", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_arg_nested_same_name.c", 0, 0},
     {"probes", "variadic_macro_forward", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/variadic_macro_forward.c", 0, 0},
     {"probes", "cast_int_to_double", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/cast_int_to_double.c", 0, 0},
@@ -1352,6 +1363,8 @@ static const test_case_t test_cases[] = {
     {"probes", "typedef_void_parameter_marker", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_void_parameter_marker.c", 0, 0},
     {"probes", "incomplete_parameter_prototype", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_parameter_prototype.c", 0, 0},
     {"probes", "incomplete_return_prototype", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_return_prototype.c", 0, 0},
+    {"probes", "incomplete_record_parameter_prototype", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_record_parameter_prototype.c", 0, 0},
+    {"probes", "block_scope_extern_visibility", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_scope_extern_visibility.c", 0, 0},
     {"probes", "incomplete_array_pointer_parameter", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_array_pointer_parameter.c", 0, 0},
     {"probes", "array_parameter_outer_qualifiers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_parameter_outer_qualifiers.c", 0, 0},
     {"probes", "conditional_void_pointer_null", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/conditional_void_pointer_null.c", 0, 0},
@@ -1360,12 +1373,27 @@ static const test_case_t test_cases[] = {
     {"probes", "restrict_object_pointer_types", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/restrict_object_pointer_types.c", 0, 0},
     {"probes", "alignas_global_static_storage", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignas_global_static_storage.c", 0, 0},
     {"probes", "alignas_redeclaration_consistency", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignas_redeclaration_consistency.c", 0, 0},
+    {"probes", "goto_vla_scope_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/goto_vla_scope_constraints.c", 0, 0},
     {"probes", "storage_class_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/storage_class_constraints.c", 0, 0},
     {"probes", "function_specifier_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_specifier_constraints.c", 0, 0},
     {"probes", "atomic_type_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_type_constraints.c", 0, 0},
     {"probes", "atomic_qualifier_typedef_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_qualifier_typedef_constraints.c", 0, 0},
     {"probes", "static_assert_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_assert_constraints.c", 0, 0},
     {"probes", "integer_constant_contexts", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/integer_constant_contexts.c", 0, 0},
+    {"probes", "unsigned_integer_constant_expressions", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_integer_constant_expressions.c", 0, 0},
+    {"probes", "static_initializer_short_circuit", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_initializer_short_circuit.c", 0, 0},
+    {"probes", "static_initializer_floating_conditions", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_initializer_floating_conditions.c", 0, 0},
+    {"probes", "static_address_constant_expressions", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_address_constant_expressions.c", 0, 0},
+    {"probes", "static_pointer_comparison_constants", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_pointer_comparison_constants.c", 0, 0},
+    {"probes", "static_distinct_symbol_comparisons", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_distinct_symbol_comparisons.c", 0, 0},
+    {"probes", "static_pointer_to_integer_constants", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_pointer_to_integer_constants.c", 0, 0},
+    {"probes", "enum_compatible_integer_types", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/enum_compatible_integer_types.c", 0, 0},
+    {"probes", "signed_integer_constant_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/signed_integer_constant_boundaries.c", 0, 0},
+    {"probes", "unsigned_long_long_constant_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_long_long_constant_boundaries.c", 0, 0},
+    {"probes", "constant_cast_sizeof_character", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/constant_cast_sizeof_character.c", 0, 0},
+    {"probes", "unevaluated_type_query_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unevaluated_type_query_boundaries.c", 0, 0},
+    {"probes", "generic_unselected_constant_expression", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_unselected_constant_expression.c", 0, 0},
+    {"probes", "conditional_unselected_constant_expression", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/conditional_unselected_constant_expression.c", 0, 0},
     {"probes", "statement_declaration_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/statement_declaration_boundaries.c", 0, 0},
     {"probes", "generic_selection_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_selection_constraints.c", 0, 0},
     {"probes", "compound_literal_scalar_lvalue", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_literal_scalar_lvalue.c", 0, 0},
@@ -1373,12 +1401,36 @@ static const test_case_t test_cases[] = {
     {"probes", "type_query_register_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/type_query_register_constraints.c", 0, 0},
     {"probes", "function_argument_return_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_argument_return_constraints.c", 0, 0},
     {"probes", "function_default_argument_promotions", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_default_argument_promotions.c", 0, 0},
+    {"probes", "variadic_complex_arguments", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/variadic_complex_arguments.c", 0, 0},
     {"probes", "binary_operator_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/binary_operator_constraints.c", 0, 0},
     {"probes", "conditional_operator_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/conditional_operator_constraints.c", 0, 0},
     {"probes", "atomic_pointer_conversion_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_pointer_conversion_constraints.c", 0, 0},
     {"probes", "array_pointer_qualification_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_pointer_qualification_constraints.c", 0, 0},
     {"probes", "complex_compound_assignment", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_compound_assignment.c", 0, 0},
     {"probes", "atomic_compound_assignment", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_compound_assignment.c", 0, 0},
+    {"probes", "integer_runtime_arithmetic_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/integer_runtime_arithmetic_boundaries.c", 0, 0},
+    {"probes", "floating_runtime_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/floating_runtime_boundaries.c", 0, 0},
+    {"probes", "bitfield_signedness_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/bitfield_signedness_boundaries.c", 0, 0},
+    {"probes", "control_flow_enum_compound_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/control_flow_enum_compound_boundaries.c", 0, 0},
+    {"probes", "call_conversion_qualifier_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/call_conversion_qualifier_boundaries.c", 0, 0},
+    {"probes", "narrow_integer_return_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/narrow_integer_return_boundaries.c", 0, 0},
+    {"probes", "formatted_scan_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/formatted_scan_boundaries.c", 0, 0},
+    {"probes", "wide_format_scan_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_format_scan_boundaries.c", 0, 0},
+    {"probes", "formatted_output_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/formatted_output_boundaries.c", 0, 0},
+    {"probes", "formatted_output_integer_base_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/formatted_output_integer_base_boundaries.c", 0, 0},
+    {"probes", "formatted_output_string_character_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/formatted_output_string_character_boundaries.c", 0, 0},
+    {"probes", "formatted_output_floating_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/formatted_output_floating_boundaries.c", 0, 0},
+    {"probes", "formatted_output_narrow_wide_composition", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/formatted_output_narrow_wide_composition.c", 0, 0},
+    {"probes", "formatted_output_wide_character_conversion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/formatted_output_wide_character_conversion_boundaries.c", 0, 0},
+    {"probes", "sprintf_common_formatter_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sprintf_common_formatter_boundaries.c", 0, 0},
+    {"probes", "wide_format_output_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_format_output_boundaries.c", 0, 0},
+    {"probes", "wide_format_integer_base_output_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_format_integer_base_output_boundaries.c", 0, 0},
+    {"probes", "wide_format_string_character_output_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_format_string_character_output_boundaries.c", 0, 0},
+    {"probes", "wide_format_floating_output_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_format_floating_output_boundaries.c", 0, 0},
+    {"probes", "wide_format_input_va_list_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_format_input_va_list_boundaries.c", 0, 0},
+    {"probes", "wide_format_stream_output_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_format_stream_output_boundaries.c", 0, 0},
+    {"probes", "wide_format_stream_input_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_format_stream_input_boundaries.c", 0, 0},
+    {"probes", "literal_vla_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/literal_vla_boundaries.c", 0, 0},
     {"probes", "stdatomic_pointer_operations", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdatomic_pointer_operations.c", 0, 0},
     {"probes", "atomic_qualified_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_qualified_layout.c", 0, 0},
     {"probes", "atomic_aggregate_member_array_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_aggregate_member_array_layout.c", 0, 0},
@@ -1503,6 +1555,63 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"block_extern_pointer_to_vla_rejected",
      "int main(int argc, char **argv) { extern int (*pointer)[argc]; return pointer != 0 && argv != 0; }",
      "E3064"},
+    {"goto_into_vla_same_block_rejected",
+     "int f(int n) { goto target; int values[n]; target: return sizeof(values); } int main(void) { return 0; }",
+     "E3064"},
+    {"goto_into_vla_nested_block_rejected",
+     "int f(int n) { goto target; { int values[n]; target: return sizeof(values); } } int main(void) { return 0; }",
+     "E3064"},
+    {"goto_into_vla_sibling_block_rejected",
+     "int f(int n) { { goto target; } { int values[n]; target: return sizeof(values); } } int main(void) { return 0; }",
+     "E3064"},
+    {"goto_into_pointer_to_vla_scope_rejected",
+     "int f(int n) { goto target; int (*pointer)[n]; target: return pointer != 0; } int main(void) { return 0; }",
+     "E3064"},
+    {"goto_into_vla_typedef_scope_rejected",
+     "int f(int n) { goto target; typedef int row[n]; target: return sizeof(row); } int main(void) { return 0; }",
+     "E3064"},
+    {"goto_into_for_vla_scope_rejected",
+     "int f(int n) { goto target; for (int values[n];;) { target: return sizeof(values); } } int main(void) { return 0; }",
+     "E3064"},
+    {"switch_case_into_vla_scope_rejected",
+     "int f(int n, int x) { switch (x) { int values[n]; case 1: return sizeof(values); default: return 0; } } int main(void) { return 0; }",
+     "E3064"},
+    {"switch_default_into_vla_scope_rejected",
+     "int f(int n, int x) { switch (x) { int values[n]; default: return sizeof(values); } } int main(void) { return 0; }",
+     "E3064"},
+    {"switch_case_into_pointer_to_vla_scope_rejected",
+     "int f(int n, int x) { switch (x) { int (*pointer)[n]; case 1: return pointer != 0; default: return 0; } } int main(void) { return 0; }",
+     "E3064"},
+    {"switch_case_into_vla_typedef_scope_rejected",
+     "int f(int n, int x) { switch (x) { typedef int row[n]; case 1: return sizeof(row); default: return 0; } } int main(void) { return 0; }",
+     "E3064"},
+    {"switch_nested_case_into_vla_scope_rejected",
+     "int f(int n, int x) { switch (x) { { int values[n]; case 1: return sizeof(values); } default: return 0; } } int main(void) { return 0; }",
+     "E3064"},
+    {"switch_duplicate_case_unsigned_conversion_rejected",
+     "int f(unsigned x) { switch (x) { case -1: return 1; case 4294967295u: return 2; default: return 0; } } int main(void) { return 0; }",
+     "E3060"},
+    {"switch_duplicate_case_signed_conversion_rejected",
+     "int f(int x) { switch (x) { case -2: return 1; case 4294967294u: return 2; default: return 0; } } int main(void) { return 0; }",
+     "E3060"},
+    {"switch_duplicate_case_promoted_uchar_rejected",
+     "int f(unsigned char x) { switch (x) { case -1: return 1; case 4294967295u: return 2; default: return 0; } } int main(void) { return 0; }",
+     "E3060"},
+    {"switch_duplicate_case_wrapped_expression_rejected",
+     "int f(unsigned x) { switch (x) { case 1: return 1; case 4294967295u + 2u: return 2; default: return 0; } } int main(void) { return 0; }",
+     "E3060"},
+    {"switch_duplicate_case_unsigned_shift_rejected",
+     "int f(unsigned x) { switch (x) { case 2147483647: return 1; case ~0u >> 1: return 2; default: return 0; } } int main(void) { return 0; }",
+     "E3060"},
+    {"switch_duplicate_case_unsigned_comparison_rejected",
+     "int f(int x) { switch (x) { case 0: return 1; case 0xffffffffu > -1: return 2; default: return 0; } } int main(void) { return 0; }",
+     "E3060"},
+    {"static_initializer_evaluated_logical_and_divzero_rejected",
+     "static int value = 1 && (1 / 0); int main(void) { return value; }",
+     "E3116"},
+    {"static_initializer_evaluated_logical_or_divzero_rejected",
+     "static int value = 0 || (1 / 0); int main(void) { return value; }",
+     "E3116"},
     {"const_array_parameter_reassignment_rejected",
      "int f(int values[const]) { values = 0; return 0; } int main(void) { return 0; }",
      "E3077"},
@@ -2873,6 +2982,17 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_atoi") == 0 || strcmp(sym, "_atol") == 0 ||
             strcmp(sym, "_puts") == 0 || strcmp(sym, "_fprintf") == 0 ||
             strcmp(sym, "_sprintf") == 0 || strcmp(sym, "_snprintf") == 0 ||
+            strcmp(sym, "_vsnprintf") == 0 || strcmp(sym, "_vswprintf") == 0 ||
+            strcmp(sym, "_vswscanf") == 0 || strcmp(sym, "_fwprintf") == 0 ||
+            strcmp(sym, "_wprintf") == 0 || strcmp(sym, "_vfwprintf") == 0 ||
+            strcmp(sym, "_vwprintf") == 0 ||
+            strcmp(sym, "_tmpfile") == 0 || strcmp(sym, "_fputwc") == 0 ||
+            strcmp(sym, "_fgetws") == 0 || strcmp(sym, "_rewind") == 0 ||
+            strcmp(sym, "_fclose") == 0 || strcmp(sym, "_fputws") == 0 ||
+            strcmp(sym, "_fgetwc") == 0 || strcmp(sym, "_fwscanf") == 0 ||
+            strcmp(sym, "_wscanf") == 0 || strcmp(sym, "_vfwscanf") == 0 ||
+            strcmp(sym, "_vwscanf") == 0 ||
+            strcmp(sym, "_sscanf") == 0 || strcmp(sym, "_vsscanf") == 0 ||
             strcmp(sym, "_va_start") == 0 || strcmp(sym, "_va_end") == 0 ||
             strcmp(sym, "_abs") == 0 || strcmp(sym, "_labs") == 0 ||
             strcmp(sym, "_rand") == 0 || strcmp(sym, "_srand") == 0 ||
@@ -3022,12 +3142,28 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_wmemcpy") == 0 || strcmp(sym, "_wmemset") == 0 ||
             strcmp(sym, "_wmemmove") == 0 || strcmp(sym, "_wmemcmp") == 0 ||
             strcmp(sym, "_wmemchr") == 0 ||
+            strcmp(sym, "_fwprintf") == 0 || strcmp(sym, "_wprintf") == 0 ||
+            strcmp(sym, "_swprintf") == 0 || strcmp(sym, "_vfwprintf") == 0 ||
+            strcmp(sym, "_vwprintf") == 0 || strcmp(sym, "_vswprintf") == 0 ||
+            strcmp(sym, "_fwscanf") == 0 || strcmp(sym, "_wscanf") == 0 ||
+            strcmp(sym, "_swscanf") == 0 || strcmp(sym, "_vfwscanf") == 0 ||
+            strcmp(sym, "_vwscanf") == 0 || strcmp(sym, "_vswscanf") == 0 ||
+            strcmp(sym, "_fgetwc") == 0 || strcmp(sym, "_getwc") == 0 ||
+            strcmp(sym, "_getwchar") == 0 || strcmp(sym, "_fputwc") == 0 ||
+            strcmp(sym, "_putwc") == 0 || strcmp(sym, "_putwchar") == 0 ||
+            strcmp(sym, "_fgetws") == 0 || strcmp(sym, "_fputws") == 0 ||
+            strcmp(sym, "_ungetwc") == 0 || strcmp(sym, "_fwide") == 0 ||
             strcmp(sym, "_mbrtowc") == 0 || strcmp(sym, "_wcrtomb") == 0 ||
             strcmp(sym, "_mbsrtowcs") == 0 || strcmp(sym, "_wcsrtombs") == 0 ||
             strcmp(sym, "_mbrlen") == 0 || strcmp(sym, "_mbsinit") == 0 ||
+            strcmp(sym, "_mblen") == 0 || strcmp(sym, "_mbtowc") == 0 ||
+            strcmp(sym, "_wctomb") == 0 || strcmp(sym, "_mbstowcs") == 0 ||
+            strcmp(sym, "_wcstombs") == 0 ||
             strcmp(sym, "_btowc") == 0 || strcmp(sym, "_wctob") == 0 ||
             strcmp(sym, "_wcstol") == 0 || strcmp(sym, "_wcstoul") == 0 ||
-            strcmp(sym, "_wcstod") == 0 ||
+            strcmp(sym, "_wcstoll") == 0 || strcmp(sym, "_wcstoull") == 0 ||
+            strcmp(sym, "_wcstof") == 0 || strcmp(sym, "_wcstod") == 0 ||
+            strcmp(sym, "_wcstold") == 0 ||
             strcmp(sym, "_wcsftime") == 0 ||
             strcmp(sym, "_mbrtoc16") == 0 || strcmp(sym, "_c16rtomb") == 0 ||
             strcmp(sym, "_mbrtoc32") == 0 || strcmp(sym, "_c32rtomb") == 0 ||

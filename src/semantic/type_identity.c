@@ -398,7 +398,7 @@ psx_qual_type_t psx_semantic_type_table_intern_void(
 
 psx_qual_type_t psx_semantic_type_table_intern_enum(
     psx_semantic_type_table_t *table, psx_decl_id_t declaration_id,
-    const char *tag_name, int tag_length) {
+    const char *tag_name, int tag_length, int is_unsigned) {
   if (tag_length < 0 || (tag_length > 0 && !tag_name) ||
       declaration_id == PSX_DECL_ID_INVALID)
     return invalid_qual_type();
@@ -408,6 +408,7 @@ psx_qual_type_t psx_semantic_type_table_intern_enum(
       .enum_tag_name = tag_name,
       .enum_tag_length = tag_length,
       .enum_decl_id = declaration_id,
+      .is_unsigned = is_unsigned ? 1 : 0,
   };
   return psx_semantic_type_table_intern_shape(
       table, &shape, invalid_qual_type(), NULL, 0);
@@ -600,6 +601,31 @@ static int semantic_qual_types_compatible(
     psx_qual_type_t left, psx_qual_type_t right,
     int compare_qualifiers);
 
+static int semantic_integer_shapes_compatible(
+    const psx_type_shape_t *left,
+    const psx_type_shape_t *right) {
+  if (!left || !right || left->kind != PSX_TYPE_INTEGER ||
+      right->kind != PSX_TYPE_INTEGER)
+    return 0;
+  int left_is_enum =
+      left->integer_kind == PSX_INTEGER_KIND_ENUM;
+  int right_is_enum =
+      right->integer_kind == PSX_INTEGER_KIND_ENUM;
+  if (!left_is_enum && !right_is_enum)
+    return semantic_type_shapes_match(left, right);
+  if (left_is_enum && right_is_enum)
+    return semantic_type_shapes_match(left, right);
+  const psx_type_shape_t *enumeration =
+      left_is_enum ? left : right;
+  const psx_type_shape_t *integer =
+      left_is_enum ? right : left;
+  psx_integer_conversion_t conversion =
+      psx_integer_conversion_from_shape(integer);
+  return conversion.is_integer && conversion.rank == 3 &&
+         !integer->is_plain_char &&
+         conversion.is_unsigned == enumeration->is_unsigned;
+}
+
 static int parameter_is_unchanged_by_default_argument_promotions(
     const psx_semantic_type_table_t *table, psx_qual_type_t parameter) {
   if (!semantic_type_id_is_valid(table, parameter.type_id)) return 0;
@@ -701,6 +727,9 @@ static int semantic_qual_types_compatible(
   if (left_shape->kind != right_shape->kind) return 0;
 
   switch (left_shape->kind) {
+    case PSX_TYPE_INTEGER:
+      return semantic_integer_shapes_compatible(
+          left_shape, right_shape);
     case PSX_TYPE_POINTER:
       return semantic_qual_types_compatible(
           table, left_entry->base_type, right_entry->base_type, 1);

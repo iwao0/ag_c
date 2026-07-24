@@ -171,10 +171,21 @@ static int ag_rt_general_format_precision(int precision) {
   return precision == 0 ? 1 : precision;
 }
 
+static double ag_rt_round_decimal_nearest_even(double v, unsigned long scale) {
+  double scaled;
+  unsigned long integral;
+  double remainder;
+  if (v > 9007199254740991.0 / (double)scale) return v;
+  scaled = v * (double)scale;
+  integral = (unsigned long)scaled;
+  remainder = scaled - (double)integral;
+  if (remainder > 0.5 || (remainder == 0.5 && (integral & 1u))) integral++;
+  return (double)integral / (double)scale;
+}
+
 static void ag_rt_write_fixed(char *buf, size_t size, int bounded, size_t *pos,
                               double v, int precision, int upper, int alternate, int sign_ch) {
   if (ag_rt_double_is_nan(v)) {
-    if (sign_ch) ag_rt_putc(buf, size, bounded, pos, sign_ch);
     ag_rt_putc(buf, size, bounded, pos, upper ? 'N' : 'n');
     ag_rt_putc(buf, size, bounded, pos, upper ? 'A' : 'a');
     ag_rt_putc(buf, size, bounded, pos, upper ? 'N' : 'n');
@@ -201,7 +212,7 @@ static void ag_rt_write_fixed(char *buf, size_t size, int bounded, size_t *pos,
 
   unsigned long scale = 1;
   for (int i = 0; i < precision; i++) scale *= 10;
-  double rounded = v + 0.5 / (double)scale;
+  double rounded = ag_rt_round_decimal_nearest_even(v, scale);
   unsigned long whole = (unsigned long)rounded;
   double frac_ld = (rounded - (double)whole) * (double)scale;
   unsigned long frac = (unsigned long)frac_ld;
@@ -234,6 +245,11 @@ static void ag_rt_write_float_text_padded(char *buf, size_t size, int bounded, s
     if (tmp[0] == '-' || tmp[0] == '+' || tmp[0] == ' ') {
       ag_rt_putc(buf, size, bounded, pos, tmp[0]);
       start = 1;
+    }
+    if (tmp[start] == '0' && (tmp[start + 1] == 'x' || tmp[start + 1] == 'X')) {
+      ag_rt_putc(buf, size, bounded, pos, tmp[start]);
+      ag_rt_putc(buf, size, bounded, pos, tmp[start + 1]);
+      start += 2;
     }
     while (pad > 0) {
       ag_rt_putc(buf, size, bounded, pos, '0');
@@ -295,7 +311,7 @@ static void ag_rt_write_scientific(char *buf, size_t size, int bounded, size_t *
 
   unsigned long scale = 1;
   for (int i = 0; i < precision; i++) scale *= 10;
-  double rounded = v + 0.5 / (double)scale;
+  double rounded = ag_rt_round_decimal_nearest_even(v, scale);
   if (rounded >= 10.0) {
     rounded = rounded / 10.0;
     exp++;
@@ -344,7 +360,7 @@ static int ag_rt_float_exp10_rounded(double v, int precision) {
     exp--;
   }
   for (int i = 1; i < precision; i++) scale *= 10;
-  if (v + 0.5 / (double)scale >= 10.0) exp++;
+  if (ag_rt_round_decimal_nearest_even(v, scale) >= 10.0) exp++;
   return exp;
 }
 
@@ -522,10 +538,30 @@ static int ag_rt_strn_len(const char *s, int limit) {
   return n;
 }
 
+static void ag_rt_write_narrow_wstr_n(char *buf, size_t size, int bounded, size_t *pos,
+                                      const int *s, int limit) {
+  if (!s) {
+    ag_rt_write_str_n(buf, size, bounded, pos, "(null)", limit);
+    return;
+  }
+  while (*s && (limit < 0 || limit > 0)) {
+    ag_rt_putc(buf, size, bounded, pos, *s);
+    s++;
+    if (limit > 0) limit--;
+  }
+}
+
+static int ag_rt_narrow_wstrn_len(const int *s, int limit) {
+  int n = 0;
+  if (!s) return ag_rt_strn_len("(null)", limit);
+  while (s[n] && (limit < 0 || n < limit)) n++;
+  return n;
+}
+
 static long ag_rt_format_read_signed(va_list *ap, int length_hh, int length_h,
                                      int length_l, int length_ll, int length_z,
                                      int length_j, int length_t) {
-  if (length_ll || length_j) return va_arg(*ap, long);
+  if (length_ll || length_j) return (long)va_arg(*ap, long long);
   if (length_l || length_z || length_t) return va_arg(*ap, long);
   int v = va_arg(*ap, int);
   if (length_hh) return (long)(signed char)v;
@@ -536,7 +572,7 @@ static long ag_rt_format_read_signed(va_list *ap, int length_hh, int length_h,
 static unsigned long ag_rt_format_read_unsigned(va_list *ap, int length_hh, int length_h,
                                                 int length_l, int length_ll, int length_z,
                                                 int length_j, int length_t) {
-  if (length_ll || length_j) return va_arg(*ap, unsigned long);
+  if (length_ll || length_j) return (unsigned long)va_arg(*ap, unsigned long long);
   if (length_l || length_z || length_t) return va_arg(*ap, unsigned long);
   if (length_hh || length_h) {
     int v = va_arg(*ap, int);
@@ -727,10 +763,18 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
       ag_rt_write_pointer(buf, size, bounded, &pos, (unsigned long)(long)p, width, left_align);
       fmt++;
     } else if (*fmt == 's') {
-      char *s = va_arg(ap, char *);
-      int len = ag_rt_strn_len(s, precision);
+      void *string = va_arg(ap, void *);
+      int len = length_l
+                    ? ag_rt_narrow_wstrn_len((const int *)string, precision)
+                    : ag_rt_strn_len((const char *)string, precision);
       if (!left_align) ag_rt_write_spaces(buf, size, bounded, &pos, width - len);
-      ag_rt_write_str_n(buf, size, bounded, &pos, s, precision);
+      if (length_l) {
+        ag_rt_write_narrow_wstr_n(buf, size, bounded, &pos,
+                                  (const int *)string, precision);
+      } else {
+        ag_rt_write_str_n(buf, size, bounded, &pos,
+                          (const char *)string, precision);
+      }
       if (left_align) ag_rt_write_spaces(buf, size, bounded, &pos, width - len);
       fmt++;
     } else if (*fmt == 'c') {
@@ -879,7 +923,10 @@ static double ag_rt_scan_nan_value(void) {
 
 static void ag_rt_scan_store_signed(va_list *ap, int length_hh, int length_h, int length_l,
                                     int length_ll, long value) {
-  if (length_ll || length_l) {
+  if (length_ll) {
+    long long *out = va_arg(*ap, long long *);
+    *out = (long long)value;
+  } else if (length_l) {
     long *out = va_arg(*ap, long *);
     *out = value;
   } else if (length_hh) {
@@ -896,7 +943,10 @@ static void ag_rt_scan_store_signed(va_list *ap, int length_hh, int length_h, in
 
 static void ag_rt_scan_store_unsigned(va_list *ap, int length_hh, int length_h, int length_l,
                                       int length_ll, unsigned long value) {
-  if (length_ll || length_l) {
+  if (length_ll) {
+    unsigned long long *out = va_arg(*ap, unsigned long long *);
+    *out = (unsigned long long)value;
+  } else if (length_l) {
     unsigned long *out = va_arg(*ap, unsigned long *);
     *out = value;
   } else if (length_hh) {
@@ -913,7 +963,10 @@ static void ag_rt_scan_store_unsigned(va_list *ap, int length_hh, int length_h, 
 
 static void ag_rt_scan_store_count(va_list *ap, int length_hh, int length_h, int length_l,
                                    int length_ll, long value) {
-  if (length_ll || length_l) {
+  if (length_ll) {
+    long long *out = va_arg(*ap, long long *);
+    *out = (long long)value;
+  } else if (length_l) {
     long *out = va_arg(*ap, long *);
     *out = value;
   } else if (length_hh) {
@@ -1272,6 +1325,12 @@ static int ag_rt_vscan_consumed(long s_addr, long fmt_addr, long ap) {
     } else if (*fmt == 'L') {
       length_L = 1;
       fmt++;
+    } else if (*fmt == 'j') {
+      length_ll = 1;
+      fmt++;
+    } else if (*fmt == 'z' || *fmt == 't') {
+      length_l = 1;
+      fmt++;
     }
 
     if (*fmt == 'd' || *fmt == 'i' || *fmt == 'u' || *fmt == 'x' || *fmt == 'X' ||
@@ -1297,7 +1356,8 @@ static int ag_rt_vscan_consumed(long s_addr, long fmt_addr, long ap) {
         assigned++;
       }
       fmt++;
-    } else if (*fmt == 'f' || *fmt == 'F' || *fmt == 'e' || *fmt == 'E' ||
+    } else if (*fmt == 'a' || *fmt == 'A' || *fmt == 'f' || *fmt == 'F' ||
+               *fmt == 'e' || *fmt == 'E' ||
                *fmt == 'g' || *fmt == 'G') {
       double value = 0.0;
       if (!ag_rt_scan_float(&p, width, &value)) {
@@ -1347,7 +1407,7 @@ static int ag_rt_vscan_consumed(long s_addr, long fmt_addr, long ap) {
           n++;
           if (width > 0) width--;
         }
-        if (!suppress) out[n] = 0;
+        if (!suppress && n != 0) out[n] = 0;
       } else {
         char *out = 0;
         if (!suppress) out = va_arg(ap, char *);
@@ -1357,7 +1417,7 @@ static int ag_rt_vscan_consumed(long s_addr, long fmt_addr, long ap) {
           n++;
           if (width > 0) width--;
         }
-        if (!suppress) *(out + n) = 0;
+        if (!suppress && n != 0) *(out + n) = 0;
       }
       if (n == 0) {
         if (*p == 0) input_failure = 1;
@@ -1414,7 +1474,7 @@ static int ag_rt_vscan_consumed(long s_addr, long fmt_addr, long ap) {
           n++;
           if (width > 0) width--;
         }
-        if (!suppress) out[n] = 0;
+        if (!suppress && n != 0) out[n] = 0;
       } else {
         char *out = 0;
         if (!suppress) out = va_arg(ap, char *);
@@ -1425,7 +1485,7 @@ static int ag_rt_vscan_consumed(long s_addr, long fmt_addr, long ap) {
           n++;
           if (width > 0) width--;
         }
-        if (!suppress) *(out + n) = 0;
+        if (!suppress && n != 0) *(out + n) = 0;
       }
       if (n == 0) {
         if (*p == 0) input_failure = 1;
@@ -1652,6 +1712,9 @@ static int ag_rt_wscan_float(int **pp, int width, double *out) {
   return 1;
 }
 
+static long ag_rt_vwscan_consumed_out;
+static int ag_rt_vwscan_input_failure_out;
+
 static int ag_rt_vwscan(int *s, int *fmt, va_list ap) {
   int *p = s;
   int assigned = 0;
@@ -1719,6 +1782,12 @@ static int ag_rt_vwscan(int *s, int *fmt, va_list ap) {
     } else if (*fmt == 'L') {
       length_L = 1;
       fmt++;
+    } else if (*fmt == 'j') {
+      length_ll = 1;
+      fmt++;
+    } else if (*fmt == 'z' || *fmt == 't') {
+      length_l = 1;
+      fmt++;
     }
 
     if (*fmt == 'd' || *fmt == 'i' || *fmt == 'u' || *fmt == 'x' || *fmt == 'X' ||
@@ -1744,7 +1813,8 @@ static int ag_rt_vwscan(int *s, int *fmt, va_list ap) {
         assigned++;
       }
       fmt++;
-    } else if (*fmt == 'f' || *fmt == 'F' || *fmt == 'e' || *fmt == 'E' ||
+    } else if (*fmt == 'a' || *fmt == 'A' || *fmt == 'f' || *fmt == 'F' ||
+               *fmt == 'e' || *fmt == 'E' ||
                *fmt == 'g' || *fmt == 'G') {
       double value = 0.0;
       if (!ag_rt_wscan_float(&p, width, &value)) {
@@ -1794,7 +1864,7 @@ static int ag_rt_vwscan(int *s, int *fmt, va_list ap) {
           n++;
           if (width > 0) width--;
         }
-        if (!suppress) out[n] = 0;
+        if (!suppress && n != 0) out[n] = 0;
       } else {
         char *out = 0;
         if (!suppress) out = va_arg(ap, char *);
@@ -1804,7 +1874,7 @@ static int ag_rt_vwscan(int *s, int *fmt, va_list ap) {
           n++;
           if (width > 0) width--;
         }
-        if (!suppress) out[n] = 0;
+        if (!suppress && n != 0) out[n] = 0;
       }
       if (n == 0) {
         if (*p == 0) input_failure = 1;
@@ -1860,7 +1930,7 @@ static int ag_rt_vwscan(int *s, int *fmt, va_list ap) {
           n++;
           if (width > 0) width--;
         }
-        if (!suppress) out[n] = 0;
+        if (!suppress && n != 0) out[n] = 0;
       } else {
         char *out = 0;
         if (!suppress) out = va_arg(ap, char *);
@@ -1870,7 +1940,7 @@ static int ag_rt_vwscan(int *s, int *fmt, va_list ap) {
           n++;
           if (width > 0) width--;
         }
-        if (!suppress) out[n] = 0;
+        if (!suppress && n != 0) out[n] = 0;
       }
       if (n == 0) {
         if (*p == 0) input_failure = 1;
@@ -1887,6 +1957,8 @@ static int ag_rt_vwscan(int *s, int *fmt, va_list ap) {
       break;
     }
   }
+  ag_rt_vwscan_consumed_out = (long)(p - s);
+  ag_rt_vwscan_input_failure_out = input_failure;
   if (assigned == 0 && input_failure) return -1;
   return assigned;
 }
@@ -1900,48 +1972,181 @@ static void ag_rt_wfinish(int *buf, size_t size, size_t pos) {
   if (size != 0) buf[(long)((long)pos < (long)size ? pos : size - 1)] = 0;
 }
 
-static void ag_rt_wwrite_str(int *buf, size_t size, size_t *pos, const char *s) {
+static int ag_rt_wstrn_len(const char *s, int precision) {
   if (!s) s = "(null)";
-  while (*s) {
+  int len = 0;
+  while (*s && (precision < 0 || len < precision)) {
+    len++;
+    s++;
+  }
+  return len;
+}
+
+static int ag_rt_wwstrn_len(const int *s, int precision) {
+  if (!s) return ag_rt_wstrn_len("(null)", precision);
+  int len = 0;
+  while (*s && (precision < 0 || len < precision)) {
+    len++;
+    s++;
+  }
+  return len;
+}
+
+static void ag_rt_wwrite_str_n(int *buf, size_t size, size_t *pos,
+                               const char *s, int len) {
+  if (!s) s = "(null)";
+  while (len > 0) {
     ag_rt_wputc(buf, size, pos, (unsigned char)*s);
     s++;
+    len--;
   }
 }
 
-static void ag_rt_wwrite_wstr(int *buf, size_t size, size_t *pos, int *s) {
+static void ag_rt_wwrite_wstr_n(int *buf, size_t size, size_t *pos,
+                                int *s, int len) {
   if (!s) {
-    ag_rt_wwrite_str(buf, size, pos, "(null)");
+    ag_rt_wwrite_str_n(buf, size, pos, "(null)", len);
     return;
   }
-  while (*s) {
+  while (len > 0) {
     ag_rt_wputc(buf, size, pos, *s);
     s++;
+    len--;
   }
 }
 
-static void ag_rt_wwrite_udec(int *buf, size_t size, size_t *pos, unsigned long v) {
-  unsigned long div = 1000000000UL;
-  int started = 0;
-  while (div > 0) {
-    int digit = (int)(v / div);
-    if (digit || started || div == 1) {
-      ag_rt_wputc(buf, size, pos, '0' + digit);
-      started = 1;
-    }
-    v = v % div;
-    div = div / 10;
+static void ag_rt_wwrite_padding(int *buf, size_t size, size_t *pos, int ch, int count) {
+  while (count > 0) {
+    ag_rt_wputc(buf, size, pos, ch);
+    count--;
   }
 }
 
-static void ag_rt_wwrite_idec(int *buf, size_t size, size_t *pos, int v) {
-  unsigned int u;
-  if (v < 0) {
+static int ag_rt_wuint_base_len(unsigned long long v, unsigned int base,
+                                int precision) {
+  int len = 0;
+  if (precision == 0 && v == 0) return 0;
+  do {
+    v /= base;
+    len++;
+  } while (v != 0);
+  return len;
+}
+
+static void ag_rt_wwrite_uint_base_padded(int *buf, size_t size, size_t *pos,
+                                          unsigned long long v, unsigned int base,
+                                          int upper, int width, int zero_pad,
+                                          int left_align, int precision,
+                                          int alternate, int pointer_format) {
+  int tmp[64];
+  int digits = ag_rt_wuint_base_len(v, base, precision);
+  int n = 0;
+  int zero_count = precision > digits ? precision - digits : 0;
+  int prefix_len = 0;
+  int pad;
+  unsigned long long original = v;
+  while (n < digits) {
+    unsigned int digit = (unsigned int)(v % base);
+    tmp[n++] = digit < 10 ? '0' + (int)digit
+                          : (upper ? 'A' : 'a') + (int)digit - 10;
+    v /= base;
+  }
+  if (pointer_format) {
+    prefix_len = 2;
+  } else if (alternate && base == 16 && original != 0) {
+    prefix_len = 2;
+  } else if (alternate && base == 8 &&
+             ((original == 0 && precision == 0) ||
+              (original != 0 && precision <= digits))) {
+    prefix_len = 1;
+  }
+  pad = width - prefix_len - zero_count - digits;
+  if (pad < 0) pad = 0;
+  if (!left_align && !zero_pad) ag_rt_wwrite_padding(buf, size, pos, ' ', pad);
+  if (prefix_len >= 1) ag_rt_wputc(buf, size, pos, '0');
+  if (prefix_len == 2) ag_rt_wputc(buf, size, pos, upper ? 'X' : 'x');
+  if (!left_align && zero_pad) ag_rt_wwrite_padding(buf, size, pos, '0', pad);
+  ag_rt_wwrite_padding(buf, size, pos, '0', zero_count);
+  while (n > 0) ag_rt_wputc(buf, size, pos, tmp[--n]);
+  if (left_align) ag_rt_wwrite_padding(buf, size, pos, ' ', pad);
+}
+
+static void ag_rt_wwrite_idec_padded(int *buf, size_t size, size_t *pos,
+                                     long long v, int width, int zero_pad,
+                                     int left_align, int precision, int sign_ch) {
+  int negative = v < 0;
+  unsigned long long u =
+      negative ? (unsigned long long)(-(v + 1)) + 1u : (unsigned long long)v;
+  int digits = ag_rt_wuint_base_len(u, 10, precision);
+  int zero_count = precision > digits ? precision - digits : 0;
+  int sign_len = negative || sign_ch ? 1 : 0;
+  int pad = width - sign_len - zero_count - digits;
+  unsigned long long div = 1;
+  if (pad < 0) pad = 0;
+  if (!left_align && !zero_pad) ag_rt_wwrite_padding(buf, size, pos, ' ', pad);
+  if (negative) {
     ag_rt_wputc(buf, size, pos, '-');
-    u = (unsigned int)(-(v + 1)) + 1u;
-  } else {
-    u = (unsigned int)v;
+  } else if (sign_ch) {
+    ag_rt_wputc(buf, size, pos, sign_ch);
   }
-  ag_rt_wwrite_udec(buf, size, pos, u);
+  if (!left_align && zero_pad) ag_rt_wwrite_padding(buf, size, pos, '0', pad);
+  ag_rt_wwrite_padding(buf, size, pos, '0', zero_count);
+  for (int i = 1; i < digits; i++) div *= 10;
+  while (digits > 0) {
+    ag_rt_wputc(buf, size, pos, '0' + (int)(u / div));
+    u %= div;
+    div /= 10;
+    digits--;
+  }
+  if (left_align) ag_rt_wwrite_padding(buf, size, pos, ' ', pad);
+}
+
+static void ag_rt_wwrite_float_padded(int *buf, size_t size, size_t *pos,
+                                      double value, int format, int width,
+                                      int zero_pad, int left_align, int precision,
+                                      int upper, int alternate, int sign_ch) {
+  char tmp[128];
+  size_t tmp_pos = 0;
+  int start = 0;
+  int pad;
+  int allow_zero_pad;
+  if (format == 'a') {
+    ag_rt_write_hex_float(tmp, sizeof(tmp), 1, &tmp_pos, value, precision, upper,
+                          alternate, sign_ch);
+  } else if (format == 'g') {
+    ag_rt_write_general(tmp, sizeof(tmp), 1, &tmp_pos, value, precision, upper,
+                        alternate, sign_ch);
+  } else if (format == 'e') {
+    ag_rt_write_scientific(tmp, sizeof(tmp), 1, &tmp_pos, value, precision, upper,
+                           alternate, sign_ch);
+  } else {
+    ag_rt_write_fixed(tmp, sizeof(tmp), 1, &tmp_pos, value, precision, upper,
+                      alternate, sign_ch);
+  }
+  ag_rt_finish(tmp, sizeof(tmp), 1, tmp_pos);
+  pad = width - (int)tmp_pos;
+  if (pad < 0) pad = 0;
+  allow_zero_pad = !ag_rt_double_is_nan(value) && !ag_rt_double_is_inf(value);
+  if (!left_align && (!zero_pad || !allow_zero_pad)) {
+    ag_rt_wwrite_padding(buf, size, pos, ' ', pad);
+  }
+  if (!left_align && zero_pad && allow_zero_pad) {
+    if (tmp[0] == '-' || tmp[0] == '+' || tmp[0] == ' ') {
+      ag_rt_wputc(buf, size, pos, tmp[0]);
+      start = 1;
+    }
+    if (tmp[start] == '0' && (tmp[start + 1] == 'x' || tmp[start + 1] == 'X')) {
+      ag_rt_wputc(buf, size, pos, tmp[start]);
+      ag_rt_wputc(buf, size, pos, tmp[start + 1]);
+      start += 2;
+    }
+    ag_rt_wwrite_padding(buf, size, pos, '0', pad);
+  }
+  while (start < (int)tmp_pos) {
+    ag_rt_wputc(buf, size, pos, (unsigned char)tmp[start]);
+    start++;
+  }
+  if (left_align) ag_rt_wwrite_padding(buf, size, pos, ' ', pad);
 }
 
 static int ag_rt_vwformat(int *buf, size_t size, int *fmt, va_list ap) {
@@ -1958,30 +2163,162 @@ static int ag_rt_vwformat(int *buf, size_t size, int *fmt, va_list ap) {
       continue;
     }
 
+    int left_align = 0;
+    int zero_pad = 0;
+    int alternate = 0;
+    int sign_ch = 0;
+    int width = 0;
+    int precision = -1;
+    while (*fmt == '-' || *fmt == '0' || *fmt == '#' ||
+           *fmt == '+' || *fmt == ' ') {
+      if (*fmt == '-') left_align = 1;
+      if (*fmt == '0') zero_pad = 1;
+      if (*fmt == '#') alternate = 1;
+      if (*fmt == '+') sign_ch = '+';
+      if (*fmt == ' ' && !sign_ch) sign_ch = ' ';
+      fmt++;
+    }
+    while (*fmt >= '0' && *fmt <= '9') {
+      width = width * 10 + (*fmt - '0');
+      fmt++;
+    }
+    if (*fmt == '*') {
+      width = va_arg(ap, int);
+      if (width < 0) {
+        left_align = 1;
+        width = -width;
+      }
+      fmt++;
+    }
+    if (left_align) zero_pad = 0;
+    if (*fmt == '.') {
+      fmt++;
+      if (*fmt == '*') {
+        precision = va_arg(ap, int);
+        fmt++;
+      } else {
+        precision = 0;
+        while (*fmt >= '0' && *fmt <= '9') {
+          precision = precision * 10 + (*fmt - '0');
+          fmt++;
+        }
+      }
+      if (precision < 0) precision = -1;
+    }
+    int int_zero_pad = precision >= 0 ? 0 : zero_pad;
+
+    int length_z = 0;
+    int length_j = 0;
+    int length_t = 0;
+    int length_h = 0;
+    int length_hh = 0;
     int length_l = 0;
-    if (*fmt == 'l') {
+    int length_ll = 0;
+    int length_L = 0;
+    if (*fmt == 'z') {
+      length_z = 1;
+      fmt++;
+    } else if (*fmt == 'j') {
+      length_j = 1;
+      fmt++;
+    } else if (*fmt == 't') {
+      length_t = 1;
+      fmt++;
+    } else if (*fmt == 'h') {
+      length_h = 1;
+      fmt++;
+      if (*fmt == 'h') {
+        length_hh = 1;
+        fmt++;
+      }
+    } else if (*fmt == 'l') {
       length_l = 1;
+      fmt++;
+      if (*fmt == 'l') {
+        length_ll = 1;
+        fmt++;
+      }
+    } else if (*fmt == 'L') {
+      length_L = 1;
       fmt++;
     }
 
-    if (*fmt == 'd') {
-      ag_rt_wwrite_idec(buf, size, &pos, va_arg(ap, int));
+    if (*fmt == 'd' || *fmt == 'i') {
+      long long value =
+          (long long)ag_rt_format_read_signed(&ap, length_hh, length_h, length_l,
+                                              length_ll, length_z, length_j, length_t);
+      ag_rt_wwrite_idec_padded(buf, size, &pos, value, width, int_zero_pad,
+                               left_align, precision, sign_ch);
       fmt++;
     } else if (*fmt == 'u') {
-      ag_rt_wwrite_udec(buf, size, &pos, (unsigned long)va_arg(ap, unsigned int));
+      unsigned long long value =
+          (unsigned long long)ag_rt_format_read_unsigned(
+              &ap, length_hh, length_h, length_l, length_ll, length_z, length_j, length_t);
+      ag_rt_wwrite_uint_base_padded(buf, size, &pos, value, 10, 0, width,
+                                    int_zero_pad, left_align, precision, 0, 0);
+      fmt++;
+    } else if (*fmt == 'x' || *fmt == 'X' || *fmt == 'o') {
+      int upper = *fmt == 'X';
+      unsigned int base = *fmt == 'o' ? 8u : 16u;
+      unsigned long long value =
+          (unsigned long long)ag_rt_format_read_unsigned(
+              &ap, length_hh, length_h, length_l, length_ll, length_z, length_j, length_t);
+      ag_rt_wwrite_uint_base_padded(buf, size, &pos, value, base, upper, width,
+                                    int_zero_pad, left_align, precision, alternate, 0);
+      fmt++;
+    } else if (*fmt == 'p') {
+      void *pointer = ag_rt_format_read_ptr(&ap);
+      ag_rt_wwrite_uint_base_padded(buf, size, &pos,
+                                    (unsigned long long)(unsigned long)(long)pointer,
+                                    16, 0, width, zero_pad, left_align, -1, 0, 1);
       fmt++;
     } else if (*fmt == 's') {
+      int len;
       if (length_l) {
-        ag_rt_wwrite_wstr(buf, size, &pos, va_arg(ap, int *));
+        int *string = va_arg(ap, int *);
+        len = ag_rt_wwstrn_len(string, precision);
+        if (!left_align) ag_rt_wwrite_padding(buf, size, &pos, ' ', width - len);
+        ag_rt_wwrite_wstr_n(buf, size, &pos, string, len);
       } else {
-        ag_rt_wwrite_str(buf, size, &pos, va_arg(ap, char *));
+        char *string = va_arg(ap, char *);
+        len = ag_rt_wstrn_len(string, precision);
+        if (!left_align) ag_rt_wwrite_padding(buf, size, &pos, ' ', width - len);
+        ag_rt_wwrite_str_n(buf, size, &pos, string, len);
       }
+      if (left_align) ag_rt_wwrite_padding(buf, size, &pos, ' ', width - len);
       fmt++;
     } else if (*fmt == 'c') {
-      ag_rt_wputc(buf, size, &pos, va_arg(ap, int));
+      int character = va_arg(ap, int);
+      if (!left_align) ag_rt_wwrite_padding(buf, size, &pos, ' ', width - 1);
+      ag_rt_wputc(buf, size, &pos, character);
+      if (left_align) ag_rt_wwrite_padding(buf, size, &pos, ' ', width - 1);
+      fmt++;
+    } else if (*fmt == 'n') {
+      ag_rt_format_store_count(&ap, length_hh, length_h, length_l, length_ll, length_z,
+                               length_j, length_t, (long)pos);
+      fmt++;
+    } else if (*fmt == 'f' || *fmt == 'F' || *fmt == 'e' || *fmt == 'E' ||
+               *fmt == 'g' || *fmt == 'G' || *fmt == 'a' || *fmt == 'A') {
+      int format = *fmt == 'a' || *fmt == 'A'
+                       ? 'a'
+                       : (*fmt == 'g' || *fmt == 'G'
+                              ? 'g'
+                              : (*fmt == 'e' || *fmt == 'E' ? 'e' : 'f'));
+      int upper = *fmt == 'F' || *fmt == 'E' || *fmt == 'G' || *fmt == 'A';
+      double value;
+      (void)length_l;
+      if (length_L) {
+        long double long_value = va_arg(ap, long double);
+        value = (double)long_value;
+      } else {
+        value = va_arg(ap, double);
+      }
+      ag_rt_wwrite_float_padded(buf, size, &pos, value, format, width, zero_pad,
+                                left_align, precision, upper, alternate, sign_ch);
       fmt++;
     } else {
       ag_rt_wputc(buf, size, &pos, '%');
+      if (length_L) ag_rt_wputc(buf, size, &pos, 'L');
       if (length_l) ag_rt_wputc(buf, size, &pos, 'l');
       if (*fmt) ag_rt_wputc(buf, size, &pos, *fmt++);
     }
@@ -2117,6 +2454,117 @@ int __agc_runtime_vfscanf(long stream_addr, long fmt_addr, long ap_addr) {
   return ag_rt_vfscan(stream_addr, fmt, ap);
 }
 
+static int ag_rt_vwfscan(long stream_addr, int *fmt, va_list ap) {
+  struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
+  int *orientation = ag_rt_stream_orientation(stream_addr);
+  char *src;
+  long len;
+  long avail;
+  long logical_total;
+  long logical_pos = 0;
+  long wide_count = 0;
+  long consumed;
+  long logical_consumed;
+  int had_ungetc;
+  int n;
+  static int scan_buf[AG_RT_FILE_BUF_CAP + 2];
+  static long byte_offsets[AG_RT_FILE_BUF_CAP + 2];
+
+  if (!f || !orientation) {
+    ag_rt_set_errno(AG_RT_EBADF);
+    return -1;
+  }
+  if (!ag_rt_file_can_read(f)) {
+    f->error = 1;
+    ag_rt_set_errno(AG_RT_EBADF);
+    return -1;
+  }
+  if (*orientation < 0) {
+    f->error = 1;
+    ag_rt_set_errno(AG_RT_EBADF);
+    return -1;
+  }
+  (void)ag_rt_orient_stream(stream_addr, 1);
+
+  src = ag_rt_stream_buf(f);
+  len = ag_rt_stream_len(f);
+  had_ungetc = f->has_ungetc;
+  avail = f->pos < len ? len - f->pos : 0;
+  logical_total = avail + had_ungetc;
+  byte_offsets[0] = 0;
+
+  while (logical_pos < logical_total && wide_count < AG_RT_FILE_BUF_CAP + 1) {
+    char encoded[4];
+    int first =
+        had_ungetc && logical_pos == 0
+            ? f->ungetc_ch
+            : (unsigned char)src[f->pos + logical_pos - had_ungetc];
+    int need = ag_rt_utf8_need_from_first(first);
+    if (need < 0 || logical_pos + need > logical_total) break;
+    for (int i = 0; i < need; i++) {
+      long byte_index = logical_pos + i;
+      encoded[i] =
+          (char)(had_ungetc && byte_index == 0
+                     ? f->ungetc_ch
+                     : (unsigned char)src[f->pos + byte_index - had_ungetc]);
+    }
+    int wc = 0;
+    long converted = __agc_runtime_mbrtowc((long)&wc, (long)encoded, need, 0);
+    if (converted <= 0) break;
+    scan_buf[wide_count] = wc;
+    logical_pos += need;
+    wide_count++;
+    byte_offsets[wide_count] = logical_pos;
+  }
+  scan_buf[wide_count] = 0;
+
+  n = ag_rt_vwscan(scan_buf, fmt, ap);
+  consumed = ag_rt_vwscan_consumed_out;
+  if (consumed > wide_count) consumed = wide_count;
+  logical_consumed = byte_offsets[consumed];
+  if (logical_consumed > 0) {
+    long advance = logical_consumed;
+    if (had_ungetc) {
+      f->has_ungetc = 0;
+      advance--;
+    }
+    if (advance < 0) advance = 0;
+    ag_rt_file_set_pos(f, f->pos + advance);
+  }
+  if (ag_rt_vwscan_input_failure_out) f->eof = 1;
+  return n;
+}
+
+int __agc_runtime_wscanf(long fmt_addr, ...) {
+  int *fmt = (int *)ag_rt_ptr(fmt_addr);
+  va_list ap;
+  va_start(ap, fmt_addr);
+  int n = ag_rt_vwfscan((long)&ag_rt_file_value, fmt, ap);
+  va_end(ap);
+  return n;
+}
+
+int __agc_runtime_vwscanf(long fmt_addr, long ap_addr) {
+  int *fmt = (int *)ag_rt_ptr(fmt_addr);
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vwfscan((long)&ag_rt_file_value, fmt, ap);
+}
+
+int __agc_runtime_fwscanf(long stream_addr, long fmt_addr, ...) {
+  int *fmt = (int *)ag_rt_ptr(fmt_addr);
+  va_list ap;
+  va_start(ap, fmt_addr);
+  int n = ag_rt_vwfscan(stream_addr, fmt, ap);
+  va_end(ap);
+  return n;
+}
+
+int __agc_runtime_vfwscanf(long stream_addr, long fmt_addr, long ap_addr) {
+  int *fmt = (int *)ag_rt_ptr(fmt_addr);
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vwfscan(stream_addr, fmt, ap);
+}
+
 static int ag_rt_vformat_stream(long stream_addr, char *fmt, va_list ap) {
   char stack_buf[1024];
   char *buf = stack_buf;
@@ -2192,6 +2640,66 @@ int __agc_runtime_vfprintf(long stream_addr, long fmt_addr, long ap_addr) {
   return ag_rt_vformat_stream(stream_addr, fmt, ap);
 }
 
+static int ag_rt_vwformat_stream(long stream_addr, int *fmt, va_list ap) {
+  va_list count_args;
+  va_copy(count_args, ap);
+  int n = ag_rt_vwformat(0, 0, fmt, count_args);
+  va_end(count_args);
+  if (n < 0) return n;
+
+  unsigned long bytes = ((unsigned long)n + 1) * sizeof(int);
+  int *buf = (int *)__agc_runtime_malloc(bytes);
+  if (!buf) return -1;
+
+  va_list render_args;
+  va_copy(render_args, ap);
+  int rendered = ag_rt_vwformat(buf, (size_t)n + 1, fmt, render_args);
+  va_end(render_args);
+  if (rendered != n) {
+    __agc_runtime_free(buf);
+    return -1;
+  }
+
+  for (int i = 0; i < n; i++) {
+    if (__agc_runtime_fputwc(buf[i], stream_addr) < 0) {
+      __agc_runtime_free(buf);
+      return -1;
+    }
+  }
+  __agc_runtime_free(buf);
+  return n;
+}
+
+int __agc_runtime_wprintf(long fmt_addr, ...) {
+  int *fmt = (int *)ag_rt_ptr(fmt_addr);
+  va_list ap;
+  va_start(ap, fmt_addr);
+  int n = ag_rt_vwformat_stream((long)__stdoutp, fmt, ap);
+  va_end(ap);
+  return n;
+}
+
+int __agc_runtime_vwprintf(long fmt_addr, long ap_addr) {
+  int *fmt = (int *)ag_rt_ptr(fmt_addr);
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vwformat_stream((long)__stdoutp, fmt, ap);
+}
+
+int __agc_runtime_fwprintf(long stream_addr, long fmt_addr, ...) {
+  int *fmt = (int *)ag_rt_ptr(fmt_addr);
+  va_list ap;
+  va_start(ap, fmt_addr);
+  int n = ag_rt_vwformat_stream(stream_addr, fmt, ap);
+  va_end(ap);
+  return n;
+}
+
+int __agc_runtime_vfwprintf(long stream_addr, long fmt_addr, long ap_addr) {
+  int *fmt = (int *)ag_rt_ptr(fmt_addr);
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vwformat_stream(stream_addr, fmt, ap);
+}
+
 int __agc_runtime_swprintf(long buf_addr, size_t size, long fmt_addr, ...) {
   int *buf = (int *)ag_rt_ptr(buf_addr);
   int *fmt = (int *)ag_rt_ptr(fmt_addr);
@@ -2200,6 +2708,16 @@ int __agc_runtime_swprintf(long buf_addr, size_t size, long fmt_addr, ...) {
   va_start(ap, fmt_addr);
   n = ag_rt_vwformat(buf, size, fmt, ap);
   va_end(ap);
+  if (size == 0 || (size_t)n >= size) return -1;
+  return n;
+}
+
+int __agc_runtime_vswprintf(long buf_addr, size_t size, long fmt_addr, long ap_addr) {
+  int *buf = (int *)ag_rt_ptr(buf_addr);
+  int *fmt = (int *)ag_rt_ptr(fmt_addr);
+  va_list ap = (va_list)(long)ap_addr;
+  int n = ag_rt_vwformat(buf, size, fmt, ap);
+  if (size == 0 || (size_t)n >= size) return -1;
   return n;
 }
 
@@ -2212,6 +2730,13 @@ int __agc_runtime_swscanf(long s_addr, long fmt_addr, ...) {
   n = ag_rt_vwscan(s, fmt, ap);
   va_end(ap);
   return n;
+}
+
+int __agc_runtime_vswscanf(long s_addr, long fmt_addr, long ap_addr) {
+  int *s = (int *)ag_rt_ptr(s_addr);
+  int *fmt = (int *)ag_rt_ptr(fmt_addr);
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vwscan(s, fmt, ap);
 }
 
 void __agc_runtime___assert_rtn(long func_addr, long file_addr, int line, long expr_addr) {

@@ -128,7 +128,8 @@ int psx_apply_parsed_enum_body_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    const psx_parsed_enum_body_t *body);
+    const psx_parsed_enum_body_t *body,
+    char *tag_name, int tag_len);
 int psx_apply_parsed_aggregate_body_layout_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

@@ -282,6 +282,28 @@ psx_decl_id_t psx_scope_graph_declare_synthetic_at(
       graph, scope_id, name_space, kind, name, name_len, payload, 0);
 }
 
+psx_decl_id_t psx_scope_graph_declare_linkage_alias_at(
+    psx_scope_graph_t *graph, psx_scope_id_t scope_id,
+    const char *name, int name_len,
+    psx_decl_id_t aliased_declaration_id) {
+  const psx_scope_declaration_t *target =
+      psx_scope_graph_declaration(graph, aliased_declaration_id);
+  if (!target || target->scope_id != PSX_SCOPE_ID_TRANSLATION_UNIT ||
+      target->name_space != PSX_NAMESPACE_ORDINARY ||
+      (target->kind != PSX_DECL_GLOBAL_OBJECT &&
+       target->kind != PSX_DECL_FUNCTION) ||
+      !target->name || target->name_len != name_len ||
+      memcmp(target->name, name, (size_t)name_len) != 0)
+    return PSX_DECL_ID_INVALID;
+  psx_decl_id_t alias_id = declare_at(
+      graph, scope_id, PSX_NAMESPACE_ORDINARY,
+      PSX_DECL_LINKAGE_ALIAS, name, name_len, NULL, 1);
+  if (alias_id == PSX_DECL_ID_INVALID) return alias_id;
+  graph->declarations[alias_id - 1].aliased_declaration_id =
+      aliased_declaration_id;
+  return alias_id;
+}
+
 psx_decl_id_t psx_scope_graph_declare(
     psx_scope_graph_t *graph, psx_c_namespace_t name_space,
     psx_scope_decl_kind_t kind, const char *name, int name_len,
@@ -327,6 +349,7 @@ void psx_scope_graph_forget_declaration(
   declaration->name = NULL;
   declaration->name_len = 0;
   declaration->payload = NULL;
+  declaration->aliased_declaration_id = PSX_DECL_ID_INVALID;
   declaration->source_name = NULL;
   declaration->source_input = NULL;
 }
@@ -351,6 +374,19 @@ int psx_scope_graph_note_declaration_source(
   declaration->source_input = source_input;
   declaration->source_byte_offset = byte_offset;
   declaration->source_byte_length = byte_length;
+  return 1;
+}
+
+int psx_scope_graph_set_declaration_hidden_from_lookup(
+    psx_scope_graph_t *graph, psx_decl_id_t declaration_id,
+    int hidden) {
+  if (!graph || declaration_id == PSX_DECL_ID_INVALID ||
+      declaration_id > graph->declaration_count)
+    return 0;
+  psx_scope_declaration_t *declaration =
+      &graph->declarations[declaration_id - 1];
+  if (declaration->kind == PSX_DECL_UNKNOWN) return 0;
+  declaration->hidden_from_lookup = hidden ? 1u : 0u;
   return 1;
 }
 
@@ -392,6 +428,7 @@ psx_decl_id_t psx_scope_graph_lookup(
       const psx_scope_declaration_t *declaration =
           &graph->declarations[index - 1];
       if (declaration->scope_id != scope_id ||
+          declaration->hidden_from_lookup ||
           !declaration_name_matches(
               declaration, name_space, name, name_len))
         continue;
@@ -401,6 +438,13 @@ psx_decl_id_t psx_scope_graph_lookup(
       if (name_space != PSX_NAMESPACE_LABEL && same_order_domain &&
           declaration->declaration_order > point.declaration_order)
         continue;
+      if (declaration->kind == PSX_DECL_LINKAGE_ALIAS) {
+        const psx_scope_declaration_t *target =
+            psx_scope_graph_declaration(
+                graph, declaration->aliased_declaration_id);
+        if (!target) continue;
+        return target->id;
+      }
       return declaration->id;
     }
     if (scope_id == PSX_SCOPE_ID_TRANSLATION_UNIT) break;
@@ -442,14 +486,26 @@ int psx_scope_graph_checkpoint_begin(
   uint32_t *declaration_orders = calloc(
       graph->scope_count, sizeof(*declaration_orders));
   if (!declaration_orders) return 0;
+  unsigned char *declaration_lookup_hidden = calloc(
+      graph->declaration_count ? graph->declaration_count : 1,
+      sizeof(*declaration_lookup_hidden));
+  if (!declaration_lookup_hidden) {
+    free(declaration_orders);
+    return 0;
+  }
   for (size_t index = 0; index < graph->scope_count; index++)
     declaration_orders[index] = graph->scopes[index].next_declaration_order;
+  for (size_t index = 0; index < graph->declaration_count; index++)
+    declaration_lookup_hidden[index] =
+        graph->declarations[index].hidden_from_lookup ? 1 : 0;
   *checkpoint = (psx_scope_graph_checkpoint_t){
       .scope_count = graph->scope_count,
       .declaration_count = graph->declaration_count,
       .current_scope = graph->current_scope,
       .declaration_orders = declaration_orders,
       .declaration_order_count = graph->scope_count,
+      .declaration_lookup_hidden = declaration_lookup_hidden,
+      .declaration_lookup_hidden_count = graph->declaration_count,
       .active = 1,
   };
   return 1;
@@ -459,6 +515,7 @@ void psx_scope_graph_checkpoint_commit(
     psx_scope_graph_checkpoint_t *checkpoint) {
   if (!checkpoint) return;
   free(checkpoint->declaration_orders);
+  free(checkpoint->declaration_lookup_hidden);
   *checkpoint = (psx_scope_graph_checkpoint_t){0};
 }
 
@@ -473,6 +530,13 @@ void psx_scope_graph_checkpoint_rollback(
   for (size_t index = 0; index < order_count; index++)
     graph->scopes[index].next_declaration_order =
         checkpoint->declaration_orders[index];
+  size_t hidden_count = checkpoint->declaration_lookup_hidden_count;
+  if (hidden_count > graph->declaration_count)
+    hidden_count = graph->declaration_count;
+  for (size_t index = 0; index < hidden_count; index++)
+    graph->declarations[index].hidden_from_lookup =
+        checkpoint->declaration_lookup_hidden[index] ? 1u : 0u;
   free(checkpoint->declaration_orders);
+  free(checkpoint->declaration_lookup_hidden);
   *checkpoint = (psx_scope_graph_checkpoint_t){0};
 }

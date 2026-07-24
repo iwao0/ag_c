@@ -59,7 +59,21 @@ fi
 
 skip_reason() {
   case "$1" in
+    test/fixtures/probes_found_bugs/gnu_attribute_parse.c|\
+    test/fixtures/probes_found_bugs/gnu_statement_expression.c|\
+    test/fixtures/probes_found_bugs/unsupported_gnu_extensions_warn_skip.c)
+      echo "intentional strict-C rejection covered by wasm32 E2E reject cases"
+      ;;
+    test/fixtures/wasm32/setjmp_stub_ops.c)
+      echo "intentional unsupported non-local control-flow rejection"
+      ;;
+    test/fixtures/wasm32/stdio_file_state_ops.c)
+      echo "WAT-only unavailable-file stub contract; object runtime has real in-memory files"
+      ;;
     test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c)
@@ -76,6 +90,9 @@ link_companion() {
     test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c"
       ;;
+    test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_other.c"
+      ;;
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c"
       ;;
@@ -88,6 +105,9 @@ link_companion() {
 expected_result() {
   case "$1" in
     test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_main.c)
       echo 42
       ;;
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c)

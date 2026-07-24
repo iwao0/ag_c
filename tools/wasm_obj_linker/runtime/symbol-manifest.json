@@ -3051,6 +3051,20 @@
       "jsImplementation": "fwide"
     },
     {
+      "cSymbol": "fwprintf",
+      "runtimeSymbol": "__agc_runtime_fwprintf",
+      "importNamespace": "env",
+      "signature": "i64,i64->i32",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
+    },
+    {
       "cSymbol": "fwrite",
       "runtimeSymbol": "__agc_runtime_fwrite",
       "importNamespace": "env",
@@ -3066,6 +3080,20 @@
       "bridge": "runtime",
       "importGroup": "stdio",
       "jsImplementation": "fwrite"
+    },
+    {
+      "cSymbol": "fwscanf",
+      "runtimeSymbol": "__agc_runtime_fwscanf",
+      "importNamespace": "env",
+      "signature": "i64,i64->i32",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
     },
     {
       "cSymbol": "getc",
@@ -6523,6 +6551,34 @@
       "bridge": "runtime"
     },
     {
+      "cSymbol": "vfwprintf",
+      "runtimeSymbol": "__agc_runtime_vfwprintf",
+      "importNamespace": "env",
+      "signature": "i64,i64,i64->i32",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
+    },
+    {
+      "cSymbol": "vfwscanf",
+      "runtimeSymbol": "__agc_runtime_vfwscanf",
+      "importNamespace": "env",
+      "signature": "i64,i64,i64->i32",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
+    },
+    {
       "cSymbol": "vprintf",
       "runtimeSymbol": "__agc_runtime_vprintf",
       "importNamespace": "env",
@@ -6586,6 +6642,62 @@
       "runtimeSymbol": "__agc_runtime_vsscanf",
       "importNamespace": "env",
       "signature": "i64,i64,i64->i32",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
+    },
+    {
+      "cSymbol": "vswprintf",
+      "runtimeSymbol": "__agc_runtime_vswprintf",
+      "importNamespace": "env",
+      "signature": "i64,i64,i64,i64->i32",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
+    },
+    {
+      "cSymbol": "vswscanf",
+      "runtimeSymbol": "__agc_runtime_vswscanf",
+      "importNamespace": "env",
+      "signature": "i64,i64,i64->i32",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
+    },
+    {
+      "cSymbol": "vwprintf",
+      "runtimeSymbol": "__agc_runtime_vwprintf",
+      "importNamespace": "env",
+      "signature": "i64,i64->i32",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
+    },
+    {
+      "cSymbol": "vwscanf",
+      "runtimeSymbol": "__agc_runtime_vwscanf",
+      "importNamespace": "env",
+      "signature": "i64,i64->i32",
       "memory": {
         "read": true,
         "write": true
@@ -7100,6 +7212,20 @@
       "bridge": "runtime"
     },
     {
+      "cSymbol": "wprintf",
+      "runtimeSymbol": "__agc_runtime_wprintf",
+      "importNamespace": "env",
+      "signature": "i64->i32",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
+    },
+    {
       "cSymbol": "write",
       "runtimeSymbol": "__agc_runtime_write",
       "importNamespace": "env",
@@ -7115,6 +7241,20 @@
       "bridge": "runtime",
       "importGroup": "stdio",
       "jsImplementation": "write"
+    },
+    {
+      "cSymbol": "wscanf",
+      "runtimeSymbol": "__agc_runtime_wscanf",
+      "importNamespace": "env",
+      "signature": "i64->i32",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
     }
   ]
 }

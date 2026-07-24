@@ -27,24 +27,24 @@ int at_quick_exit(void *func);
 void quick_exit(int status);
 
 /* String conversion */
-int atoi(char *s);
-double atof(char *s);
-long atol(char *s);
-long long atoll(char *s);
-long strtol(char *s, char **endptr, int base);
-unsigned long strtoul(char *s, char **endptr, int base);
-long long strtoll(char *s, char **endptr, int base);
-unsigned long long strtoull(char *s, char **endptr, int base);
-float strtof(char *s, char **endptr);
-double strtod(char *s, char **endptr);
-long double strtold(char *s, char **endptr);
+int atoi(const char *s);
+double atof(const char *s);
+long atol(const char *s);
+long long atoll(const char *s);
+long strtol(const char *s, char **endptr, int base);
+unsigned long strtoul(const char *s, char **endptr, int base);
+long long strtoll(const char *s, char **endptr, int base);
+unsigned long long strtoull(const char *s, char **endptr, int base);
+float strtof(const char *s, char **endptr);
+double strtod(const char *s, char **endptr);
+long double strtold(const char *s, char **endptr);
 
 /* Multibyte / wide-character conversion */
-int mblen(char *s, long n);
-int mbtowc(int *pwc, char *s, long n);
-int wctomb(char *s, int wc);
-long mbstowcs(int *dst, char *src, long n);
-long wcstombs(char *dst, int *src, long n);
+int mblen(const char *s, size_t n);
+int mbtowc(wchar_t *pwc, const char *s, size_t n);
+int wctomb(char *s, wchar_t wc);
+size_t mbstowcs(wchar_t *dst, const char *src, size_t n);
+size_t wcstombs(char *dst, const wchar_t *src, size_t n);
 
 /* Pseudo-random numbers */
 int rand(void);

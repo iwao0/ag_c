@@ -241,6 +241,19 @@ int hir_ir_build_statement(
           context, result, value_type, context->return_info,
           context->return_qual_type);
       if (context->status != IR_HIR_BUILD_OK) return 0;
+      /*
+       * Narrow integer return types still use an integer result register.
+       * Preserve the conversion to the declared type, then present its
+       * promoted value to the ABI so callers never observe stale upper bits.
+       */
+      if (context->return_info.type_class == IR_MIR_TYPE_INTEGER &&
+          context->return_info.source_size > 0 &&
+          context->return_info.source_size < 4) {
+        result = hir_ir_emit_integer_width_conversion(
+            context, result, IR_TY_I32,
+            context->return_info.is_unsigned ? 0 : 1);
+        if (context->status != IR_HIR_BUILD_OK) return 0;
+      }
       ir_inst_t *ret = ir_inst_new(IR_RET);
       if (!ret) {
         context->status = IR_HIR_BUILD_OUT_OF_MEMORY;

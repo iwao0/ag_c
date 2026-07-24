@@ -25,6 +25,12 @@ static psx_source_cast_types_status_t aggregate_cast_status(
   return PSX_SOURCE_CAST_TYPES_INVALID;
 }
 
+static int type_kind_is_floating_or_complex(
+    psx_type_kind_t kind) {
+  return kind == PSX_TYPE_FLOAT ||
+         kind == PSX_TYPE_COMPLEX;
+}
+
 void psx_resolve_source_cast_qual_types(
     const psx_semantic_type_table_t *types,
     const psx_record_decl_table_t *record_decls,
@@ -75,6 +81,14 @@ void psx_resolve_source_cast_qual_types(
   }
   if (!psx_type_kind_is_scalar(operand_type.kind)) {
     resolution->status = PSX_SOURCE_CAST_OPERAND_NOT_SCALAR;
+    return;
+  }
+  if ((target_type.kind == PSX_TYPE_POINTER &&
+       type_kind_is_floating_or_complex(operand_type.kind)) ||
+      (operand_type.kind == PSX_TYPE_POINTER &&
+       type_kind_is_floating_or_complex(target_type.kind))) {
+    resolution->status =
+        PSX_SOURCE_CAST_SCALAR_CATEGORIES_INCOMPATIBLE;
     return;
   }
   resolution->status = PSX_SOURCE_CAST_TYPES_OK;

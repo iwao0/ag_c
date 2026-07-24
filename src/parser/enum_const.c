@@ -17,6 +17,13 @@ void psx_parse_enum_body_syntax(
     return;
   tokenizer_context_t *tokenizer_context = context->tokenizer_context;
   memset(body, 0, sizeof(*body));
+  if (tk_get_current_token_ctx(tokenizer_context)->kind ==
+      TK_RBRACE) {
+    ps_diag_ctx_in(
+        context->diagnostics,
+        tk_get_current_token_ctx(tokenizer_context), "enum-syntax",
+        "an enumeration requires at least one enumerator");
+  }
   while (!tk_consume_ctx(tokenizer_context, '}')) {
     if (body->member_count >= PS_MAX_DECLARATOR_COUNT) {
       ps_diag_ctx_in(

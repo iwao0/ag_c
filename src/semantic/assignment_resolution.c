@@ -30,6 +30,15 @@ static int kind_is_aggregate(psx_type_kind_t kind) {
   return kind == PSX_TYPE_STRUCT || kind == PSX_TYPE_UNION;
 }
 
+static int unqualified_types_are_compatible(
+    const psx_semantic_type_table_t *types,
+    psx_qual_type_t left, psx_qual_type_t right) {
+  left.qualifiers = PSX_TYPE_QUALIFIER_NONE;
+  right.qualifiers = PSX_TYPE_QUALIFIER_NONE;
+  return psx_semantic_type_table_types_compatible(
+      types, left, right);
+}
+
 static int pointed_types_are_compatible(
     const psx_semantic_type_table_t *types,
     psx_qual_type_t target, psx_qual_type_t value,
@@ -51,7 +60,7 @@ static int pointed_types_are_compatible(
     return psx_semantic_type_table_function_types_compatible(
         types, target, value);
   if (target_shape.kind != PSX_TYPE_ARRAY)
-    return psx_semantic_type_table_unqualified_types_match(
+    return unqualified_types_are_compatible(
         types, target, value);
 
   int target_has_constant_bound =
@@ -67,9 +76,10 @@ static int pointed_types_are_compatible(
       require_identical_qualifiers);
 }
 
-static int resolve_modifiable_target(
+static int resolve_assignment_target(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t target_type,
+    int require_modifiable,
     psx_assignment_types_resolution_t *resolution,
     psx_type_shape_t *target) {
   if (!semantic_context ||
@@ -80,10 +90,15 @@ static int resolve_modifiable_target(
           ps_ctx_semantic_type_table_in(semantic_context),
           target_type, &canonical))
     return 0;
-  if ((target_type.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0 ||
+  if ((require_modifiable &&
+       psx_semantic_qual_type_has_const_subobject_in(
+           semantic_context, target_type)) ||
       canonical.kind == PSX_TYPE_ARRAY ||
       canonical.kind == PSX_TYPE_FUNCTION ||
-      canonical.kind == PSX_TYPE_VOID) {
+      canonical.kind == PSX_TYPE_VOID ||
+      !psx_semantic_type_is_complete_object_in(
+          (psx_semantic_context_t *)semantic_context,
+          target_type.type_id)) {
     resolution->status = PSX_ASSIGNMENT_TARGET_NOT_MODIFIABLE;
     return 0;
   }
@@ -121,11 +136,12 @@ static int pointer_targets_are_compatible(
       types, target_base, value_base, 0);
 }
 
-void psx_resolve_assignment_qual_types_in(
+static void resolve_assignment_qual_types_in(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t target_type,
     psx_qual_type_t value_type,
     int value_is_null_pointer_constant,
+    int require_modifiable,
     psx_assignment_types_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
@@ -142,8 +158,9 @@ void psx_resolve_assignment_qual_types_in(
   psx_type_shape_t value = {0};
   psx_type_shape_t target = {0};
   if (!describe_type(types, value_type, &value) ||
-      !resolve_modifiable_target(
-          semantic_context, target_type, resolution, &target))
+      !resolve_assignment_target(
+          semantic_context, target_type, require_modifiable,
+          resolution, &target))
     return;
   if ((value_type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0 &&
       (target_type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) == 0) {
@@ -208,6 +225,28 @@ void psx_resolve_assignment_qual_types_in(
       target_type.type_id, PSX_TYPE_QUALIFIER_NONE};
 }
 
+void psx_resolve_assignment_qual_types_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t target_type,
+    psx_qual_type_t value_type,
+    int value_is_null_pointer_constant,
+    psx_assignment_types_resolution_t *resolution) {
+  resolve_assignment_qual_types_in(
+      semantic_context, target_type, value_type,
+      value_is_null_pointer_constant, 1, resolution);
+}
+
+void psx_resolve_assignment_conversion_qual_types_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t target_type,
+    psx_qual_type_t value_type,
+    int value_is_null_pointer_constant,
+    psx_assignment_types_resolution_t *resolution) {
+  resolve_assignment_qual_types_in(
+      semantic_context, target_type, value_type,
+      value_is_null_pointer_constant, 0, resolution);
+}
+
 void psx_resolve_return_qual_types_in(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t return_type,
@@ -218,7 +257,7 @@ void psx_resolve_return_qual_types_in(
   *status = PSX_RETURN_TYPES_INVALID;
   return_type.qualifiers &= PSX_TYPE_QUALIFIER_ATOMIC;
   psx_assignment_types_resolution_t assignment;
-  psx_resolve_assignment_qual_types_in(
+  psx_resolve_assignment_conversion_qual_types_in(
       semantic_context, return_type, value_type,
       value_is_null_pointer_constant, &assignment);
   switch (assignment.status) {
@@ -257,8 +296,8 @@ void psx_resolve_compound_assignment_qual_types_in(
   psx_type_shape_t target = {0};
   psx_type_shape_t value = {0};
   if (!describe_type(types, value_type, &value) ||
-      !resolve_modifiable_target(
-          semantic_context, target_type, resolution, &target))
+      !resolve_assignment_target(
+          semantic_context, target_type, 1, resolution, &target))
     return;
 
   int compatible = 0;

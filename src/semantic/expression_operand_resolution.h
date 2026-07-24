@@ -157,6 +157,7 @@ void psx_resolve_control_expression_qual_type_in(
 typedef enum {
   PSX_SUBSCRIPT_OPERANDS_OK = 0,
   PSX_SUBSCRIPT_OPERANDS_INVALID,
+  PSX_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT,
 } psx_subscript_operands_status_t;
 
 typedef struct {
@@ -168,7 +169,7 @@ typedef struct {
 } psx_subscript_qual_types_resolution_t;
 
 void psx_resolve_subscript_qual_types_in(
-    const psx_semantic_context_t *semantic_context,
+    psx_semantic_context_t *semantic_context,
     psx_qual_type_t left_type,
     psx_qual_type_t right_type,
     psx_subscript_qual_types_resolution_t *resolution);

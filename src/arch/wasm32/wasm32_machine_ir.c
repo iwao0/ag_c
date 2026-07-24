@@ -68,6 +68,8 @@ static const wasm32_opcode_encoding_t opcode_encodings[WASM32_MI_COUNT] = {
     [WASM32_MI_F64_LE] = {"f64.le", 0x65},
     [WASM32_MI_COPY] = {NULL, 0},
     [WASM32_MI_I32_WRAP_I64] = {"i32.wrap_i64", 0xa7},
+    [WASM32_MI_I32_EXTEND8_S] = {"i32.extend8_s", 0xc0},
+    [WASM32_MI_I32_EXTEND16_S] = {"i32.extend16_s", 0xc1},
     [WASM32_MI_I64_EXTEND_I32_S] = {"i64.extend_i32_s", 0xac},
     [WASM32_MI_I64_EXTEND_I32_U] = {"i64.extend_i32_u", 0xad},
     [WASM32_MI_F32_CONVERT_I32_S] = {"f32.convert_i32_s", 0xb2},
@@ -244,7 +246,39 @@ int wasm32_machine_select_conversion(
   selected->opcode = opcode;
   selected->source_type = source_type;
   selected->result_type = result_type;
+  selected->immediate = 0;
+  selected->has_immediate = 0;
   return 1;
+}
+
+int wasm32_machine_select_ir_conversion(
+    ir_op_t source_op, ir_type_t source_type, ir_type_t result_type,
+    int is_unsigned, wasm32_machine_conversion_t *selected) {
+  if (!selected) return 0;
+  if ((source_op == IR_ZEXT || source_op == IR_SEXT) &&
+      (source_type == IR_TY_I8 || source_type == IR_TY_I16) &&
+      wasm32_machine_value_type(result_type) == IR_TY_I32) {
+    if (source_op == IR_ZEXT) {
+      *selected = (wasm32_machine_conversion_t){
+          .opcode = WASM32_MI_I32_AND,
+          .source_type = IR_TY_I32,
+          .result_type = IR_TY_I32,
+          .immediate = source_type == IR_TY_I8 ? 0xff : 0xffff,
+          .has_immediate = 1,
+      };
+    } else {
+      *selected = (wasm32_machine_conversion_t){
+          .opcode = source_type == IR_TY_I8
+                        ? WASM32_MI_I32_EXTEND8_S
+                        : WASM32_MI_I32_EXTEND16_S,
+          .source_type = IR_TY_I32,
+          .result_type = IR_TY_I32,
+      };
+    }
+    return 1;
+  }
+  return wasm32_machine_select_conversion(
+      source_type, result_type, is_unsigned, selected);
 }
 
 int wasm32_machine_select_unary(

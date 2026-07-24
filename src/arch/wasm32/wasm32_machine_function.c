@@ -525,9 +525,8 @@ static int select_instruction(
             : wasm32_machine_function_vreg_is_unsigned(
                   function, instruction->src1);
     selected->kind = WASM32_MACHINE_INST_CONVERSION;
-    return wasm32_machine_select_conversion(
-        wasm32_machine_function_vreg_type(function, instruction->src1),
-        wasm32_machine_function_vreg_type(function, instruction->dst),
+    return wasm32_machine_select_ir_conversion(
+        instruction->op, instruction->src1.type, instruction->dst.type,
         is_unsigned, &selected->conversion);
   }
   if (instruction->op == IR_LOAD) {

@@ -83,6 +83,15 @@ static psx_qual_type_t decay_pointer_like(
                    semantic_context, element);
 }
 
+static int unqualified_types_are_compatible(
+    const psx_semantic_type_table_t *types,
+    psx_qual_type_t left, psx_qual_type_t right) {
+  left.qualifiers = PSX_TYPE_QUALIFIER_NONE;
+  right.qualifiers = PSX_TYPE_QUALIFIER_NONE;
+  return psx_semantic_type_table_types_compatible(
+      types, left, right);
+}
+
 static int array_types_are_compatible(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t left, psx_qual_type_t right,
@@ -129,7 +138,7 @@ static int array_types_are_compatible(
       (!allow_element_qualifier_difference &&
        left_element.qualifiers != right_element.qualifiers))
     return 0;
-  return psx_semantic_type_table_unqualified_types_match(
+  return unqualified_types_are_compatible(
       types, left_element, right_element);
 }
 
@@ -159,7 +168,7 @@ static int nested_pointed_types_are_compatible(
   if (left_shape.kind == PSX_TYPE_FUNCTION)
     return psx_semantic_type_table_function_types_compatible(
         types, left, right);
-  return psx_semantic_type_table_unqualified_types_match(
+  return unqualified_types_are_compatible(
       types, left, right);
 }
 
@@ -216,7 +225,7 @@ static int pointer_types_are_compatible(
            : left_shape.kind == PSX_TYPE_POINTER
                  ? !nested_pointed_types_are_compatible(
                        semantic_context, left_base, right_base, 0)
-           : !psx_semantic_type_table_unqualified_types_match(
+           : !unqualified_types_are_compatible(
                  types, left_base, right_base)))
     return 0;
   return !require_complete_object ||
@@ -734,7 +743,7 @@ psx_qual_type_t psx_resolve_value_decay_qual_type_in(
 }
 
 void psx_resolve_subscript_qual_types_in(
-    const psx_semantic_context_t *semantic_context,
+    psx_semantic_context_t *semantic_context,
     psx_qual_type_t left_type, psx_qual_type_t right_type,
     psx_subscript_qual_types_resolution_t *resolution) {
   if (!resolution) return;
@@ -760,9 +769,20 @@ void psx_resolve_subscript_qual_types_in(
   } else {
     return;
   }
-  resolution->result_qual_type = psx_semantic_type_table_base(
-      ps_ctx_semantic_type_table_in(semantic_context),
-      resolution->base_qual_type.type_id);
-  if (resolution->result_qual_type.type_id != PSX_TYPE_ID_INVALID)
-    resolution->status = PSX_SUBSCRIPT_OPERANDS_OK;
+  resolution->result_qual_type =
+      psx_semantic_type_table_base(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          resolution->base_qual_type.type_id);
+  if (resolution->result_qual_type.type_id ==
+      PSX_TYPE_ID_INVALID)
+    return;
+  if (!psx_semantic_type_is_complete_object_in(
+          semantic_context,
+          resolution->result_qual_type.type_id)) {
+    resolution->status =
+        PSX_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT;
+    resolution->result_qual_type = invalid_qual_type();
+    return;
+  }
+  resolution->status = PSX_SUBSCRIPT_OPERANDS_OK;
 }

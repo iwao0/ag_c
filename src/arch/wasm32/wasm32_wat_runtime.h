@@ -27,6 +27,7 @@ typedef struct wasm32_ir_context_t wasm32_ir_context_t;
 
 typedef enum {
   WASM32_WAT_RUNTIME_ARGUMENT_SOURCE = 0,
+  WASM32_WAT_RUNTIME_ARGUMENT_ZERO_I32,
   WASM32_WAT_RUNTIME_ARGUMENT_ZERO_I64,
 } wasm32_wat_runtime_argument_kind_t;
 

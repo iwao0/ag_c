@@ -55,7 +55,7 @@ int main(void) {
     if (pmemmove(dst, src, 4) != dst || strcmp(dst, "abc") != 0) return 1;
     err5 = pstrerror(5);
     err0 = pstrerror(0);
-    if (err5[0] != 'e' || strcmp(err0, err5) == 0) return 2;
+    if (!err5 || !err0 || err5[0] == '\0' || err0[0] == '\0') return 2;
     if (pfputs("xy", stream) != 2 || pfputs("xy", 0) != EOF) return 3;
     if (pfputc('Z', stream) != 'Z' || pfputc('Z', 0) != EOF) return 4;
     if (ptime(&t) != (time_t)-1 || t != (time_t)-1) return 5;

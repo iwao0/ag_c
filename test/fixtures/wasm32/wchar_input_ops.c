@@ -1,6 +1,7 @@
 // Wasm standalone wchar.h wide input and swscanf stubs
 // Expected: exit=0
 #include <wchar.h>
+#include <string.h>
 
 int main(void) {
     FILE *stream = (FILE *)1;
@@ -8,12 +9,17 @@ int main(void) {
     unsigned b = 0;
     wchar_t word[8];
     wchar_t ch = 0;
+    char narrow[8];
+    char narrow_ch = 0;
 
     if (swscanf(L" -12:34", L" %d:%u", &a, &b) != 2) return 1;
     if (a != -12 || b != 34u) return 2;
 
-    if (swscanf(L"wide Z", L"%s %c", word, &ch) != 2) return 3;
-    if (wcscmp(word, L"wide") != 0 || ch != L'Z') return 4;
+    if (swscanf(L"wide Z", L"%ls %lc", word, &ch) != 2) return 3;
+    if (wcscmp(word, L"wide") != 0) return 4;
+    if (ch != L'Z') return 13;
+    if (swscanf(L"byte Q", L"%s %c", narrow, &narrow_ch) != 2) return 14;
+    if (strcmp(narrow, "byte") != 0 || narrow_ch != 'Q') return 15;
 
     a = 99;
     b = 77;

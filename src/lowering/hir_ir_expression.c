@@ -13,6 +13,8 @@ static ir_val_t build_atomic_inc_dec(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     const psx_hir_node_t *target, ir_mir_type_info_t type,
     ir_val_t pointer);
+static ir_val_t build_string_reference(
+    hir_ir_context_t *context, const psx_hir_node_t *node);
 static int node_has_atomic_qualifier(const psx_hir_node_t *node);
 
 static ir_val_t global_address(
@@ -261,6 +263,8 @@ ir_val_t hir_ir_lvalue_address(
   }
   if (psx_hir_node_kind(node) == PSX_HIR_GLOBAL)
     return global_address(context, node);
+  if (psx_hir_node_kind(node) == PSX_HIR_STRING)
+    return build_string_reference(context, node);
   if (psx_hir_node_kind(node) == PSX_HIR_DEREF) {
     const psx_hir_node_t *pointer = hir_ir_child_for_edge(
         context, node, PSX_HIR_EDGE_LHS, 0);

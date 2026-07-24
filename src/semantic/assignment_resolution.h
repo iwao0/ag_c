@@ -38,6 +38,13 @@ void psx_resolve_assignment_qual_types_in(
     int value_is_null_pointer_constant,
     psx_assignment_types_resolution_t *resolution);
 
+void psx_resolve_assignment_conversion_qual_types_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t target_type,
+    psx_qual_type_t value_type,
+    int value_is_null_pointer_constant,
+    psx_assignment_types_resolution_t *resolution);
+
 typedef enum {
   PSX_RETURN_TYPES_OK = 0,
   PSX_RETURN_TYPES_INVALID,

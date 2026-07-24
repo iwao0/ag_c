@@ -1054,6 +1054,17 @@ int main(void) {
                                 "int forty(void){return 40;} int main(void){return forty()+2;}\n",
                                 simple_needles, 6);
 
+  const char *overaligned_data_needles[] = {
+      "aligned64 p2align=6",
+      "aligned128 p2align=7",
+  };
+  failures += run_objdump_check(
+      "overaligned_data_segments",
+      "_Alignas(64) int aligned64 = 1; "
+      "static _Alignas(128) char aligned128 = 2; "
+      "int main(void){return aligned64 + aligned128;}\n",
+      overaligned_data_needles, 2);
+
   const char *extern_needles[] = {"Import", "<other>", "undefined", "R_WASM_FUNCTION_INDEX_LEB"};
   failures += run_objdump_check("extern_call",
                                 "int other(void); int main(void){return other();}\n",

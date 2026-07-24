@@ -64,12 +64,9 @@ static psx_aggregate_member_status_t validate_aggregate_member_type(
     return PSX_AGGREGATE_MEMBER_OK;
   if (stored.kind == PSX_TYPE_FUNCTION)
     return PSX_AGGREGATE_MEMBER_FUNCTION_TYPE;
-  if (stored.kind == PSX_TYPE_STRUCT || stored.kind == PSX_TYPE_UNION) {
-    const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
-        semantic_context, stored.record_id);
-    if (!record || !record->is_complete)
-      return PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE;
-  }
+  if (!psx_semantic_type_is_complete_object_in(
+          semantic_context, stored_identity.type_id))
+    return PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE;
   return PSX_AGGREGATE_MEMBER_OK;
 }
 
@@ -158,8 +155,7 @@ static void resolve_aggregate_bitfield_placement(
   if (storage_size > 8) storage_size = 8;
   resolution->storage_size = storage_size;
   resolution->bit_is_signed =
-      type.kind != PSX_TYPE_BOOL && !type.is_unsigned &&
-      type.integer_kind != PSX_INTEGER_KIND_ENUM;
+      type.kind != PSX_TYPE_BOOL && !type.is_unsigned;
   int storage_bits = storage_size * 8;
   int bit_capacity =
       type.kind == PSX_TYPE_BOOL ? 1 : storage_bits;
@@ -402,6 +398,14 @@ void psx_resolve_aggregate_member_declaration(
       !has_name && is_aggregate_kind(type_shape.kind);
   if (!has_name && !is_anonymous_aggregate && !request->has_bitfield) {
     resolution->status = PSX_AGGREGATE_MEMBER_MISSING_NAME;
+    return;
+  }
+  if (request->has_bitfield &&
+      type_shape.kind == PSX_TYPE_INTEGER &&
+      type_shape.integer_kind == PSX_INTEGER_KIND_ENUM &&
+      !psx_semantic_type_is_complete_object_in(
+          semantic_context, identity.type_id)) {
+    resolution->status = PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE;
     return;
   }
   if (request->has_bitfield &&

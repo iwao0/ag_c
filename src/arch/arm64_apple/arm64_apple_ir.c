@@ -450,11 +450,7 @@ static void gen_inst_load_tls_sym(gen_ctx_t *ctx, ir_inst_t *inst) {
 }
 
 static void gen_inst_int_cast(gen_ctx_t *ctx, ir_inst_t *inst) {
-      /* 整数の幅変換。
-       *   ZEXT i32→i64 : uxtw x_dst, w_src    (高 32bit ゼロ)
-       *   SEXT i32→i64 : sxtw x_dst, w_src
-       *   TRUNC i64→i32: mov  w_dst, w_src    (高 32bit は捨てる)
-       * 現状 i32 ↔ i64 の双方向のみ。 */
+      /* Integer width conversion, including the narrow i8/i16 MIR types. */
       char b1[8], bd[8];
       const char *src = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
       int spill = 0;
@@ -462,12 +458,39 @@ static void gen_inst_int_cast(gen_ctx_t *ctx, ir_inst_t *inst) {
       char w_src[8], w_dst[8];
       to_w_name(src, w_src, sizeof(w_src));
       to_w_name(d, w_dst, sizeof(w_dst));
-      if (inst->op == IR_ZEXT) {
-        arm64_cg_emitf(ctx, "  uxtw %s, %s\n", d, w_src);
+      int source_size = ir_type_fixed_size(inst->src1.type);
+      int destination_size = ir_type_fixed_size(inst->dst.type);
+      if (inst->op == IR_TRUNC) {
+        if (destination_size <= 4)
+          arm64_cg_emitf(ctx, "  mov %s, %s\n", w_dst, w_src);
+        else
+          arm64_cg_emitf(ctx, "  mov %s, %s\n", d, src);
+      } else if (inst->op == IR_ZEXT) {
+        if (source_size == 1)
+          arm64_cg_emitf(ctx, "  uxtb %s, %s\n", w_dst, w_src);
+        else if (source_size == 2)
+          arm64_cg_emitf(ctx, "  uxth %s, %s\n", w_dst, w_src);
+        else if (source_size == 4 && destination_size == 8)
+          arm64_cg_emitf(ctx, "  uxtw %s, %s\n", d, w_src);
+        else
+          arm64_cg_emitf(ctx, "  mov %s, %s\n",
+                         destination_size >= 8 ? d : w_dst,
+                         destination_size >= 8 ? src : w_src);
       } else if (inst->op == IR_SEXT) {
-        arm64_cg_emitf(ctx, "  sxtw %s, %s\n", d, w_src);
+        if (source_size == 1)
+          arm64_cg_emitf(ctx, "  sxtb %s, %s\n",
+                         destination_size >= 8 ? d : w_dst, w_src);
+        else if (source_size == 2)
+          arm64_cg_emitf(ctx, "  sxth %s, %s\n",
+                         destination_size >= 8 ? d : w_dst, w_src);
+        else if (source_size == 4 && destination_size == 8)
+          arm64_cg_emitf(ctx, "  sxtw %s, %s\n", d, w_src);
+        else
+          arm64_cg_emitf(ctx, "  mov %s, %s\n",
+                         destination_size >= 8 ? d : w_dst,
+                         destination_size >= 8 ? src : w_src);
       } else {
-        arm64_cg_emitf(ctx, "  mov %s, %s\n", w_dst, w_src);
+        abort();
       }
   release_dst(ctx, inst->dst, d, spill);
 }

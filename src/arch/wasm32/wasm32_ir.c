@@ -485,13 +485,15 @@ static int has_minimal_libc_stub_function(char *name, int name_len) {
       "tan", "tanf", "tanh", "tanhf", "tanhl", "tanl", "time", "timespec_get",
       "tmpfile", "tmpnam", "tolower", "toupper", "towctrans", "towlower",
       "towupper", "trunc", "truncf", "truncl", "ungetc", "ungetwc", "vfprintf",
-      "vfscanf", "vprintf", "vscanf", "vsnprintf", "vsprintf", "vsscanf",
+      "vfscanf", "vfwprintf", "vfwscanf", "vprintf", "vscanf", "vsnprintf",
+      "vsprintf", "vsscanf", "vswprintf", "vswscanf", "vwprintf", "vwscanf",
       "wcrtomb", "wcscat", "wcschr", "wcscmp", "wcscoll", "wcscpy", "wcscspn",
       "wcsftime", "wcslen", "wcsncat", "wcsncmp", "wcsncpy", "wcspbrk",
       "wcsrchr", "wcsrtombs", "wcsspn", "wcsstr", "wcstod", "wcstof", "wcstok",
       "wcstol", "wcstold", "wcstoll", "wcstombs", "wcstoul", "wcstoull",
       "wcsxfrm", "wctob", "wctomb", "wctrans", "wctype", "wmemchr", "wmemcmp",
-      "wmemcpy", "wmemmove", "wmemset",
+      "wmemcpy", "wmemmove", "wmemset", "wprintf", "wscanf", "fwprintf",
+      "fwscanf",
   };
   int n = (int)(sizeof(stub_names) / sizeof(stub_names[0]));
   for (int i = 0; i < n; i++) {
@@ -1338,6 +1340,10 @@ static void emit_call(
   for (int index = 0; index < runtime_plan->argument_count; index++) {
     const wasm32_wat_runtime_argument_t *argument =
         &runtime_plan->arguments[index];
+    if (argument->kind == WASM32_WAT_RUNTIME_ARGUMENT_ZERO_I32) {
+      wasm_cg_emitf(" (i32.const 0)");
+      continue;
+    }
     if (argument->kind == WASM32_WAT_RUNTIME_ARGUMENT_ZERO_I64) {
       wasm_cg_emitf(" (i64.const 0)");
       continue;
@@ -1493,6 +1499,8 @@ static void emit_inst(
         wasm_cg_emitf("(%s ", opcode);
       }
       emit_val_expr(ctx, i->src1);
+      if (selected->has_immediate)
+        wasm_cg_emitf(" (i32.const %d)", selected->immediate);
       if (selected->opcode != WASM32_MI_COPY) wasm_cg_emitf(")");
       wasm_cg_emitf(")\n");
       return;

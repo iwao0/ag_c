@@ -174,6 +174,10 @@ int psx_semantic_type_is_complete_object_in(
       type.kind == PSX_TYPE_INVALID || type.kind == PSX_TYPE_VOID ||
       type.kind == PSX_TYPE_FUNCTION)
     return 0;
+  if (type.kind == PSX_TYPE_INTEGER &&
+      type.integer_kind == PSX_INTEGER_KIND_ENUM)
+    return ps_ctx_enum_declaration_is_complete_in(
+        semantic_context, type.enum_decl_id);
   if (psx_type_kind_is_aggregate(type.kind)) {
     const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
         semantic_context, type.record_id);
@@ -206,6 +210,48 @@ int psx_semantic_pointer_points_to_complete_object_in(
       psx_semantic_type_table_base(types, pointer_type.type_id);
   return psx_semantic_type_is_complete_object_in(
       semantic_context, pointee.type_id);
+}
+
+static int semantic_qual_type_has_const_subobject(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t type, int depth) {
+  if (!semantic_context || type.type_id == PSX_TYPE_ID_INVALID ||
+      depth > 128)
+    return 0;
+  if ((type.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0)
+    return 1;
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          types, type.type_id, &shape))
+    return 0;
+  if (shape.kind == PSX_TYPE_ARRAY) {
+    return semantic_qual_type_has_const_subobject(
+        semantic_context,
+        psx_semantic_type_table_base(types, type.type_id),
+        depth + 1);
+  }
+  if (shape.kind != PSX_TYPE_STRUCT &&
+      shape.kind != PSX_TYPE_UNION)
+    return 0;
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      semantic_context, shape.record_id);
+  if (!record || !record->is_complete) return 0;
+  for (int i = 0; i < record->member_count; i++) {
+    if (semantic_qual_type_has_const_subobject(
+            semantic_context, record->members[i].decl_qual_type,
+            depth + 1))
+      return 1;
+  }
+  return 0;
+}
+
+int psx_semantic_qual_type_has_const_subobject_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t type) {
+  return semantic_qual_type_has_const_subobject(
+      semantic_context, type, 0);
 }
 
 static int semantic_type_has_invalid_atomic_qualification(
