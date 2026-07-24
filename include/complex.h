@@ -135,8 +135,12 @@ static double __ag_complex_atan_core(double x) {
 }
 
 static double __ag_complex_atan(double x) {
-  if (x > 1.0) return 1.5707963267948966 - __ag_complex_atan_core(1.0 / x);
-  if (x < -1.0) return -1.5707963267948966 - __ag_complex_atan_core(1.0 / x);
+  if (x < 0.0) return -__ag_complex_atan(-x);
+  if (x > 2.0) return 1.5707963267948966 - __ag_complex_atan_core(1.0 / x);
+  if (x > 0.5) {
+    return 0.7853981633974483 +
+           __ag_complex_atan_core((x - 1.0) / (x + 1.0));
+  }
   return __ag_complex_atan_core(x);
 }
 
