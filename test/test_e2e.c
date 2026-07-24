@@ -765,6 +765,7 @@ static const test_case_t test_cases[] = {
     {"probes", "wide_integer_control_flow_truth_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_integer_control_flow_truth_boundaries.c", 0, 0},
     {"probes", "complex_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_function_pointer_abi_boundaries.c", 0, 0},
     {"probes", "stdio_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdio_function_pointer_state_boundaries.c", 0, 0},
+    {"probes", "posix_file_descriptor_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/posix_file_descriptor_function_pointer_boundaries.c", 0, 0},
     {"stdheader", "stdlib_strto_float", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_float.c", 0, 0},
     {"stdheader", "stdlib_env_system", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_env_system.c", 0, 0},
     {"stdheader", "stdlib_realpath", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_realpath.c", 0, 0},
@@ -3043,6 +3044,9 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_freopen") == 0 || strcmp(sym, "_tmpnam") == 0 ||
             strcmp(sym, "_fdopen") == 0 || strcmp(sym, "_remove") == 0 ||
             strcmp(sym, "_rename") == 0 ||
+            strcmp(sym, "_open") == 0 || strcmp(sym, "_read") == 0 ||
+            strcmp(sym, "_write") == 0 || strcmp(sym, "_lseek") == 0 ||
+            strcmp(sym, "_close") == 0 || strcmp(sym, "_fstat") == 0 ||
             strcmp(sym, "_fclose") == 0 || strcmp(sym, "_fflush") == 0 ||
             strcmp(sym, "_setbuf") == 0 || strcmp(sym, "_setvbuf") == 0 ||
             strcmp(sym, "_fread") == 0 || strcmp(sym, "_fwrite") == 0 ||

@@ -3872,6 +3872,24 @@ void wasm32_wat_emit_minimal_libc_stubs(
   if (has_undefined_function("rename", 6)) {
     wasm_emitf(2, "(func $rename (param i32 i32) (result i32) (i32.const -1))\n");
   }
+  if (has_undefined_function("open", 4)) {
+    wasm_emitf(2, "(func $open (param i32 i32) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("close", 5)) {
+    wasm_emitf(2, "(func $close (param i32) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("fstat", 5)) {
+    wasm_emitf(2, "(func $fstat (param i32 i32) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("read", 4)) {
+    wasm_emitf(2, "(func $read (param i32 i32 i64) (result i64) (i64.const -1))\n");
+  }
+  if (has_undefined_function("write", 5)) {
+    wasm_emitf(2, "(func $write (param i32 i32 i64) (result i64) (i64.const -1))\n");
+  }
+  if (has_undefined_function("lseek", 5)) {
+    wasm_emitf(2, "(func $lseek (param i32 i64 i32) (result i64) (i64.const -1))\n");
+  }
   if (has_undefined_function("fflush", 6)) {
     wasm_emitf(2, "(func $fflush (param i32) (result i32) (i32.const 0))\n");
   }
