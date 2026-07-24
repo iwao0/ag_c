@@ -85,18 +85,18 @@ ir_val_t hir_ir_load_atomic_object_value(
   return ir_val_vreg(temporary, IR_TY_PTR);
 }
 
-int hir_ir_store_atomic_object_value(
-    hir_ir_context_t *context, ir_val_t pointer, ir_val_t value,
+ir_val_t hir_ir_prepare_atomic_object_value(
+    hir_ir_context_t *context, ir_val_t value,
     int value_size, int width) {
   ir_type_t storage_type = atomic_aggregate_storage_type(width);
-  if (pointer.type != IR_TY_PTR || value.type != IR_TY_PTR ||
-      value_size <= 0 || value_size > width ||
+  if (value.type != IR_TY_PTR || value_size <= 0 ||
+      value_size > width ||
       (storage_type == IR_TY_VOID && width != 16))
-    return 0;
+    return ir_val_none();
   if (value_size < width || width == 16) {
     int temporary = hir_ir_allocate_scalar_temp(
         context, width, width >= 16 ? 16 : width >= 8 ? 8 : width);
-    if (temporary < 0) return 0;
+    if (temporary < 0) return ir_val_none();
     ir_val_t temporary_pointer =
         ir_val_vreg(temporary, IR_TY_PTR);
     if (width == 16) {
@@ -108,23 +108,38 @@ int hir_ir_store_atomic_object_value(
               hir_ir_pointer_with_offset(
                   context, temporary_pointer, 8),
               ir_val_imm(IR_TY_I64, 0)))
-        return 0;
+        return ir_val_none();
     } else if (!hir_ir_store_direct_value(
                    context, temporary_pointer,
                    ir_val_imm(storage_type, 0))) {
-      return 0;
+      return ir_val_none();
     }
     ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
     if (!copy) {
       context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return 0;
+      return ir_val_none();
     }
     copy->src1 = temporary_pointer;
     copy->src2 = value;
     copy->alloca_size = value_size;
-    if (!hir_ir_append_instruction(context, copy)) return 0;
+    if (!hir_ir_append_instruction(context, copy))
+      return ir_val_none();
     value = temporary_pointer;
   }
+  return value;
+}
+
+int hir_ir_store_atomic_object_value(
+    hir_ir_context_t *context, ir_val_t pointer, ir_val_t value,
+    int value_size, int width) {
+  if (pointer.type != IR_TY_PTR) return 0;
+  value = hir_ir_prepare_atomic_object_value(
+      context, value, value_size, width);
+  if (context->status != IR_HIR_BUILD_OK ||
+      value.type != IR_TY_PTR)
+    return 0;
+  ir_type_t storage_type =
+      atomic_aggregate_storage_type(width);
   if (width == 16) {
     ir_inst_t *store = ir_inst_new(IR_ATOMIC);
     if (!store) {

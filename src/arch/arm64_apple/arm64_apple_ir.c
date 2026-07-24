@@ -1384,8 +1384,9 @@ static void atomic_store_result(gen_ctx_t *ctx, ir_val_t dst, const char *RL) {
  * 全操作を seq_cst 強度 (ldar/stlr/ld...al/swpal/casal/dmb ish) で出す
  * (規格上、要求より強い順序付けは常に安全)。16-byte load/store は
  * Apple ARM64 の aligned pair single-copy contract に従い LDP/STP +
- * dmb ish で出す。scratch は x9..x14 (regalloc は x19..x28 のみ使うので
- * 衝突しない)。幅は 1/2/4/8/16 バイト。 */
+ * dmb ish で出す。16-byte CAS は CASPAL のregister pairで出す。
+ * scratch は x9..x17 (x18はApple platform register、regallocはx19..x28
+ * のみ使うので衝突しない)。幅は 1/2/4/8/16 バイト。 */
 static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
   int w = inst->atomic_width ? inst->atomic_width : 4;
   char buf[8];
@@ -1420,6 +1421,35 @@ static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
       arm64_cg_emitf(ctx, "  dmb ish\n");
       arm64_cg_emitf(ctx, "  stp x11, x12, [x9]\n");
       arm64_cg_emitf(ctx, "  dmb ish\n");
+      return;
+    }
+    if (inst->atomic_kind == IR_ATOMIC_CAS) {
+      char expected_buffer[8], desired_buffer[8];
+      const char *expected_pointer =
+          ensure_val_in(
+              ctx, inst->src2, "x14",
+              expected_buffer, sizeof(expected_buffer));
+      if (strcmp(expected_pointer, "x14") != 0)
+        arm64_cg_emitf(
+            ctx, "  mov x14, %s\n", expected_pointer);
+      const char *desired_pointer =
+          ensure_val_in(
+              ctx, inst->src3, "x15",
+              desired_buffer, sizeof(desired_buffer));
+      if (strcmp(desired_pointer, "x15") != 0)
+        arm64_cg_emitf(
+            ctx, "  mov x15, %s\n", desired_pointer);
+      arm64_cg_emitf(ctx, "  ldp x10, x11, [x14]\n");
+      arm64_cg_emitf(ctx, "  mov x16, x10\n");
+      arm64_cg_emitf(ctx, "  mov x17, x11\n");
+      arm64_cg_emitf(ctx, "  ldp x12, x13, [x15]\n");
+      arm64_cg_emitf(
+          ctx, "  caspal x10, x11, x12, x13, [x9]\n");
+      arm64_cg_emitf(ctx, "  cmp x10, x16\n");
+      arm64_cg_emitf(ctx, "  ccmp x11, x17, #0, eq\n");
+      arm64_cg_emitf(ctx, "  stp x10, x11, [x14]\n");
+      arm64_cg_emitf(ctx, "  cset w11, eq\n");
+      atomic_store_result(ctx, inst->dst, "w");
       return;
     }
   }

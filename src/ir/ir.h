@@ -138,6 +138,7 @@ typedef enum {
    *  - IR_ATOMIC_RMW:   dst = old(*src1); *src1 op= src2 (LDADDAL/LDSETAL/...)。
    *                     op は atomic_rmw_op (ADD/SUB/OR/AND/XOR/XCHG)。
    *  - IR_ATOMIC_CAS:   src1=ptr, src2=expected-ptr, src3=desired; dst = 成否 (0/1)。
+   *    16-byte CASではsrc3もdesired storage pointer。
    *  - IR_ATOMIC_FENCE: DMB ISH。 */
   IR_ATOMIC,
 

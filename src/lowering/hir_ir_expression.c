@@ -16,14 +16,13 @@ static ir_val_t build_atomic_inc_dec(
 static ir_val_t build_string_reference(
     hir_ir_context_t *context, const psx_hir_node_t *node);
 static int node_has_atomic_qualifier(const psx_hir_node_t *node);
-static int atomic_complex_uses_single_word(
-    ir_mir_type_info_t value_type);
 static ir_val_t build_atomic_complex_compound_assignment(
     hir_ir_context_t *context, ir_val_t pointer,
     const psx_hir_node_t *rhs_node,
     ir_mir_type_info_t target_type,
     ir_mir_type_info_t rhs_type,
-    psx_hir_compound_operator_t compound_op);
+    psx_hir_compound_operator_t compound_op,
+    int atomic_width);
 
 static ir_val_t global_address(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
@@ -1477,11 +1476,14 @@ static ir_val_t build_complex_compound_assignment(
       target, &bit_width, &bit_offset, &bit_is_signed);
   if (hir_ir_is_complex_type(target_type) && is_bitfield)
     return hir_ir_unsupported_expr(context);
+  int atomic_width = hir_ir_atomic_object_storage_width(
+      context, target, target_type);
   if (hir_ir_is_complex_type(target_type) &&
-      node_has_atomic_qualifier(target))
+      node_has_atomic_qualifier(target) &&
+      atomic_width != 0)
     return build_atomic_complex_compound_assignment(
         context, pointer, rhs_node, target_type, rhs_type,
-        compound_op);
+        compound_op, atomic_width);
 
   ir_mir_type_info_t operation_type =
       complex_compound_operation_type(target_type, rhs_type);
@@ -1701,22 +1703,18 @@ static ir_val_t emit_atomic_load_value(
   return atomic->dst;
 }
 
-static int atomic_complex_uses_single_word(
-    ir_mir_type_info_t value_type) {
-  return hir_ir_is_complex_type(value_type) &&
-         value_type.type == IR_TY_F32 &&
-         value_type.source_size == 8;
-}
-
 static ir_val_t build_atomic_complex_compound_assignment(
     hir_ir_context_t *context, ir_val_t pointer,
     const psx_hir_node_t *rhs_node,
     ir_mir_type_info_t target_type,
     ir_mir_type_info_t rhs_type,
-    psx_hir_compound_operator_t compound_op) {
+    psx_hir_compound_operator_t compound_op,
+    int atomic_width) {
   psx_hir_node_kind_t binary_kind = PSX_HIR_ADD;
   if (pointer.type != IR_TY_PTR || !rhs_node ||
-      !atomic_complex_uses_single_word(target_type) ||
+      !hir_ir_is_complex_type(target_type) ||
+      (atomic_width != 8 && atomic_width != 16) ||
+      target_type.source_size != atomic_width ||
       !is_arithmetic_mir_type(rhs_type) ||
       !complex_compound_binary_kind(compound_op, &binary_kind))
     return hir_ir_unsupported_expr(context);
@@ -1729,14 +1727,28 @@ static ir_val_t build_atomic_complex_compound_assignment(
       right.type != IR_TY_PTR)
     return ir_val_none();
 
-  int expected_slot = hir_ir_allocate_scalar_temp(context, 8, 8);
-  int desired_slot = hir_ir_allocate_scalar_temp(context, 8, 8);
-  if (expected_slot < 0 || desired_slot < 0)
-    return ir_val_none();
-  ir_val_t initial = emit_atomic_load_value(context, pointer, 8, 1);
-  if (context->status != IR_HIR_BUILD_OK ||
-      !store_scalar_temp(context, expected_slot, initial))
-    return ir_val_none();
+  int desired_slot = hir_ir_allocate_scalar_temp(
+      context, atomic_width, atomic_width);
+  if (desired_slot < 0) return ir_val_none();
+  ir_val_t expected_pointer = ir_val_none();
+  if (atomic_width == 16) {
+    expected_pointer = hir_ir_load_atomic_object_value(
+        context, pointer, atomic_width);
+    if (context->status != IR_HIR_BUILD_OK ||
+        expected_pointer.type != IR_TY_PTR)
+      return ir_val_none();
+  } else {
+    int expected_slot =
+        hir_ir_allocate_scalar_temp(context, 8, 8);
+    if (expected_slot < 0) return ir_val_none();
+    ir_val_t initial =
+        emit_atomic_load_value(context, pointer, 8, 1);
+    if (context->status != IR_HIR_BUILD_OK ||
+        !store_scalar_temp(context, expected_slot, initial))
+      return ir_val_none();
+    expected_pointer =
+        ir_val_vreg(expected_slot, IR_TY_PTR);
+  }
 
   ir_block_t *retry_block = hir_ir_cfg_new_block(context);
   ir_block_t *success_block = hir_ir_cfg_new_block(context);
@@ -1746,7 +1758,7 @@ static ir_val_t build_atomic_complex_compound_assignment(
     return ir_val_none();
 
   ir_val_t left = convert_complex_pointer(
-      context, ir_val_vreg(expected_slot, IR_TY_PTR),
+      context, expected_pointer,
       target_type, operation_type);
   ir_val_t result = emit_complex_binary_values(
       context, binary_kind, left, right, operation_type);
@@ -1756,11 +1768,28 @@ static ir_val_t build_atomic_complex_compound_assignment(
   if (context->status != IR_HIR_BUILD_OK ||
       result.type != IR_TY_PTR)
     return ir_val_none();
-  ir_val_t desired_bits =
-      load_direct_value(context, result, IR_TY_I64);
-  if (context->status != IR_HIR_BUILD_OK ||
-      !store_scalar_temp(context, desired_slot, desired_bits))
-    return ir_val_none();
+  ir_val_t desired_pointer =
+      ir_val_vreg(desired_slot, IR_TY_PTR);
+  ir_val_t desired_value = desired_pointer;
+  if (atomic_width == 16) {
+    ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+    if (!copy) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    copy->src1 = desired_pointer;
+    copy->src2 = result;
+    copy->alloca_size = 16;
+    if (!hir_ir_append_instruction(context, copy))
+      return ir_val_none();
+  } else {
+    desired_value =
+        load_direct_value(context, result, IR_TY_I64);
+    if (context->status != IR_HIR_BUILD_OK ||
+        !store_scalar_temp(
+            context, desired_slot, desired_value))
+      return ir_val_none();
+  }
 
   int success_vreg = hir_ir_new_vreg(context);
   if (success_vreg < 0) return ir_val_none();
@@ -1770,12 +1799,12 @@ static ir_val_t build_atomic_complex_compound_assignment(
     return ir_val_none();
   }
   compare_exchange->atomic_kind = IR_ATOMIC_CAS;
-  compare_exchange->atomic_width = 8;
+  compare_exchange->atomic_width =
+      (unsigned char)atomic_width;
   compare_exchange->is_unsigned = 1;
   compare_exchange->src1 = pointer;
-  compare_exchange->src2 =
-      ir_val_vreg(expected_slot, IR_TY_PTR);
-  compare_exchange->src3 = desired_bits;
+  compare_exchange->src2 = expected_pointer;
+  compare_exchange->src3 = desired_value;
   compare_exchange->dst =
       ir_val_vreg(success_vreg, IR_TY_I32);
   if (!hir_ir_append_instruction(context, compare_exchange) ||
@@ -1784,7 +1813,7 @@ static ir_val_t build_atomic_complex_compound_assignment(
           success_block, retry_block) ||
       !hir_ir_cfg_switch_to_block(context, success_block))
     return ir_val_none();
-  return ir_val_vreg(desired_slot, IR_TY_PTR);
+  return desired_pointer;
 }
 
 static ir_type_t atomic_bits_type(

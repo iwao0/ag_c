@@ -3162,7 +3162,8 @@ static void test_typed_hir_atomic_wide_complex_lowering_without_ast(
       "double _Complex replacement) { "
       "double _Complex snapshot = *pointer; "
       "*pointer = replacement; "
-      "return *pointer + snapshot; }");
+      "double _Complex result = (*pointer += snapshot); "
+      "return result; }");
   ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -3190,6 +3191,7 @@ static void test_typed_hir_atomic_wide_complex_lowering_without_ast(
 
   int atomic_load_count = 0;
   int atomic_store_count = 0;
+  int atomic_cas_count = 0;
   for (const ir_block_t *block = ir->funcs->entry;
        block; block = block->next) {
     for (const ir_inst_t *instruction = block->head;
@@ -3204,10 +3206,15 @@ static void test_typed_hir_atomic_wide_complex_lowering_without_ast(
       if (instruction->atomic_kind == IR_ATOMIC_STORE &&
           instruction->src2.type == IR_TY_PTR)
         atomic_store_count++;
+      if (instruction->atomic_kind == IR_ATOMIC_CAS &&
+          instruction->src2.type == IR_TY_PTR &&
+          instruction->src3.type == IR_TY_PTR)
+        atomic_cas_count++;
     }
   }
   ASSERT_EQ(2, atomic_load_count);
   ASSERT_EQ(1, atomic_store_count);
+  ASSERT_EQ(1, atomic_cas_count);
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
 }

@@ -7,9 +7,10 @@
  * (マルチスレッドで正しい)。操作は全て seq_cst 強度 (ldar/stlr/ld...al/swpal/
  * casal/dmb ish) で発行する。fetch 系は規格通り「演算前の旧値」を返す。
  *
- * 幅と符号はコンパイラが obj ポインタの指す型から決める (1/2/4/8 バイト)。
- * memory_order 引数は受け取るが、常に seq_cst 強度で実行する (規格上、要求より
- * 強い順序付けは常に安全)。 */
+ * 幅と符号はコンパイラが obj ポインタの指す型から決める。load/store は
+ * scalar/pointerだけでなく、backendがatomic storageとして扱える幅の
+ * aggregate/complexにも対応する。memory_order 引数は受け取るが、常に
+ * seq_cst 強度で実行する (規格上、要求より強い順序付けは常に安全)。 */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -82,13 +83,14 @@ int  __ag_atomic_fence(void);
 /* 初期化: オブジェクトはまだ共有されていないので非アトミックでよい (C11 7.17.2.2)。 */
 #define atomic_init(obj, value) ((void)(*(obj) = (value)))
 
-/* ロード / ストア (LDAR / STLR)。 */
-#define atomic_load(obj)                         __ag_atomic_load(obj)
+/* ロード / ストア。atomic lvalue の型を保ったままcompiler loweringへ渡すことで、
+ * C11 generic function契約どおりaggregate/complexを含む任意の対応型を返す。 */
+#define atomic_load(obj)                         ((void)0, *(obj))
 #define atomic_load_explicit(obj, order) \
-  ((void)(order), __ag_atomic_load(obj))
-#define atomic_store(obj, value)                 ((void)__ag_atomic_store((obj), (value)))
+  ((void)(order), *(obj))
+#define atomic_store(obj, value)                 ((void)(*(obj) = (value)))
 #define atomic_store_explicit(obj, value, order) \
-  ((void)(order), (void)__ag_atomic_store((obj), (value)))
+  ((void)(order), (void)(*(obj) = (value)))
 
 /* 交換 (SWPAL): 旧値を返す。 */
 #define atomic_exchange(obj, value)                 __ag_atomic_exchange((obj), (value))

@@ -150,6 +150,9 @@ int hir_ir_atomic_object_storage_width(
     ir_mir_type_info_t type);
 ir_val_t hir_ir_load_atomic_object_value(
     hir_ir_context_t *context, ir_val_t pointer, int width);
+ir_val_t hir_ir_prepare_atomic_object_value(
+    hir_ir_context_t *context, ir_val_t value,
+    int value_size, int width);
 int hir_ir_store_atomic_object_value(
     hir_ir_context_t *context, ir_val_t pointer, ir_val_t value,
     int value_size, int width);
