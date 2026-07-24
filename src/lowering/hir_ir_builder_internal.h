@@ -102,6 +102,8 @@ int hir_ir_emit_conditional_branch(
     ir_block_t *if_true, ir_block_t *if_false);
 ir_val_t hir_ir_build_expr(
     hir_ir_context_t *context, const psx_hir_node_t *node);
+ir_val_t hir_ir_build_condition_value(
+    hir_ir_context_t *context, const psx_hir_node_t *node);
 ir_val_t hir_ir_build_call(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_mir_type_info_t result_type);

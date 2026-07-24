@@ -1393,6 +1393,17 @@ static ir_val_t complex_pointer_truth_value(
       context, IR_OR, real, imaginary, IR_TY_I32);
 }
 
+ir_val_t hir_ir_build_condition_value(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  if (!node) return hir_ir_unsupported_expr(context);
+  ir_mir_type_info_t type = hir_ir_classify_node_type(context, node);
+  ir_val_t value = hir_ir_build_expr(context, node);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  if (hir_ir_is_complex_type(type))
+    return complex_pointer_truth_value(context, value, type);
+  return value;
+}
+
 static ir_val_t build_complex_compound_assignment(
     hir_ir_context_t *context, const psx_hir_node_t *target,
     const psx_hir_node_t *rhs_node,
@@ -2170,7 +2181,7 @@ static ir_val_t build_short_circuit(
       !store_scalar_temp(
           context, slot, ir_val_imm(IR_TY_I32, is_and ? 0 : 1)))
     return ir_val_none();
-  ir_val_t left_value = hir_ir_build_expr(context, left);
+  ir_val_t left_value = hir_ir_build_condition_value(context, left);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   ir_block_t *right_block = hir_ir_cfg_new_block(context);
   ir_block_t *merge_block = hir_ir_cfg_new_block(context);
@@ -2181,7 +2192,7 @@ static ir_val_t build_short_circuit(
           is_and ? merge_block : right_block) ||
       !hir_ir_cfg_switch_to_block(context, right_block))
     return ir_val_none();
-  ir_val_t right_value = hir_ir_build_expr(context, right);
+  ir_val_t right_value = hir_ir_build_condition_value(context, right);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   right_value = hir_ir_scalar_truth_value(context, right_value);
   if (context->status != IR_HIR_BUILD_OK ||
@@ -2190,6 +2201,71 @@ static ir_val_t build_short_circuit(
       !hir_ir_cfg_switch_to_block(context, merge_block))
     return ir_val_none();
   return load_scalar_temp(context, slot, IR_TY_I32, 0);
+}
+
+static int copy_complex_ternary_value_to(
+    hir_ir_context_t *context, const psx_hir_node_t *source_node,
+    ir_val_t destination, ir_mir_type_info_t result_type) {
+  if (!source_node || destination.type != IR_TY_PTR ||
+      !hir_ir_is_complex_type(result_type) ||
+      result_type.source_size <= 0) {
+    hir_ir_unsupported_expr(context);
+    return 0;
+  }
+  ir_val_t source = hir_ir_materialize_complex_operand(
+      context, source_node, result_type);
+  if (context->status != IR_HIR_BUILD_OK || source.type != IR_TY_PTR)
+    return 0;
+  ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+  if (!copy) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  copy->src1 = destination;
+  copy->src2 = source;
+  copy->alloca_size = result_type.source_size;
+  return hir_ir_append_instruction(context, copy);
+}
+
+static ir_val_t build_complex_ternary(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t result_type) {
+  const psx_hir_node_t *condition = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *if_true = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  const psx_hir_node_t *if_false = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_ELSE, 0);
+  if (!condition || !if_true || !if_false ||
+      !hir_ir_is_complex_type(result_type) ||
+      result_type.source_size <= 0)
+    return hir_ir_unsupported_expr(context);
+  int component_size = ir_type_fixed_size(result_type.type);
+  int slot = hir_ir_allocate_scalar_temp(
+      context, result_type.source_size,
+      component_size >= 8 ? 8 : 4);
+  if (slot < 0) return ir_val_none();
+  ir_val_t destination = ir_val_vreg(slot, IR_TY_PTR);
+  ir_val_t condition_value = hir_ir_build_condition_value(
+      context, condition);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  ir_block_t *true_block = hir_ir_cfg_new_block(context);
+  ir_block_t *false_block = hir_ir_cfg_new_block(context);
+  ir_block_t *merge_block = hir_ir_cfg_new_block(context);
+  if (!true_block || !false_block || !merge_block ||
+      !hir_ir_emit_conditional_branch(
+          context, condition_value, true_block, false_block) ||
+      !hir_ir_cfg_switch_to_block(context, true_block) ||
+      !copy_complex_ternary_value_to(
+          context, if_true, destination, result_type) ||
+      !hir_ir_cfg_emit_branch(context, merge_block) ||
+      !hir_ir_cfg_switch_to_block(context, false_block) ||
+      !copy_complex_ternary_value_to(
+          context, if_false, destination, result_type) ||
+      !hir_ir_cfg_emit_branch(context, merge_block) ||
+      !hir_ir_cfg_switch_to_block(context, merge_block))
+    return ir_val_none();
+  return destination;
 }
 
 static ir_val_t build_scalar_ternary(
@@ -2209,7 +2285,8 @@ static ir_val_t build_scalar_ternary(
                   size >= 2 ? 2 : 1;
   int slot = hir_ir_allocate_scalar_temp(context, size, alignment);
   if (slot < 0) return ir_val_none();
-  ir_val_t condition_value = hir_ir_build_expr(context, condition);
+  ir_val_t condition_value = hir_ir_build_condition_value(
+      context, condition);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   ir_block_t *true_block = hir_ir_cfg_new_block(context);
   ir_block_t *false_block = hir_ir_cfg_new_block(context);
@@ -2254,7 +2331,8 @@ static ir_val_t build_void_ternary(
       context, node, PSX_HIR_EDGE_ELSE, 0);
   if (!condition || !if_true || !if_false)
     return hir_ir_unsupported_expr(context);
-  ir_val_t condition_value = hir_ir_build_expr(context, condition);
+  ir_val_t condition_value = hir_ir_build_condition_value(
+      context, condition);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   ir_block_t *true_block = hir_ir_cfg_new_block(context);
   ir_block_t *false_block = hir_ir_cfg_new_block(context);
@@ -2404,6 +2482,8 @@ ir_val_t hir_ir_build_expr(
     if (kind == PSX_HIR_ADD || kind == PSX_HIR_SUB ||
         kind == PSX_HIR_MUL || kind == PSX_HIR_DIV)
       return build_complex_binary(context, node, type);
+    if (kind == PSX_HIR_TERNARY)
+      return build_complex_ternary(context, node, type);
     if (kind == PSX_HIR_COMMA) {
       const psx_hir_node_t *left = hir_ir_child_for_edge(
           context, node, PSX_HIR_EDGE_LHS, 0);

@@ -279,7 +279,7 @@ int hir_ir_build_statement(
         context->status = IR_HIR_BUILD_INVALID;
         return 0;
       }
-      ir_val_t value = hir_ir_build_expr(context, condition);
+      ir_val_t value = hir_ir_build_condition_value(context, condition);
       if (context->status != IR_HIR_BUILD_OK) return 0;
       ir_block_t *then_block = hir_ir_cfg_new_block(context);
       ir_block_t *merge_block = hir_ir_cfg_new_block(context);
@@ -326,7 +326,8 @@ int hir_ir_build_statement(
               condition_block->id;
           if (!hir_ir_append_instruction(context, suspend)) return 0;
         } else {
-          ir_val_t value = hir_ir_build_expr(context, condition);
+          ir_val_t value = hir_ir_build_condition_value(
+              context, condition);
           if (context->status != IR_HIR_BUILD_OK ||
               !hir_ir_emit_conditional_branch(
                   context, value, body_block, exit_block)) return 0;
@@ -341,7 +342,8 @@ int hir_ir_build_statement(
       if (!hir_ir_cfg_emit_branch(context, condition_block)) return 0;
       if (psx_hir_node_kind(node) == PSX_HIR_DO_WHILE) {
         if (!hir_ir_cfg_switch_to_block(context, condition_block)) return 0;
-        ir_val_t value = hir_ir_build_expr(context, condition);
+        ir_val_t value = hir_ir_build_condition_value(
+            context, condition);
         if (context->status != IR_HIR_BUILD_OK ||
             !hir_ir_emit_conditional_branch(
                 context, value, body_block, exit_block)) return 0;
@@ -370,7 +372,8 @@ int hir_ir_build_statement(
           !exit_block || !hir_ir_cfg_emit_branch(context, condition_block) ||
           !hir_ir_cfg_switch_to_block(context, condition_block)) return 0;
       if (condition) {
-        ir_val_t value = hir_ir_build_expr(context, condition);
+        ir_val_t value = hir_ir_build_condition_value(
+            context, condition);
         if (context->status != IR_HIR_BUILD_OK ||
             !hir_ir_emit_conditional_branch(
                 context, value, body_block, exit_block)) return 0;

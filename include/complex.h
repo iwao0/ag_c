@@ -9,16 +9,16 @@
  * 複素数算術で組み立てられる。
  *
  * creal/cimag は GNU 拡張 __real__/__imag__ で実装するため任意の式 (rvalue) に
- * 効く (例: `creal(a+b)`)。cabs/carg は <math.h> の sqrt/atan2 経由。_Complex の
- * 値渡し / 値返し (AAPCS64 HFA: re→d0, im→d1) も実装済みなので、複素数を値で
- * 受け取る / 返す関数を自分で書ける。cexp/clog/csqrt 等の複素数 math 関数は未提供。 */
+ * 効く (例: `creal(a+b)`)。cabs/carg は <math.h> の hypot/atan2 経由。_Complex の
+ * 値渡し / 値返し (AAPCS64 HFA: re→d0, im→d1) も実装済みで、cexp/clog/csqrt
+ * など使用頻度の高い複素初等関数も下で同梱実装する。 */
 
 #define complex   _Complex
 #define imaginary _Imaginary
 
 /* 虚数単位。_Complex_I は i (= 0 + 1i)。I は通常 _Complex_I。 */
-#define _Complex_I   ((double _Complex){0.0, 1.0})
-#define _Imaginary_I ((double _Complex){0.0, 1.0})
+#define _Complex_I   ((float _Complex){0.0f, 1.0f})
+#define _Imaginary_I ((float _Complex){0.0f, 1.0f})
 #define I            _Complex_I
 
 /* C11 7.3.9.3: real/imaginary parts are converted independently, so both
@@ -28,29 +28,74 @@
 #define CMPLXF(x, y) ((float _Complex){(float)(x), (float)(y)})
 #define CMPLXL(x, y) ((long double _Complex){(long double)(x), (long double)(y)})
 
-/* 実部・虚部の取り出し。__real__/__imag__ は任意の複素数式に効く
- * (実数オペランドでは __real__ x = x, __imag__ x = 0)。 */
-#define creal(z)  (__real__ (z))
-#define cimag(z)  (__imag__ (z))
-#define crealf(z) (__real__ (z))
-#define cimagf(z) (__imag__ (z))
-#define creall(z) (__real__ (z))
-#define cimagl(z) (__imag__ (z))
-
-/* 複素共役 (虚部の符号反転)。新しい複素数を compound literal で構築する。 */
-#define conj(z)  ((double _Complex){ __real__ (z), -__imag__ (z) })
-#define conjf(z) ((float _Complex){ __real__ (z), -__imag__ (z) })
-#define conjl(z) conj(z)
-
-/* cproj: 無限遠点への射影。有限値ではそのまま (恒等)。 */
-#define cproj(z)  (z)
-#define cprojf(z) (z)
-#define cprojl(z) (z)
+/* C11 7.3.9.2: expose actual functions so callers can take their addresses. */
+static double creal(double _Complex z) { return __real__ z; }
+static double cimag(double _Complex z) { return __imag__ z; }
+static float crealf(float _Complex z) { return __real__ z; }
+static float cimagf(float _Complex z) { return __imag__ z; }
+static long double creall(long double _Complex z) { return __real__ z; }
+static long double cimagl(long double _Complex z) { return __imag__ z; }
 
 /* 複素数の絶対値・偏角は <math.h> の実数関数で計算する (ag_c では sqrt/atan2 が
- * リンクする)。マクロ実装のため引数 z は __real__/__imag__ で複数回評価される点に
- * 注意 (純粋な複素数値・式なら副作用なしで問題ない)。 */
+ * リンクする)。 */
 #include <math.h>
+
+/*
+ * C11 7.3.9 value functions.  Keep these as actual functions rather than
+ * function-like macros: callers may take their addresses, and every argument
+ * must be evaluated exactly once.
+ */
+static double _Complex conj(double _Complex z) {
+  return CMPLX(__real__ z, -__imag__ z);
+}
+static float _Complex conjf(float _Complex z) {
+  return CMPLXF(__real__ z, -__imag__ z);
+}
+static long double _Complex conjl(long double _Complex z) {
+  return CMPLXL(__real__ z, -__imag__ z);
+}
+
+static double _Complex cproj(double _Complex z) {
+  double re = __real__ z;
+  double im = __imag__ z;
+  if (isinf(re) || isinf(im))
+    return CMPLX(HUGE_VAL, copysign(0.0, im));
+  return z;
+}
+static float _Complex cprojf(float _Complex z) {
+  float re = __real__ z;
+  float im = __imag__ z;
+  if (isinf(re) || isinf(im))
+    return CMPLXF(HUGE_VALF, copysignf(0.0f, im));
+  return z;
+}
+static long double _Complex cprojl(long double _Complex z) {
+  long double re = __real__ z;
+  long double im = __imag__ z;
+  if (isinf(re) || isinf(im))
+    return CMPLXL(HUGE_VALL, copysignl(0.0L, im));
+  return z;
+}
+
+static double cabs(double _Complex z) {
+  return hypot(__real__ z, __imag__ z);
+}
+static float cabsf(float _Complex z) {
+  return hypotf(__real__ z, __imag__ z);
+}
+static long double cabsl(long double _Complex z) {
+  return hypotl(__real__ z, __imag__ z);
+}
+
+static double carg(double _Complex z) {
+  return atan2(__imag__ z, __real__ z);
+}
+static float cargf(float _Complex z) {
+  return atan2f(__imag__ z, __real__ z);
+}
+static long double cargl(long double _Complex z) {
+  return atan2l(__imag__ z, __real__ z);
+}
 
 static double __ag_complex_sqrt(double x) {
   if (x <= 0.0) return 0.0;
@@ -170,17 +215,6 @@ static double __ag_complex_cosh(double x) {
   return 0.5 * (__ag_complex_exp(x) + __ag_complex_exp(-x));
 }
 
-/* cabs(z) = sqrt(Re^2 + Im^2)。 */
-#define cabs(z)  (__ag_complex_sqrt((double)(__real__ (z)) * (double)(__real__ (z)) + \
-                                    (double)(__imag__ (z)) * (double)(__imag__ (z))))
-#define cabsf(z) ((float)cabs(z))
-#define cabsl(z) cabs(z)
-
-/* carg(z) = atan2(Im, Re)。 */
-#define carg(z)  (__ag_complex_atan2((double)(__imag__ (z)), (double)(__real__ (z))))
-#define cargf(z) ((float)carg(z))
-#define cargl(z) carg(z)
-
 /* 複素数を返す初等関数。_Complex の値渡し/値返しが効くので static 関数として
  * 実装する (引数 z は 1 回だけ評価される)。実部/虚部の計算は <math.h> の実数関数。
  * float/long double 版は double 版へ委譲する (引数・戻り値の暗黙変換)。
@@ -231,11 +265,51 @@ static double _Complex ccosh(double _Complex z) {
 static double _Complex ctan(double _Complex z)  { return csin(z) / ccos(z); }
 static double _Complex ctanh(double _Complex z) { return csinh(z) / ccosh(z); }
 
-/* float _Complex 版: double 版へ委譲 (引数昇格・戻り値変換)。 */
+/* Narrower/wider variants delegate to the double implementation.  Both
+ * supported targets represent long double with the double ABI and precision. */
 static float _Complex cexpf(float _Complex z)  { return cexp(z); }
 static float _Complex clogf(float _Complex z)  { return clog(z); }
 static float _Complex csqrtf(float _Complex z) { return csqrt(z); }
+static float _Complex cpowf(float _Complex z, float _Complex w) {
+  return cpow(z, w);
+}
 static float _Complex csinf(float _Complex z)  { return csin(z); }
 static float _Complex ccosf(float _Complex z)  { return ccos(z); }
+static float _Complex csinhf(float _Complex z) { return csinh(z); }
+static float _Complex ccoshf(float _Complex z) { return ccosh(z); }
+static float _Complex ctanf(float _Complex z)  { return ctan(z); }
+static float _Complex ctanhf(float _Complex z) { return ctanh(z); }
+
+static long double _Complex cexpl(long double _Complex z) {
+  return cexp(z);
+}
+static long double _Complex clogl(long double _Complex z) {
+  return clog(z);
+}
+static long double _Complex csqrtl(long double _Complex z) {
+  return csqrt(z);
+}
+static long double _Complex cpowl(
+    long double _Complex z, long double _Complex w) {
+  return cpow(z, w);
+}
+static long double _Complex csinl(long double _Complex z) {
+  return csin(z);
+}
+static long double _Complex ccosl(long double _Complex z) {
+  return ccos(z);
+}
+static long double _Complex csinhl(long double _Complex z) {
+  return csinh(z);
+}
+static long double _Complex ccoshl(long double _Complex z) {
+  return ccosh(z);
+}
+static long double _Complex ctanl(long double _Complex z) {
+  return ctan(z);
+}
+static long double _Complex ctanhl(long double _Complex z) {
+  return ctanh(z);
+}
 
 #endif /* _COMPLEX_H */

@@ -123,7 +123,8 @@ static ir_val_t build_aggregate_ternary_address(
       result_type.source_size >= 8 ? 8 : 4);
   if (temporary < 0) return ir_val_none();
   ir_val_t destination = ir_val_vreg(temporary, IR_TY_PTR);
-  ir_val_t condition_value = hir_ir_build_expr(context, condition);
+  ir_val_t condition_value = hir_ir_build_condition_value(
+      context, condition);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   ir_block_t *true_block = hir_ir_cfg_new_block(context);
   ir_block_t *false_block = hir_ir_cfg_new_block(context);
