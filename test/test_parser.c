@@ -437,6 +437,13 @@ static long test_call_abi_value(
       value = ir_abi_signature_result_source_size(signature);
     else if (field == 4)
       value = ir_abi_signature_direct_result_type(signature);
+    else if (field == 9) value = (long)signature->result_count;
+    else if (field == 10 && index < signature->result_count)
+      value = signature->result_pieces[index].type;
+    else if (field == 11 && index < signature->result_count)
+      value = signature->result_pieces[index].byte_offset;
+    else if (field == 12 && index < signature->result_count)
+      value = signature->result_pieces[index].kind;
   }
   ir_abi_module_free(abi);
   return value;
@@ -3266,9 +3273,9 @@ static void test_typed_hir_aggregate_parameter_lowering_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_indirect_aggregate_return_without_ast(
+static void test_typed_hir_register_aggregate_return_without_ast(
     ag_compilation_session_t *test_suite_session) {
-  printf("test_typed_hir_indirect_aggregate_return_without_ast...\n");
+  printf("test_typed_hir_register_aggregate_return_without_ast...\n");
   reset_test_translation_unit_state(test_suite_session);
   int program_resolved = resolve_program_input_hir(test_suite_session,
       "struct Triple { int first; int second; int third; }; "
@@ -3304,10 +3311,17 @@ static void test_typed_hir_indirect_aggregate_return_without_ast(
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(12, test_function_abi_value(test_suite_session, ir, 3, 0));
-  ASSERT_EQ(1, test_function_abi_value(test_suite_session, ir, 9, 0));
-  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(test_suite_session, ir, 10, 0));
-  ASSERT_EQ(IR_ABI_PIECE_INDIRECT,
+  ASSERT_EQ(2, test_function_abi_value(test_suite_session, ir, 9, 0));
+  ASSERT_EQ(IR_TY_I64,
+            test_function_abi_value(test_suite_session, ir, 10, 0));
+  ASSERT_EQ(IR_TY_I32,
+            test_function_abi_value(test_suite_session, ir, 10, 1));
+  ASSERT_EQ(0, test_function_abi_value(test_suite_session, ir, 11, 0));
+  ASSERT_EQ(8, test_function_abi_value(test_suite_session, ir, 11, 1));
+  ASSERT_EQ(IR_ABI_PIECE_DIRECT_AGGREGATE,
             test_function_abi_value(test_suite_session, ir, 12, 0));
+  ASSERT_EQ(IR_ABI_PIECE_DIRECT_AGGREGATE,
+            test_function_abi_value(test_suite_session, ir, 12, 1));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_EQ(0, count_ir_op(ir->funcs, IR_MEMCPY));
   ir_module_free(ir);
@@ -3330,6 +3344,7 @@ static void test_typed_hir_indirect_aggregate_return_without_ast(
   }
   ASSERT_TRUE(call != NULL);
   ASSERT_EQ(12, test_call_abi_value(test_suite_session, ir, call, 3, 0));
+  ASSERT_EQ(2, test_call_abi_value(test_suite_session, ir, call, 9, 0));
   ASSERT_TRUE(call->result_storage.id != IR_VAL_NONE);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_MEMCPY) >= 1);
   ir_module_free(ir);
@@ -3380,7 +3395,9 @@ static void test_typed_hir_odd_sized_aggregate_abi_without_ast(
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(3, test_function_abi_value(test_suite_session, ir, 3, 0));
   ASSERT_EQ(1, test_function_abi_value(test_suite_session, ir, 9, 0));
-  ASSERT_EQ(IR_ABI_PIECE_INDIRECT,
+  ASSERT_EQ(IR_TY_I64,
+            test_function_abi_value(test_suite_session, ir, 10, 0));
+  ASSERT_EQ(IR_ABI_PIECE_DIRECT_AGGREGATE,
             test_function_abi_value(test_suite_session, ir, 12, 0));
   ASSERT_EQ(2, test_function_abi_value(test_suite_session, ir, 0, 0));
   ASSERT_EQ(IR_TY_PTR, test_function_abi_value(test_suite_session, ir, 1, 0));
@@ -9941,6 +9958,21 @@ static void test_target_type_layout_boundary(
   ASSERT_TRUE(
       ir_abi_policy_parameter_aggregate_is_indirect(
           wasm_abi_policy, 17));
+  ASSERT_EQ(
+      1, ir_abi_policy_aggregate_result_piece_count(
+             host_abi_policy, 3));
+  ASSERT_EQ(
+      2, ir_abi_policy_aggregate_result_piece_count(
+             host_abi_policy, 16));
+  ASSERT_EQ(
+      0, ir_abi_policy_aggregate_result_piece_count(
+             host_abi_policy, 17));
+  ASSERT_EQ(
+      1, ir_abi_policy_aggregate_result_piece_count(
+             wasm_abi_policy, 8));
+  ASSERT_EQ(
+      0, ir_abi_policy_aggregate_result_piece_count(
+             wasm_abi_policy, 16));
 
   ASSERT_TRUE(!ag_target_info_is_valid(NULL));
   ASSERT_EQ(0, test_target_pointer_size(NULL));
@@ -10332,8 +10364,13 @@ static void test_target_type_layout_boundary(
           wasm_lowered, abi_probe_function);
   ASSERT_TRUE(host_signature != NULL);
   ASSERT_TRUE(wasm_signature != NULL);
-  ASSERT_TRUE(ir_abi_signature_result_is_indirect(
+  ASSERT_TRUE(ir_abi_signature_result_is_direct_aggregate(
       host_signature));
+  ASSERT_EQ(2, host_signature->result_count);
+  ASSERT_EQ(IR_TY_I64, host_signature->result_pieces[0].type);
+  ASSERT_EQ(IR_TY_I64, host_signature->result_pieces[1].type);
+  ASSERT_EQ(0, host_signature->result_pieces[0].byte_offset);
+  ASSERT_EQ(8, host_signature->result_pieces[1].byte_offset);
   ASSERT_EQ(16, ir_abi_signature_result_source_size(
                     host_signature));
   ASSERT_TRUE(ir_abi_signature_result_is_direct_aggregate(
@@ -19185,7 +19222,7 @@ int main() {
   test_typed_hir_va_arg_area_lowering_without_ast(test_suite_session);
   test_typed_hir_register_aggregate_lowering_without_ast(test_suite_session);
   test_typed_hir_aggregate_parameter_lowering_without_ast(test_suite_session);
-  test_typed_hir_indirect_aggregate_return_without_ast(test_suite_session);
+  test_typed_hir_register_aggregate_return_without_ast(test_suite_session);
   test_typed_hir_odd_sized_aggregate_abi_without_ast(test_suite_session);
   test_typed_hir_aggregate_ternary_without_ast(test_suite_session);
   test_typed_hir_aggregate_member_storage_without_ast(test_suite_session);

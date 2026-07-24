@@ -1,5 +1,6 @@
-/* 1/2/4/8B 以外 (x8 ret_area 間接返し ABI) の struct/union を返す関数ポインタの
- * 間接呼び出し。以前は IR build 失敗 ("ir build/emit failed")。メンバアクセス以前に
+/* 複数registerまたはhidden ret_areaでstruct/unionを返す関数ポインタの間接呼び出し。
+ * Apple ARM64では12B/16Bをx0/x1、20Bをx8 ret_areaで返し、Wasmではtarget固有の
+ * hidden return pointerを使う。以前は IR build 失敗 ("ir build/emit failed")。メンバアクセス以前に
  * `struct Big r = ob(100);` (代入のみ) でも落ちていた。原因は 3 箇所:
  *   (1) parse_call_postfix が間接 funcall ノードに ret_struct_size を設定せず 0 のまま
  *       → ir_builder が struct 戻りを scalar 扱い。callee funcptr の戻り tag (pql<=1 で
@@ -7,13 +8,14 @@
  *   (2) build_assign_struct が間接 struct 戻りを明示 fail。汎用 funcall 経路へ委譲し
  *       ret_area から dst へ memcpy する。
  *   (3) build_node_funcall の ret_area 確保が direct call 限定 (!fn->callee)。間接でも
- *       x8 ret_area ABI は同じなので両方で確保 (codegen は x8 設定と blr を独立に出す)。
+ *       hidden ret_area ABI は同じなので両方で確保 (codegen は ret_area設定と
+ *       blr/call_indirectを独立に出す)。
  * 1/2/4/8B のレジスタ返しは funcptr_return_struct_member で別途確認済み。 */
 #include <assert.h>
 
 struct Big { int a, b, c, d, e; };               /* 20B */
 struct Mid { int x, y, z; };                      /* 12B */
-struct Mix { char tag; int val; double d; };      /* 16B (非 1/2/4/8 -> 間接) */
+struct Mix { char tag; int val; double d; };      /* 16B */
 union  U   { struct Mid m; long long pad[2]; };   /* 16B union */
 
 struct Big mkbig(int s){ struct Big r; r.a=s; r.b=s+1; r.c=s+2; r.d=s+3; r.e=s+4; return r; }

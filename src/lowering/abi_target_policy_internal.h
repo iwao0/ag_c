@@ -6,6 +6,9 @@
 struct ir_abi_target_policy_t {
   size_t complex_result_piece_count;
   int direct_aggregate_size_limit;
+  int register_aggregate_result_size_limit;
+  ir_type_t register_aggregate_result_piece_type;
+  int register_aggregate_result_piece_size;
   int parameter_aggregate_direct_size_limit;
   ir_type_t variadic_aggregate_piece_type;
   int variadic_aggregate_piece_size;

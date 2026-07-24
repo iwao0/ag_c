@@ -120,9 +120,15 @@ static int lower_result_pieces(
   const ir_abi_target_policy_t *policy =
       ir_abi_target_policy_for(context->target);
   if (!policy) return 0;
-  size_t piece_count = type.kind == PSX_TYPE_COMPLEX
-                           ? ir_abi_policy_complex_result_piece_count(policy)
-                           : 1u;
+  size_t aggregate_piece_count =
+      info.param_class == IR_ABI_PARAM_AGGREGATE
+          ? ir_abi_policy_aggregate_result_piece_count(
+                policy, info.source_size)
+          : 0;
+  size_t piece_count =
+      type.kind == PSX_TYPE_COMPLEX
+          ? ir_abi_policy_complex_result_piece_count(policy)
+          : aggregate_piece_count > 0 ? aggregate_piece_count : 1u;
   if (piece_count != 1 && piece_count != 2) return 0;
   out->result_pieces = calloc(
       piece_count, sizeof(*out->result_pieces));
@@ -144,6 +150,27 @@ static int lower_result_pieces(
         .byte_offset = abi_ir_type_size(context, info.type),
         .kind = IR_ABI_PIECE_COMPLEX_IMAGINARY,
     };
+    return 1;
+  }
+
+  if (info.param_class == IR_ABI_PARAM_AGGREGATE &&
+      aggregate_piece_count > 0) {
+    for (size_t piece_index = 0;
+         piece_index < aggregate_piece_count; piece_index++) {
+      ir_type_t piece_type = IR_TY_VOID;
+      int byte_offset = 0;
+      if (!ir_abi_policy_aggregate_result_piece(
+              policy, info.source_size, piece_index,
+              &piece_type, &byte_offset))
+        return 0;
+      out->result_pieces[piece_index] = (ir_abi_piece_t){
+          .type = piece_type,
+          .source_index = SIZE_MAX,
+          .source_size = info.source_size,
+          .byte_offset = byte_offset,
+          .kind = IR_ABI_PIECE_DIRECT_AGGREGATE,
+      };
+    }
     return 1;
   }
 
@@ -669,10 +696,15 @@ int ir_abi_signature_result_is_indirect(
 
 int ir_abi_signature_result_is_direct_aggregate(
     const ir_abi_signature_t *signature) {
-  return signature && signature->result_count == 1 &&
-         signature->result_pieces &&
-         signature->result_pieces[0].kind ==
-             IR_ABI_PIECE_DIRECT_AGGREGATE;
+  if (!signature || signature->result_count == 0 ||
+      !signature->result_pieces)
+    return 0;
+  for (size_t i = 0; i < signature->result_count; i++) {
+    if (signature->result_pieces[i].kind !=
+        IR_ABI_PIECE_DIRECT_AGGREGATE)
+      return 0;
+  }
+  return 1;
 }
 
 ir_type_t ir_abi_signature_direct_result_type(

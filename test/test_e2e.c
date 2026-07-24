@@ -749,6 +749,9 @@ static const test_case_t test_cases[] = {
     {"probes", "time_locale_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/time_locale_function_pointer_boundaries.c", 0, 0},
     {"probes", "wide_string_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_string_function_pointer_boundaries.c", 0, 0},
     {"probes", "wide_conversion_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_conversion_function_pointer_boundaries.c", 0, 0},
+    {"probes", "inttypes_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_function_pointer_abi_boundaries.c", 0, 0},
+    {"probes", "aggregate_return_register_width_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_return_register_width_boundaries.c", 0, 0},
+    {"probes", "fenv_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fenv_function_pointer_boundaries.c", 0, 0},
     {"stdheader", "stdlib_strto_float", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_float.c", 0, 0},
     {"stdheader", "stdlib_env_system", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_env_system.c", 0, 0},
     {"stdheader", "stdlib_realpath", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_realpath.c", 0, 0},
@@ -3183,7 +3186,7 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_fegetenv") == 0 || strcmp(sym, "_feholdexcept") == 0 ||
             strcmp(sym, "_fesetenv") == 0 || strcmp(sym, "_feupdateenv") == 0 ||
             strcmp(sym, "_setlocale") == 0 || strcmp(sym, "_localeconv") == 0 ||
-            strcmp(sym, "_imaxabs") == 0 ||
+            strcmp(sym, "_imaxabs") == 0 || strcmp(sym, "_imaxdiv") == 0 ||
             strcmp(sym, "_strtoimax") == 0 || strcmp(sym, "_strtoumax") == 0 ||
             strcmp(sym, "_powf") == 0 ||
             strcmp(sym, "_powl") == 0 || strcmp(sym, "_sqrtl") == 0 ||

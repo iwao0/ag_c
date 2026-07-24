@@ -6,7 +6,7 @@
 // それを memcpy ソースにするケースを追加して修正。
 #include <assert.h>
 struct S8  { int a, b; };                 // 8B  (レジスタ返し)
-struct S16 { long sum; int count; };      // 16B (間接)
+struct S16 { long sum; int count; };      // 16B (Apple ARM64はx0/x1)
 struct S24 { int a, b, c, d, e, f; };     // 24B (間接, x8)
 
 struct S8  mk8(int x){ struct S8 s = {x, x * 2}; return s; }

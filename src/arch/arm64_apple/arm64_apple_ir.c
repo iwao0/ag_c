@@ -929,6 +929,98 @@ static void emit_parameter_piece_store(
                    opcode, source, destination, byte_offset);
 }
 
+static int aggregate_result_piece_size(
+    const ir_abi_piece_t *piece) {
+  if (!piece || piece->source_size <= 0 ||
+      piece->byte_offset < 0 ||
+      piece->byte_offset >= piece->source_size)
+    return 0;
+  int remaining = piece->source_size - piece->byte_offset;
+  return remaining < 8 ? remaining : 8;
+}
+
+static void emit_aggregate_result_piece_store(
+    gen_ctx_t *ctx, const char *destination,
+    const ir_abi_piece_t *piece, size_t register_index) {
+  int piece_size = aggregate_result_piece_size(piece);
+  if (piece_size <= 0 || piece_size > 8 || register_index > 1)
+    abort();
+  char source[8];
+  snprintf(source, sizeof(source), "x%zu", register_index);
+  for (int copied = 0; copied < piece_size;) {
+    int remaining = piece_size - copied;
+    int width = remaining >= 4 ? 4 :
+                remaining >= 2 ? 2 : 1;
+    const char *value = source;
+    if (piece_size == 8) width = 8;
+    if (copied > 0) {
+      arm64_cg_emitf(
+          ctx, "  lsr x17, %s, #%d\n", source, copied * 8);
+      value = "x17";
+    }
+    char narrow_value[8];
+    const char *opcode = "str";
+    if (width < 8) {
+      to_w_name(value, narrow_value, sizeof(narrow_value));
+      value = narrow_value;
+      if (width == 2) opcode = "strh";
+      else if (width == 1) opcode = "strb";
+    }
+    int byte_offset = piece->byte_offset + copied;
+    if (byte_offset == 0)
+      arm64_cg_emitf(
+          ctx, "  %s %s, [%s]\n", opcode, value, destination);
+    else
+      arm64_cg_emitf(
+          ctx, "  %s %s, [%s, #%d]\n",
+          opcode, value, destination, byte_offset);
+    copied += width;
+  }
+}
+
+static void emit_aggregate_result_piece_load(
+    gen_ctx_t *ctx, const char *source,
+    const ir_abi_piece_t *piece, size_t register_index) {
+  int piece_size = aggregate_result_piece_size(piece);
+  if (piece_size <= 0 || piece_size > 8 || register_index > 1)
+    abort();
+  char destination[8];
+  snprintf(destination, sizeof(destination), "x%zu", register_index);
+  if (piece_size == 8) {
+    if (piece->byte_offset == 0)
+      arm64_cg_emitf(
+          ctx, "  ldr %s, [%s]\n", destination, source);
+    else
+      arm64_cg_emitf(
+          ctx, "  ldr %s, [%s, #%d]\n",
+          destination, source, piece->byte_offset);
+    return;
+  }
+
+  arm64_cg_emitf(ctx, "  mov %s, #0\n", destination);
+  for (int copied = 0; copied < piece_size;) {
+    int remaining = piece_size - copied;
+    int width = remaining >= 4 ? 4 :
+                remaining >= 2 ? 2 : 1;
+    const char *opcode = width == 4 ? "ldr" :
+                         width == 2 ? "ldrh" : "ldrb";
+    int byte_offset = piece->byte_offset + copied;
+    if (byte_offset == 0)
+      arm64_cg_emitf(ctx, "  %s w17, [%s]\n", opcode, source);
+    else
+      arm64_cg_emitf(
+          ctx, "  %s w17, [%s, #%d]\n",
+          opcode, source, byte_offset);
+    if (copied == 0)
+      arm64_cg_emitf(ctx, "  mov %s, x17\n", destination);
+    else
+      arm64_cg_emitf(
+          ctx, "  orr %s, %s, x17, lsl #%d\n",
+          destination, destination, copied * 8);
+    copied += width;
+  }
+}
+
 static void emit_indirect_parameter_copy(
     gen_ctx_t *ctx, const char *destination,
     const char *source, int size) {
@@ -1142,14 +1234,20 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
     for (size_t piece_index = 0; piece_index < result_piece_count;
          piece_index++) {
       const ir_abi_piece_t *piece = &result_pieces[piece_index];
-      if (piece->kind != IR_ABI_PIECE_COMPLEX_REAL &&
-          piece->kind != IR_ABI_PIECE_COMPLEX_IMAGINARY)
+      if (piece->kind == IR_ABI_PIECE_DIRECT_AGGREGATE) {
+        emit_aggregate_result_piece_store(
+            ctx, "x9", piece, piece_index);
+      } else if (piece->kind == IR_ABI_PIECE_COMPLEX_REAL ||
+                 piece->kind == IR_ABI_PIECE_COMPLEX_IMAGINARY) {
+        char source[8];
+        snprintf(source, sizeof(source), "%c%zu",
+                 piece->type == IR_TY_F64 ? 'd' : 's',
+                 piece_index);
+        emit_parameter_piece_store(
+            ctx, "x9", piece->byte_offset, piece->type, source);
+      } else {
         abort();
-      char source[8];
-      snprintf(source, sizeof(source), "%c%zu",
-               piece->type == IR_TY_F64 ? 'd' : 's', piece_index);
-      emit_parameter_piece_store(
-          ctx, "x9", piece->byte_offset, piece->type, source);
+      }
     }
     return;
   }
@@ -1160,8 +1258,8 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
     char buffer[8];
     const char *destination = ensure_val_in(
         ctx, abi->result_area, "x16", buffer, sizeof(buffer));
-    emit_parameter_piece_store(
-        ctx, destination, piece->byte_offset, piece->type, "x0");
+    emit_aggregate_result_piece_store(
+        ctx, destination, piece, 0);
     return;
   }
       /* 戻り値: float なら s0/d0、それ以外 x0 を dst slot へ。 */
@@ -1216,15 +1314,23 @@ static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
         for (size_t piece_index = 0; piece_index < result_piece_count;
              piece_index++) {
           const ir_abi_piece_t *piece = &result_pieces[piece_index];
-          if (piece->kind != IR_ABI_PIECE_COMPLEX_REAL &&
-              piece->kind != IR_ABI_PIECE_COMPLEX_IMAGINARY)
+          if (piece->kind == IR_ABI_PIECE_DIRECT_AGGREGATE) {
+            emit_aggregate_result_piece_load(
+                ctx, "x9", piece, piece_index);
+          } else if (piece->kind == IR_ABI_PIECE_COMPLEX_REAL ||
+                     piece->kind == IR_ABI_PIECE_COMPLEX_IMAGINARY) {
+            const char *load =
+                piece->type == IR_TY_F64 ? "ldr d" : "ldr s";
+            if (piece->byte_offset == 0)
+              arm64_cg_emitf(
+                  ctx, "  %s%zu, [x9]\n", load, piece_index);
+            else
+              arm64_cg_emitf(
+                  ctx, "  %s%zu, [x9, #%d]\n", load,
+                  piece_index, piece->byte_offset);
+          } else {
             abort();
-          const char *load = piece->type == IR_TY_F64 ? "ldr d" : "ldr s";
-          if (piece->byte_offset == 0)
-            arm64_cg_emitf(ctx, "  %s%zu, [x9]\n", load, piece_index);
-          else
-            arm64_cg_emitf(ctx, "  %s%zu, [x9, #%d]\n", load,
-                           piece_index, piece->byte_offset);
+          }
         }
       } else if (ir_abi_signature_result_is_direct_aggregate(abi)) {
         if (inst->src1.type != IR_TY_PTR ||
@@ -1235,12 +1341,8 @@ static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
         char buffer[8];
         const char *source = ensure_val_in(
             ctx, inst->src1, "x9", buffer, sizeof(buffer));
-        const char *load = piece->type == IR_TY_I64 ? "ldr x0" :
-                           piece->type == IR_TY_I32 ? "ldr w0" :
-                           piece->type == IR_TY_I16 ? "ldrh w0" :
-                           piece->type == IR_TY_I8 ? "ldrb w0" : NULL;
-        if (!load) abort();
-        arm64_cg_emitf(ctx, "  %s, [%s]\n", load, source);
+        emit_aggregate_result_piece_load(
+            ctx, source, piece, 0);
       } else if (inst->src1.id != IR_VAL_NONE) {
         if (inst->src1.type == IR_TY_F32) {
           char buf[8];

@@ -5,9 +5,9 @@
  * canonical return type を取得し、値型かポインタ型かもその構造で判定する。 */
 #include <assert.h>
 
-/* 注: ここで使う struct は全て 1/2/4/8 バイト (レジスタ返し ABI)。1/2/4/8 以外の
- * サイズ (12B/20B 等、x8 ret_area 間接返し) を返す関数ポインタの間接呼び出しは
- * 別の既存バグ (IR build 失敗) のため対象外。 */
+/* 注: ここで使う struct は全て 1/2/4/8 バイト。Apple ARM64では16B以下も
+ * x0/x1のレジスタ返し、16B超はx8 ret_area間接返しとなる。より大きな値と
+ * targetごとの差はfuncptr_return_large_structで別途確認する。 */
 struct R { int v; };               /* 4B */
 struct Pt { int x, y; };           /* 8B */
 struct Wrap { struct Pt p; };      /* 8B: ネストメンバ連鎖の検証用 */
