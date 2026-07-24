@@ -3,38 +3,6 @@
 #include <stddef.h>
 #include <uchar.h>
 
-#ifndef __wasm32__
-size_t mbrtoc16(char16_t *pc16, const char *s, size_t n, mbstate_t *ps) {
-    (void)ps;
-    if (!s) return 0;
-    if (n == 0) return (size_t)-2;
-    if (pc16) *pc16 = (unsigned char)s[0];
-    return s[0] == 0 ? 0 : 1;
-}
-
-size_t c16rtomb(char *s, char16_t c16, mbstate_t *ps) {
-    (void)ps;
-    if (!s) return 1;
-    s[0] = (char)c16;
-    return 1;
-}
-
-size_t mbrtoc32(char32_t *pc32, const char *s, size_t n, mbstate_t *ps) {
-    (void)ps;
-    if (!s) return 0;
-    if (n == 0) return (size_t)-2;
-    if (pc32) *pc32 = (unsigned char)s[0];
-    return s[0] == 0 ? 0 : 1;
-}
-
-size_t c32rtomb(char *s, char32_t c32, mbstate_t *ps) {
-    (void)ps;
-    if (!s) return 1;
-    s[0] = (char)c32;
-    return 1;
-}
-#endif
-
 int main(void) {
     char16_t c16 = 0;
     char32_t c32 = 0;

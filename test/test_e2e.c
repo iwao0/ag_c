@@ -749,6 +749,7 @@ static const test_case_t test_cases[] = {
     {"probes", "time_locale_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/time_locale_function_pointer_boundaries.c", 0, 0},
     {"probes", "wide_string_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_string_function_pointer_boundaries.c", 0, 0},
     {"probes", "wide_conversion_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_conversion_function_pointer_boundaries.c", 0, 0},
+    {"probes", "uchar_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/uchar_function_pointer_state_boundaries.c", 0, 0},
     {"probes", "inttypes_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_function_pointer_abi_boundaries.c", 0, 0},
     {"probes", "aggregate_return_register_width_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_return_register_width_boundaries.c", 0, 0},
     {"probes", "fenv_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fenv_function_pointer_boundaries.c", 0, 0},
@@ -757,6 +758,7 @@ static const test_case_t test_cases[] = {
     {"probes", "stdlib_integer_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_integer_function_pointer_abi_boundaries.c", 0, 0},
     {"probes", "stdlib_conversion_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_conversion_function_pointer_boundaries.c", 0, 0},
     {"probes", "math_output_pointer_function_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/math_output_pointer_function_boundaries.c", 0, 0},
+    {"probes", "stdio_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdio_function_pointer_state_boundaries.c", 0, 0},
     {"stdheader", "stdlib_strto_float", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_float.c", 0, 0},
     {"stdheader", "stdlib_env_system", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_env_system.c", 0, 0},
     {"stdheader", "stdlib_realpath", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_realpath.c", 0, 0},
@@ -3031,11 +3033,18 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_timespec_get") == 0 ||
             strcmp(sym, "_signal") == 0 || strcmp(sym, "_raise") == 0 ||
             strcmp(sym, "_perror") == 0 || strcmp(sym, "_fopen") == 0 ||
+            strcmp(sym, "_freopen") == 0 || strcmp(sym, "_tmpnam") == 0 ||
+            strcmp(sym, "_fdopen") == 0 || strcmp(sym, "_remove") == 0 ||
+            strcmp(sym, "_rename") == 0 ||
             strcmp(sym, "_fclose") == 0 || strcmp(sym, "_fflush") == 0 ||
+            strcmp(sym, "_setbuf") == 0 || strcmp(sym, "_setvbuf") == 0 ||
             strcmp(sym, "_fread") == 0 || strcmp(sym, "_fwrite") == 0 ||
             strcmp(sym, "_fputs") == 0 || strcmp(sym, "_fputc") == 0 ||
-            strcmp(sym, "_fgetc") == 0 || strcmp(sym, "_fgets") == 0 ||
+            strcmp(sym, "_putc") == 0 || strcmp(sym, "_fgetc") == 0 ||
+            strcmp(sym, "_getc") == 0 || strcmp(sym, "_ungetc") == 0 ||
+            strcmp(sym, "_fgets") == 0 || strcmp(sym, "_getline") == 0 ||
             strcmp(sym, "_fseek") == 0 || strcmp(sym, "_ftell") == 0 ||
+            strcmp(sym, "_fgetpos") == 0 || strcmp(sym, "_fsetpos") == 0 ||
             strcmp(sym, "_rewind") == 0 || strcmp(sym, "_feof") == 0 ||
             strcmp(sym, "_ferror") == 0 || strcmp(sym, "_clearerr") == 0 ||
             strcmp(sym, "_getchar") == 0 || strcmp(sym, "_putchar") == 0 ||

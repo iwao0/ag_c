@@ -514,10 +514,10 @@ static int ag_rt_utf8_decode_state(struct ag_rt_mbstate *state, unsigned int *ou
   return 1;
 }
 
-static long ag_rt_mbrtowc_stateful(long pwc_addr, long s_addr, long n,
+static long ag_rt_mbrtowc_stateful(long pwc_addr, long s_addr, unsigned long n,
                                    struct ag_rt_mbstate *state) {
   char *s;
-  long consumed = 0;
+  unsigned long consumed = 0;
   unsigned int value = 0;
   if (!s_addr) {
     ag_rt_mbstate_reset(state);
@@ -561,7 +561,7 @@ static long ag_rt_mbrtowc_stateful(long pwc_addr, long s_addr, long n,
   return value == 0 ? 0 : consumed;
 }
 
-long __agc_runtime_mbrtowc(long pwc_addr, long s_addr, long n, long ps_addr) {
+long __agc_runtime_mbrtowc(long pwc_addr, long s_addr, unsigned long n, long ps_addr) {
   return ag_rt_mbrtowc_stateful(pwc_addr, s_addr, n,
                                 ag_rt_mbstate_at(ps_addr, &ag_rt_mbrtowc_state));
 }
@@ -602,7 +602,7 @@ long __agc_runtime_wcrtomb(long s_addr, int wc, long ps_addr) {
   return -1;
 }
 
-long __agc_runtime_mbrtoc16(long pc16_addr, long s_addr, long n, long ps_addr) {
+long __agc_runtime_mbrtoc16(long pc16_addr, long s_addr, unsigned long n, long ps_addr) {
   struct ag_rt_mbstate *state = ag_rt_mbstate_at(ps_addr, &ag_rt_mbrtoc16_state);
   unsigned short *pc16 = (unsigned short *)ag_rt_ptr(pc16_addr);
   if (!s_addr) {
@@ -658,7 +658,7 @@ long __agc_runtime_c16rtomb(long s_addr, int c16, long ps_addr) {
   return __agc_runtime_wcrtomb(s_addr, c16, 0);
 }
 
-long __agc_runtime_mbrtoc32(long pc32_addr, long s_addr, long n, long ps_addr) {
+long __agc_runtime_mbrtoc32(long pc32_addr, long s_addr, unsigned long n, long ps_addr) {
   struct ag_rt_mbstate *state = ag_rt_mbstate_at(ps_addr, &ag_rt_mbrtoc32_state);
   if (!s_addr) {
     ag_rt_mbstate_reset(state);
@@ -676,7 +676,7 @@ long __agc_runtime_c32rtomb(long s_addr, unsigned int c32, long ps_addr) {
   return __agc_runtime_wcrtomb(s_addr, (int)c32, ps_addr);
 }
 
-long __agc_runtime_mbrlen(long s_addr, long n, long ps_addr) {
+long __agc_runtime_mbrlen(long s_addr, unsigned long n, long ps_addr) {
   return ag_rt_mbrtowc_stateful(0, s_addr, n,
                                 ag_rt_mbstate_at(ps_addr, &ag_rt_mbrlen_state));
 }
