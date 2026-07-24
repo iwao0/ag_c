@@ -1393,6 +1393,37 @@ static ir_val_t complex_pointer_truth_value(
       context, IR_OR, real, imaginary, IR_TY_I32);
 }
 
+static ir_val_t coerce_complex_pointer_to_direct_value(
+    hir_ir_context_t *context, ir_val_t value,
+    ir_mir_type_info_t source, ir_mir_type_info_t target,
+    psx_qual_type_t target_qual_type, int is_explicit_cast) {
+  psx_type_shape_t semantic_target = {0};
+  if (value.type != IR_TY_PTR || !hir_ir_is_complex_type(source) ||
+      !hir_ir_is_direct_value_type(target) ||
+      !hir_ir_type_shape(
+          context, target_qual_type.type_id, &semantic_target))
+    return hir_ir_unsupported_expr(context);
+  if (semantic_target.kind == PSX_TYPE_BOOL)
+    return complex_pointer_truth_value(context, value, source);
+  if (semantic_target.kind != PSX_TYPE_FLOAT &&
+      semantic_target.kind != PSX_TYPE_INTEGER)
+    return hir_ir_unsupported_expr(context);
+
+  ir_val_t real = load_direct_value(context, value, source.type);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  ir_mir_type_info_t component = {
+      .type = source.type,
+      .type_class = IR_MIR_TYPE_FLOAT,
+      .source_size = ir_type_fixed_size(source.type),
+  };
+  return is_explicit_cast
+             ? coerce_explicit_cast_value(
+                   context, real, component, target,
+                   target_qual_type)
+             : hir_ir_coerce_direct_value(
+                   context, real, component, target);
+}
+
 ir_val_t hir_ir_build_condition_value(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   if (!node) return hir_ir_unsupported_expr(context);
@@ -2660,6 +2691,11 @@ ir_val_t hir_ir_build_expr(
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
     ir_mir_type_info_t source_type =
         hir_ir_classify_node_type(context, operand);
+    if (hir_ir_is_complex_type(source_type))
+      return coerce_complex_pointer_to_direct_value(
+          context, value, source_type, type,
+          psx_hir_node_qual_type(node),
+          psx_hir_node_kind(node) == PSX_HIR_CAST);
     return psx_hir_node_kind(node) == PSX_HIR_CAST
                ? coerce_explicit_cast_value(
                      context, value, source_type, type,
@@ -2744,21 +2780,27 @@ ir_val_t hir_ir_build_expr(
   if (try_build_pointer_arithmetic(
           context, node, lhs, rhs, type, &pointer_result))
     return pointer_result;
-  ir_val_t left = hir_ir_build_expr(context, lhs);
-  ir_val_t right = hir_ir_build_expr(context, rhs);
-  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-
   ir_mir_type_info_t left_type = hir_ir_classify_node_type(context, lhs);
   ir_mir_type_info_t right_type = hir_ir_classify_node_type(context, rhs);
   if (hir_ir_is_complex_type(left_type) || hir_ir_is_complex_type(right_type)) {
-    if (!hir_ir_is_complex_type(left_type) ||
-        !hir_ir_is_complex_type(right_type) ||
-        left_type.type != right_type.type ||
-        left_type.source_size != right_type.source_size)
+    if ((kind != PSX_HIR_EQ && kind != PSX_HIR_NE) ||
+        !is_arithmetic_mir_type(left_type) ||
+        !is_arithmetic_mir_type(right_type))
       return hir_ir_unsupported_expr(context);
+    ir_mir_type_info_t comparison_type =
+        complex_compound_operation_type(left_type, right_type);
+    ir_val_t left = hir_ir_materialize_complex_operand(
+        context, lhs, comparison_type);
+    ir_val_t right = hir_ir_materialize_complex_operand(
+        context, rhs, comparison_type);
+    if (context->status != IR_HIR_BUILD_OK)
+      return ir_val_none();
     return build_complex_comparison(
-        context, kind, left, right, left_type);
+        context, kind, left, right, comparison_type);
   }
+  ir_val_t left = hir_ir_build_expr(context, lhs);
+  ir_val_t right = hir_ir_build_expr(context, rhs);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   int is_float = hir_ir_is_float_value_type(left_type) ||
                  hir_ir_is_float_value_type(right_type);
   if (is_float) {

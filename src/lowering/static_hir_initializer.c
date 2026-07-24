@@ -340,6 +340,14 @@ static long long eval_const_int(
       int has_target = node_type_shape(eval, node, &target);
       int has_source = node_type_shape(eval, lhs, &source);
       if (has_target && target.kind == PSX_TYPE_BOOL) {
+        if (has_source && source.kind == PSX_TYPE_COMPLEX) {
+          int truth = 0;
+          if (!eval_const_truth(eval, lhs, &truth)) {
+            if (ok) *ok = 0;
+            return 0;
+          }
+          return truth;
+        }
         if (has_source && type_uses_floating_value(&source)) {
           double value = eval_const_fp(eval, lhs, ok);
           return (!ok || *ok) && value != 0.0;
@@ -566,8 +574,23 @@ static long long eval_const_int(
   }
   psx_type_shape_t lhs_shape = {0};
   psx_type_shape_t rhs_shape = {0};
-  if (node_type_shape(eval, lhs, &lhs_shape) &&
-      node_type_shape(eval, rhs, &rhs_shape) &&
+  int has_lhs_shape = node_type_shape(eval, lhs, &lhs_shape);
+  int has_rhs_shape = node_type_shape(eval, rhs, &rhs_shape);
+  if ((kind == PSX_HIR_EQ || kind == PSX_HIR_NE) &&
+      has_lhs_shape && has_rhs_shape &&
+      (lhs_shape.kind == PSX_TYPE_COMPLEX ||
+       rhs_shape.kind == PSX_TYPE_COMPLEX)) {
+    static_complex_value_t left =
+        eval_const_complex(eval, lhs, ok);
+    if (ok && !*ok) return 0;
+    static_complex_value_t right =
+        eval_const_complex(eval, rhs, ok);
+    if (ok && !*ok) return 0;
+    int equal = left.real == right.real &&
+                left.imaginary == right.imaginary;
+    return kind == PSX_HIR_EQ ? equal : !equal;
+  }
+  if (has_lhs_shape && has_rhs_shape &&
       (type_uses_floating_value(&lhs_shape) ||
        type_uses_floating_value(&rhs_shape))) {
     double left = eval_const_fp(eval, lhs, ok);
@@ -628,6 +651,11 @@ static double eval_const_fp(
        expression_type.kind == PSX_TYPE_INTEGER)) {
     long long value = eval_const_int(eval, node, ok);
     return integer_constant_as_double(eval, node, value);
+  }
+  if (expression_type.kind == PSX_TYPE_COMPLEX) {
+    static_complex_value_t value =
+        eval_const_complex(eval, node, ok);
+    return value.real;
   }
   const psx_hir_node_t *lhs =
       child_for_edge(eval, node, PSX_HIR_EDGE_LHS, 0);

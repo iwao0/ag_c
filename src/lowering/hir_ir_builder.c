@@ -487,6 +487,68 @@ ir_val_t hir_ir_coerce_direct_value_to_qual_type(
     ir_mir_type_info_t source, ir_mir_type_info_t target,
     psx_qual_type_t target_qual_type) {
   psx_type_shape_t semantic_target = {0};
+  if (hir_ir_is_complex_type(source)) {
+    if (value.type != IR_TY_PTR ||
+        !hir_ir_is_direct_value_type(target))
+      return hir_ir_unsupported_expr(context);
+    int component_size = ir_type_fixed_size(source.type);
+    int real_vreg = hir_ir_new_vreg(context);
+    if (component_size <= 0 || real_vreg < 0)
+      return hir_ir_unsupported_expr(context);
+    ir_inst_t *real_load = ir_inst_new(IR_LOAD);
+    if (!real_load) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    real_load->dst = ir_val_vreg(real_vreg, source.type);
+    real_load->src1 = value;
+    if (!hir_ir_append_instruction(context, real_load))
+      return ir_val_none();
+    value = real_load->dst;
+
+    if (hir_ir_type_shape(
+            context, target_qual_type.type_id, &semantic_target) &&
+        semantic_target.kind == PSX_TYPE_BOOL) {
+      ir_val_t imaginary_pointer = hir_ir_pointer_with_offset(
+          context, real_load->src1, component_size);
+      int imaginary_vreg = hir_ir_new_vreg(context);
+      if (context->status != IR_HIR_BUILD_OK ||
+          imaginary_vreg < 0)
+        return ir_val_none();
+      ir_inst_t *imaginary_load = ir_inst_new(IR_LOAD);
+      if (!imaginary_load) {
+        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+        return ir_val_none();
+      }
+      imaginary_load->dst =
+          ir_val_vreg(imaginary_vreg, source.type);
+      imaginary_load->src1 = imaginary_pointer;
+      if (!hir_ir_append_instruction(context, imaginary_load))
+        return ir_val_none();
+      ir_val_t real_truth =
+          hir_ir_scalar_truth_value(context, value);
+      ir_val_t imaginary_truth =
+          hir_ir_scalar_truth_value(
+              context, imaginary_load->dst);
+      if (context->status != IR_HIR_BUILD_OK)
+        return ir_val_none();
+      value = hir_ir_emit_integer_binary(
+          context, IR_OR, real_truth, imaginary_truth,
+          IR_TY_I32);
+      source = (ir_mir_type_info_t){
+          .type = IR_TY_I32,
+          .type_class = IR_MIR_TYPE_INTEGER,
+          .source_size = 4,
+          .is_unsigned = 1,
+      };
+    } else {
+      source = (ir_mir_type_info_t){
+          .type = source.type,
+          .type_class = IR_MIR_TYPE_FLOAT,
+          .source_size = component_size,
+      };
+    }
+  }
   if (hir_ir_type_shape(
           context, target_qual_type.type_id, &semantic_target) &&
       semantic_target.kind == PSX_TYPE_BOOL) {

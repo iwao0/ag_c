@@ -777,6 +777,8 @@ static const test_case_t test_cases[] = {
     {"probes", "complex_control_flow_truth_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_control_flow_truth_boundaries.c", 0, 0},
     {"probes", "complex_component_function_unit_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_component_function_unit_boundaries.c", 0, 0},
     {"probes", "complex_static_initializer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_static_initializer_boundaries.c", 0, 0},
+    {"probes", "complex_static_scalar_conversion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_static_scalar_conversion_boundaries.c", 0, 0},
+    {"probes", "complex_runtime_scalar_conversion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_runtime_scalar_conversion_boundaries.c", 0, 0},
     {"probes", "stdio_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdio_function_pointer_state_boundaries.c", 0, 0},
     {"probes", "stdio_position_type_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdio_position_type_abi_boundaries.c", 0, 0},
     {"probes", "stdio_opaque_file_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdio_opaque_file_type_boundaries.c", 0, 0},
