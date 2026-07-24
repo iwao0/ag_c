@@ -6,7 +6,12 @@
 
 #ifndef _FILE_T
 #define _FILE_T
-typedef void FILE;
+#ifdef __wasm32__
+typedef struct __agc_FILE FILE;
+#else
+/* Match Darwin's opaque stdio tag without exposing its private layout. */
+typedef struct __sFILE FILE;
+#endif
 #endif
 #ifdef __wasm32__
 typedef long fpos_t;

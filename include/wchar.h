@@ -20,10 +20,12 @@ typedef union {
 #endif
 #endif
 struct tm;
-#ifndef FILE
 #ifndef _FILE_T
 #define _FILE_T
-typedef void FILE;
+#ifdef __wasm32__
+typedef struct __agc_FILE FILE;
+#else
+typedef struct __sFILE FILE;
 #endif
 #endif
 

@@ -34,6 +34,7 @@ static long ag_rt_heap = 8 * 1024 * 1024;
 static long ag_rt_memory_limit_bytes = 64L * 1024L * 1024L;
 static char ag_rt_locale_c[] = "C";
 static char ag_rt_decimal_point[] = ".";
+static char ag_rt_empty_string[] = "";
 enum {
   AG_RT_EPERM = 1,
   AG_RT_ENOENT = 2,
@@ -150,9 +151,44 @@ struct ag_rt_file_store {
 
 struct ag_rt_lconv {
   char *decimal_point;
+  char *thousands_sep;
+  char *grouping;
+  char *int_curr_symbol;
+  char *currency_symbol;
+  char *mon_decimal_point;
+  char *mon_thousands_sep;
+  char *mon_grouping;
+  char *positive_sign;
+  char *negative_sign;
+  char int_frac_digits;
+  char frac_digits;
+  char p_cs_precedes;
+  char p_sep_by_space;
+  char n_cs_precedes;
+  char n_sep_by_space;
+  char p_sign_posn;
+  char n_sign_posn;
+  char int_p_cs_precedes;
+  char int_n_cs_precedes;
+  char int_p_sep_by_space;
+  char int_n_sep_by_space;
+  char int_p_sign_posn;
+  char int_n_sign_posn;
 };
 
-static struct ag_rt_lconv ag_rt_lconv_value = {ag_rt_decimal_point};
+static struct ag_rt_lconv ag_rt_lconv_value = {
+    ag_rt_decimal_point,
+    ag_rt_empty_string,
+    ag_rt_empty_string,
+    ag_rt_empty_string,
+    ag_rt_empty_string,
+    ag_rt_empty_string,
+    ag_rt_empty_string,
+    ag_rt_empty_string,
+    ag_rt_empty_string,
+    ag_rt_empty_string,
+    127, 127, 127, 127, 127, 127, 127,
+    127, 127, 127, 127, 127, 127, 127};
 static struct ag_rt_fd ag_rt_fds[8];
 static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, 0, 0, -1, 1, 1, 0, 0, -1, 0};
 static struct ag_rt_file ag_rt_files[8];

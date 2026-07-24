@@ -4,7 +4,11 @@
 #include <stddef.h>
 
 typedef long time_t;
+#ifdef __wasm32__
 typedef long clock_t;
+#else
+typedef unsigned long clock_t;
+#endif
 
 struct tm {
   int tm_sec;

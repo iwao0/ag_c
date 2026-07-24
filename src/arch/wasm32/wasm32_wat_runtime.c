@@ -286,10 +286,18 @@ static void emit_minimal_static_data_if_needed(
   if (has_undefined_function("setlocale", 9) || has_undefined_function("localeconv", 10)) {
     int c_addr = intern_data_symbol("__ag_stub_locale_c", 18, 2, 1)->addr;
     int dot_addr = intern_data_symbol("__ag_stub_locale_dot", 20, 2, 1)->addr;
+    int empty_addr = intern_data_symbol("__ag_stub_locale_empty", 22, 1, 1)->addr;
     int lc_addr = intern_data_symbol("__ag_stub_lconv", 15, 96, 4)->addr;
     wasm_emitf(2, "(data (i32.const %d) \"C\\00\")\n", c_addr);
     wasm_emitf(2, "(data (i32.const %d) \".\\00\")\n", dot_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"\\00\")\n", empty_addr);
     emit_i32_data_bytes(lc_addr, dot_addr, 4);
+    for (int offset = 4; offset < 40; offset += 4)
+      emit_i32_data_bytes(lc_addr + offset, empty_addr, 4);
+    emit_i32_data_bytes(lc_addr + 40, 0x7f7f7f7f, 4);
+    emit_i32_data_bytes(lc_addr + 44, 0x7f7f7f7f, 4);
+    emit_i32_data_bytes(lc_addr + 48, 0x7f7f7f7f, 4);
+    emit_i32_data_bytes(lc_addr + 52, 0x00007f7f, 4);
   }
   if (has_undefined_function("localtime", 9) || has_undefined_function("gmtime", 6) ||
       has_undefined_function("ctime", 5)) {
