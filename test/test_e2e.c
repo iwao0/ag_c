@@ -743,6 +743,8 @@ static const test_case_t test_cases[] = {
     {"probes", "strto_integer_base_detection_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/strto_integer_base_detection_boundaries.c", 0, 0},
     {"probes", "stdlib_const_input_qualifier_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_const_input_qualifier_boundaries.c", 0, 0},
     {"probes", "stdlib_multibyte_const_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_multibyte_const_boundaries.c", 0, 0},
+    {"probes", "stdlib_management_signature_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_management_signature_boundaries.c", 0, 0},
+    {"probes", "string_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_function_pointer_boundaries.c", 0, 0},
     {"stdheader", "stdlib_strto_float", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_float.c", 0, 0},
     {"stdheader", "stdlib_env_system", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_env_system.c", 0, 0},
     {"stdheader", "stdlib_realpath", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_realpath.c", 0, 0},
@@ -2966,6 +2968,7 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_literal4") == 0 || strcmp(sym, "_literal8") == 0 ||
             strcmp(sym, "_literal16") == 0 || strcmp(sym, "_const") == 0 ||
             strcmp(sym, "_strcmp") == 0 || strcmp(sym, "_strncmp") == 0 ||
+            strcmp(sym, "_strcoll") == 0 || strcmp(sym, "_strxfrm") == 0 ||
             strcmp(sym, "_strlen") == 0 || strcmp(sym, "_strcpy") == 0 ||
             strcmp(sym, "_strncpy") == 0 || strcmp(sym, "_strcat") == 0 ||
             strcmp(sym, "_strncat") == 0 || strcmp(sym, "_strchr") == 0 ||
@@ -2978,6 +2981,7 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_memset") == 0 ||
             strcmp(sym, "_malloc") == 0 || strcmp(sym, "_calloc") == 0 ||
             strcmp(sym, "_realloc") == 0 || strcmp(sym, "_free") == 0 ||
+            strcmp(sym, "_aligned_alloc") == 0 ||
             strcmp(sym, "_exit") == 0 || strcmp(sym, "_abort") == 0 ||
             strcmp(sym, "_atoi") == 0 || strcmp(sym, "_atol") == 0 ||
             strcmp(sym, "_puts") == 0 || strcmp(sym, "_fprintf") == 0 ||
@@ -2997,7 +3001,8 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_abs") == 0 || strcmp(sym, "_labs") == 0 ||
             strcmp(sym, "_rand") == 0 || strcmp(sym, "_srand") == 0 ||
             strcmp(sym, "_qsort") == 0 || strcmp(sym, "_bsearch") == 0 ||
-            strcmp(sym, "_atexit") == 0 || strcmp(sym, "_getenv") == 0 ||
+            strcmp(sym, "_atexit") == 0 || strcmp(sym, "_at_quick_exit") == 0 ||
+            strcmp(sym, "_getenv") == 0 ||
             strcmp(sym, "_system") == 0 || strcmp(sym, "_atof") == 0 ||
             strcmp(sym, "_strtol") == 0 || strcmp(sym, "_strtoul") == 0 ||
             strcmp(sym, "_strtoll") == 0 || strcmp(sym, "_strtoull") == 0 ||

@@ -23,6 +23,6 @@ int main(void) {
 
     if (llabs(-1234567890123LL) != 1234567890123LL) return 8;
     if (llabs(55LL) != 55LL) return 9;
-    if (at_quick_exit((void *)cleanup) != 0) return 10;
+    if (at_quick_exit(cleanup) != 0) return 10;
     return 0;
 }

@@ -12,18 +12,18 @@ typedef struct { long quot; long rem; } ldiv_t;
 typedef struct { long long quot; long long rem; } lldiv_t;
 
 /* Memory management */
-void *malloc(long size);
-void *calloc(long nmemb, long size);
-void *realloc(void *ptr, long size);
+void *malloc(size_t size);
+void *calloc(size_t nmemb, size_t size);
+void *realloc(void *ptr, size_t size);
 void free(void *ptr);
-void *aligned_alloc(long alignment, long size);
+void *aligned_alloc(size_t alignment, size_t size);
 
 /* Process control */
 void exit(int status);
 void abort(void);
 void _Exit(int status);
-int atexit(void *func);
-int at_quick_exit(void *func);
+int atexit(void (*func)(void));
+int at_quick_exit(void (*func)(void));
 void quick_exit(int status);
 
 /* String conversion */
@@ -65,7 +65,7 @@ void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
               int (*compar)(const void *, const void *));
 
 /* Environment */
-char *getenv(char *name);
+char *getenv(const char *name);
 int system(const char *command);
 char *realpath(const char *path, char *resolved_path);
 
