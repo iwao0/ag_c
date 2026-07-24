@@ -9,7 +9,15 @@ typedef int wint_t;
 #endif
 #ifndef __MBSTATE_T_DEFINED
 #define __MBSTATE_T_DEFINED
+#ifdef __wasm32__
 typedef struct { unsigned int __o[32 / sizeof(unsigned int)]; } mbstate_t;
+#else
+typedef union {
+  char __mbstate8[128];
+  long long _mbstateL;
+  unsigned int __o[128 / sizeof(unsigned int)];
+} mbstate_t;
+#endif
 #endif
 struct tm;
 #ifndef FILE

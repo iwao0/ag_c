@@ -453,7 +453,7 @@ static int has_minimal_libc_stub_function(char *name, int name_len) {
       "fpclassify", "fprintf", "fputc", "fputs", "fputwc", "fputws", "fread", "fstat",
       "free", "freopen", "frexp", "frexpf", "frexpl", "fscanf", "fseek",
       "fsetpos", "ftell", "fwide", "fwrite", "getc", "getchar", "getenv",
-      "getline", "getwc", "getwchar", "gmtime", "hypot", "hypotf", "hypotl",
+      "getline", "getrusage", "getwc", "getwchar", "gmtime", "hypot", "hypotf", "hypotl",
       "ilogb", "ilogbf", "ilogbl", "imaxabs", "imaxdiv", "isalnum", "isalpha",
       "isblank", "iscntrl", "isdigit", "isfinite", "isgraph", "isgreater",
       "isgreaterequal", "isinf", "isless", "islessequal", "islessgreater",

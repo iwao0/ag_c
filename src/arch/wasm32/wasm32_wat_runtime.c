@@ -5311,6 +5311,13 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("getrusage", 9)) {
+    int errno_addr = intern_data_symbol("__ag_stub_errno", 15, 4, 4)->addr;
+    wasm_emitf(2, "(func $getrusage (param $who i32) (param $usage i32) (result i32)\n");
+    wasm_emitf(4, "(i32.store (i32.const %d) (i32.const 78))\n", errno_addr);
+    wasm_emitf(4, "(i32.const -1)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("time", 4)) {
     wasm_emitf(2, "(func $time (param $tloc i32) (result i64)\n");
     wasm_emitf(4, "(if (local.get $tloc) (then (i64.store (local.get $tloc) (i64.const -1))))\n");

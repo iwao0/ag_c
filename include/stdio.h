@@ -8,7 +8,12 @@
 #define _FILE_T
 typedef void FILE;
 #endif
+#ifdef __wasm32__
 typedef long fpos_t;
+#else
+/* Apple SDK's __darwin_off_t is the compiler's signed 64-bit long long. */
+typedef long long fpos_t;
+#endif
 
 #define EOF  (-1)
 #define SEEK_SET 0

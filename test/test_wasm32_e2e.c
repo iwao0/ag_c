@@ -1168,8 +1168,8 @@ static int collect_public_std_header_symbols(symbol_set_t *out) {
       "include/signal.h", "include/stdalign.h", "include/stdarg.h", "include/stdatomic.h",
       "include/stdbool.h", "include/stddef.h", "include/stdint.h", "include/stdio.h",
       "include/stdlib.h", "include/stdnoreturn.h", "include/string.h", "include/sys/stat.h",
-      "include/tgmath.h", "include/time.h", "include/uchar.h", "include/unistd.h",
-      "include/wchar.h", "include/wctype.h",
+      "include/sys/resource.h", "include/tgmath.h", "include/time.h", "include/uchar.h",
+      "include/unistd.h", "include/wchar.h", "include/wctype.h",
   };
   size_t nheaders = sizeof(headers) / sizeof(headers[0]);
   for (size_t i = 0; i < nheaders; i++) {

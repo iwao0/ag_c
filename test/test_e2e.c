@@ -747,10 +747,13 @@ static const test_case_t test_cases[] = {
     {"probes", "string_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_function_pointer_boundaries.c", 0, 0},
     {"probes", "character_classification_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/character_classification_function_pointer_boundaries.c", 0, 0},
     {"probes", "time_locale_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/time_locale_function_pointer_boundaries.c", 0, 0},
+    {"probes", "resource_usage_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/resource_usage_function_pointer_abi_boundaries.c", 0, 0},
+    {"probes", "setjmp_native_control_flow_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/setjmp_native_control_flow_abi_boundaries.c", 0, 0},
     {"probes", "wide_string_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_string_function_pointer_boundaries.c", 0, 0},
     {"probes", "wide_conversion_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_conversion_function_pointer_boundaries.c", 0, 0},
     {"probes", "wchar_stream_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wchar_stream_function_pointer_state_boundaries.c", 0, 0},
     {"probes", "uchar_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/uchar_function_pointer_state_boundaries.c", 0, 0},
+    {"probes", "mbstate_target_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mbstate_target_abi_boundaries.c", 0, 0},
     {"probes", "inttypes_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_function_pointer_abi_boundaries.c", 0, 0},
     {"probes", "aggregate_return_register_width_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_return_register_width_boundaries.c", 0, 0},
     {"probes", "fenv_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fenv_function_pointer_boundaries.c", 0, 0},
@@ -765,6 +768,7 @@ static const test_case_t test_cases[] = {
     {"probes", "wide_integer_control_flow_truth_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_integer_control_flow_truth_boundaries.c", 0, 0},
     {"probes", "complex_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_function_pointer_abi_boundaries.c", 0, 0},
     {"probes", "stdio_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdio_function_pointer_state_boundaries.c", 0, 0},
+    {"probes", "stdio_position_type_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdio_position_type_abi_boundaries.c", 0, 0},
     {"probes", "posix_file_descriptor_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/posix_file_descriptor_function_pointer_boundaries.c", 0, 0},
     {"stdheader", "stdlib_strto_float", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_float.c", 0, 0},
     {"stdheader", "stdlib_env_system", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_env_system.c", 0, 0},
@@ -3038,7 +3042,8 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_gmtime") == 0 || strcmp(sym, "_localtime") == 0 ||
             strcmp(sym, "_asctime") == 0 || strcmp(sym, "_ctime") == 0 ||
             strcmp(sym, "_strftime") == 0 || strcmp(sym, "_mktime") == 0 ||
-            strcmp(sym, "_timespec_get") == 0 ||
+            strcmp(sym, "_timespec_get") == 0 || strcmp(sym, "_getrusage") == 0 ||
+            strcmp(sym, "_setjmp") == 0 || strcmp(sym, "_longjmp") == 0 ||
             strcmp(sym, "_signal") == 0 || strcmp(sym, "_raise") == 0 ||
             strcmp(sym, "_perror") == 0 || strcmp(sym, "_fopen") == 0 ||
             strcmp(sym, "_freopen") == 0 || strcmp(sym, "_tmpnam") == 0 ||

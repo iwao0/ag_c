@@ -2,12 +2,24 @@
 #define _UCHAR_H
 #include <stddef.h>
 /* C11 7.28: char16_t / char32_t。Apple ARM64 では uint_least16_t=unsigned short,
- * uint_least32_t=unsigned int。mbstate_t は同梱runtimeとnative fallbackで共有する。 */
+ * uint_least32_t=unsigned int。 */
 typedef unsigned short char16_t;
 typedef unsigned int   char32_t;
 #ifndef __MBSTATE_T_DEFINED
 #define __MBSTATE_T_DEFINED
+#ifdef __wasm32__
 typedef struct { unsigned int __o[32 / sizeof(unsigned int)]; } mbstate_t;
+#else
+/*
+ * Match Darwin's 128-byte, 8-byte-aligned opaque state while retaining a
+ * private word view for the native uchar fallback below.
+ */
+typedef union {
+  char __mbstate8[128];
+  long long _mbstateL;
+  unsigned int __o[128 / sizeof(unsigned int)];
+} mbstate_t;
+#endif
 #endif
 
 #ifdef __wasm32__
