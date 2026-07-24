@@ -745,6 +745,8 @@ static const test_case_t test_cases[] = {
     {"probes", "stdlib_multibyte_const_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_multibyte_const_boundaries.c", 0, 0},
     {"probes", "stdlib_management_signature_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_management_signature_boundaries.c", 0, 0},
     {"probes", "string_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_function_pointer_boundaries.c", 0, 0},
+    {"probes", "character_classification_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/character_classification_function_pointer_boundaries.c", 0, 0},
+    {"probes", "time_locale_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/time_locale_function_pointer_boundaries.c", 0, 0},
     {"stdheader", "stdlib_strto_float", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_float.c", 0, 0},
     {"stdheader", "stdlib_env_system", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_env_system.c", 0, 0},
     {"stdheader", "stdlib_realpath", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_realpath.c", 0, 0},

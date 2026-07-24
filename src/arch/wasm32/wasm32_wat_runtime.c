@@ -284,12 +284,12 @@ wasm32_wat_runtime_module_plan_call(
 static void emit_minimal_static_data_if_needed(
     wasm32_ir_context_t *context) {
   if (has_undefined_function("setlocale", 9) || has_undefined_function("localeconv", 10)) {
-    wasm_data_symbol_t *c = intern_data_symbol("__ag_stub_locale_c", 18, 2, 1);
-    wasm_data_symbol_t *dot = intern_data_symbol("__ag_stub_locale_dot", 20, 2, 1);
-    wasm_data_symbol_t *lc = intern_data_symbol("__ag_stub_lconv", 15, 96, 4);
-    wasm_emitf(2, "(data (i32.const %d) \"C\\00\")\n", c->addr);
-    wasm_emitf(2, "(data (i32.const %d) \".\\00\")\n", dot->addr);
-    emit_i32_data_bytes(lc->addr, dot->addr, 4);
+    int c_addr = intern_data_symbol("__ag_stub_locale_c", 18, 2, 1)->addr;
+    int dot_addr = intern_data_symbol("__ag_stub_locale_dot", 20, 2, 1)->addr;
+    int lc_addr = intern_data_symbol("__ag_stub_lconv", 15, 96, 4)->addr;
+    wasm_emitf(2, "(data (i32.const %d) \"C\\00\")\n", c_addr);
+    wasm_emitf(2, "(data (i32.const %d) \".\\00\")\n", dot_addr);
+    emit_i32_data_bytes(lc_addr, dot_addr, 4);
   }
   if (has_undefined_function("localtime", 9) || has_undefined_function("gmtime", 6) ||
       has_undefined_function("ctime", 5)) {
@@ -300,18 +300,20 @@ static void emit_minimal_static_data_if_needed(
   }
   if (has_undefined_function("asctime", 7) || has_undefined_function("ctime", 5) ||
       has_undefined_function("strftime", 8) || has_undefined_function("wcsftime", 8)) {
-    wasm_data_symbol_t *buf = intern_data_symbol("__ag_stub_asctime_buf", 21, 26, 1);
-    wasm_data_symbol_t *wday = intern_data_symbol("__ag_time_wday_names", 20, 21, 1);
-    wasm_data_symbol_t *mon = intern_data_symbol("__ag_time_mon_names", 19, 36, 1);
-    wasm_data_symbol_t *wday_full =
-        intern_data_symbol("__ag_time_wday_full_names", (int)sizeof("__ag_time_wday_full_names") - 1, 57, 1);
-    wasm_data_symbol_t *mon_full =
-        intern_data_symbol("__ag_time_mon_full_names", (int)sizeof("__ag_time_mon_full_names") - 1, 86, 1);
-    wasm_emitf(2, "(data (i32.const %d) \"Thu Jan  1 00:00:00 1970\\0a\\00\")\n", buf->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"SunMonTueWedThuFriSat\")\n", wday->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"JanFebMarAprMayJunJulAugSepOctNovDec\")\n", mon->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"Sunday\\00Monday\\00Tuesday\\00Wednesday\\00Thursday\\00Friday\\00Saturday\\00\")\n", wday_full->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"January\\00February\\00March\\00April\\00May\\00June\\00July\\00August\\00September\\00October\\00November\\00December\\00\")\n", mon_full->addr);
+    int buf_addr = intern_data_symbol("__ag_stub_asctime_buf", 21, 26, 1)->addr;
+    int wday_addr = intern_data_symbol("__ag_time_wday_names", 20, 21, 1)->addr;
+    int mon_addr = intern_data_symbol("__ag_time_mon_names", 19, 36, 1)->addr;
+    int wday_full_addr =
+        intern_data_symbol("__ag_time_wday_full_names",
+                           (int)sizeof("__ag_time_wday_full_names") - 1, 57, 1)->addr;
+    int mon_full_addr =
+        intern_data_symbol("__ag_time_mon_full_names",
+                           (int)sizeof("__ag_time_mon_full_names") - 1, 86, 1)->addr;
+    wasm_emitf(2, "(data (i32.const %d) \"Thu Jan  1 00:00:00 1970\\0a\\00\")\n", buf_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"SunMonTueWedThuFriSat\")\n", wday_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"JanFebMarAprMayJunJulAugSepOctNovDec\")\n", mon_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"Sunday\\00Monday\\00Tuesday\\00Wednesday\\00Thursday\\00Friday\\00Saturday\\00\")\n", wday_full_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"January\\00February\\00March\\00April\\00May\\00June\\00July\\00August\\00September\\00October\\00November\\00December\\00\")\n", mon_full_addr);
   }
 }
 
@@ -4715,14 +4717,14 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("strerror", 8)) {
-    wasm_data_symbol_t *ok = intern_data_symbol("__ag_stub_strerror_ok", 21, 9, 1);
-    wasm_data_symbol_t *err = intern_data_symbol("__ag_stub_strerror", 18, 6, 1);
-    wasm_emitf(2, "(data (i32.const %d) \"no error\\00\")\n", ok->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"error\\00\")\n", err->addr);
+    int ok_addr = intern_data_symbol("__ag_stub_strerror_ok", 21, 9, 1)->addr;
+    int err_addr = intern_data_symbol("__ag_stub_strerror", 18, 6, 1)->addr;
+    wasm_emitf(2, "(data (i32.const %d) \"no error\\00\")\n", ok_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"error\\00\")\n", err_addr);
     wasm_emitf(2, "(func $strerror (param $errnum %s) (result i32)\n",
                wasm_stub_param_type("strerror", 8, 0, IR_TY_I32));
-    wasm_emitf(4, "(if (i32.eqz (local.get $errnum)) (then (return (i32.const %d))))\n", ok->addr);
-    wasm_emitf(4, "(i32.const %d)\n", err->addr);
+    wasm_emitf(4, "(if (i32.eqz (local.get $errnum)) (then (return (i32.const %d))))\n", ok_addr);
+    wasm_emitf(4, "(i32.const %d)\n", err_addr);
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("putchar", 7)) {
@@ -5492,8 +5494,17 @@ void wasm32_wat_emit_minimal_libc_stubs(
   }
   if (has_undefined_function("setlocale", 9)) {
     int c_addr = intern_data_symbol("__ag_stub_locale_c", 18, 2, 1)->addr;
-    wasm_emitf(2, "(func $setlocale (param %s i32) (result i32) (i32.const %d))\n",
-               wasm_stub_param_type("setlocale", 9, 0, IR_TY_I32), c_addr);
+    wasm_emitf(2, "(func $setlocale (param $category %s) (param $locale i32) (result i32)\n",
+               wasm_stub_param_type("setlocale", 9, 0, IR_TY_I32));
+    wasm_emitf(4, "(if (i32.or (i32.lt_s (local.get $category) (i32.const 0)) (i32.gt_s (local.get $category) (i32.const 5))) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $locale)) (then (return (i32.const %d))))\n",
+               c_addr);
+    wasm_emitf(4, "(if (i32.eqz (i32.load8_u (local.get $locale))) (then (return (i32.const %d))))\n",
+               c_addr);
+    wasm_emitf(4, "(if (i32.and (i32.eq (i32.load8_u (local.get $locale)) (i32.const 67)) (i32.eqz (i32.load8_u offset=1 (local.get $locale)))) (then (return (i32.const %d))))\n",
+               c_addr);
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("localeconv", 10)) {
     int lc_addr = intern_data_symbol("__ag_stub_lconv", 15, 96, 4)->addr;
@@ -5590,34 +5601,34 @@ void wasm32_wat_emit_minimal_libc_stubs(
   int need_wctype_lookup_stub = has_undefined_function("wctype", 6) ||
                                 has_undefined_function("wctrans", 7);
   if (need_wctype_lookup_stub) {
-    wasm_data_symbol_t *alnum = intern_data_symbol("__ag_wctype_alnum", 17, 6, 1);
-    wasm_data_symbol_t *alpha = intern_data_symbol("__ag_wctype_alpha", 17, 6, 1);
-    wasm_data_symbol_t *blank = intern_data_symbol("__ag_wctype_blank", 17, 6, 1);
-    wasm_data_symbol_t *cntrl = intern_data_symbol("__ag_wctype_cntrl", 17, 6, 1);
-    wasm_data_symbol_t *digit = intern_data_symbol("__ag_wctype_digit", 17, 6, 1);
-    wasm_data_symbol_t *graph = intern_data_symbol("__ag_wctype_graph", 17, 6, 1);
-    wasm_data_symbol_t *lower = intern_data_symbol("__ag_wctype_lower", 17, 6, 1);
-    wasm_data_symbol_t *print = intern_data_symbol("__ag_wctype_print", 17, 6, 1);
-    wasm_data_symbol_t *punct = intern_data_symbol("__ag_wctype_punct", 17, 6, 1);
-    wasm_data_symbol_t *space = intern_data_symbol("__ag_wctype_space", 17, 6, 1);
-    wasm_data_symbol_t *upper = intern_data_symbol("__ag_wctype_upper", 17, 6, 1);
-    wasm_data_symbol_t *xdigit = intern_data_symbol("__ag_wctype_xdigit", 18, 7, 1);
-    wasm_data_symbol_t *tolower_s = intern_data_symbol("__ag_wctrans_tolower", 20, 8, 1);
-    wasm_data_symbol_t *toupper_s = intern_data_symbol("__ag_wctrans_toupper", 20, 8, 1);
-    wasm_emitf(2, "(data (i32.const %d) \"alnum\\00\")\n", alnum->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"alpha\\00\")\n", alpha->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"blank\\00\")\n", blank->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"cntrl\\00\")\n", cntrl->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"digit\\00\")\n", digit->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"graph\\00\")\n", graph->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"lower\\00\")\n", lower->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"print\\00\")\n", print->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"punct\\00\")\n", punct->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"space\\00\")\n", space->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"upper\\00\")\n", upper->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"xdigit\\00\")\n", xdigit->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"tolower\\00\")\n", tolower_s->addr);
-    wasm_emitf(2, "(data (i32.const %d) \"toupper\\00\")\n", toupper_s->addr);
+    int alnum_addr = intern_data_symbol("__ag_wctype_alnum", 17, 6, 1)->addr;
+    int alpha_addr = intern_data_symbol("__ag_wctype_alpha", 17, 6, 1)->addr;
+    int blank_addr = intern_data_symbol("__ag_wctype_blank", 17, 6, 1)->addr;
+    int cntrl_addr = intern_data_symbol("__ag_wctype_cntrl", 17, 6, 1)->addr;
+    int digit_addr = intern_data_symbol("__ag_wctype_digit", 17, 6, 1)->addr;
+    int graph_addr = intern_data_symbol("__ag_wctype_graph", 17, 6, 1)->addr;
+    int lower_addr = intern_data_symbol("__ag_wctype_lower", 17, 6, 1)->addr;
+    int print_addr = intern_data_symbol("__ag_wctype_print", 17, 6, 1)->addr;
+    int punct_addr = intern_data_symbol("__ag_wctype_punct", 17, 6, 1)->addr;
+    int space_addr = intern_data_symbol("__ag_wctype_space", 17, 6, 1)->addr;
+    int upper_addr = intern_data_symbol("__ag_wctype_upper", 17, 6, 1)->addr;
+    int xdigit_addr = intern_data_symbol("__ag_wctype_xdigit", 18, 7, 1)->addr;
+    int tolower_addr = intern_data_symbol("__ag_wctrans_tolower", 20, 8, 1)->addr;
+    int toupper_addr = intern_data_symbol("__ag_wctrans_toupper", 20, 8, 1)->addr;
+    wasm_emitf(2, "(data (i32.const %d) \"alnum\\00\")\n", alnum_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"alpha\\00\")\n", alpha_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"blank\\00\")\n", blank_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"cntrl\\00\")\n", cntrl_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"digit\\00\")\n", digit_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"graph\\00\")\n", graph_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"lower\\00\")\n", lower_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"print\\00\")\n", print_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"punct\\00\")\n", punct_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"space\\00\")\n", space_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"upper\\00\")\n", upper_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"xdigit\\00\")\n", xdigit_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"tolower\\00\")\n", tolower_addr);
+    wasm_emitf(2, "(data (i32.const %d) \"toupper\\00\")\n", toupper_addr);
     wasm_emitf(2, "(func $__ag_streq (param $a i32) (param $b i32) (result i32)\n");
     wasm_emitf(4, "(local $ca i32)\n");
     wasm_emitf(4, "(local $cb i32)\n");
@@ -5634,31 +5645,31 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wctype", 6)) {
-    wasm_data_symbol_t *alnum = intern_data_symbol("__ag_wctype_alnum", 17, 6, 1);
-    wasm_data_symbol_t *alpha = intern_data_symbol("__ag_wctype_alpha", 17, 6, 1);
-    wasm_data_symbol_t *blank = intern_data_symbol("__ag_wctype_blank", 17, 6, 1);
-    wasm_data_symbol_t *cntrl = intern_data_symbol("__ag_wctype_cntrl", 17, 6, 1);
-    wasm_data_symbol_t *digit = intern_data_symbol("__ag_wctype_digit", 17, 6, 1);
-    wasm_data_symbol_t *graph = intern_data_symbol("__ag_wctype_graph", 17, 6, 1);
-    wasm_data_symbol_t *lower = intern_data_symbol("__ag_wctype_lower", 17, 6, 1);
-    wasm_data_symbol_t *print = intern_data_symbol("__ag_wctype_print", 17, 6, 1);
-    wasm_data_symbol_t *punct = intern_data_symbol("__ag_wctype_punct", 17, 6, 1);
-    wasm_data_symbol_t *space = intern_data_symbol("__ag_wctype_space", 17, 6, 1);
-    wasm_data_symbol_t *upper = intern_data_symbol("__ag_wctype_upper", 17, 6, 1);
-    wasm_data_symbol_t *xdigit = intern_data_symbol("__ag_wctype_xdigit", 18, 7, 1);
+    int alnum_addr = intern_data_symbol("__ag_wctype_alnum", 17, 6, 1)->addr;
+    int alpha_addr = intern_data_symbol("__ag_wctype_alpha", 17, 6, 1)->addr;
+    int blank_addr = intern_data_symbol("__ag_wctype_blank", 17, 6, 1)->addr;
+    int cntrl_addr = intern_data_symbol("__ag_wctype_cntrl", 17, 6, 1)->addr;
+    int digit_addr = intern_data_symbol("__ag_wctype_digit", 17, 6, 1)->addr;
+    int graph_addr = intern_data_symbol("__ag_wctype_graph", 17, 6, 1)->addr;
+    int lower_addr = intern_data_symbol("__ag_wctype_lower", 17, 6, 1)->addr;
+    int print_addr = intern_data_symbol("__ag_wctype_print", 17, 6, 1)->addr;
+    int punct_addr = intern_data_symbol("__ag_wctype_punct", 17, 6, 1)->addr;
+    int space_addr = intern_data_symbol("__ag_wctype_space", 17, 6, 1)->addr;
+    int upper_addr = intern_data_symbol("__ag_wctype_upper", 17, 6, 1)->addr;
+    int xdigit_addr = intern_data_symbol("__ag_wctype_xdigit", 18, 7, 1)->addr;
     wasm_emitf(2, "(func $wctype (param $p i32) (result i32)\n");
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 1))))\n", alnum->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 2))))\n", alpha->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 3))))\n", blank->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 4))))\n", cntrl->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 5))))\n", digit->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 6))))\n", graph->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 7))))\n", lower->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 8))))\n", print->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 9))))\n", punct->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 10))))\n", space->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 11))))\n", upper->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 12))))\n", xdigit->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 1))))\n", alnum_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 2))))\n", alpha_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 3))))\n", blank_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 4))))\n", cntrl_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 5))))\n", digit_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 6))))\n", graph_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 7))))\n", lower_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 8))))\n", print_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 9))))\n", punct_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 10))))\n", space_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 11))))\n", upper_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 12))))\n", xdigit_addr);
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
@@ -5682,11 +5693,11 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wctrans", 7)) {
-    wasm_data_symbol_t *tolower_s = intern_data_symbol("__ag_wctrans_tolower", 20, 8, 1);
-    wasm_data_symbol_t *toupper_s = intern_data_symbol("__ag_wctrans_toupper", 20, 8, 1);
+    int tolower_addr = intern_data_symbol("__ag_wctrans_tolower", 20, 8, 1)->addr;
+    int toupper_addr = intern_data_symbol("__ag_wctrans_toupper", 20, 8, 1)->addr;
     wasm_emitf(2, "(func $wctrans (param $p i32) (result i32)\n");
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 1))))\n", tolower_s->addr);
-    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 2))))\n", toupper_s->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 1))))\n", tolower_addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 2))))\n", toupper_addr);
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
