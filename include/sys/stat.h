@@ -1,7 +1,7 @@
 #ifndef _SYS_STAT_H
 #define _SYS_STAT_H
 
-typedef unsigned short mode_t;
+#include <sys/types.h>
 
 #define S_IFMT  0170000
 #define S_IFREG 0100000
@@ -16,7 +16,7 @@ typedef unsigned short mode_t;
  */
 struct stat {
   mode_t st_mode;
-  long st_size;
+  off_t st_size;
 };
 #else
 /*
@@ -26,24 +26,24 @@ struct stat {
  */
 #include <time.h>
 struct stat {
-  int st_dev;
+  dev_t st_dev;
   mode_t st_mode;
-  unsigned short st_nlink;
-  unsigned long long st_ino;
-  unsigned int st_uid;
-  unsigned int st_gid;
-  int st_rdev;
+  nlink_t st_nlink;
+  ino_t st_ino;
+  uid_t st_uid;
+  gid_t st_gid;
+  dev_t st_rdev;
   struct timespec st_atimespec;
   struct timespec st_mtimespec;
   struct timespec st_ctimespec;
   struct timespec st_birthtimespec;
-  long st_size;
-  long st_blocks;
-  int st_blksize;
+  off_t st_size;
+  blkcnt_t st_blocks;
+  blksize_t st_blksize;
   unsigned int st_flags;
   unsigned int st_gen;
   int st_lspare;
-  long st_qspare[2];
+  long long st_qspare[2];
 };
 #endif
 

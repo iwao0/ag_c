@@ -24,7 +24,12 @@ int main(void) {
     if (d16[0] != 'h' || d16[1] != 'd' || d16[2] != 0) return 6;
     if (u8[0] != 'h' || u8[1] != 'h' || u8[2] != 'u' || u8[3] != 0) return 7;
     if (x16[0] != 'h' || x16[1] != 'x' || x16[2] != 0) return 8;
-    if (dmax[0] != 'l' || dmax[1] != 'l' || dmax[2] != 'd' || dmax[3] != 0) return 9;
+#ifdef __wasm32__
+    if (dmax[0] != 'l' || dmax[1] != 'l' ||
+        dmax[2] != 'd' || dmax[3] != 0) return 9;
+#else
+    if (dmax[0] != 'l' || dmax[1] != 'd' || dmax[2] != 0) return 9;
+#endif
     if (xptr[0] != 'l' || xptr[1] != 'x' || xptr[2] != 0) return 10;
     if (priu8[0] != 'h' || priu8[1] != 'h' || priu8[2] != 'u' || priu8[3] != 0) return 11;
     if (prid16[0] != 'h' || prid16[1] != 'd' || prid16[2] != 0) return 12;

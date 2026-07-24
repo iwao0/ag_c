@@ -15,9 +15,9 @@ static int bytes_equal(const unsigned char *left,
 
 int main(void) {
     int (*open_fn)(const char *, int, ...) = open;
-    long (*read_fn)(int, void *, unsigned long) = read;
-    long (*write_fn)(int, const void *, unsigned long) = write;
-    long (*lseek_fn)(int, long, int) = lseek;
+    ssize_t (*read_fn)(int, void *, size_t) = read;
+    ssize_t (*write_fn)(int, const void *, size_t) = write;
+    off_t (*lseek_fn)(int, off_t, int) = lseek;
     int (*close_fn)(int) = close;
     int (*fstat_fn)(int, struct stat *) = fstat;
     unsigned char buffer[10] = {
@@ -66,7 +66,7 @@ int main(void) {
 
     {
         const unsigned char initial[] = {'A', 0, 0x80, 'Z'};
-        if (write_fn(fd, initial, sizeof(initial)) != (long)sizeof(initial)) {
+        if (write_fn(fd, initial, sizeof(initial)) != (ssize_t)sizeof(initial)) {
             return 9;
         }
     }
