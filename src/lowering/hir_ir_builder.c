@@ -146,7 +146,8 @@ int hir_ir_emit_conditional_branch(
     hir_ir_context_t *context, ir_val_t condition,
     ir_block_t *if_true, ir_block_t *if_false) {
   if (hir_ir_cfg_current_block_terminated(context)) return 1;
-  if (hir_ir_is_float_type(condition.type)) {
+  if (hir_ir_is_float_type(condition.type) ||
+      condition.type == IR_TY_I64) {
     condition = hir_ir_scalar_truth_value(context, condition);
     if (context->status != IR_HIR_BUILD_OK) return 0;
   }

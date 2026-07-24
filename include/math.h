@@ -188,4 +188,121 @@ int islessequal(double x, double y);
 int islessgreater(double x, double y);
 int isunordered(double x, double y);
 
+/*
+ * C11 7.12.3 / 7.12.14 defines these interfaces as macros.  Darwin does not
+ * provide linkable functions for every macro name, so calls emitted from this
+ * bundled header must not depend on external fpclassify/isfinite/etc symbols.
+ * Keep float subnormals distinct before promotion; ag_c's long double shares
+ * the target double representation.
+ */
+union __ag_math_float_bits {
+  float value;
+  unsigned int bits;
+};
+
+union __ag_math_double_bits {
+  double value;
+  unsigned long long bits;
+};
+
+static int __ag_math_fpclassify_float(float value) {
+  union __ag_math_float_bits repr;
+  unsigned int exponent;
+  unsigned int fraction;
+  repr.value = value;
+  exponent = (repr.bits >> 23) & 0xffU;
+  fraction = repr.bits & 0x7fffffU;
+  if (exponent == 0xffU) return fraction ? FP_NAN : FP_INFINITE;
+  if (exponent == 0U) return fraction ? FP_SUBNORMAL : FP_ZERO;
+  return FP_NORMAL;
+}
+
+static int __ag_math_fpclassify_double(double value) {
+  union __ag_math_double_bits repr;
+  unsigned long long exponent;
+  unsigned long long fraction;
+  repr.value = value;
+  exponent = (repr.bits >> 52) & 0x7ffULL;
+  fraction = repr.bits & 0xfffffffffffffULL;
+  if (exponent == 0x7ffULL) return fraction ? FP_NAN : FP_INFINITE;
+  if (exponent == 0ULL) return fraction ? FP_SUBNORMAL : FP_ZERO;
+  return FP_NORMAL;
+}
+
+static int __ag_math_fpclassify_long_double(long double value) {
+  return __ag_math_fpclassify_double((double)value);
+}
+
+static int __ag_math_isfinite_float(float value) {
+  int classification = __ag_math_fpclassify_float(value);
+  return classification != FP_NAN && classification != FP_INFINITE;
+}
+
+static int __ag_math_isfinite_double(double value) {
+  int classification = __ag_math_fpclassify_double(value);
+  return classification != FP_NAN && classification != FP_INFINITE;
+}
+
+static int __ag_math_isfinite_long_double(long double value) {
+  return __ag_math_isfinite_double((double)value);
+}
+
+static int __ag_math_signbit_float(float value) {
+  union __ag_math_float_bits repr;
+  repr.value = value;
+  return (int)(repr.bits >> 31);
+}
+
+static int __ag_math_signbit_double(double value) {
+  union __ag_math_double_bits repr;
+  repr.value = value;
+  return (int)(repr.bits >> 63);
+}
+
+static int __ag_math_signbit_long_double(long double value) {
+  return __ag_math_signbit_double((double)value);
+}
+
+static int __ag_math_isgreater(double x, double y) { return x > y; }
+static int __ag_math_isgreaterequal(double x, double y) { return x >= y; }
+static int __ag_math_isless(double x, double y) { return x < y; }
+static int __ag_math_islessequal(double x, double y) { return x <= y; }
+static int __ag_math_islessgreater(double x, double y) {
+  return x < y || x > y;
+}
+static int __ag_math_isunordered(double x, double y) {
+  return __ag_math_fpclassify_double(x) == FP_NAN ||
+         __ag_math_fpclassify_double(y) == FP_NAN;
+}
+
+#define __ag_math_classify(x) \
+  _Generic((x), \
+           float: __ag_math_fpclassify_float, \
+           long double: __ag_math_fpclassify_long_double, \
+           default: __ag_math_fpclassify_double)(x)
+#define __ag_math_sign(x) \
+  _Generic((x), \
+           float: __ag_math_signbit_float, \
+           long double: __ag_math_signbit_long_double, \
+           default: __ag_math_signbit_double)(x)
+
+#define fpclassify(x) __ag_math_classify(x)
+#define isfinite(x) \
+  _Generic((x), \
+           float: __ag_math_isfinite_float, \
+           long double: __ag_math_isfinite_long_double, \
+           default: __ag_math_isfinite_double)(x)
+#define isinf(x) (__ag_math_classify(x) == FP_INFINITE)
+#define isnan(x) (__ag_math_classify(x) == FP_NAN)
+#define isnormal(x) (__ag_math_classify(x) == FP_NORMAL)
+#define signbit(x) __ag_math_sign(x)
+#define isgreater(x, y) __ag_math_isgreater((double)(x), (double)(y))
+#define isgreaterequal(x, y) \
+  __ag_math_isgreaterequal((double)(x), (double)(y))
+#define isless(x, y) __ag_math_isless((double)(x), (double)(y))
+#define islessequal(x, y) __ag_math_islessequal((double)(x), (double)(y))
+#define islessgreater(x, y) \
+  __ag_math_islessgreater((double)(x), (double)(y))
+#define isunordered(x, y) __ag_math_isunordered((double)(x), (double)(y))
+
 #endif

@@ -745,6 +745,8 @@ probes_found_bugs/stdlib_conversion_function_pointer_boundaries.c
 probes_found_bugs/math_output_pointer_function_boundaries.c
 probes_found_bugs/math_unary_function_pointer_boundaries.c
 probes_found_bugs/math_mixed_function_pointer_boundaries.c
+probes_found_bugs/math_classification_macro_boundaries.c
+probes_found_bugs/wide_integer_control_flow_truth_boundaries.c
 probes_found_bugs/complex_function_pointer_abi_boundaries.c
 probes_found_bugs/stdio_function_pointer_state_boundaries.c
 probes_found_bugs/wide_format_output_boundaries.c
@@ -764,6 +766,7 @@ wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c
 wasm32/math_fdim_fma_frexp_ops.c
 wasm32/math_nan_ops.c
+probes_found_bugs/tgmath_mixed_dispatch_boundaries.c
 wasm32/signal_ign_ops.c
 wasm32/setjmp_stub_ops.c
 wasm32/string_coll_xfrm_ops.c

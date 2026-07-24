@@ -1,9 +1,10 @@
 #ifndef _TGMATH_H
 #define _TGMATH_H
 #include <math.h>
-/* C11 7.25: 型総称マクロ。引数型 (float/double/long double) で f/無印/l 版へ
- * _Generic ディスパッチする。Apple ARM64 では long double==double (同一 ABI) なので
- * l 版呼び出しも安全。complex 版は対象外 (実数のみ)。下で必要な f/l 版を宣言する
+/* C11 7.25: 型総称マクロ。実数の総称引数を共通の実数型へまとめて
+ * f/無印/l 版へ _Generic ディスパッチする。整数引数は double として扱う。
+ * Apple ARM64 では long double==double (同一 ABI) なので l 版呼び出しも安全。
+ * complex 版は対象外 (実数のみ)。下で必要な f/l 版を宣言する
  * (math.h は double 中心で f/l を網羅しないため)。 */
 float       sqrtf(float);       long double sqrtl(long double);
 float       cbrtf(float);       long double cbrtl(long double);
@@ -60,9 +61,21 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
 
 /* 注: マクロ引数名は `fn`。`f` にすると float サフィックス `f` とトークン貼り付けで
  * 区別できず `f##f` が `sqrtsqrt` のように壊れる (引数名 == 貼り付け先トークンの衝突)。 */
-#define __tg_un(fn, x)      _Generic((x), float: fn##f, long double: fn##l, default: fn)(x)
-#define __tg_bin(fn, x, y)  _Generic((x), float: fn##f, long double: fn##l, default: fn)((x), (y))
-#define __tg_tri(fn, x, y, z)  _Generic((x), float: fn##f, long double: fn##l, default: fn)((x), (y), (z))
+#define __tg_real_type(x) \
+  _Generic((x), float: (float)0, long double: (long double)0, default: (double)0)
+#define __tg_un(fn, x) \
+  _Generic((x), float: fn##f, long double: fn##l, default: fn)(x)
+#define __tg_bin(fn, x, y) \
+  _Generic((__tg_real_type(x) + __tg_real_type(y)), \
+           float: fn##f, long double: fn##l, default: fn)((x), (y))
+#define __tg_tri(fn, x, y, z) \
+  _Generic((__tg_real_type(x) + __tg_real_type(y) + __tg_real_type(z)), \
+           float: fn##f, long double: fn##l, default: fn)((x), (y), (z))
+#define __tg_first_bin(fn, x, y) \
+  _Generic((x), float: fn##f, long double: fn##l, default: fn)((x), (y))
+#define __tg_bin_out(fn, x, y, z) \
+  _Generic((__tg_real_type(x) + __tg_real_type(y)), \
+           float: fn##f, long double: fn##l, default: fn)((x), (y), (z))
 
 #define sqrt(x)  __tg_un(sqrt, x)
 #define cbrt(x)  __tg_un(cbrt, x)
@@ -101,16 +114,16 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
 #define pow(x, y)   __tg_bin(pow, x, y)
 #define fmod(x, y)  __tg_bin(fmod, x, y)
 #define remainder(x, y) __tg_bin(remainder, x, y)
-#define remquo(x, y, z) __tg_tri(remquo, x, y, z)
+#define remquo(x, y, z) __tg_bin_out(remquo, x, y, z)
 #define fdim(x, y)  __tg_bin(fdim, x, y)
 #define fma(x, y, z) __tg_tri(fma, x, y, z)
-#define frexp(x, y) __tg_bin(frexp, x, y)
-#define ldexp(x, y) __tg_bin(ldexp, x, y)
-#define scalbn(x, y) __tg_bin(scalbn, x, y)
-#define scalbln(x, y) __tg_bin(scalbln, x, y)
+#define frexp(x, y) __tg_first_bin(frexp, x, y)
+#define ldexp(x, y) __tg_first_bin(ldexp, x, y)
+#define scalbn(x, y) __tg_first_bin(scalbn, x, y)
+#define scalbln(x, y) __tg_first_bin(scalbln, x, y)
 #define ilogb(x) __tg_un(ilogb, x)
 #define logb(x) __tg_un(logb, x)
-#define modf(x, y)  __tg_bin(modf, x, y)
+#define modf(x, y)  __tg_first_bin(modf, x, y)
 #define copysign(x, y) __tg_bin(copysign, x, y)
 #define atan2(x, y) __tg_bin(atan2, x, y)
 #define hypot(x, y) __tg_bin(hypot, x, y)
