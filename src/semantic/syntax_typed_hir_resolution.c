@@ -248,6 +248,7 @@ typedef struct {
   int enforce_function_return_type;
   int preflight_failed;
   int suppress_value_decay_depth;
+  int address_operand_depth;
   int is_static_initializer;
 } direct_resolution_context_t;
 
@@ -2550,8 +2551,10 @@ static int preflight_direct_expression_impl(
     psx_address_operand_category_t category =
         PSX_ADDRESS_OPERAND_NOT_ADDRESSABLE;
     context->suppress_value_decay_depth++;
+    context->address_operand_depth++;
     int operand_is_lvalue = preflight_direct_lvalue(
         context, operand_syntax, &operand_type);
+    context->address_operand_depth--;
     context->suppress_value_decay_depth--;
     if (operand_is_lvalue) {
       category = PSX_ADDRESS_OPERAND_OBJECT_LVALUE;
@@ -4477,7 +4480,8 @@ static psx_semantic_node_t *build_direct_resolved_initializer(
           &object_shape))
     return NULL;
 
-  if (psx_type_kind_is_scalar(object_shape.kind)) {
+  if (psx_type_kind_is_scalar(object_shape.kind) &&
+      object_shape.kind != PSX_TYPE_COMPLEX) {
     for (int i = 0; i < plan->item_count; i++) {
       const psx_local_initializer_item_t *item = &plan->items[i];
       if (!item->is_active ||
@@ -5534,8 +5538,13 @@ static int resolve_direct_compound_literal(
   if (context->unevaluated_depth == 0) {
     if (!context->lowering_context)
       return 0;
+    int use_static_initializer_storage =
+        context->is_static_initializer &&
+        context->address_operand_depth == 0 &&
+        object_shape.kind == PSX_TYPE_COMPLEX;
     if (binding->plan.storage_duration ==
-        PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC) {
+            PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC &&
+        !use_static_initializer_storage) {
       if (context->block_depth == 0) return 0;
       int name_len = 0;
       char *name = new_direct_compound_object_name(
@@ -5556,12 +5565,15 @@ static int resolve_direct_compound_literal(
       if (stored_type.type_id != binding->plan.object_qual_type.type_id)
         return 0;
     } else {
-      if (!context->options || context->block_depth != 0)
+      if (!context->options ||
+          (context->block_depth != 0 &&
+           !use_static_initializer_storage))
         return 0;
       psx_parsed_initializer_t storage_initializer = initializer;
       const node_init_list_t *list =
           (const node_init_list_t *)compound->base.rhs;
-      if (psx_type_kind_is_scalar(object_shape.kind)) {
+      if (psx_type_kind_is_scalar(object_shape.kind) &&
+          object_shape.kind != PSX_TYPE_COMPLEX) {
         if (!list || list->entry_count != 1 ||
             list->entries[0].designator_count != 0 ||
             !list->entries[0].value ||
@@ -5900,10 +5912,12 @@ static int preflight_direct_local_declaration(
                       static_initializer_type,
                       initializer->value,
                       &initializer_typed_hir, &initializer_failure)
-                : psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+                : psx_resolve_syntax_static_initializer_expression_direct_to_typed_hir_in_contexts(
                       context->semantic_context,
                       context->global_registry,
-                      context->local_registry, initializer->value,
+                      context->local_registry,
+                      context->lowering_context, context->options,
+                      initializer->value,
                       &initializer_typed_hir, &initializer_failure);
         if (initializer_status != PSX_SYNTAX_TYPED_HIR_RESOLVED) {
           if (context->failure)
@@ -7298,6 +7312,7 @@ resolve_syntax_expression_direct_to_typed_hir(
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     const psx_scope_lookup_point_t *lookup_point,
+    int is_static_initializer,
     const node_t *syntax_expression,
     const psx_typed_hir_tree_t **typed_hir,
     psx_syntax_integer_constant_result_t *constant_result,
@@ -7381,6 +7396,7 @@ resolve_syntax_expression_direct_to_typed_hir(
       .function_name = current_function_name,
       .function_name_len = current_function_name_len,
       .block_depth = current_function_name ? 1 : 0,
+      .is_static_initializer = is_static_initializer,
   };
   psx_semantic_node_builder_init(
       &context.builder, ps_ctx_arena(semantic_context),
@@ -7453,7 +7469,7 @@ psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
     psx_resolved_hir_build_failure_t *failure) {
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
-      NULL, NULL, NULL, syntax_expression, typed_hir, NULL, failure);
+      NULL, NULL, NULL, 0, syntax_expression, typed_hir, NULL, failure);
 }
 
 psx_syntax_typed_hir_resolution_status_t
@@ -7475,7 +7491,7 @@ psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
   }
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
-      NULL, NULL, lookup_point, syntax_expression, typed_hir,
+      NULL, NULL, lookup_point, 0, syntax_expression, typed_hir,
       constant_result, failure);
 }
 
@@ -7491,7 +7507,23 @@ psx_resolve_syntax_expression_direct_to_typed_hir_with_lowering_in_contexts(
     psx_resolved_hir_build_failure_t *failure) {
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
-      lowering_context, options, NULL, syntax_expression, typed_hir,
+      lowering_context, options, NULL, 0, syntax_expression, typed_hir,
+      NULL, failure);
+}
+
+psx_syntax_typed_hir_resolution_status_t
+psx_resolve_syntax_static_initializer_expression_direct_to_typed_hir_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const node_t *syntax_expression,
+    const psx_typed_hir_tree_t **typed_hir,
+    psx_resolved_hir_build_failure_t *failure) {
+  return resolve_syntax_expression_direct_to_typed_hir(
+      semantic_context, global_registry, local_registry,
+      lowering_context, options, NULL, 1, syntax_expression, typed_hir,
       NULL, failure);
 }
 

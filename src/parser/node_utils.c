@@ -789,6 +789,48 @@ static psx_qual_type_t gvar_member_value_qual_type(
              : member_qual_type;
 }
 
+static int gvar_walk_scalar_value(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target,
+    const psx_record_member_decl_t *member,
+    psx_qual_type_t value_qual_type,
+    gvar_init_cursor_t *cur, long long offset,
+    const psx_gvar_aggregate_walk_ops_t *ops, void *user) {
+  psx_type_shape_t shape = {0};
+  if (!semantic_types || !record_layouts || !target || !member || !cur ||
+      !psx_semantic_type_table_describe(
+          semantic_types, value_qual_type.type_id, &shape) ||
+      !gvar_walk_require_scalar(ops))
+    return 0;
+  if (shape.kind != PSX_TYPE_COMPLEX) {
+    int slot = gvar_init_cursor_advance_at_offset(cur, offset);
+    if (slot < 0) return 0;
+    gvar_walk_emit_scalar(
+        ops, user, member, value_qual_type.type_id, slot, offset);
+    return 1;
+  }
+
+  psx_qual_type_t component = psx_semantic_type_table_base(
+      semantic_types, value_qual_type.type_id);
+  int component_size = psx_qual_type_layout_sizeof(
+      semantic_types, record_layouts, component,
+      ag_target_info_data_layout(target));
+  if (component.type_id == PSX_TYPE_ID_INVALID || component_size <= 0)
+    return 0;
+  for (int component_index = 0; component_index < 2; component_index++) {
+    long long component_offset =
+        offset + (long long)component_index * component_size;
+    int slot = gvar_init_cursor_advance_at_offset(
+        cur, component_offset);
+    if (slot < 0) return 0;
+    gvar_walk_emit_scalar(
+        ops, user, member, component.type_id, slot,
+        component_offset);
+  }
+  return 1;
+}
+
 static int gvar_walk_struct_initializer(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
@@ -817,7 +859,6 @@ static int gvar_walk_struct_initializer(
     psx_type_id_t member_type_id = member_qual_type.type_id;
     psx_qual_type_t member_value_qual_type = gvar_member_value_qual_type(
         semantic_types, aggregate_type_id, ordinal);
-    psx_type_id_t member_value_type_id = member_value_qual_type.type_id;
     psx_type_id_t member_aggregate_type_id =
         psx_semantic_type_table_array_leaf(
             semantic_types, member_type_id).type_id;
@@ -894,10 +935,11 @@ static int gvar_walk_struct_initializer(
             }
             break;
           }
-          int slot = gvar_init_cursor_advance_at_offset(cur, elem_off);
-          if (slot < 0) return 0;
-          gvar_walk_emit_scalar(
-              ops, user, &member, member_value_type_id, slot, elem_off);
+          if (!gvar_walk_scalar_value(
+                  semantic_types, record_layouts, target,
+                  &member, member_value_qual_type, cur, elem_off,
+                  ops, user))
+            return 0;
         }
       }
       prev_end = member_layout.offset + member_storage_size;
@@ -941,13 +983,12 @@ static int gvar_walk_struct_initializer(
       prev_end = member_layout.offset + member_value_size;
       continue;
     }
-    if (!gvar_walk_require_scalar(ops)) return 0;
     long long scalar_offset = base_offset + member_layout.offset;
-    int slot = gvar_init_cursor_advance_at_offset(cur, scalar_offset);
-    if (slot < 0) return 0;
-    gvar_walk_emit_scalar(
-        ops, user, &member, member_value_type_id, slot,
-        scalar_offset);
+    if (!gvar_walk_scalar_value(
+            semantic_types, record_layouts, target,
+            &member, member_value_qual_type, cur, scalar_offset,
+            ops, user))
+      return 0;
     prev_end = member_layout.offset + member_value_size;
   }
   if (prev_end < struct_size) {
@@ -1073,10 +1114,11 @@ static int gvar_walk_union_initializer(
           }
           break;
         }
-        int slot = gvar_init_cursor_advance_at_offset(cur, elem_off);
-        if (slot < 0) return 0;
-        gvar_walk_emit_scalar(
-            ops, user, &member, member_value_type_id, slot, elem_off);
+        if (!gvar_walk_scalar_value(
+                semantic_types, record_layouts, target,
+                &member, member_value_qual_type, cur, elem_off,
+                ops, user))
+          return 0;
       }
     }
     if (member_layout.offset + emitted < union_size) {
@@ -1116,13 +1158,12 @@ static int gvar_walk_union_initializer(
     }
     return 1;
   }
-  if (!gvar_walk_require_scalar(ops)) return 0;
   long long scalar_offset = base_offset + member_layout.offset;
-  int slot = gvar_init_cursor_advance_at_offset(cur, scalar_offset);
-  if (slot < 0) return 0;
-  gvar_walk_emit_scalar(
-      ops, user, &member, member_value_type_id, slot,
-      scalar_offset);
+  if (!gvar_walk_scalar_value(
+          semantic_types, record_layouts, target,
+          &member, member_value_qual_type, cur, scalar_offset,
+          ops, user))
+    return 0;
   gvar_init_cursor_consume_resolved_type_zero_padding(
       semantic_types, record_decls, record_layouts, target,
       aggregate_type_id, cur, start_idx);

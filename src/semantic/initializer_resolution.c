@@ -723,7 +723,8 @@ static int flat_initializer_aggregate_value_span(
             context->semantic_types, candidate.qual_type.type_id,
             &candidate_shape) &&
         (psx_type_kind_is_aggregate(candidate_shape.kind) ||
-         candidate_shape.kind == PSX_TYPE_ARRAY) &&
+         candidate_shape.kind == PSX_TYPE_ARRAY ||
+         candidate_shape.kind == PSX_TYPE_COMPLEX) &&
         candidate.qual_type.type_id == value_type.type_id) {
       *target = candidate;
       return 1;

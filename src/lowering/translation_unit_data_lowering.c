@@ -77,6 +77,13 @@ static psx_type_id_t scalar_element_type_id(
     has_type = psx_semantic_type_table_describe(
         lowering->semantic_types, type_id, &type);
   }
+  if (has_type && type.kind == PSX_TYPE_COMPLEX) {
+    psx_qual_type_t component = psx_semantic_type_table_base(
+        lowering->semantic_types, type_id);
+    if (component.type_id == PSX_TYPE_ID_INVALID)
+      return PSX_TYPE_ID_INVALID;
+    type_id = component.type_id;
+  }
   return has_type ? type_id : PSX_TYPE_ID_INVALID;
 }
 

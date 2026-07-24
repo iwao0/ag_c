@@ -20,6 +20,11 @@ typedef struct {
   const psx_hir_module_t *hir;
 } static_hir_eval_t;
 
+typedef struct {
+  double real;
+  double imaginary;
+} static_complex_value_t;
+
 static const psx_hir_node_t *node_for_id(
     const static_hir_eval_t *eval, psx_hir_node_id_t id) {
   return eval ? psx_hir_module_lookup(eval->hir, id) : NULL;
@@ -225,6 +230,8 @@ static int floating_constant_as_integer(
 static long long eval_const_int(
     const static_hir_eval_t *eval, const psx_hir_node_t *node, int *ok);
 static double eval_const_fp(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node, int *ok);
+static static_complex_value_t eval_const_complex(
     const static_hir_eval_t *eval, const psx_hir_node_t *node, int *ok);
 static int eval_const_truth(
     const static_hir_eval_t *eval, const psx_hir_node_t *node,
@@ -651,6 +658,13 @@ static double eval_const_fp(
       }
       return eval_const_fp(eval, lhs, ok);
     }
+    case PSX_HIR_CREAL:
+    case PSX_HIR_CIMAG: {
+      static_complex_value_t value =
+          eval_const_complex(eval, lhs, ok);
+      return psx_hir_node_kind(node) == PSX_HIR_CREAL
+                 ? value.real : value.imaginary;
+    }
     case PSX_HIR_UNARY_PLUS:
       return eval_const_fp(eval, lhs, ok);
     case PSX_HIR_NEGATE: {
@@ -711,6 +725,120 @@ static double eval_const_fp(
   }
 }
 
+static static_complex_value_t eval_const_complex(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node, int *ok) {
+  static_complex_value_t zero = {0.0, 0.0};
+  psx_type_shape_t type = {0};
+  if (!eval || !node || !node_type_shape(eval, node, &type)) {
+    if (ok) *ok = 0;
+    return zero;
+  }
+  if (type.kind != PSX_TYPE_COMPLEX) {
+    double real = type_uses_floating_value(&type)
+                      ? eval_const_fp(eval, node, ok)
+                      : integer_constant_as_double(
+                            eval, node, eval_const_int(eval, node, ok));
+    return (static_complex_value_t){real, 0.0};
+  }
+
+  const psx_hir_node_t *lhs =
+      child_for_edge(eval, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *rhs =
+      child_for_edge(eval, node, PSX_HIR_EDGE_RHS, 0);
+  switch (psx_hir_node_kind(node)) {
+    case PSX_HIR_CAST:
+    case PSX_HIR_UNARY_PLUS:
+      return eval_const_complex(eval, lhs, ok);
+    case PSX_HIR_NEGATE: {
+      static_complex_value_t value =
+          eval_const_complex(eval, lhs, ok);
+      if (ok && !*ok) return zero;
+      return (static_complex_value_t){
+          -value.real, -value.imaginary};
+    }
+    case PSX_HIR_GLOBAL: {
+      global_var_t *global = find_global(eval, node);
+      psx_type_shape_t global_type = {0};
+      if (global_value_is_foldable_extension(global) &&
+          global->has_init && !global->init_symbol &&
+          global->init_fvalues && global->init_count >= 2 &&
+          type_shape(
+              eval, ps_gvar_decl_type_id(global), &global_type) &&
+          global_type.kind == PSX_TYPE_COMPLEX) {
+        return (static_complex_value_t){
+            global->init_fvalues[0], global->init_fvalues[1]};
+      }
+      if (ok) *ok = 0;
+      return zero;
+    }
+    case PSX_HIR_COMMA:
+      (void)eval_const_complex(eval, lhs, ok);
+      if (ok && !*ok) return zero;
+      return eval_const_complex(eval, rhs, ok);
+    case PSX_HIR_TERNARY: {
+      int condition = 0;
+      if (!eval_const_truth(eval, lhs, &condition)) {
+        if (ok) *ok = 0;
+        return zero;
+      }
+      const psx_hir_node_t *otherwise =
+          child_for_edge(eval, node, PSX_HIR_EDGE_ELSE, 0);
+      return eval_const_complex(
+          eval, condition ? rhs : otherwise, ok);
+    }
+    case PSX_HIR_ADD:
+    case PSX_HIR_SUB:
+    case PSX_HIR_MUL:
+    case PSX_HIR_DIV:
+      break;
+    default:
+      if (ok) *ok = 0;
+      return zero;
+  }
+
+  static_complex_value_t left =
+      eval_const_complex(eval, lhs, ok);
+  if (ok && !*ok) return zero;
+  static_complex_value_t right =
+      eval_const_complex(eval, rhs, ok);
+  if (ok && !*ok) return zero;
+  switch (psx_hir_node_kind(node)) {
+    case PSX_HIR_ADD:
+      return (static_complex_value_t){
+          left.real + right.real,
+          left.imaginary + right.imaginary};
+    case PSX_HIR_SUB:
+      return (static_complex_value_t){
+          left.real - right.real,
+          left.imaginary - right.imaginary};
+    case PSX_HIR_MUL:
+      return (static_complex_value_t){
+          left.real * right.real -
+              left.imaginary * right.imaginary,
+          left.real * right.imaginary +
+              left.imaginary * right.real};
+    case PSX_HIR_DIV: {
+      double denominator =
+          right.real * right.real +
+          right.imaginary * right.imaginary;
+      if (denominator == 0.0) {
+        if (ok) *ok = 0;
+        return zero;
+      }
+      return (static_complex_value_t){
+          (left.real * right.real +
+           left.imaginary * right.imaginary) /
+              denominator,
+          (left.imaginary * right.real -
+           left.real * right.imaginary) /
+              denominator};
+    }
+    default:
+      if (ok) *ok = 0;
+      return zero;
+  }
+}
+
 static int eval_const_truth(
     const static_hir_eval_t *eval, const psx_hir_node_t *node,
     int *truth) {
@@ -719,7 +847,11 @@ static int eval_const_truth(
       !node_type_shape(eval, node, &type))
     return 0;
   int ok = 1;
-  if (type_uses_floating_value(&type))
+  if (type.kind == PSX_TYPE_COMPLEX) {
+    static_complex_value_t value =
+        eval_const_complex(eval, node, &ok);
+    *truth = value.real != 0.0 || value.imaginary != 0.0;
+  } else if (type_uses_floating_value(&type))
     *truth = eval_const_fp(eval, node, &ok) != 0.0;
   else
     *truth = eval_const_int(eval, node, &ok) != 0;
@@ -1347,6 +1479,31 @@ static psx_initializer_target_t aggregate_resolved_entry_target(
     target.member_ref = leaf->member_ref;
     return target;
   }
+  psx_type_shape_t target_shape = {0};
+  psx_qual_type_t component = psx_semantic_type_table_base(
+      ps_lowering_semantic_types(aggregate->eval.lowering_context),
+      target.type_id);
+  int component_size = aggregate_type_size(
+      aggregate, component.type_id);
+  if (type_shape(&aggregate->eval, target.type_id, &target_shape) &&
+      target_shape.kind == PSX_TYPE_COMPLEX &&
+      component.type_id != PSX_TYPE_ID_INVALID &&
+      component_size > 0) {
+    for (int i = 0; i + 1 < aggregate->leaves.count; i++) {
+      const psx_initializer_scalar_leaf_t *real =
+          &aggregate->leaves.items[i];
+      const psx_initializer_scalar_leaf_t *imaginary =
+          &aggregate->leaves.items[i + 1];
+      if (real->relative_offset != target.relative_offset ||
+          imaginary->relative_offset !=
+              target.relative_offset + component_size ||
+          real->qual_type.type_id != component.type_id ||
+          imaginary->qual_type.type_id != component.type_id)
+        continue;
+      target.member_ref = real->member_ref;
+      return target;
+    }
+  }
   if (target.union_member_index >= 0) {
     target.member_ref = (psx_initializer_member_ref_t){0};
     return target;
@@ -1427,6 +1584,22 @@ static int aggregate_write_scalar(
   if (index < 0 || index >= aggregate->leaves.count || !value ||
       !type_shape(&aggregate->eval, target->type_id, &target_type))
     return 0;
+  if (target_type.kind == PSX_TYPE_COMPLEX) {
+    int ok = 1;
+    static_complex_value_t complex =
+        eval_const_complex(&aggregate->eval, value, &ok);
+    if (!ok || index + 1 >= aggregate->leaves.count) {
+      aggregate->failure =
+          PSX_STATIC_AGGREGATE_INITIALIZER_FAILURE_NON_CONSTANT;
+      return 0;
+    }
+    ps_gvar_init_slot_write(
+        aggregate->global, index, 0, complex.real, NULL, 0);
+    ps_gvar_init_slot_write(
+        aggregate->global, index + 1, 0,
+        complex.imaginary, NULL, 0);
+    return 1;
+  }
   const char *symbol = NULL;
   int symbol_len = 0;
   long long integer = 0;
@@ -1601,7 +1774,9 @@ static int aggregate_type_contains_float(
     psx_type_id_t type_id) {
   psx_type_shape_t type = {0};
   if (!aggregate || !type_shape(&aggregate->eval, type_id, &type)) return 0;
-  if (type.kind == PSX_TYPE_FLOAT) return 1;
+  if (type.kind == PSX_TYPE_FLOAT ||
+      type.kind == PSX_TYPE_COMPLEX)
+    return 1;
   if (type.kind == PSX_TYPE_POINTER || type.kind == PSX_TYPE_FUNCTION)
     return 0;
   if (type.kind == PSX_TYPE_ARRAY)
@@ -1639,7 +1814,7 @@ int psx_build_static_aggregate_hir_initializer_plan(
       !psx_semantic_type_table_describe(
           ps_lowering_semantic_types(lowering_context), type_id, &type) ||
       (type.kind != PSX_TYPE_ARRAY && type.kind != PSX_TYPE_STRUCT &&
-       type.kind != PSX_TYPE_UNION))
+       type.kind != PSX_TYPE_UNION && type.kind != PSX_TYPE_COMPLEX))
     return 0;
   global_var_t temporary = {0};
   static_hir_aggregate_t aggregate = {
@@ -1770,7 +1945,32 @@ int psx_lower_static_scalar_hir_initializer(
 
   int integer_ok = 1;
   long long integer = eval_const_int(&eval, initializer, &integer_ok);
-  if (type.kind == PSX_TYPE_FLOAT || type.kind == PSX_TYPE_COMPLEX) {
+  if (type.kind == PSX_TYPE_COMPLEX) {
+    int complex_ok = 1;
+    static_complex_value_t complex =
+        eval_const_complex(&eval, initializer, &complex_ok);
+    psx_qual_type_t component = psx_semantic_type_table_base(
+        ps_lowering_semantic_types(lowering_context), type_id);
+    int component_size = psx_type_layout_sizeof(
+        ps_lowering_semantic_types(lowering_context),
+        ps_lowering_record_layouts(lowering_context),
+        component.type_id,
+        ps_lowering_data_layout(lowering_context));
+    if (complex_ok && component_size > 0) {
+      ps_gvar_init_slots_alloc(global, 2, 1);
+      if (!global->init_values || !global->init_fvalues)
+        return 0;
+      ps_gvar_init_slot_write(
+          global, 0, 0, complex.real, NULL, 0);
+      ps_gvar_init_slot_set_offset(global, 0, 0);
+      ps_gvar_init_slot_write(
+          global, 1, 0, complex.imaginary, NULL, 0);
+      ps_gvar_init_slot_set_offset(global, 1, component_size);
+      global->init_count = 2;
+      return 1;
+    }
+  }
+  if (type.kind == PSX_TYPE_FLOAT) {
     int floating_ok = 1;
     double floating = eval_const_fp(&eval, initializer, &floating_ok);
     if (floating_ok) {

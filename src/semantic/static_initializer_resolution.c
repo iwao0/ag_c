@@ -89,6 +89,7 @@ void psx_resolve_static_initializer(
   if (kind == PSX_DECL_INIT_LIST) {
     if (initializer->kind != ND_INIT_LIST) return;
     if (object_shape.kind == PSX_TYPE_ARRAY ||
+        object_shape.kind == PSX_TYPE_COMPLEX ||
         psx_type_kind_is_aggregate(object_shape.kind)) {
       resolution->is_aggregate_initializer = 1;
       resolution->status = PSX_STATIC_INITIALIZER_OK;

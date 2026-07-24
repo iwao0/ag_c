@@ -54,6 +54,16 @@ psx_resolve_syntax_expression_direct_to_typed_hir_with_lowering_in_contexts(
     const node_t *syntax_expression,
     const psx_typed_hir_tree_t **typed_hir,
     psx_resolved_hir_build_failure_t *failure);
+psx_syntax_typed_hir_resolution_status_t
+psx_resolve_syntax_static_initializer_expression_direct_to_typed_hir_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const node_t *syntax_expression,
+    const psx_typed_hir_tree_t **typed_hir,
+    psx_resolved_hir_build_failure_t *failure);
 
 psx_syntax_typed_hir_resolution_status_t
 psx_resolve_syntax_initializer_for_object_direct_to_typed_hir_in_contexts(
