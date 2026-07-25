@@ -17394,6 +17394,24 @@ static void test_parse_evil_edge_cases(
       "int main(void){ struct S { int a; int b; }; struct S s; s.a=2; s.b=5; return s.a+s.b; }",
       "W3004");
   expect_parse_ok_without_message(test_suite_session,
+      "int main(void){ struct S { int a[2][2]; }; struct S s; s.a[0][0]=2; s.a[0][1]=3; s.a[1][0]=5; s.a[1][1]=7; return s.a[1][1]; }",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int main(void){ struct S { int a[2]; }; struct S s; return s.a[0]; }",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int main(void){ int *p; p[0]=1; return 0; }",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "void set(int *p){*p=7;} int main(void){int x; set(&x); return x;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "struct S{int x;}; void set(struct S *p){p->x=7;} int main(void){struct S s; set(&s); return s.x;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "void inspect(const int *p){(void)p;} int main(void){int x; inspect(&x); return x;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
       "int main(void){ struct B { unsigned a:3; unsigned b:5; }; struct B s; s.a=5; s.b=10; return s.a; }",
       "W3004");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ int x; int *p=&x; return p==0; }", "W3004");
@@ -17407,6 +17425,12 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok_with_message(test_suite_session, "int main(void){ int x; x=1.5; return 0; }", "W3010");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ return 1.5; }", "W3010");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=1; return x==x; }", "W3013");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){ return 1==1; }", "W3013");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){ return sizeof(int)==sizeof(int); }", "W3013");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){ return _Generic(0,int:1,default:0)==1; }", "W3013");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=1; return x&&x; }", "W3020");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ unsigned int u=1; int s=-1; return s<u; }",
                                "W3018");

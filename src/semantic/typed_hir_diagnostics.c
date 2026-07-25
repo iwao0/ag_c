@@ -89,7 +89,8 @@ static int known_integral_floating_literal(
 static int node_identity_equal(
     const typed_hir_diagnostic_walk_t *walk,
     const psx_semantic_node_t *lhs,
-    const psx_semantic_node_t *rhs) {
+    const psx_semantic_node_t *rhs,
+    int include_equal_literals) {
   if (!lhs || !rhs || lhs->spec.kind != rhs->spec.kind) return 0;
   switch (lhs->spec.kind) {
     case PSX_HIR_LOCAL:
@@ -106,6 +107,7 @@ static int node_identity_equal(
              memcmp(lhs->spec.name, rhs->spec.name,
                     lhs->spec.name_length) == 0;
     case PSX_HIR_NUMBER:
+      if (!include_equal_literals) return 0;
       if (type_is_floating(
               walk, psx_semantic_node_expression_qual_type(lhs)) !=
           type_is_floating(
@@ -157,10 +159,11 @@ static void warn_self_or_logical_compare(
     const psx_semantic_node_t *node,
     const psx_semantic_node_t *lhs,
     const psx_semantic_node_t *rhs) {
-  if (!node_identity_equal(walk, lhs, rhs)) return;
+  int is_logical = node->spec.kind == PSX_HIR_LOGAND ||
+                   node->spec.kind == PSX_HIR_LOGOR;
+  if (!node_identity_equal(walk, lhs, rhs, is_logical)) return;
   const char *op = binary_operator_text(node->spec.kind);
-  if (node->spec.kind == PSX_HIR_LOGAND ||
-      node->spec.kind == PSX_HIR_LOGOR) {
+  if (is_logical) {
     diag_warn_tokf_in(
         walk->diagnostics,
         DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS,
@@ -527,7 +530,7 @@ static void diagnose_node(
       warn_float_to_int(
           walk, psx_semantic_node_expression_qual_type(target), value);
     if (node->spec.is_source_assignment &&
-        node_identity_equal(walk, target, value))
+        node_identity_equal(walk, target, value, 0))
       diag_warn_tokf_in(
           walk->diagnostics, DIAG_WARN_PARSER_SELF_ASSIGN,
           walk->fallback_diag_tok, "%s",

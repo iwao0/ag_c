@@ -324,6 +324,9 @@ static int preflight_direct_statement_impl(
 static int preflight_direct_lvalue(
     direct_resolution_context_t *context,
     const node_t *syntax, psx_qual_type_t *qual_type);
+static void mark_direct_assignment_target(
+    direct_resolution_context_t *context,
+    const node_t *syntax);
 static int resolve_direct_compound_literal(
     direct_resolution_context_t *context,
     const node_compound_literal_t *compound,
@@ -511,6 +514,29 @@ static int note_direct_source_cast_rejection(
       context, rejection, syntax, resolution->target_type_kind);
 }
 
+static void mark_direct_out_argument_initialization(
+    direct_resolution_context_t *context,
+    const node_t *argument,
+    psx_qual_type_t parameter_type) {
+  const psx_semantic_type_table_t *types =
+      direct_semantic_types(context);
+  psx_type_shape_t parameter_shape = {0};
+  if (!types || !argument ||
+      !psx_semantic_type_table_describe(
+          types, parameter_type.type_id, &parameter_shape) ||
+      parameter_shape.kind != PSX_TYPE_POINTER)
+    return;
+  psx_qual_type_t pointee = psx_semantic_type_table_base(
+      types, parameter_type.type_id);
+  if (pointee.type_id == PSX_TYPE_ID_INVALID ||
+      (pointee.qualifiers & PSX_TYPE_QUALIFIER_CONST))
+    return;
+  while (argument && argument->kind == ND_SOURCE_CAST)
+    argument = argument->lhs;
+  if (argument && argument->kind == ND_ADDRESS_OF)
+    mark_direct_assignment_target(context, argument->lhs);
+}
+
 static int resolve_direct_function_call(
     direct_resolution_context_t *context,
     const node_function_call_t *call,
@@ -613,6 +639,14 @@ static int resolve_direct_function_call(
           PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_DISCARDS_QUALIFIERS,
           call->arguments[i]);
     if (argument_status != PSX_CALL_ARGUMENT_TYPES_OK) return 0;
+    if (i < resolution.parameter_count) {
+      psx_qual_type_t parameter_type =
+          psx_semantic_type_table_parameter(
+              direct_semantic_types(context),
+              resolution.function_qual_type.type_id, i);
+      mark_direct_out_argument_initialization(
+          context, call->arguments[i], parameter_type);
+    }
   }
   if (psx_builtin_call_is_atomic(builtin_kind) &&
       !psx_resolve_atomic_builtin_call(
@@ -2101,6 +2135,18 @@ static void mark_direct_assignment_target(
   if (syntax->kind == ND_UNARY_DEREF && syntax->lhs &&
       syntax->lhs->kind == ND_ADDRESS_OF)
     mark_direct_assignment_target(context, syntax->lhs->lhs);
+  if (syntax->kind == ND_SUBSCRIPT) {
+    psx_qual_type_t base_type = {
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+    psx_type_shape_t base_shape = {0};
+    if (preflight_direct_lvalue(
+            context, syntax->lhs, &base_type) &&
+        direct_describe_qual_type(
+            context, base_type, &base_shape) &&
+        base_shape.kind == PSX_TYPE_ARRAY)
+      mark_direct_assignment_target(context, syntax->lhs);
+    return;
+  }
   if (syntax->kind == ND_MEMBER_ACCESS) {
     const node_member_access_t *access =
         (const node_member_access_t *)syntax;
