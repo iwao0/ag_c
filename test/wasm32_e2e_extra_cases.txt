@@ -817,6 +817,7 @@ probes_found_bugs/pointer_constant_cast_wrapper.c
 probes_found_bugs/ptrptr_deref_subscript_member.c
 probes_found_bugs/typedef_void_funcptr_param.c
 probes_found_bugs/void_cast_wrapper_side_effect.c
+probes_found_bugs/hir_ir_dynamic_capacity_boundaries.c
 flex_array/union_contains_flex.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c

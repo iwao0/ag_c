@@ -1,5 +1,8 @@
 #include "hir_ir_builder_internal.h"
 
+#include <stdint.h>
+#include <stdlib.h>
+
 static int append_instruction(
     hir_ir_context_t *context, ir_inst_t *instruction) {
   if (!instruction) {
@@ -71,10 +74,22 @@ int hir_ir_cfg_emit_branch(
 int hir_ir_cfg_push_loop(
     hir_ir_context_t *context, ir_block_t *continue_block,
     ir_block_t *break_block) {
-  if (context->loop_depth >=
-      sizeof(context->loop_targets) / sizeof(context->loop_targets[0])) {
-    context->status = IR_HIR_BUILD_UNSUPPORTED;
-    return 0;
+  if (context->loop_depth == context->loop_capacity) {
+    size_t capacity =
+        context->loop_capacity ? context->loop_capacity * 2 : 16;
+    if (capacity < context->loop_capacity ||
+        capacity > SIZE_MAX / sizeof(*context->loop_targets)) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+    hir_loop_target_t *targets = realloc(
+        context->loop_targets, capacity * sizeof(*targets));
+    if (!targets) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+    context->loop_targets = targets;
+    context->loop_capacity = capacity;
   }
   context->loop_targets[context->loop_depth++] =
       (hir_loop_target_t){continue_block, break_block};
@@ -100,10 +115,7 @@ int hir_ir_cfg_collect_labels(
   if (!node) return 1;
   if (psx_hir_node_kind(node) == PSX_HIR_LABEL) {
     int label_id = psx_hir_node_label_id(node);
-    if (label_id <= 0 ||
-        context->label_count >=
-            sizeof(context->label_targets) /
-                sizeof(context->label_targets[0])) {
+    if (label_id <= 0) {
       context->status = IR_HIR_BUILD_INVALID;
       return 0;
     }
@@ -113,6 +125,24 @@ int hir_ir_cfg_collect_labels(
     }
     ir_block_t *block = hir_ir_cfg_new_block(context);
     if (!block) return 0;
+    if (context->label_count == context->label_capacity) {
+      size_t capacity =
+          context->label_capacity
+              ? context->label_capacity * 2 : 32;
+      if (capacity < context->label_capacity ||
+          capacity > SIZE_MAX / sizeof(*context->label_targets)) {
+        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+        return 0;
+      }
+      hir_label_target_t *targets = realloc(
+          context->label_targets, capacity * sizeof(*targets));
+      if (!targets) {
+        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+        return 0;
+      }
+      context->label_targets = targets;
+      context->label_capacity = capacity;
+    }
     context->label_targets[context->label_count++] =
         (hir_label_target_t){label_id, block};
   }

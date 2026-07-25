@@ -1535,6 +1535,7 @@ static const test_case_t test_cases[] = {
     {"probes", "zero_width_unnamed_bitfield_initializer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/zero_width_unnamed_bitfield_initializer.c", 0, 0},
     {"probes", "mixed_base_bitfield_tail_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mixed_base_bitfield_tail_layout.c", 0, 0},
     {"probes", "packed_bitfield_tail_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/packed_bitfield_tail_layout.c", 0, 0},
+    {"probes", "hir_ir_dynamic_capacity_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/hir_ir_dynamic_capacity_boundaries.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

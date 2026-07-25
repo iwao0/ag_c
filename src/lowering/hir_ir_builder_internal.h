@@ -44,14 +44,18 @@ typedef struct {
   const ag_continuation_options_t *continuation;
   const psx_hir_node_t *continuation_while;
   int returns_void;
-  hir_local_slot_t local_slots[512];
+  hir_local_slot_t *local_slots;
   size_t local_slot_count;
-  hir_loop_target_t loop_targets[32];
+  size_t local_slot_capacity;
+  hir_loop_target_t *loop_targets;
   size_t loop_depth;
-  hir_switch_target_t switch_targets[16];
+  size_t loop_capacity;
+  hir_switch_target_t **switch_targets;
   size_t switch_depth;
-  hir_label_target_t label_targets[128];
+  size_t switch_capacity;
+  hir_label_target_t *label_targets;
   size_t label_count;
+  size_t label_capacity;
 } hir_ir_context_t;
 
 const psx_hir_node_t *hir_ir_child_for_edge(

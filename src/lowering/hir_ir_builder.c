@@ -242,15 +242,36 @@ int hir_ir_find_local_address(
   return -1;
 }
 
+static int reserve_local_slots(
+    hir_ir_context_t *context, size_t required) {
+  if (required <= context->local_slot_capacity) return 1;
+  size_t capacity =
+      context->local_slot_capacity
+          ? context->local_slot_capacity * 2 : 32;
+  if (capacity < required) capacity = required;
+  if (capacity < context->local_slot_capacity ||
+      capacity > SIZE_MAX / sizeof(*context->local_slots)) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  hir_local_slot_t *slots = realloc(
+      context->local_slots, capacity * sizeof(*slots));
+  if (!slots) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  context->local_slots = slots;
+  context->local_slot_capacity = capacity;
+  return 1;
+}
+
 int hir_ir_local_storage_address(
     hir_ir_context_t *context, int object_offset, int size, int align) {
   int existing = hir_ir_find_local_address(context, object_offset);
   if (existing >= 0) return existing;
-  if (context->local_slot_count >=
-      sizeof(context->local_slots) / sizeof(context->local_slots[0])) {
-    context->status = IR_HIR_BUILD_UNSUPPORTED;
+  if (!reserve_local_slots(
+          context, context->local_slot_count + 1))
     return -1;
-  }
   if (size <= 0 || align <= 0 ||
       (align > 16 && size > INT_MAX - align)) {
     context->status = IR_HIR_BUILD_UNSUPPORTED;
@@ -776,6 +797,33 @@ static int set_continuation_function_metadata(
   return 1;
 }
 
+static void dispose_hir_ir_context_storage(
+    hir_ir_context_t *context) {
+  if (!context) return;
+  for (size_t i = 0; i < context->switch_depth; i++) {
+    hir_switch_target_t *target = context->switch_targets[i];
+    if (!target) continue;
+    free(target->cases);
+    free(target);
+  }
+  free(context->local_slots);
+  free(context->loop_targets);
+  free(context->switch_targets);
+  free(context->label_targets);
+  context->local_slots = NULL;
+  context->local_slot_count = 0;
+  context->local_slot_capacity = 0;
+  context->loop_targets = NULL;
+  context->loop_depth = 0;
+  context->loop_capacity = 0;
+  context->switch_targets = NULL;
+  context->switch_depth = 0;
+  context->switch_capacity = 0;
+  context->label_targets = NULL;
+  context->label_count = 0;
+  context->label_capacity = 0;
+}
+
 
 
 ir_module_t *ir_build_function_module_from_hir(
@@ -929,16 +977,19 @@ ir_module_t *ir_build_function_module_from_hir(
       !hir_ir_emit_vla_parameter_strides(&context, root) ||
       !preallocate_local_storage(&context, body) ||
       !hir_ir_cfg_collect_labels(&context, body)) {
+    dispose_hir_ir_context_storage(&context);
     ir_module_free(context.module);
     if (status) *status = context.status;
     return NULL;
   }
   if (!hir_ir_build_statement(&context, body)) {
+    dispose_hir_ir_context_storage(&context);
     ir_module_free(context.module);
     if (status) *status = context.status;
     return NULL;
   }
   if (!append_implicit_return(&context, name, name_length)) {
+    dispose_hir_ir_context_storage(&context);
     ir_module_free(context.module);
     if (status) *status = context.status;
     return NULL;
@@ -948,10 +999,13 @@ ir_module_t *ir_build_function_module_from_hir(
        (context.function->cur_block == context.function->entry ||
         hir_ir_cfg_block_has_predecessor(
             context.function, context.function->cur_block)))) {
+    dispose_hir_ir_context_storage(&context);
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_UNSUPPORTED;
     return NULL;
   }
+  ir_module_t *module = context.module;
+  dispose_hir_ir_context_storage(&context);
   if (status) *status = IR_HIR_BUILD_OK;
-  return context.module;
+  return module;
 }

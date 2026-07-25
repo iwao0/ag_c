@@ -31,6 +31,28 @@ static void dispose_switch_target(hir_switch_target_t *target) {
   memset(target, 0, sizeof(*target));
 }
 
+static int reserve_switch_targets(
+    hir_ir_context_t *context, size_t required) {
+  if (required <= context->switch_capacity) return 1;
+  size_t capacity =
+      context->switch_capacity ? context->switch_capacity * 2 : 8;
+  if (capacity < required) capacity = required;
+  if (capacity < context->switch_capacity ||
+      capacity > SIZE_MAX / sizeof(*context->switch_targets)) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  hir_switch_target_t **targets = realloc(
+      context->switch_targets, capacity * sizeof(*targets));
+  if (!targets) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  context->switch_targets = targets;
+  context->switch_capacity = capacity;
+  return 1;
+}
+
 static int collect_switch_targets(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     hir_switch_target_t *target) {
@@ -64,7 +86,7 @@ static ir_block_t *current_case_block(
     const hir_ir_context_t *context, const psx_hir_node_t *node) {
   if (context->switch_depth == 0) return NULL;
   const hir_switch_target_t *target =
-      &context->switch_targets[context->switch_depth - 1];
+      context->switch_targets[context->switch_depth - 1];
   if (node == target->default_node) return target->default_block;
   for (size_t i = 0; i < target->case_count; i++) {
     if (target->cases[i].node == node) return target->cases[i].block;
@@ -78,9 +100,7 @@ static int build_switch_statement(
       context, node, PSX_HIR_EDGE_LHS, 0);
   const psx_hir_node_t *body = hir_ir_child_for_edge(
       context, node, PSX_HIR_EDGE_RHS, 0);
-  if (!control || !body || context->switch_depth >=
-      sizeof(context->switch_targets) /
-          sizeof(context->switch_targets[0])) {
+  if (!control || !body) {
     context->status = IR_HIR_BUILD_UNSUPPORTED;
     return 0;
   }
@@ -89,9 +109,15 @@ static int build_switch_statement(
       !hir_ir_is_integer_type(control_value.type))
     return 0;
 
-  hir_switch_target_t *target =
-      &context->switch_targets[context->switch_depth++];
-  memset(target, 0, sizeof(*target));
+  if (!reserve_switch_targets(
+          context, context->switch_depth + 1))
+    return 0;
+  hir_switch_target_t *target = calloc(1, sizeof(*target));
+  if (!target) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  context->switch_targets[context->switch_depth++] = target;
   target->end_block = hir_ir_cfg_new_block(context);
   if (!target->end_block ||
       !collect_switch_targets(context, body, target)) {
@@ -142,11 +168,15 @@ static int build_switch_statement(
   }
   dispose_switch_target(target);
   context->switch_depth--;
+  context->switch_targets[context->switch_depth] = NULL;
+  free(target);
   return 1;
 
 fail:
   dispose_switch_target(target);
   context->switch_depth--;
+  context->switch_targets[context->switch_depth] = NULL;
+  free(target);
   return 0;
 }
 

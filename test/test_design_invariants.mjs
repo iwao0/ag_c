@@ -12126,6 +12126,35 @@ if (/hir_case_target_t\s+cases\s*\[/.test(
   );
 }
 
+if (/\bhir_local_slot_t\s+local_slots\s*\[/.test(
+      hirIrBuilderInternalHeader,
+    ) ||
+    /\bhir_loop_target_t\s+loop_targets\s*\[/.test(
+      hirIrBuilderInternalHeader,
+    ) ||
+    /\bhir_switch_target_t\s+switch_targets\s*\[/.test(
+      hirIrBuilderInternalHeader,
+    ) ||
+    /\bhir_label_target_t\s+label_targets\s*\[/.test(
+      hirIrBuilderInternalHeader,
+    ) ||
+    !/\bhir_local_slot_t\s*\*local_slots\s*;[^]*?\bsize_t\s+local_slot_capacity\s*;/.test(
+      hirIrBuilderInternalHeader,
+    ) ||
+    !/\bhir_loop_target_t\s*\*loop_targets\s*;[^]*?\bsize_t\s+loop_capacity\s*;/.test(
+      hirIrBuilderInternalHeader,
+    ) ||
+    !/\bhir_switch_target_t\s*\*\*switch_targets\s*;[^]*?\bsize_t\s+switch_capacity\s*;/.test(
+      hirIrBuilderInternalHeader,
+    ) ||
+    !/\bhir_label_target_t\s*\*label_targets\s*;[^]*?\bsize_t\s+label_capacity\s*;/.test(
+      hirIrBuilderInternalHeader,
+    )) {
+  throw new Error(
+    "HIR-to-IR local, loop, switch, and label storage must grow dynamically",
+  );
+}
+
 const wasmMachineIrSource = await readFile(
   "src/arch/wasm32/wasm32_machine_ir.c",
   "utf8",
