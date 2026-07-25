@@ -122,6 +122,8 @@ enum {
   DIRECT_IDENTIFIER_USAGE_ADDRESS_TAKEN = 1u << 1,
   DIRECT_IDENTIFIER_USAGE_INITIALIZED = 1u << 2,
   DIRECT_IDENTIFIER_USAGE_UNEVALUATED = 1u << 3,
+  DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE = 1u << 4,
+  DIRECT_IDENTIFIER_USAGE_DOES_NOT_REQUIRE_INITIALIZED_VALUE = 1u << 5,
 };
 
 struct direct_identifier_binding_t {
@@ -226,6 +228,7 @@ typedef struct {
   psx_resolved_hir_build_failure_t *failure;
   const psx_scope_lookup_point_t *identifier_lookup_point;
   direct_identifier_binding_t *identifier_bindings;
+  direct_identifier_binding_t *identifier_bindings_tail;
   direct_cast_binding_t *cast_bindings;
   direct_call_binding_t *call_bindings;
   direct_generic_binding_t *generic_bindings;
@@ -243,6 +246,7 @@ typedef struct {
   unsigned int switch_depth;
   unsigned int block_depth;
   unsigned int unevaluated_depth;
+  unsigned int track_initialization_order;
   char *function_name;
   int function_name_len;
   psx_qual_type_t function_return_qual_type;
@@ -326,7 +330,8 @@ static int preflight_direct_lvalue(
     const node_t *syntax, psx_qual_type_t *qual_type);
 static void mark_direct_assignment_target(
     direct_resolution_context_t *context,
-    const node_t *syntax);
+    const node_t *syntax,
+    int reads_prior_value);
 static int resolve_direct_compound_literal(
     direct_resolution_context_t *context,
     const node_compound_literal_t *compound,
@@ -534,7 +539,7 @@ static void mark_direct_out_argument_initialization(
   while (argument && argument->kind == ND_SOURCE_CAST)
     argument = argument->lhs;
   if (argument && argument->kind == ND_ADDRESS_OF)
-    mark_direct_assignment_target(context, argument->lhs);
+    mark_direct_assignment_target(context, argument->lhs, 0);
 }
 
 static int resolve_direct_function_call(
@@ -1022,10 +1027,16 @@ static int resolve_direct_identifier_with_usage(
            context->identifier_bindings;
        binding; binding = binding->next) {
     if (binding->syntax != identifier) continue;
-    if (context->unevaluated_depth == 0)
+    if (context->unevaluated_depth == 0) {
       binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_EVALUATED;
-    else
+      if (context->track_initialization_order &&
+          !(binding->usage_flags &
+            DIRECT_IDENTIFIER_USAGE_DOES_NOT_REQUIRE_INITIALIZED_VALUE))
+        binding->usage_flags |=
+            DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE;
+    } else {
       binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_UNEVALUATED;
+    }
     if (resolution) *resolution = binding->resolution;
     return 1;
   }
@@ -1087,11 +1098,18 @@ static int resolve_direct_identifier_with_usage(
       .syntax = identifier,
       .resolution = resolved,
       .usage_flags = context->unevaluated_depth == 0
-                         ? DIRECT_IDENTIFIER_USAGE_EVALUATED
+                         ? DIRECT_IDENTIFIER_USAGE_EVALUATED |
+                               (context->track_initialization_order
+                                    ? DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE
+                                    : 0)
                          : DIRECT_IDENTIFIER_USAGE_UNEVALUATED,
-      .next = context->identifier_bindings,
+      .next = NULL,
   };
-  context->identifier_bindings = binding;
+  if (!context->identifier_bindings)
+    context->identifier_bindings = binding;
+  else
+    context->identifier_bindings_tail->next = binding;
+  context->identifier_bindings_tail = binding;
   if (resolution) *resolution = resolved;
   return 1;
 }
@@ -2113,14 +2131,16 @@ static int direct_null_pointer_constant(
 
 static void mark_direct_assignment_target(
     direct_resolution_context_t *context,
-    const node_t *syntax) {
+    const node_t *syntax,
+    int reads_prior_value) {
   if (!context || !syntax || context->unevaluated_depth != 0)
     return;
   if (syntax->kind == ND_GENERIC_SELECTION) {
     const node_t *selected = direct_selected_expression(
         context, syntax);
     if (selected)
-      mark_direct_assignment_target(context, selected);
+      mark_direct_assignment_target(
+          context, selected, reads_prior_value);
     return;
   }
   if (syntax->kind == ND_IDENTIFIER) {
@@ -2128,13 +2148,21 @@ static void mark_direct_assignment_target(
         direct_identifier_binding(
             context, (const node_identifier_t *)syntax);
     if (binding &&
-        binding->resolution.symbol.kind == PSX_IDENTIFIER_LOCAL)
+        binding->resolution.symbol.kind == PSX_IDENTIFIER_LOCAL) {
+      if (!reads_prior_value) {
+        binding->usage_flags &=
+            ~DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE;
+        binding->usage_flags |=
+            DIRECT_IDENTIFIER_USAGE_DOES_NOT_REQUIRE_INITIALIZED_VALUE;
+      }
       binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_INITIALIZED;
+    }
     return;
   }
   if (syntax->kind == ND_UNARY_DEREF && syntax->lhs &&
       syntax->lhs->kind == ND_ADDRESS_OF)
-    mark_direct_assignment_target(context, syntax->lhs->lhs);
+    mark_direct_assignment_target(
+        context, syntax->lhs->lhs, reads_prior_value);
   if (syntax->kind == ND_SUBSCRIPT) {
     psx_qual_type_t base_type = {
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
@@ -2144,14 +2172,16 @@ static void mark_direct_assignment_target(
         direct_describe_qual_type(
             context, base_type, &base_shape) &&
         base_shape.kind == PSX_TYPE_ARRAY)
-      mark_direct_assignment_target(context, syntax->lhs);
+      mark_direct_assignment_target(
+          context, syntax->lhs, reads_prior_value);
     return;
   }
   if (syntax->kind == ND_MEMBER_ACCESS) {
     const node_member_access_t *access =
         (const node_member_access_t *)syntax;
     if (!access->from_pointer)
-      mark_direct_assignment_target(context, syntax->lhs);
+      mark_direct_assignment_target(
+          context, syntax->lhs, reads_prior_value);
   }
 }
 
@@ -2173,8 +2203,13 @@ static void mark_direct_address_taken(
         direct_identifier_binding(
             context, (const node_identifier_t *)syntax);
     if (binding &&
-        binding->resolution.symbol.kind == PSX_IDENTIFIER_LOCAL)
+        binding->resolution.symbol.kind == PSX_IDENTIFIER_LOCAL) {
+      binding->usage_flags &=
+          ~DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE;
+      binding->usage_flags |=
+          DIRECT_IDENTIFIER_USAGE_DOES_NOT_REQUIRE_INITIALIZED_VALUE;
       binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_ADDRESS_TAKEN;
+    }
     return;
   }
   if (syntax->kind == ND_MEMBER_ACCESS) {
@@ -2635,7 +2670,7 @@ static int preflight_direct_expression_impl(
           context,
           PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_INVALID_OPERAND_TYPE,
           syntax);
-    mark_direct_assignment_target(context, syntax->lhs);
+    mark_direct_assignment_target(context, syntax->lhs, 1);
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
@@ -2666,7 +2701,9 @@ static int preflight_direct_expression_impl(
     if (resolution.status != PSX_ASSIGNMENT_TYPES_OK)
       return note_direct_assignment_rejection(
           context, syntax, target_type, resolution.status);
-    mark_direct_assignment_target(context, syntax->lhs);
+    mark_direct_assignment_target(
+        context, syntax->lhs,
+        syntax->kind == ND_COMPOUND_ASSIGN);
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
@@ -3293,6 +3330,12 @@ static void record_direct_identifier_usage(
       ps_decl_record_lvar_usage_in_region_in(
           context->local_registry, local,
           PSX_LVAR_USAGE_ADDRESS_TAKEN, NULL);
+    }
+    if (binding->usage_flags &
+        DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE) {
+      ps_decl_record_lvar_usage_in_region_in(
+          context->local_registry, local,
+          PSX_LVAR_USAGE_REQUIRES_INITIALIZED_VALUE, NULL);
     }
     if (binding->usage_flags &
         DIRECT_IDENTIFIER_USAGE_INITIALIZED) {
@@ -8078,6 +8121,7 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
       .function_name_len = header.name_len,
       .function_return_qual_type = return_qual_type,
       .enforce_function_return_type = 1,
+      .track_initialization_order = 1,
   };
   psx_semantic_node_builder_init(
       &context.builder, ps_ctx_arena(semantic_context),

@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-25（atomic aggregate値境界まで）
+最終更新: 2026-07-26（read-modify-write usage診断境界まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -360,6 +360,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | `errno.h` の必須macro・modifiable lvalue境界 | 🔧 | errno_macro_contract_boundaries | `EDOM`/`EILSEQ`/`ERANGE`が正の整数定数式として`#if`・enum・配列boundで使えること、`errno`が変更可能な`int` lvalueであり`&errno`と間接代入が成立することをnative/WAT/objectで固定する。Typed HIRのW3013自己比較判定は同じ変数参照だけに限定し、`_Generic`や`sizeof`から得た同値の定数同士を自己比較と誤診断しない |
 | aggregate配列member代入のlocal usage診断境界 | 🔧 | aggregate_array_member_usage_boundaries | `s.values[i][j]`や`s.ops[i]`への代入は直接member代入と同様に基底local aggregateを初期化するが、AST上は`ND_SUBSCRIPT`を挟むためW3004が残っていた。subscript基底の宣言型が配列の場合だけ代入先を遡り、多次元配列・関数pointer配列の全要素書込み後の読出しを無警告でnative/WAT/object実行する。未初期化member読出しと未初期化pointerの`p[i]`代入は引き続きW3004にする |
 | out-parameter経由のlocal初期化診断境界 | 🔧 | out_parameter_initialization_usage_boundaries | `set(&local)`の固定引数が非const pointeeへのpointerならcalleeがobjectを書き込めるため、呼出し後の読出しをW3004にしていたfalse-positiveを解消する。canonical function parameter型からpointee qualifierを確認し、直接`&local`（明示castで包まれた形を含む）だけを初期化可能として記録する。`const T *`への引渡し、未初期化pointer値の使用、単なるアドレス保存は引き続き警告対象にする |
+| read-modify-writeのlocal初期化順序診断境界 | 🔧 | read_modify_write_usage_boundaries | `int x; x += 1;`や`++x`が左辺を単純代入と同じ初期化済みにしてW3004を落としていた。identifier usageをsource順に記録し、値を要求するreadとwrite-only lvalueを分離して、compound assignment・increment/decrementと「read後に単純代入」のprior-value不足を警告する。宣言初期化・先行する単純代入・parameter・static localのread-modify-writeは無警告のまま、scalar・aggregate member・配列要素・pointer dereferenceの実行結果をnative/WAT/objectで固定する。function-wide解析より前のVLA bound解決は順序診断eventを記録せず、初期化済みboundへの誤警告も防ぐ |
 | `stdlib.h` algorithm APIの入れ子callback関数pointer境界 | ✅ | stdlib_algorithm_function_pointer_boundaries | `qsort`/`bsearch`を「比較callback関数pointerを受け取る関数pointer」へ代入し、APIとcallbackの二重間接呼出し、重複要素、検索hit/miss、要素数0で比較を行わない境界をnative/WAT/objectで検証する |
 | `stdlib.h` 整数APIの関数pointer・aggregate戻りABI境界 | ✅ | stdlib_integer_function_pointer_abi_boundaries | `abs`/`labs`/`llabs`と`div`/`ldiv`/`lldiv`の標準signatureを関数pointer代入で固定し、負数の0方向丸め・剰余符号、8-byteと16-byte aggregate戻りをnative/WAT/objectで検証する。Apple ARM64のregister戻りとWasmのhidden return pointerを独立した標準API群から回帰確認し、native統合E2Eのassembly名前空間化でも6 symbolを外部libcとして保持する |
 | `stdlib.h` 文字列変換APIの関数pointer・範囲境界 | ✅ | stdlib_conversion_function_pointer_boundaries | `atoi`/`atol`/`atoll`/`atof`と整数・浮動小数の全`strto*`を標準signatureの関数pointer越しに呼び、符号・基数・指数・`endptr`・変換不能入力を固定する。64-bit signed/unsigned overflowでは全桁を消費し、上限/下限へ飽和して`errno == ERANGE`となることをnative/WAT/objectで検証する。WAT standaloneの共通変換helperはsigned/unsigned別のlimit・cutoff・cutlimをunsigned演算で求め、wrap前にoverflowを記録する |

@@ -457,6 +457,8 @@ psx_lvar_registry_view_t ps_lvar_registry_view(const lvar_t *var) {
       .is_unevaluated_used = var->is_unevaluated_used,
       .is_address_taken = var->is_address_taken,
       .is_initialized = var->is_initialized,
+      .was_read_before_initialized =
+          var->was_read_before_initialized,
       .suppress_unreachable_warnings =
           var->suppress_unreachable_warnings,
       .is_param = var->is_param,
@@ -656,7 +658,8 @@ void ps_decl_replay_lvar_usage_events_in(
     var->is_used = 0;
     var->is_unevaluated_used = 0;
     var->is_address_taken = 0;
-    var->is_initialized = 0;
+    var->is_initialized = var->is_param || var->is_static_local;
+    var->was_read_before_initialized = 0;
     var->suppress_unreachable_warnings = 0;
     var->used_count = 0;
     if (var->decl_region)
@@ -679,6 +682,10 @@ void ps_decl_replay_lvar_usage_events_in(
         if (var->used_count > 0) var->used_count--;
         var->is_used = var->used_count > 0;
         var->is_address_taken = 1;
+        break;
+      case PSX_LVAR_USAGE_REQUIRES_INITIALIZED_VALUE:
+        if (!var->is_initialized)
+          var->was_read_before_initialized = 1;
         break;
       case PSX_LVAR_USAGE_INITIALIZED:
         var->is_initialized = 1;

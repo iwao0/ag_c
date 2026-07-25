@@ -17,6 +17,7 @@ struct lvar_t {
   unsigned int suppress_unreachable_warnings : 1;
   unsigned int is_param : 1;
   unsigned int is_initialized : 1;
+  unsigned int was_read_before_initialized : 1;
   unsigned int is_static_local : 1;
   unsigned int is_register : 1;
   struct global_var_t *static_global;

@@ -763,6 +763,7 @@ static const test_case_t test_cases[] = {
     {"probes", "errno_macro_contract_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/errno_macro_contract_boundaries.c", 0, 0},
     {"probes", "aggregate_array_member_usage_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_array_member_usage_boundaries.c", 0, 0},
     {"probes", "out_parameter_initialization_usage_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/out_parameter_initialization_usage_boundaries.c", 0, 0},
+    {"probes", "read_modify_write_usage_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/read_modify_write_usage_boundaries.c", 0, 0},
     {"probes", "stdlib_algorithm_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_algorithm_function_pointer_boundaries.c", 0, 0},
     {"probes", "stdlib_integer_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_integer_function_pointer_abi_boundaries.c", 0, 0},
     {"probes", "stdlib_conversion_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_conversion_function_pointer_boundaries.c", 0, 0},

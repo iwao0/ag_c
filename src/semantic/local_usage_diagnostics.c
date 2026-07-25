@@ -48,7 +48,9 @@ void psx_emit_recorded_local_usage_warnings_in(
           diag_warn_message_for_in(
               diagnostics, DIAG_WARN_PARSER_UNUSED_VARIABLE),
           view.name_len, view.name);
-    } else if (view.is_used && !view.is_initialized &&
+    } else if (view.is_used &&
+               (!view.is_initialized ||
+                view.was_read_before_initialized) &&
                !view.is_param && !view.is_array) {
       diag_warn_tokf_in(
           diagnostics, DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE,

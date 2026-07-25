@@ -17411,6 +17411,36 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok_with_message(test_suite_session,
       "void inspect(const int *p){(void)p;} int main(void){int x; inspect(&x); return x;}",
       "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int main(void){int x; x+=1; return x;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int main(void){int x; ++x; return x;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "struct S{int x;}; int main(void){struct S s; s.x++; return s.x;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int main(void){int source; int result=source; source=9; return result;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){int x; x=1; x+=2; return x;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){int x=1; ++x; return x;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int increment(int x){return ++x;} int main(void){return increment(1);}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){static int x; return ++x;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){int n=2; int values[n]; values[0]=3; return values[0];}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int first(int n, int values[n]){return values[0]+n;} int main(void){int values[1]={2}; return first(1,values);}",
+      "W3004");
   expect_parse_ok_without_message(test_suite_session,
       "int main(void){ struct B { unsigned a:3; unsigned b:5; }; struct B s; s.a=5; s.b=10; return s.a; }",
       "W3004");

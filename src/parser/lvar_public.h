@@ -15,6 +15,7 @@ typedef struct {
   int is_unevaluated_used;
   int is_address_taken;
   int is_initialized;
+  int was_read_before_initialized;
   int suppress_unreachable_warnings;
   int is_param;
   int is_array;
