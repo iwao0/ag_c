@@ -9216,7 +9216,9 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
         &transaction, context.function_declarations, 1);
     return PSX_SYNTAX_TYPED_HIR_FAILED;
   }
-  size_t child_count = (size_t)header.parameter_count + 1;
+  size_t child_count =
+      (size_t)header.parameter_count +
+      (size_t)header.parameter_bound_expression_count + 1;
   psx_semantic_node_t **children = arena_alloc_in(
       ps_ctx_arena(semantic_context),
       child_count * sizeof(*children));
@@ -9268,8 +9270,27 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
       return PSX_SYNTAX_TYPED_HIR_FAILED;
     }
   }
-  children[header.parameter_count] = body;
-  edges[header.parameter_count] = PSX_HIR_EDGE_FUNCTION_BODY;
+  for (int i = 0;
+       i < header.parameter_bound_expression_count; i++) {
+    size_t child_index = (size_t)header.parameter_count + i;
+    const psx_typed_hir_tree_t *bound =
+        ps_ctx_semantic_expression_in(
+            semantic_context,
+            header.parameter_bound_expression_ids[i]);
+    children[child_index] =
+        bound ? (psx_semantic_node_t *)bound->root : NULL;
+    edges[child_index] = PSX_HIR_EDGE_VLA_DIMENSION;
+    if (!children[child_index]) {
+      rollback_direct_function_resolution(
+          &transaction, context.function_declarations, 1);
+      return PSX_SYNTAX_TYPED_HIR_FAILED;
+    }
+  }
+  size_t body_index =
+      (size_t)header.parameter_count +
+      (size_t)header.parameter_bound_expression_count;
+  children[body_index] = body;
+  edges[body_index] = PSX_HIR_EDGE_FUNCTION_BODY;
   psx_hir_node_spec_t function_spec = {
       .kind = PSX_HIR_FUNCTION,
       .attached_qual_type = header.signature_qual_type,

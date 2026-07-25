@@ -52,6 +52,7 @@ static const success_case_t success_cases[] = {
     {42, "#if __STDC_VERSION__ >= 201112L\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     {42, "#if __STDC_HOSTED__ == 1\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     {42, "#if __STDC_NO_THREADS__ == 1\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
+    {42, "#if __STDC_UTF_16__ == 1 && __STDC_UTF_32__ == 1\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     {42, "#if !defined(__STDC_NO_ATOMICS__) && !defined(__STDC_NO_COMPLEX__) && !defined(__STDC_NO_VLA__)\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     {1,  "int main() { return __LINE__; }"},
     {42, "int main() { char *f = __FILE__; return f[0] ? 42 : 0; }"},

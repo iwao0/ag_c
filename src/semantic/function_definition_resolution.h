@@ -1,6 +1,7 @@
 #ifndef SEMANTIC_FUNCTION_DEFINITION_RESOLUTION_H
 #define SEMANTIC_FUNCTION_DEFINITION_RESOLUTION_H
 
+#include "expression_identity.h"
 #include "../type_system/type_ids.h"
 
 typedef struct psx_global_registry_t psx_global_registry_t;
@@ -18,6 +19,8 @@ typedef struct {
   psx_qual_type_t signature_qual_type;
   lvar_t **parameters;
   int parameter_count;
+  psx_semantic_expr_id_t *parameter_bound_expression_ids;
+  int parameter_bound_expression_count;
   lvar_t *locals;
   int is_static;
   int is_variadic;

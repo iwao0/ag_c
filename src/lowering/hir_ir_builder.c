@@ -925,6 +925,7 @@ ir_module_t *ir_build_function_module_from_hir(
   }
   if ((!context.continuation && !hir_ir_setup_parameter_bindings(
           &context, root, &context.function->function_type)) ||
+      !hir_ir_emit_parameter_array_bounds(&context, root) ||
       !hir_ir_emit_vla_parameter_strides(&context, root) ||
       !preallocate_local_storage(&context, body) ||
       !hir_ir_cfg_collect_labels(&context, body)) {

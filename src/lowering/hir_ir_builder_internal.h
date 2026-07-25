@@ -121,6 +121,8 @@ ir_val_t hir_ir_build_vla_allocation(
     hir_ir_context_t *context, const psx_hir_node_t *node);
 int hir_ir_emit_vla_parameter_strides(
     hir_ir_context_t *context, const psx_hir_node_t *root);
+int hir_ir_emit_parameter_array_bounds(
+    hir_ir_context_t *context, const psx_hir_node_t *root);
 ir_val_t hir_ir_emit_integer_binary(
     hir_ir_context_t *context, ir_op_t op, ir_val_t left,
     ir_val_t right, ir_type_t type);

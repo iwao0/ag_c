@@ -2,6 +2,24 @@
 
 #include <stdlib.h>
 
+int hir_ir_emit_parameter_array_bounds(
+    hir_ir_context_t *context, const psx_hir_node_t *root) {
+  size_t bound_count = hir_ir_child_count_for_edge(
+      root, PSX_HIR_EDGE_VLA_DIMENSION);
+  for (size_t i = 0; i < bound_count; i++) {
+    const psx_hir_node_t *bound = hir_ir_child_for_edge(
+        context, root, PSX_HIR_EDGE_VLA_DIMENSION, i);
+    ir_val_t value = hir_ir_build_expr(context, bound);
+    if (!bound || context->status != IR_HIR_BUILD_OK ||
+        !hir_ir_is_integer_type(value.type)) {
+      if (context->status == IR_HIR_BUILD_OK)
+        context->status = IR_HIR_BUILD_INVALID;
+      return 0;
+    }
+  }
+  return 1;
+}
+
 static int emit_vla_stride_value(
     hir_ir_context_t *context, ir_val_t dimension,
     ir_val_t accumulated, int destination_offset, int slot_size) {

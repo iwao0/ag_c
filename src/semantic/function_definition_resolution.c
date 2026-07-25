@@ -239,11 +239,33 @@ static int resolve_function_definition_header(
     memcpy(resolved_parameters, applied.parameter_vars,
            (size_t)applied.nargs * sizeof(*resolved_parameters));
   }
+  psx_semantic_expr_id_t *parameter_bound_expression_ids = NULL;
+  if (applied.parameter_bound_expression_count > 0) {
+    parameter_bound_expression_ids = arena_alloc_in(
+        ps_ctx_arena(semantic_context),
+        (size_t)applied.parameter_bound_expression_count *
+            sizeof(*parameter_bound_expression_ids));
+    if (!parameter_bound_expression_ids) {
+      ps_diag_ctx_in(
+          diagnostics, definition->diagnostic_token, "funcdef",
+          "parameter array bound expression allocation failed");
+      return 0;
+    }
+    memcpy(
+        parameter_bound_expression_ids,
+        applied.parameter_bound_expression_ids,
+        (size_t)applied.parameter_bound_expression_count *
+            sizeof(*parameter_bound_expression_ids));
+  }
   resolution->name = name->str;
   resolution->name_len = name->len;
   resolution->signature_qual_type = signature;
   resolution->parameters = resolved_parameters;
   resolution->parameter_count = applied.nargs;
+  resolution->parameter_bound_expression_ids =
+      parameter_bound_expression_ids;
+  resolution->parameter_bound_expression_count =
+      applied.parameter_bound_expression_count;
   resolution->locals = ps_decl_get_storage_objects_in(local_registry);
   resolution->is_static = ps_function_symbol_has_internal_linkage(
       ps_ctx_find_function_symbol_in(
@@ -256,6 +278,7 @@ static int resolve_function_definition_header(
     local_storage_reserve_prefix(lowering_context, 64);
   free(applied.parameter_vars);
   free(applied.parameter_qual_types);
+  free(applied.parameter_bound_expression_ids);
   return 1;
 }
 

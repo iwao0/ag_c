@@ -1124,6 +1124,8 @@ static void pp_init_predefined_macros(
   add_int_macro(context, "__STDC_VERSION__", 201112LL);
   add_int_macro(context, "__STDC_HOSTED__", 1);
   add_int_macro(context, "__STDC_NO_THREADS__", 1);
+  add_int_macro(context, "__STDC_UTF_16__", 1);
+  add_int_macro(context, "__STDC_UTF_32__", 1);
   add_float_macro(
       context, "__AGC_HUGE_VAL__", __builtin_huge_val(),
       TK_FLOAT_KIND_DOUBLE, TK_FLOAT_SUFFIX_NONE);

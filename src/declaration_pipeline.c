@@ -742,6 +742,36 @@ static const psx_runtime_array_bound_t *parameter_bound_for_op(
   return NULL;
 }
 
+static void append_outer_parameter_bound_evaluation(
+    psx_semantic_context_t *semantic_context,
+    const psx_runtime_declarator_application_t *application,
+    psx_function_definition_pipeline_result_t *result,
+    token_t *diagnostic_token) {
+  if (!semantic_context || !application || !result ||
+      application->shape.count <= 0 ||
+      application->shape.ops[0].kind != PSX_DECL_OP_ARRAY)
+    return;
+  const psx_runtime_array_bound_t *bound =
+      parameter_bound_for_op(application, 0);
+  if (!bound || bound->is_constant) return;
+  if (bound->expression_id == PSX_SEMANTIC_EXPR_ID_INVALID ||
+      !ps_ctx_semantic_expression_in(
+          semantic_context, bound->expression_id)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "param", "parameter array bound expression lookup failed");
+  }
+  int count = result->parameter_bound_expression_count;
+  result->parameter_bound_expression_ids = pda_xreallocarray_in(
+      ps_ctx_diagnostics(semantic_context),
+      result->parameter_bound_expression_ids,
+      (size_t)count + 1,
+      sizeof(*result->parameter_bound_expression_ids));
+  result->parameter_bound_expression_ids[count] =
+      bound->expression_id;
+  result->parameter_bound_expression_count++;
+}
+
 static int resolve_definition_parameter(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t base_qual_type,
@@ -833,6 +863,9 @@ static int append_definition_parameter(
       semantic_context, global_registry, local_registry,
       &parameter->declarator, &applied, -1,
       parameter_lookup_point);
+  append_outer_parameter_bound_evaluation(
+      semantic_context, &applied, result,
+      parameter->declarator.diagnostic_token);
   token_ident_t *name = parameter->declarator.identifier;
   int has_pointer = ps_declarator_shape_count_ops(
       &applied.shape, PSX_DECL_OP_POINTER) > 0;

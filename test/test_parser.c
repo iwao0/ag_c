@@ -2428,6 +2428,72 @@ static void test_typed_hir_vla_parameter_metadata_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_typed_hir_parameter_array_bound_evaluation_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_parameter_array_bound_evaluation_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "int observe_bound(int extent) { return extent; } "
+      "int bounded_parameter("
+      "int extent, int values[static observe_bound(extent)]) { "
+      "return values[0]; }"));
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *function = find_test_named_hir_node(
+      hir, PSX_HIR_FUNCTION, "bounded_parameter", 0);
+  ASSERT_TRUE(function != NULL);
+  psx_hir_node_id_t function_id = PSX_HIR_NODE_ID_INVALID;
+  const psx_hir_node_t *bound = NULL;
+  int bound_count = 0;
+  for (size_t i = 0; i < psx_hir_node_child_count(function); i++) {
+    if (psx_hir_node_child_edge_at(function, i) !=
+        PSX_HIR_EDGE_VLA_DIMENSION)
+      continue;
+    bound = psx_hir_module_lookup(
+        hir, psx_hir_node_child_at(function, i));
+    bound_count++;
+  }
+  ASSERT_EQ(1, bound_count);
+  ASSERT_TRUE(bound != NULL);
+  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(bound));
+  for (size_t i = 0; i < psx_hir_module_root_count(hir); i++) {
+    psx_hir_node_id_t candidate_id =
+        psx_hir_module_root_at(hir, i);
+    if (psx_hir_module_lookup(hir, candidate_id) == function) {
+      function_id = candidate_id;
+      break;
+    }
+  }
+  ASSERT_TRUE(function_id != PSX_HIR_NODE_ID_INVALID);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(bound));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, function_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_indirect_vla_parameter_metadata_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_indirect_vla_parameter_metadata_without_ast...\n");
@@ -19735,6 +19801,8 @@ int main() {
   test_typed_hir_pointer_lowering_without_ast(test_suite_session);
   test_typed_hir_post_inc_lowering_without_ast(test_suite_session);
   test_typed_hir_vla_parameter_metadata_without_ast(test_suite_session);
+  test_typed_hir_parameter_array_bound_evaluation_without_ast(
+      test_suite_session);
   test_typed_hir_indirect_vla_parameter_metadata_without_ast(
       test_suite_session);
   test_typed_hir_vla_allocation_without_ast(test_suite_session);

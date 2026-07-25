@@ -78,6 +78,8 @@ typedef struct {
 typedef struct {
   struct lvar_t **parameter_vars;
   psx_qual_type_t *parameter_qual_types;
+  psx_semantic_expr_id_t *parameter_bound_expression_ids;
+  int parameter_bound_expression_count;
   int nargs;
   int has_unnamed_parameter;
   psx_qual_type_t function_qual_type;
