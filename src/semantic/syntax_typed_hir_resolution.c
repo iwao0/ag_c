@@ -64,6 +64,7 @@ typedef struct direct_expression_type_binding_t
 typedef struct direct_case_binding_t direct_case_binding_t;
 typedef struct direct_case_value_t direct_case_value_t;
 typedef struct direct_switch_scope_t direct_switch_scope_t;
+typedef struct direct_break_target_t direct_break_target_t;
 typedef struct direct_vm_scope_marker_t direct_vm_scope_marker_t;
 typedef struct direct_label_scope_state_t direct_label_scope_state_t;
 typedef struct direct_goto_binding_t direct_goto_binding_t;
@@ -153,6 +154,7 @@ struct direct_initialization_snapshot_entry_t {
 
 typedef struct {
   direct_initialization_snapshot_entry_t *entries;
+  unsigned char reachable;
 } direct_initialization_snapshot_t;
 
 struct direct_cast_binding_t {
@@ -221,7 +223,25 @@ struct direct_switch_scope_t {
   direct_switch_scope_t *parent;
   psx_type_shape_t promoted_control_type;
   direct_vm_scope_marker_t *entry_vm_scope;
+  direct_initialization_snapshot_t entry_initialization;
+  const node_t *selected_label;
+  unsigned char selection_is_known;
   unsigned char has_default;
+};
+
+typedef enum {
+  DIRECT_BREAK_TARGET_LOOP = 0,
+  DIRECT_BREAK_TARGET_SWITCH,
+} direct_break_target_kind_t;
+
+struct direct_break_target_t {
+  direct_break_target_kind_t kind;
+  direct_switch_scope_t *switch_scope;
+  direct_break_target_t *parent;
+  direct_initialization_snapshot_t exit_initialization;
+  direct_initialization_snapshot_t continue_initialization;
+  unsigned char has_exit_initialization;
+  unsigned char has_continue_initialization;
 };
 
 struct direct_vm_scope_marker_t {
@@ -232,6 +252,8 @@ struct direct_vm_scope_marker_t {
 struct direct_label_scope_state_t {
   const node_jump_t *syntax;
   direct_vm_scope_marker_t *vm_scope;
+  direct_initialization_snapshot_t incoming_initialization;
+  unsigned char has_incoming_initialization;
 };
 
 struct direct_goto_binding_t {
@@ -260,6 +282,7 @@ typedef struct {
   direct_expression_type_binding_t *expression_type_bindings;
   direct_case_binding_t *case_bindings;
   direct_switch_scope_t *switch_scope;
+  direct_break_target_t *break_target;
   size_t label_declaration_start;
   direct_vm_scope_marker_t *active_vm_scope;
   direct_goto_binding_t *gotos;
@@ -271,6 +294,7 @@ typedef struct {
   unsigned int unevaluated_depth;
   unsigned int track_initialization_order;
   unsigned int suppress_initialization_diagnostics;
+  unsigned int initialization_flow_reachable;
   char *function_name;
   int function_name_len;
   psx_qual_type_t function_return_qual_type;
@@ -1029,8 +1053,13 @@ static int capture_direct_initialization_snapshot(
     direct_resolution_context_t *context,
     direct_initialization_snapshot_t *snapshot,
     const node_t *source) {
-  if (snapshot)
-    *snapshot = (direct_initialization_snapshot_t){0};
+  if (snapshot) {
+    *snapshot = (direct_initialization_snapshot_t){
+        .reachable =
+            !context || !context->track_initialization_order ||
+            context->initialization_flow_reachable,
+    };
+  }
   if (!context || !snapshot ||
       !context->track_initialization_order)
     return 1;
@@ -1076,6 +1105,8 @@ static void restore_direct_initialization_snapshot(
     direct_resolution_context_t *context,
     const direct_initialization_snapshot_t *snapshot) {
   if (!context || !context->track_initialization_order) return;
+  context->initialization_flow_reachable =
+      snapshot && snapshot->reachable;
   for (direct_initialization_state_t *state =
            context->initialization_states;
        state; state = state->next) {
@@ -1091,13 +1122,93 @@ static void merge_direct_initialization_snapshots(
     const direct_initialization_snapshot_t *left,
     const direct_initialization_snapshot_t *right) {
   if (!context || !context->track_initialization_order) return;
+  int left_reachable = left && left->reachable;
+  int right_reachable = right && right->reachable;
+  context->initialization_flow_reachable =
+      left_reachable || right_reachable;
   for (direct_initialization_state_t *state =
            context->initialization_states;
        state; state = state->next) {
-    state->initialized =
-        direct_snapshot_local_is_initialized(left, state->local) &&
-        direct_snapshot_local_is_initialized(right, state->local);
+    if (!left_reachable) {
+      state->initialized =
+          direct_snapshot_local_is_initialized(
+              right, state->local);
+    } else if (!right_reachable) {
+      state->initialized =
+          direct_snapshot_local_is_initialized(
+              left, state->local);
+    } else {
+      state->initialized =
+          direct_snapshot_local_is_initialized(
+              left, state->local) &&
+          direct_snapshot_local_is_initialized(
+              right, state->local);
+    }
   }
+}
+
+static void accumulate_direct_initialization_snapshot(
+    direct_initialization_snapshot_t *aggregate,
+    unsigned char *has_aggregate,
+    const direct_initialization_snapshot_t *candidate) {
+  if (!aggregate || !has_aggregate || !candidate ||
+      !candidate->reachable)
+    return;
+  if (!*has_aggregate) {
+    *aggregate = *candidate;
+    *has_aggregate = 1;
+    return;
+  }
+  for (direct_initialization_snapshot_entry_t *entry =
+           aggregate->entries;
+       entry; entry = entry->next) {
+    entry->initialized =
+        entry->initialized &&
+        direct_snapshot_local_is_initialized(
+            candidate, entry->local);
+  }
+  aggregate->reachable = 1;
+}
+
+static int accumulate_current_direct_initialization_snapshot(
+    direct_resolution_context_t *context,
+    direct_initialization_snapshot_t *aggregate,
+    unsigned char *has_aggregate,
+    const node_t *source) {
+  direct_initialization_snapshot_t candidate;
+  if (!capture_direct_initialization_snapshot(
+          context, &candidate, source))
+    return 0;
+  accumulate_direct_initialization_snapshot(
+      aggregate, has_aggregate, &candidate);
+  return 1;
+}
+
+static void terminate_direct_initialization_flow(
+    direct_resolution_context_t *context) {
+  if (context && context->track_initialization_order)
+    context->initialization_flow_reachable = 0;
+}
+
+static void restore_direct_initialization_aggregate(
+    direct_resolution_context_t *context,
+    const direct_initialization_snapshot_t *aggregate,
+    int has_aggregate) {
+  if (has_aggregate)
+    restore_direct_initialization_snapshot(context, aggregate);
+  else
+    terminate_direct_initialization_flow(context);
+}
+
+static direct_break_target_t *direct_continue_target(
+    const direct_resolution_context_t *context) {
+  for (direct_break_target_t *target =
+           context ? context->break_target : NULL;
+       target; target = target->parent) {
+    if (target->kind == DIRECT_BREAK_TARGET_LOOP)
+      return target;
+  }
+  return NULL;
 }
 
 static int note_direct_rejection(
@@ -1215,6 +1326,7 @@ static int resolve_direct_identifier_with_usage(
         if (binding->resolution.symbol.kind ==
                 PSX_IDENTIFIER_LOCAL &&
             context->suppress_initialization_diagnostics == 0 &&
+            context->initialization_flow_reachable &&
             !direct_local_is_initialized(
                 context, binding->resolution.symbol.local))
           binding->usage_flags |=
@@ -1291,6 +1403,7 @@ static int resolve_direct_identifier_with_usage(
                                                    PSX_IDENTIFIER_LOCAL &&
                                                context->suppress_initialization_diagnostics ==
                                                    0 &&
+                                               context->initialization_flow_reachable &&
                                                !direct_local_is_initialized(
                                                    context,
                                                    resolved.symbol.local)
@@ -4975,6 +5088,78 @@ static int direct_integer_constant(
       syntax->kind, lhs, rhs, value);
 }
 
+typedef struct {
+  const node_t *matching_case;
+  const node_t *default_label;
+  unsigned char has_unknown_case;
+} direct_constant_switch_scan_t;
+
+static void scan_direct_constant_switch_labels(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    const psx_type_shape_t *promoted_control_type,
+    long long control_value,
+    direct_constant_switch_scan_t *scan) {
+  if (!context || !syntax || !promoted_control_type || !scan)
+    return;
+  switch (syntax->kind) {
+    case ND_SWITCH:
+      return;
+    case ND_CASE: {
+      long long case_value = 0;
+      if (!direct_integer_constant(
+              context, syntax->lhs, &case_value) ||
+          !psx_normalize_integer_constant_cast(
+              promoted_control_type, case_value, &case_value)) {
+        scan->has_unknown_case = 1;
+      } else if (case_value == control_value &&
+                 !scan->matching_case) {
+        scan->matching_case = syntax;
+      }
+      scan_direct_constant_switch_labels(
+          context, syntax->rhs, promoted_control_type,
+          control_value, scan);
+      return;
+    }
+    case ND_DEFAULT:
+      if (!scan->default_label)
+        scan->default_label = syntax;
+      scan_direct_constant_switch_labels(
+          context, syntax->rhs, promoted_control_type,
+          control_value, scan);
+      return;
+    case ND_BLOCK: {
+      const node_block_t *block = (const node_block_t *)syntax;
+      for (size_t i = 0; block->body && block->body[i]; i++) {
+        scan_direct_constant_switch_labels(
+            context, block->body[i], promoted_control_type,
+            control_value, scan);
+      }
+      return;
+    }
+    case ND_IF: {
+      const node_ctrl_t *control = (const node_ctrl_t *)syntax;
+      scan_direct_constant_switch_labels(
+          context, syntax->rhs, promoted_control_type,
+          control_value, scan);
+      scan_direct_constant_switch_labels(
+          context, control->els, promoted_control_type,
+          control_value, scan);
+      return;
+    }
+    case ND_WHILE:
+    case ND_DO_WHILE:
+    case ND_FOR:
+    case ND_LABEL:
+      scan_direct_constant_switch_labels(
+          context, syntax->rhs, promoted_control_type,
+          control_value, scan);
+      return;
+    default:
+      return;
+  }
+}
+
 static psx_semantic_node_t *build_resolved_initializer_value(
     direct_resolution_context_t *context,
     const psx_local_initializer_item_t *item,
@@ -6715,10 +6900,15 @@ static int preflight_direct_statement_impl(
       return 1;
     }
     case ND_RETURN: {
-      if (!context->enforce_function_return_type)
-        return !syntax->lhs ||
-               preflight_direct_expression(
-                   context, syntax->lhs, NULL);
+      if (!context->enforce_function_return_type) {
+        int resolved =
+            !syntax->lhs ||
+            preflight_direct_expression(
+                context, syntax->lhs, NULL);
+        if (resolved)
+          terminate_direct_initialization_flow(context);
+        return resolved;
+      }
       if (!direct_qual_type_is_valid(
               context, context->function_return_qual_type))
         return 0;
@@ -6730,6 +6920,7 @@ static int preflight_direct_statement_impl(
               context,
               PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_FORBIDDEN,
               syntax);
+        terminate_direct_initialization_flow(context);
         return 1;
       }
       if (!syntax->lhs)
@@ -6761,7 +6952,10 @@ static int preflight_direct_statement_impl(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_DISCARDS_QUALIFIERS,
             syntax);
-      return return_status == PSX_RETURN_TYPES_OK;
+      if (return_status != PSX_RETURN_TYPES_OK)
+        return 0;
+      terminate_direct_initialization_flow(context);
+      return 1;
     }
     case ND_IF: {
       const node_ctrl_t *control = (const node_ctrl_t *)syntax;
@@ -6823,21 +7017,99 @@ static int preflight_direct_statement_impl(
               context, syntax, syntax->lhs,
               PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL))
         return 0;
+      long long condition_value = 0;
+      int condition_is_constant =
+          direct_integer_constant(
+              context, syntax->lhs, &condition_value);
+      direct_initialization_snapshot_t condition_entry;
+      if (!capture_direct_initialization_snapshot(
+              context, &condition_entry, syntax))
+        return 0;
+      direct_break_target_t break_target = {
+          .kind = DIRECT_BREAK_TARGET_LOOP,
+          .parent = context->break_target,
+      };
+      context->break_target = &break_target;
       context->loop_depth++;
+      if (condition_is_constant && condition_value == 0)
+        terminate_direct_initialization_flow(context);
       int resolved =
           preflight_direct_statement(context, syntax->rhs);
       context->loop_depth--;
-      return resolved;
+      context->break_target = break_target.parent;
+      if (!resolved) return 0;
+      direct_initialization_snapshot_t exits = {0};
+      unsigned char has_exits = 0;
+      if (!accumulate_current_direct_initialization_snapshot(
+              context, &exits, &has_exits, syntax))
+        return 0;
+      if (break_target.has_continue_initialization)
+        accumulate_direct_initialization_snapshot(
+            &exits, &has_exits,
+            &break_target.continue_initialization);
+      if (condition_is_constant && condition_value == 0)
+        accumulate_direct_initialization_snapshot(
+            &exits, &has_exits, &condition_entry);
+      if (break_target.has_exit_initialization)
+        accumulate_direct_initialization_snapshot(
+            &exits, &has_exits,
+            &break_target.exit_initialization);
+      if (!has_exits &&
+          (!condition_is_constant || condition_value == 0))
+        accumulate_direct_initialization_snapshot(
+            &exits, &has_exits, &condition_entry);
+      restore_direct_initialization_aggregate(
+          context, &exits, has_exits);
+      return 1;
     }
     case ND_DO_WHILE: {
+      direct_break_target_t break_target = {
+          .kind = DIRECT_BREAK_TARGET_LOOP,
+          .parent = context->break_target,
+      };
+      context->break_target = &break_target;
       context->loop_depth++;
       int resolved =
           preflight_direct_statement(context, syntax->rhs);
       context->loop_depth--;
-      return resolved &&
-             preflight_direct_control_expression(
-                 context, syntax, syntax->lhs,
-                 PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL);
+      context->break_target = break_target.parent;
+      if (!resolved) return 0;
+      direct_initialization_snapshot_t condition_entry = {0};
+      unsigned char has_condition_entry = 0;
+      if (!accumulate_current_direct_initialization_snapshot(
+              context, &condition_entry,
+              &has_condition_entry, syntax))
+        return 0;
+      if (break_target.has_continue_initialization)
+        accumulate_direct_initialization_snapshot(
+            &condition_entry, &has_condition_entry,
+            &break_target.continue_initialization);
+      restore_direct_initialization_aggregate(
+          context, &condition_entry, has_condition_entry);
+      if (!preflight_direct_control_expression(
+              context, syntax, syntax->lhs,
+              PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL))
+        return 0;
+      long long condition_value = 0;
+      int condition_is_constant =
+          direct_integer_constant(
+              context, syntax->lhs, &condition_value);
+      direct_initialization_snapshot_t condition_exit;
+      if (!capture_direct_initialization_snapshot(
+              context, &condition_exit, syntax))
+        return 0;
+      direct_initialization_snapshot_t exits = {0};
+      unsigned char has_exits = 0;
+      if (break_target.has_exit_initialization)
+        accumulate_direct_initialization_snapshot(
+            &exits, &has_exits,
+            &break_target.exit_initialization);
+      if (!condition_is_constant || condition_value == 0)
+        accumulate_direct_initialization_snapshot(
+            &exits, &has_exits, &condition_exit);
+      restore_direct_initialization_aggregate(
+          context, &exits, has_exits);
+      return 1;
     }
     case ND_FOR: {
       const node_ctrl_t *control = (const node_ctrl_t *)syntax;
@@ -6858,15 +7130,71 @@ static int preflight_direct_statement_impl(
         resolved = preflight_direct_control_expression(
             context, syntax, syntax->lhs,
             PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL);
+      long long condition_value = 1;
+      int condition_is_constant =
+          !syntax->lhs ||
+          direct_integer_constant(
+              context, syntax->lhs, &condition_value);
+      direct_initialization_snapshot_t condition_entry;
+      if (resolved &&
+          !capture_direct_initialization_snapshot(
+              context, &condition_entry, syntax))
+        resolved = 0;
+      direct_break_target_t break_target = {
+          .kind = DIRECT_BREAK_TARGET_LOOP,
+          .parent = context->break_target,
+      };
       if (resolved) {
+        context->break_target = &break_target;
         context->loop_depth++;
+        if (condition_is_constant && condition_value == 0)
+          terminate_direct_initialization_flow(context);
         resolved = preflight_direct_statement(
             context, syntax->rhs);
         context->loop_depth--;
+        context->break_target = break_target.parent;
       }
+      direct_initialization_snapshot_t increment_entry = {0};
+      unsigned char has_increment_entry = 0;
+      if (resolved &&
+          !accumulate_current_direct_initialization_snapshot(
+              context, &increment_entry,
+              &has_increment_entry, syntax))
+        resolved = 0;
+      if (resolved &&
+          break_target.has_continue_initialization)
+        accumulate_direct_initialization_snapshot(
+            &increment_entry, &has_increment_entry,
+            &break_target.continue_initialization);
+      if (resolved)
+        restore_direct_initialization_aggregate(
+            context, &increment_entry, has_increment_entry);
       if (resolved && control->inc)
         resolved = preflight_direct_expression(
             context, control->inc, NULL);
+      if (resolved) {
+        direct_initialization_snapshot_t exits = {0};
+        unsigned char has_exits = 0;
+        if (!accumulate_current_direct_initialization_snapshot(
+                context, &exits, &has_exits, syntax))
+          resolved = 0;
+        if (resolved && condition_is_constant &&
+            condition_value == 0)
+          accumulate_direct_initialization_snapshot(
+              &exits, &has_exits, &condition_entry);
+        if (resolved &&
+            break_target.has_exit_initialization)
+          accumulate_direct_initialization_snapshot(
+              &exits, &has_exits,
+              &break_target.exit_initialization);
+        if (resolved && !has_exits &&
+            (!condition_is_constant || condition_value == 0))
+          accumulate_direct_initialization_snapshot(
+              &exits, &has_exits, &condition_entry);
+        if (resolved)
+          restore_direct_initialization_aggregate(
+              context, &exits, has_exits);
+      }
       if (declaration_scope) {
         context->active_vm_scope = vm_scope;
         ps_decl_leave_scope_in(context->local_registry);
@@ -6889,13 +7217,56 @@ static int preflight_direct_statement_impl(
           .promoted_control_type = promoted_control_type,
           .entry_vm_scope = context->active_vm_scope,
       };
+      long long control_value = 0;
+      if (direct_integer_constant(
+              context, syntax->lhs, &control_value) &&
+          psx_normalize_integer_constant_cast(
+              &promoted_control_type,
+              control_value, &control_value)) {
+        direct_constant_switch_scan_t scan = {0};
+        scan_direct_constant_switch_labels(
+            context, syntax->rhs, &promoted_control_type,
+            control_value, &scan);
+        if (scan.matching_case || !scan.has_unknown_case) {
+          scope.selection_is_known = 1;
+          scope.selected_label =
+              scan.matching_case
+                  ? scan.matching_case
+                  : scan.default_label;
+        }
+      }
+      if (!capture_direct_initialization_snapshot(
+              context, &scope.entry_initialization, syntax))
+        return 0;
+      direct_break_target_t break_target = {
+          .kind = DIRECT_BREAK_TARGET_SWITCH,
+          .switch_scope = &scope,
+          .parent = context->break_target,
+      };
       context->switch_scope = &scope;
+      context->break_target = &break_target;
       context->switch_depth++;
+      terminate_direct_initialization_flow(context);
       int resolved =
           preflight_direct_statement(context, syntax->rhs);
       context->switch_depth--;
+      context->break_target = break_target.parent;
       context->switch_scope = scope.parent;
-      return resolved;
+      if (!resolved) return 0;
+      if (!accumulate_current_direct_initialization_snapshot(
+              context, &break_target.exit_initialization,
+              &break_target.has_exit_initialization, syntax))
+        return 0;
+      if ((!scope.selection_is_known && !scope.has_default) ||
+          (scope.selection_is_known && !scope.selected_label))
+        accumulate_direct_initialization_snapshot(
+            &break_target.exit_initialization,
+            &break_target.has_exit_initialization,
+            &scope.entry_initialization);
+      restore_direct_initialization_aggregate(
+          context, &break_target.exit_initialization,
+          break_target.has_exit_initialization);
+      return 1;
     }
     case ND_CASE: {
       psx_qual_type_t case_qual_type;
@@ -6924,11 +7295,23 @@ static int preflight_direct_statement_impl(
               &context->switch_scope->promoted_control_type,
               value, &value))
         return note_direct_rejection(context, syntax);
-      return bind_direct_case_value(
-                 context, (const node_case_t *)syntax, value) &&
-             preflight_direct_statement(context, syntax->rhs);
+      if (!bind_direct_case_value(
+              context, (const node_case_t *)syntax, value))
+        return 0;
+      direct_initialization_snapshot_t fallthrough;
+      if (!capture_direct_initialization_snapshot(
+              context, &fallthrough, syntax))
+        return 0;
+      if (!context->switch_scope->selection_is_known ||
+          context->switch_scope->selected_label == syntax) {
+        merge_direct_initialization_snapshots(
+            context,
+            &context->switch_scope->entry_initialization,
+            &fallthrough);
+      }
+      return preflight_direct_statement(context, syntax->rhs);
     }
-    case ND_DEFAULT:
+    case ND_DEFAULT: {
       if (!context->switch_scope)
         return note_direct_semantic_rejection(
             context,
@@ -6945,12 +7328,35 @@ static int preflight_direct_statement_impl(
             context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
             syntax);
       context->switch_scope->has_default = 1;
+      direct_initialization_snapshot_t fallthrough;
+      if (!capture_direct_initialization_snapshot(
+              context, &fallthrough, syntax))
+        return 0;
+      if (!context->switch_scope->selection_is_known ||
+          context->switch_scope->selected_label == syntax) {
+        merge_direct_initialization_snapshots(
+            context,
+            &context->switch_scope->entry_initialization,
+            &fallthrough);
+      }
       return preflight_direct_statement(context, syntax->rhs);
+    }
     case ND_GOTO: {
       direct_goto_binding_t *binding = find_direct_goto_binding(
           context, (const node_jump_t *)syntax);
       if (!binding) return note_direct_rejection(context, syntax);
       binding->vm_scope = context->active_vm_scope;
+      const node_jump_t *jump = (const node_jump_t *)syntax;
+      direct_label_scope_state_t *target =
+          find_direct_label_scope_state(
+              context, jump->name, jump->name_len);
+      if (!target ||
+          !accumulate_current_direct_initialization_snapshot(
+              context, &target->incoming_initialization,
+              &target->has_incoming_initialization,
+              syntax))
+        return note_direct_rejection(context, syntax);
+      terminate_direct_initialization_flow(context);
       return 1;
     }
     case ND_LABEL: {
@@ -6959,6 +7365,14 @@ static int preflight_direct_statement_impl(
               context, (const node_jump_t *)syntax);
       if (!state) return note_direct_rejection(context, syntax);
       state->vm_scope = context->active_vm_scope;
+      direct_initialization_snapshot_t fallthrough;
+      if (!capture_direct_initialization_snapshot(
+              context, &fallthrough, syntax))
+        return 0;
+      if (state->has_incoming_initialization)
+        merge_direct_initialization_snapshots(
+            context, &fallthrough,
+            &state->incoming_initialization);
       return !syntax->rhs ||
              preflight_direct_statement(context, syntax->rhs);
     }
@@ -6968,14 +7382,33 @@ static int preflight_direct_statement_impl(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH,
             syntax);
+      if (context->break_target &&
+          !accumulate_current_direct_initialization_snapshot(
+              context,
+              &context->break_target->exit_initialization,
+              &context->break_target->has_exit_initialization,
+              syntax))
+        return 0;
+      terminate_direct_initialization_flow(context);
       return 1;
-    case ND_CONTINUE:
+    case ND_CONTINUE: {
       if (context->loop_depth == 0)
         return note_direct_semantic_rejection(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP,
             syntax);
+      direct_break_target_t *continue_target =
+          direct_continue_target(context);
+      if (continue_target &&
+          !accumulate_current_direct_initialization_snapshot(
+              context,
+              &continue_target->continue_initialization,
+              &continue_target->has_continue_initialization,
+              syntax))
+        return 0;
+      terminate_direct_initialization_flow(context);
       return 1;
+    }
     default:
       return preflight_direct_expression(context, syntax, NULL);
   }
@@ -8507,6 +8940,7 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
       .function_return_qual_type = return_qual_type,
       .enforce_function_return_type = 1,
       .track_initialization_order = 1,
+      .initialization_flow_reachable = 1,
   };
   psx_semantic_node_builder_init(
       &context.builder, ps_ctx_arena(semantic_context),

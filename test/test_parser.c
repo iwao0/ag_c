@@ -17450,6 +17450,27 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok_with_message(test_suite_session,
       "int choose(int condition){int value; condition||(value=1); return value;}",
       "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int selector){int value; switch(selector){case 1:value=11;break;} return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int selector){int value; switch(selector){case 1:value=11;break;default:break;} return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int selector){int value; switch(selector){case 0:value=10;case 1:return value;default:return 0;}}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int selector,int condition){int value; switch(selector){case 0:if(condition){value=10;break;}break;default:value=20;break;}return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(void){int value;switch(1){case 2:value=10;break;}return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int condition){int value;if(condition)goto done;value=10;done:return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int selector){int value;switch(selector){case 0:goto done;default:value=10;break;}done:return value;}",
+      "W3004");
   expect_parse_ok_without_message(test_suite_session,
       "int main(void){int x; x=1; x+=2; return x;}",
       "W3004");
@@ -17503,6 +17524,45 @@ static void test_parse_evil_edge_cases(
       "W3004");
   expect_parse_ok_without_message(test_suite_session,
       "int choose(void){int value; if(0)return value; return 0;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int selector){int value; switch(selector){case 0:value=10;break;case 1:value=20;break;default:value=30;break;}return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int selector,int condition){int value;switch(selector){case 0:if(condition){value=10;break;}value=20;break;default:value=30;break;}return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int outer,int inner){int value;switch(outer){case 0:switch(inner){case 0:value=10;break;default:value=20;break;}break;default:value=30;break;}return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int selector){int value;switch(selector){case 0:value=10;case 1:value=20;break;default:value=30;break;}return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int selector){int value;switch(selector){case 0:case 1:value=20;break;default:value=30;break;}return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int selector){int value;switch(selector){return value;case 0:value=10;break;default:value=20;break;}return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int selector){int value;for(int i=0;i<1;i++){switch(selector){case 0:value=10;continue;default:value=20;break;}return value;}return 0;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int selector){int value;switch(selector){case 0:while(1){value=10;break;}break;default:value=20;break;}return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(void){int value;switch(1){case 1:value=10;break;default:break;}return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(void){int value;switch(1){case 2:break;default:value=20;break;}return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int condition){int value;if(condition)goto alternate;value=10;goto done;alternate:value=20;done:return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int selector){int value;switch(selector){case 0:value=10;goto done;default:value=20;break;}done:return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int condition){int value;goto initialize;done:return value;initialize:value=condition?10:20;goto done;}",
       "W3004");
   expect_parse_ok_without_message(test_suite_session,
       "int main(void){ struct B { unsigned a:3; unsigned b:5; }; struct B s; s.a=5; s.b=10; return s.a; }",
