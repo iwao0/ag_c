@@ -71,6 +71,10 @@ typedef struct direct_local_declaration_binding_t
     direct_local_declaration_binding_t;
 typedef struct direct_function_declaration_checkpoint_t
     direct_function_declaration_checkpoint_t;
+typedef struct direct_initialization_state_t
+    direct_initialization_state_t;
+typedef struct direct_initialization_snapshot_entry_t
+    direct_initialization_snapshot_entry_t;
 
 typedef struct {
   psx_local_initializer_plan_t plan;
@@ -124,6 +128,8 @@ enum {
   DIRECT_IDENTIFIER_USAGE_UNEVALUATED = 1u << 3,
   DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE = 1u << 4,
   DIRECT_IDENTIFIER_USAGE_DOES_NOT_REQUIRE_INITIALIZED_VALUE = 1u << 5,
+  DIRECT_IDENTIFIER_USAGE_INITIALIZATION_QUEUED = 1u << 6,
+  DIRECT_IDENTIFIER_USAGE_INITIALIZATION_CLASSIFIED = 1u << 7,
 };
 
 struct direct_identifier_binding_t {
@@ -132,6 +138,22 @@ struct direct_identifier_binding_t {
   unsigned usage_flags;
   direct_identifier_binding_t *next;
 };
+
+struct direct_initialization_state_t {
+  lvar_t *local;
+  unsigned char initialized;
+  direct_initialization_state_t *next;
+};
+
+struct direct_initialization_snapshot_entry_t {
+  lvar_t *local;
+  unsigned char initialized;
+  direct_initialization_snapshot_entry_t *next;
+};
+
+typedef struct {
+  direct_initialization_snapshot_entry_t *entries;
+} direct_initialization_snapshot_t;
 
 struct direct_cast_binding_t {
   const node_source_cast_t *syntax;
@@ -229,6 +251,7 @@ typedef struct {
   const psx_scope_lookup_point_t *identifier_lookup_point;
   direct_identifier_binding_t *identifier_bindings;
   direct_identifier_binding_t *identifier_bindings_tail;
+  direct_initialization_state_t *initialization_states;
   direct_cast_binding_t *cast_bindings;
   direct_call_binding_t *call_bindings;
   direct_generic_binding_t *generic_bindings;
@@ -247,6 +270,7 @@ typedef struct {
   unsigned int block_depth;
   unsigned int unevaluated_depth;
   unsigned int track_initialization_order;
+  unsigned int suppress_initialization_diagnostics;
   char *function_name;
   int function_name_len;
   psx_qual_type_t function_return_qual_type;
@@ -328,7 +352,7 @@ static int preflight_direct_statement_impl(
 static int preflight_direct_lvalue(
     direct_resolution_context_t *context,
     const node_t *syntax, psx_qual_type_t *qual_type);
-static void mark_direct_assignment_target(
+static int mark_direct_assignment_target(
     direct_resolution_context_t *context,
     const node_t *syntax,
     int reads_prior_value);
@@ -519,7 +543,7 @@ static int note_direct_source_cast_rejection(
       context, rejection, syntax, resolution->target_type_kind);
 }
 
-static void mark_direct_out_argument_initialization(
+static int mark_direct_out_argument_initialization(
     direct_resolution_context_t *context,
     const node_t *argument,
     psx_qual_type_t parameter_type) {
@@ -530,16 +554,18 @@ static void mark_direct_out_argument_initialization(
       !psx_semantic_type_table_describe(
           types, parameter_type.type_id, &parameter_shape) ||
       parameter_shape.kind != PSX_TYPE_POINTER)
-    return;
+    return 1;
   psx_qual_type_t pointee = psx_semantic_type_table_base(
       types, parameter_type.type_id);
   if (pointee.type_id == PSX_TYPE_ID_INVALID ||
       (pointee.qualifiers & PSX_TYPE_QUALIFIER_CONST))
-    return;
+    return 1;
   while (argument && argument->kind == ND_SOURCE_CAST)
     argument = argument->lhs;
   if (argument && argument->kind == ND_ADDRESS_OF)
-    mark_direct_assignment_target(context, argument->lhs, 0);
+    return mark_direct_assignment_target(
+        context, argument->lhs, 0);
+  return 1;
 }
 
 static int resolve_direct_function_call(
@@ -644,14 +670,6 @@ static int resolve_direct_function_call(
           PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_DISCARDS_QUALIFIERS,
           call->arguments[i]);
     if (argument_status != PSX_CALL_ARGUMENT_TYPES_OK) return 0;
-    if (i < resolution.parameter_count) {
-      psx_qual_type_t parameter_type =
-          psx_semantic_type_table_parameter(
-              direct_semantic_types(context),
-              resolution.function_qual_type.type_id, i);
-      mark_direct_out_argument_initialization(
-          context, call->arguments[i], parameter_type);
-    }
   }
   if (psx_builtin_call_is_atomic(builtin_kind) &&
       !psx_resolve_atomic_builtin_call(
@@ -662,6 +680,20 @@ static int resolve_direct_function_call(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_TYPES_INCOMPATIBLE,
         &call->base);
+  if (!psx_builtin_call_is_atomic(builtin_kind)) {
+    int fixed_argument_count = call->argument_count <
+            resolution.parameter_count
+        ? call->argument_count : resolution.parameter_count;
+    for (int i = 0; i < fixed_argument_count; i++) {
+      psx_qual_type_t parameter_type =
+          psx_semantic_type_table_parameter(
+              direct_semantic_types(context),
+              resolution.function_qual_type.type_id, i);
+      if (!mark_direct_out_argument_initialization(
+              context, call->arguments[i], parameter_type))
+        return 0;
+    }
+  }
 
   direct_call_binding_t *binding = arena_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*binding));
@@ -922,6 +954,152 @@ static void set_failure(
       source ? source->tok : NULL);
 }
 
+static direct_initialization_state_t *
+find_direct_initialization_state(
+    const direct_resolution_context_t *context,
+    const lvar_t *local) {
+  if (!context || !local) return NULL;
+  for (direct_initialization_state_t *state =
+           context->initialization_states;
+       state; state = state->next) {
+    if (state->local == local) return state;
+  }
+  return NULL;
+}
+
+static int direct_local_is_preinitialized(const lvar_t *local) {
+  psx_lvar_registry_view_t view = ps_lvar_registry_view(local);
+  return view.is_param || view.is_static_local;
+}
+
+static int ensure_direct_initialization_state(
+    direct_resolution_context_t *context,
+    lvar_t *local,
+    int initialized,
+    const node_t *source) {
+  if (!context || !local || !context->track_initialization_order)
+    return 1;
+  direct_initialization_state_t *state =
+      find_direct_initialization_state(context, local);
+  if (state) return 1;
+  state = arena_alloc_in(
+      ps_ctx_arena(context->semantic_context), sizeof(*state));
+  if (!state) {
+    context->preflight_failed = 1;
+    set_failure(
+        context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        source);
+    return 0;
+  }
+  *state = (direct_initialization_state_t){
+      .local = local,
+      .initialized = initialized ? 1 : 0,
+      .next = context->initialization_states,
+  };
+  context->initialization_states = state;
+  return 1;
+}
+
+static int direct_local_is_initialized(
+    const direct_resolution_context_t *context,
+    const lvar_t *local) {
+  if (!context || !local || !context->track_initialization_order)
+    return 1;
+  direct_initialization_state_t *state =
+      find_direct_initialization_state(context, local);
+  return state ? state->initialized
+               : direct_local_is_preinitialized(local);
+}
+
+static int set_direct_local_initialized(
+    direct_resolution_context_t *context,
+    lvar_t *local,
+    const node_t *source) {
+  if (!context || !local || !context->track_initialization_order)
+    return 1;
+  if (!ensure_direct_initialization_state(
+          context, local, direct_local_is_preinitialized(local),
+          source))
+    return 0;
+  find_direct_initialization_state(context, local)->initialized = 1;
+  return 1;
+}
+
+static int capture_direct_initialization_snapshot(
+    direct_resolution_context_t *context,
+    direct_initialization_snapshot_t *snapshot,
+    const node_t *source) {
+  if (snapshot)
+    *snapshot = (direct_initialization_snapshot_t){0};
+  if (!context || !snapshot ||
+      !context->track_initialization_order)
+    return 1;
+  direct_initialization_snapshot_entry_t **tail =
+      &snapshot->entries;
+  for (direct_initialization_state_t *state =
+           context->initialization_states;
+       state; state = state->next) {
+    direct_initialization_snapshot_entry_t *entry =
+        arena_alloc_in(
+            ps_ctx_arena(context->semantic_context),
+            sizeof(*entry));
+    if (!entry) {
+      context->preflight_failed = 1;
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          source);
+      return 0;
+    }
+    *entry = (direct_initialization_snapshot_entry_t){
+        .local = state->local,
+        .initialized = state->initialized,
+    };
+    *tail = entry;
+    tail = &entry->next;
+  }
+  return 1;
+}
+
+static int direct_snapshot_local_is_initialized(
+    const direct_initialization_snapshot_t *snapshot,
+    const lvar_t *local) {
+  if (!local) return 0;
+  for (direct_initialization_snapshot_entry_t *entry =
+           snapshot ? snapshot->entries : NULL;
+       entry; entry = entry->next) {
+    if (entry->local == local) return entry->initialized;
+  }
+  return direct_local_is_preinitialized(local);
+}
+
+static void restore_direct_initialization_snapshot(
+    direct_resolution_context_t *context,
+    const direct_initialization_snapshot_t *snapshot) {
+  if (!context || !context->track_initialization_order) return;
+  for (direct_initialization_state_t *state =
+           context->initialization_states;
+       state; state = state->next) {
+    state->initialized =
+        direct_snapshot_local_is_initialized(
+            snapshot, state->local)
+            ? 1 : 0;
+  }
+}
+
+static void merge_direct_initialization_snapshots(
+    direct_resolution_context_t *context,
+    const direct_initialization_snapshot_t *left,
+    const direct_initialization_snapshot_t *right) {
+  if (!context || !context->track_initialization_order) return;
+  for (direct_initialization_state_t *state =
+           context->initialization_states;
+       state; state = state->next) {
+    state->initialized =
+        direct_snapshot_local_is_initialized(left, state->local) &&
+        direct_snapshot_local_is_initialized(right, state->local);
+  }
+}
+
 static int note_direct_rejection(
     direct_resolution_context_t *context, const node_t *source) {
   if (context && context->failure &&
@@ -1031,9 +1209,17 @@ static int resolve_direct_identifier_with_usage(
       binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_EVALUATED;
       if (context->track_initialization_order &&
           !(binding->usage_flags &
-            DIRECT_IDENTIFIER_USAGE_DOES_NOT_REQUIRE_INITIALIZED_VALUE))
+            DIRECT_IDENTIFIER_USAGE_INITIALIZATION_CLASSIFIED)) {
         binding->usage_flags |=
-            DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE;
+            DIRECT_IDENTIFIER_USAGE_INITIALIZATION_CLASSIFIED;
+        if (binding->resolution.symbol.kind ==
+                PSX_IDENTIFIER_LOCAL &&
+            context->suppress_initialization_diagnostics == 0 &&
+            !direct_local_is_initialized(
+                context, binding->resolution.symbol.local))
+          binding->usage_flags |=
+              DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE;
+      }
     } else {
       binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_UNEVALUATED;
     }
@@ -1100,7 +1286,16 @@ static int resolve_direct_identifier_with_usage(
       .usage_flags = context->unevaluated_depth == 0
                          ? DIRECT_IDENTIFIER_USAGE_EVALUATED |
                                (context->track_initialization_order
-                                    ? DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE
+                                    ? DIRECT_IDENTIFIER_USAGE_INITIALIZATION_CLASSIFIED |
+                                          (resolved.symbol.kind ==
+                                                   PSX_IDENTIFIER_LOCAL &&
+                                               context->suppress_initialization_diagnostics ==
+                                                   0 &&
+                                               !direct_local_is_initialized(
+                                                   context,
+                                                   resolved.symbol.local)
+                                               ? DIRECT_IDENTIFIER_USAGE_REQUIRES_INITIALIZED_VALUE
+                                               : 0)
                                     : 0)
                          : DIRECT_IDENTIFIER_USAGE_UNEVALUATED,
       .next = NULL,
@@ -1848,6 +2043,40 @@ static direct_identifier_binding_t *direct_identifier_binding(
   return NULL;
 }
 
+static int append_direct_local_initialization_marker(
+    direct_resolution_context_t *context,
+    lvar_t *local,
+    const node_t *source) {
+  if (!context || !local || !context->track_initialization_order)
+    return 1;
+  if (!set_direct_local_initialized(context, local, source))
+    return 0;
+  direct_identifier_binding_t *marker = arena_alloc_in(
+      ps_ctx_arena(context->semantic_context), sizeof(*marker));
+  if (!marker) {
+    context->preflight_failed = 1;
+    set_failure(
+        context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        source);
+    return 0;
+  }
+  *marker = (direct_identifier_binding_t){
+      .resolution = {
+          .symbol = {
+              .kind = PSX_IDENTIFIER_LOCAL,
+              .local = local,
+          },
+      },
+      .usage_flags = DIRECT_IDENTIFIER_USAGE_INITIALIZED,
+  };
+  if (!context->identifier_bindings)
+    context->identifier_bindings = marker;
+  else
+    context->identifier_bindings_tail->next = marker;
+  context->identifier_bindings_tail = marker;
+  return 1;
+}
+
 static int direct_syntax_has_vla_binding(
     direct_resolution_context_t *context,
     const node_t *syntax) {
@@ -2129,19 +2358,19 @@ static int direct_null_pointer_constant(
   return direct_qual_type_is_integer(context, type);
 }
 
-static void mark_direct_assignment_target(
+static int mark_direct_assignment_target(
     direct_resolution_context_t *context,
     const node_t *syntax,
     int reads_prior_value) {
   if (!context || !syntax || context->unevaluated_depth != 0)
-    return;
+    return 1;
   if (syntax->kind == ND_GENERIC_SELECTION) {
     const node_t *selected = direct_selected_expression(
         context, syntax);
     if (selected)
-      mark_direct_assignment_target(
+      return mark_direct_assignment_target(
           context, selected, reads_prior_value);
-    return;
+    return 1;
   }
   if (syntax->kind == ND_IDENTIFIER) {
     direct_identifier_binding_t *binding =
@@ -2155,13 +2384,24 @@ static void mark_direct_assignment_target(
         binding->usage_flags |=
             DIRECT_IDENTIFIER_USAGE_DOES_NOT_REQUIRE_INITIALIZED_VALUE;
       }
-      binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_INITIALIZED;
+      if (context->track_initialization_order) {
+        if (!(binding->usage_flags &
+              DIRECT_IDENTIFIER_USAGE_INITIALIZATION_QUEUED)) {
+          if (!append_direct_local_initialization_marker(
+                  context, binding->resolution.symbol.local, syntax))
+            return 0;
+          binding->usage_flags |=
+              DIRECT_IDENTIFIER_USAGE_INITIALIZATION_QUEUED;
+        }
+      } else {
+        binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_INITIALIZED;
+      }
     }
-    return;
+    return 1;
   }
   if (syntax->kind == ND_UNARY_DEREF && syntax->lhs &&
       syntax->lhs->kind == ND_ADDRESS_OF)
-    mark_direct_assignment_target(
+    return mark_direct_assignment_target(
         context, syntax->lhs->lhs, reads_prior_value);
   if (syntax->kind == ND_SUBSCRIPT) {
     psx_qual_type_t base_type = {
@@ -2172,17 +2412,18 @@ static void mark_direct_assignment_target(
         direct_describe_qual_type(
             context, base_type, &base_shape) &&
         base_shape.kind == PSX_TYPE_ARRAY)
-      mark_direct_assignment_target(
+      return mark_direct_assignment_target(
           context, syntax->lhs, reads_prior_value);
-    return;
+    return 1;
   }
   if (syntax->kind == ND_MEMBER_ACCESS) {
     const node_member_access_t *access =
         (const node_member_access_t *)syntax;
     if (!access->from_pointer)
-      mark_direct_assignment_target(
+      return mark_direct_assignment_target(
           context, syntax->lhs, reads_prior_value);
   }
+  return 1;
 }
 
 static void mark_direct_address_taken(
@@ -2670,7 +2911,9 @@ static int preflight_direct_expression_impl(
           context,
           PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_INVALID_OPERAND_TYPE,
           syntax);
-    mark_direct_assignment_target(context, syntax->lhs, 1);
+    if (!mark_direct_assignment_target(
+            context, syntax->lhs, 1))
+      return 0;
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
@@ -2701,9 +2944,10 @@ static int preflight_direct_expression_impl(
     if (resolution.status != PSX_ASSIGNMENT_TYPES_OK)
       return note_direct_assignment_rejection(
           context, syntax, target_type, resolution.status);
-    mark_direct_assignment_target(
-        context, syntax->lhs,
-        syntax->kind == ND_COMPOUND_ASSIGN);
+    if (!mark_direct_assignment_target(
+            context, syntax->lhs,
+            syntax->kind == ND_COMPOUND_ASSIGN))
+      return 0;
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
@@ -2881,12 +3125,51 @@ static int preflight_direct_expression_impl(
     psx_qual_type_t then_type;
     psx_qual_type_t else_type;
     if (!preflight_direct_expression(
-            context, syntax->lhs, &condition_type) ||
-        !preflight_direct_expression(
-            context, syntax->rhs, &then_type) ||
-        !preflight_direct_expression(
-            context, ternary->els, &else_type))
+            context, syntax->lhs, &condition_type))
       return 0;
+    long long condition_value = 0;
+    int condition_is_constant =
+        direct_integer_constant(
+            context, syntax->lhs, &condition_value);
+    direct_initialization_snapshot_t branch_entry;
+    direct_initialization_snapshot_t then_exit;
+    direct_initialization_snapshot_t else_exit;
+    if (!capture_direct_initialization_snapshot(
+            context, &branch_entry, syntax))
+      return 0;
+    int suppress_then =
+        condition_is_constant && condition_value == 0;
+    if (suppress_then)
+      context->suppress_initialization_diagnostics++;
+    int then_resolved = preflight_direct_expression(
+        context, syntax->rhs, &then_type);
+    if (suppress_then)
+      context->suppress_initialization_diagnostics--;
+    if (!then_resolved ||
+        !capture_direct_initialization_snapshot(
+            context, &then_exit, syntax))
+      return 0;
+    restore_direct_initialization_snapshot(
+        context, &branch_entry);
+    int suppress_else =
+        condition_is_constant && condition_value != 0;
+    if (suppress_else)
+      context->suppress_initialization_diagnostics++;
+    int else_resolved = preflight_direct_expression(
+        context, ternary->els, &else_type);
+    if (suppress_else)
+      context->suppress_initialization_diagnostics--;
+    if (!else_resolved ||
+        !capture_direct_initialization_snapshot(
+            context, &else_exit, syntax))
+      return 0;
+    if (condition_is_constant)
+      restore_direct_initialization_snapshot(
+          context, condition_value != 0
+                       ? &then_exit : &else_exit);
+    else
+      merge_direct_initialization_snapshots(
+          context, &then_exit, &else_exit);
     long long then_constant = 0;
     long long else_constant = 0;
     int then_is_null_pointer_constant =
@@ -2928,10 +3211,47 @@ static int preflight_direct_expression_impl(
   if (!direct_binary_kind(
           syntax->kind, &hir_kind, &type_operator) ||
       !preflight_direct_expression(
-          context, syntax->lhs, &lhs_type) ||
-      !preflight_direct_expression(
-          context, syntax->rhs, &rhs_type))
+          context, syntax->lhs, &lhs_type))
     return 0;
+  if (syntax->kind == ND_LOGAND ||
+      syntax->kind == ND_LOGOR) {
+    direct_initialization_snapshot_t short_circuit_exit;
+    direct_initialization_snapshot_t rhs_exit;
+    if (!capture_direct_initialization_snapshot(
+            context, &short_circuit_exit, syntax))
+      return 0;
+    long long condition_value = 0;
+    int condition_is_constant =
+        direct_integer_constant(
+            context, syntax->lhs, &condition_value);
+    int rhs_is_unreachable = condition_is_constant &&
+        ((syntax->kind == ND_LOGAND && condition_value == 0) ||
+         (syntax->kind == ND_LOGOR && condition_value != 0));
+    if (rhs_is_unreachable)
+      context->suppress_initialization_diagnostics++;
+    int rhs_resolved = preflight_direct_expression(
+        context, syntax->rhs, &rhs_type);
+    if (rhs_is_unreachable)
+      context->suppress_initialization_diagnostics--;
+    if (!rhs_resolved ||
+        !capture_direct_initialization_snapshot(
+            context, &rhs_exit, syntax))
+      return 0;
+    if (condition_is_constant) {
+      int rhs_executes =
+          (syntax->kind == ND_LOGAND && condition_value != 0) ||
+          (syntax->kind == ND_LOGOR && condition_value == 0);
+      restore_direct_initialization_snapshot(
+          context, rhs_executes
+                       ? &rhs_exit : &short_circuit_exit);
+    } else {
+      merge_direct_initialization_snapshots(
+          context, &short_circuit_exit, &rhs_exit);
+    }
+  } else if (!preflight_direct_expression(
+                 context, syntax->rhs, &rhs_type)) {
+    return 0;
+  }
   long long lhs_constant = 0;
   long long rhs_constant = 0;
   int lhs_is_null_pointer_constant =
@@ -6212,6 +6532,9 @@ static int preflight_direct_local_declaration(
             &request, &result) || !result.var ||
         (has_vla_type && !result.vla_runtime_plan))
       return 0;
+    if (!ensure_direct_initialization_state(
+            context, result.var, 0, &syntax->base))
+      return 0;
     if (has_vla_type)
       declares_variably_modified_identifier = 1;
     if (declaration->specifier.type_spec.is_register)
@@ -6296,6 +6619,10 @@ static int preflight_direct_local_declaration(
         .vla_runtime_plan = result.vla_runtime_plan,
         .is_object_copy_initializer = is_object_copy_initializer,
     };
+    if (initializer->has_initializer &&
+        !append_direct_local_initialization_marker(
+            context, result.var, &syntax->base))
+      return 0;
   }
   *binding = (direct_local_declaration_binding_t){
       .syntax = syntax,
@@ -6438,15 +6765,60 @@ static int preflight_direct_statement_impl(
     }
     case ND_IF: {
       const node_ctrl_t *control = (const node_ctrl_t *)syntax;
-      return preflight_direct_control_expression(
-                 context, syntax, syntax->lhs,
-                 PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL) &&
-             preflight_direct_statement(context, syntax->rhs) &&
-             (!control->els ||
-              preflight_direct_statement(context, control->els));
+      if (!preflight_direct_control_expression(
+              context, syntax, syntax->lhs,
+              PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL))
+        return 0;
+      long long condition_value = 0;
+      int condition_is_constant =
+          direct_integer_constant(
+              context, syntax->lhs, &condition_value);
+      direct_initialization_snapshot_t branch_entry;
+      direct_initialization_snapshot_t then_exit;
+      direct_initialization_snapshot_t else_exit;
+      if (!capture_direct_initialization_snapshot(
+              context, &branch_entry, syntax))
+        return 0;
+      int suppress_then =
+          condition_is_constant && condition_value == 0;
+      if (suppress_then)
+        context->suppress_initialization_diagnostics++;
+      int then_resolved =
+          preflight_direct_statement(context, syntax->rhs);
+      if (suppress_then)
+        context->suppress_initialization_diagnostics--;
+      if (!then_resolved ||
+          !capture_direct_initialization_snapshot(
+              context, &then_exit, syntax))
+        return 0;
+      restore_direct_initialization_snapshot(
+          context, &branch_entry);
+      if (control->els) {
+        int suppress_else =
+            condition_is_constant && condition_value != 0;
+        if (suppress_else)
+          context->suppress_initialization_diagnostics++;
+        int else_resolved = preflight_direct_statement(
+            context, control->els);
+        if (suppress_else)
+          context->suppress_initialization_diagnostics--;
+        if (!else_resolved ||
+            !capture_direct_initialization_snapshot(
+                context, &else_exit, syntax))
+          return 0;
+      } else {
+        else_exit = branch_entry;
+      }
+      if (condition_is_constant)
+        restore_direct_initialization_snapshot(
+            context, condition_value != 0
+                         ? &then_exit : &else_exit);
+      else
+        merge_direct_initialization_snapshots(
+            context, &then_exit, &else_exit);
+      return 1;
     }
-    case ND_WHILE:
-    case ND_DO_WHILE: {
+    case ND_WHILE: {
       if (!preflight_direct_control_expression(
               context, syntax, syntax->lhs,
               PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL))
@@ -6456,6 +6828,16 @@ static int preflight_direct_statement_impl(
           preflight_direct_statement(context, syntax->rhs);
       context->loop_depth--;
       return resolved;
+    }
+    case ND_DO_WHILE: {
+      context->loop_depth++;
+      int resolved =
+          preflight_direct_statement(context, syntax->rhs);
+      context->loop_depth--;
+      return resolved &&
+             preflight_direct_control_expression(
+                 context, syntax, syntax->lhs,
+                 PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL);
     }
     case ND_FOR: {
       const node_ctrl_t *control = (const node_ctrl_t *)syntax;
@@ -6476,15 +6858,15 @@ static int preflight_direct_statement_impl(
         resolved = preflight_direct_control_expression(
             context, syntax, syntax->lhs,
             PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR, NULL);
-      if (resolved && control->inc)
-        resolved = preflight_direct_expression(
-            context, control->inc, NULL);
       if (resolved) {
         context->loop_depth++;
         resolved = preflight_direct_statement(
             context, syntax->rhs);
         context->loop_depth--;
       }
+      if (resolved && control->inc)
+        resolved = preflight_direct_expression(
+            context, control->inc, NULL);
       if (declaration_scope) {
         context->active_vm_scope = vm_scope;
         ps_decl_leave_scope_in(context->local_registry);
@@ -7216,9 +7598,10 @@ static psx_semantic_node_t *build_direct_local_declaration(
           ND_LOCAL_DECLARATION);
       edges[i] = PSX_HIR_EDGE_BLOCK_ITEM;
       if (!children[i]) return NULL;
-      ps_decl_record_lvar_usage_in_region_in(
-          context->local_registry, declarator->local,
-          PSX_LVAR_USAGE_INITIALIZED, NULL);
+      if (!context->track_initialization_order)
+        ps_decl_record_lvar_usage_in_region_in(
+            context->local_registry, declarator->local,
+            PSX_LVAR_USAGE_INITIALIZED, NULL);
       continue;
     }
 
@@ -7230,9 +7613,10 @@ static psx_semantic_node_t *build_direct_local_declaration(
           ND_LOCAL_DECLARATION);
       edges[i] = PSX_HIR_EDGE_BLOCK_ITEM;
       if (!children[i]) return NULL;
-      ps_decl_record_lvar_usage_in_region_in(
-          context->local_registry, declarator->local,
-          PSX_LVAR_USAGE_INITIALIZED, NULL);
+      if (!context->track_initialization_order)
+        ps_decl_record_lvar_usage_in_region_in(
+            context->local_registry, declarator->local,
+            PSX_LVAR_USAGE_INITIALIZED, NULL);
       continue;
     }
 
@@ -7281,9 +7665,10 @@ static psx_semantic_node_t *build_direct_local_declaration(
     }
     edges[i] = PSX_HIR_EDGE_BLOCK_ITEM;
     if (!children[i]) return NULL;
-    ps_decl_record_lvar_usage_in_region_in(
-        context->local_registry, declarator->local,
-        PSX_LVAR_USAGE_INITIALIZED, NULL);
+    if (!context->track_initialization_order)
+      ps_decl_record_lvar_usage_in_region_in(
+          context->local_registry, declarator->local,
+          PSX_LVAR_USAGE_INITIALIZED, NULL);
   }
   psx_hir_node_spec_t block_spec = {
       .kind = PSX_HIR_BLOCK,

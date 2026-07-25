@@ -17423,6 +17423,33 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok_with_message(test_suite_session,
       "int main(void){int source; int result=source; source=9; return result;}",
       "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int main(void){int value=value; return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int main(void){int value; value=value; return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int main(void){int value; value=(value,3); return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "void set(int*out,int input){*out=input;} int main(void){int value; set(&value,value); return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int condition){int value; if(condition)value=1; return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int condition){int value; if(condition)value=1; else return value; return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int condition){int value; return condition?(value=1):value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int condition){int value; condition&&(value=1); return value;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int condition){int value; condition||(value=1); return value;}",
+      "W3004");
   expect_parse_ok_without_message(test_suite_session,
       "int main(void){int x; x=1; x+=2; return x;}",
       "W3004");
@@ -17440,6 +17467,42 @@ static void test_parse_evil_edge_cases(
       "W3004");
   expect_parse_ok_without_message(test_suite_session,
       "int first(int n, int values[n]){return values[0]+n;} int main(void){int values[1]={2}; return first(1,values);}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){int source=3,copy=source+2; int result; result=copy; return result;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){int value=3; value=value; return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){int value; do{value=3;}while(value<0); return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int main(void){int value; for(int i=0;i<1;i++,value++){value=3;} return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int condition){int value; if(condition)value=1; else value=2; return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int condition){int value; return condition?(value=1):(value=2);}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int condition){int value; (value=3)&&condition; return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(void){int value; if(1)value=1; return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(void){int value; return 1?(value=1):value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(void){int value; 1&&(value=1); return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(void){int value; 0||(value=1); return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(void){int value; if(0)return value; return 0;}",
       "W3004");
   expect_parse_ok_without_message(test_suite_session,
       "int main(void){ struct B { unsigned a:3; unsigned b:5; }; struct B s; s.a=5; s.b=10; return s.a; }",

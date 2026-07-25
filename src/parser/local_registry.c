@@ -684,8 +684,7 @@ void ps_decl_replay_lvar_usage_events_in(
         var->is_address_taken = 1;
         break;
       case PSX_LVAR_USAGE_REQUIRES_INITIALIZED_VALUE:
-        if (!var->is_initialized)
-          var->was_read_before_initialized = 1;
+        var->was_read_before_initialized = 1;
         break;
       case PSX_LVAR_USAGE_INITIALIZED:
         var->is_initialized = 1;
