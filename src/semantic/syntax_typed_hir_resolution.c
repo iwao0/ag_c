@@ -295,6 +295,8 @@ typedef struct {
   unsigned int track_initialization_order;
   unsigned int suppress_initialization_diagnostics;
   unsigned int initialization_flow_reachable;
+  unsigned int initialization_replay;
+  unsigned int initialization_flow_changed;
   char *function_name;
   int function_name_len;
   psx_qual_type_t function_return_qual_type;
@@ -435,6 +437,7 @@ static int record_direct_expression_type(
   if (!context || !syntax ||
       qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
+  if (context->initialization_replay) return 1;
   direct_expression_type_binding_t *binding = arena_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*binding));
   if (!binding) {
@@ -602,6 +605,43 @@ static int resolve_direct_function_call(
   for (direct_call_binding_t *binding = context->call_bindings;
        binding; binding = binding->next) {
     if (binding->syntax == call) {
+      if (context->initialization_replay) {
+        psx_qual_type_t ignored;
+        if (call->callee->kind == ND_IDENTIFIER) {
+          psx_identifier_expression_resolution_t callee_resolution;
+          if (!resolve_direct_call_identifier(
+                  context,
+                  (const node_identifier_t *)call->callee,
+                  &callee_resolution))
+            return 0;
+        } else if (!preflight_direct_expression(
+                       context, call->callee, &ignored)) {
+          return 0;
+        }
+        for (int i = 0; i < call->argument_count; i++) {
+          if (!preflight_direct_expression(
+                  context, call->arguments[i], &ignored))
+            return 0;
+        }
+        if (!psx_builtin_call_is_atomic(
+                psx_function_call_builtin_kind(call))) {
+          int fixed_argument_count =
+              call->argument_count <
+                      binding->resolution.parameter_count
+                  ? call->argument_count
+                  : binding->resolution.parameter_count;
+          for (int i = 0; i < fixed_argument_count; i++) {
+            psx_qual_type_t parameter_type =
+                psx_semantic_type_table_parameter(
+                    direct_semantic_types(context),
+                    binding->resolution.function_qual_type.type_id,
+                    i);
+            if (!mark_direct_out_argument_initialization(
+                    context, call->arguments[i], parameter_type))
+              return 0;
+          }
+        }
+      }
       if (out_binding) *out_binding = binding;
       return 1;
     }
@@ -819,6 +859,17 @@ static int resolve_direct_generic_selection(
   direct_generic_binding_t *existing =
       find_direct_generic_binding(context, selection);
   if (existing) {
+    if (context->initialization_replay) {
+      if (existing->selected_index < 0 ||
+          existing->selected_index >=
+              selection->association_count ||
+          !preflight_direct_expression(
+              context,
+              selection->associations[
+                  existing->selected_index].expression,
+              NULL))
+        return 0;
+    }
     if (out_binding) *out_binding = existing;
     return 1;
   }
@@ -1170,6 +1221,23 @@ static void accumulate_direct_initialization_snapshot(
   aggregate->reachable = 1;
 }
 
+static int direct_initialization_aggregate_would_change(
+    const direct_initialization_snapshot_t *aggregate,
+    int has_aggregate,
+    const direct_initialization_snapshot_t *candidate) {
+  if (!candidate || !candidate->reachable) return 0;
+  if (!has_aggregate) return 1;
+  for (direct_initialization_snapshot_entry_t *entry =
+           aggregate ? aggregate->entries : NULL;
+       entry; entry = entry->next) {
+    if (entry->initialized &&
+        !direct_snapshot_local_is_initialized(
+            candidate, entry->local))
+      return 1;
+  }
+  return 0;
+}
+
 static int accumulate_current_direct_initialization_snapshot(
     direct_resolution_context_t *context,
     direct_initialization_snapshot_t *aggregate,
@@ -1319,8 +1387,9 @@ static int resolve_direct_identifier_with_usage(
     if (context->unevaluated_depth == 0) {
       binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_EVALUATED;
       if (context->track_initialization_order &&
-          !(binding->usage_flags &
-            DIRECT_IDENTIFIER_USAGE_INITIALIZATION_CLASSIFIED)) {
+          (context->initialization_replay ||
+           !(binding->usage_flags &
+             DIRECT_IDENTIFIER_USAGE_INITIALIZATION_CLASSIFIED))) {
         binding->usage_flags |=
             DIRECT_IDENTIFIER_USAGE_INITIALIZATION_CLASSIFIED;
         if (binding->resolution.symbol.kind ==
@@ -2024,6 +2093,14 @@ static int resolve_direct_type_query(
   direct_type_query_binding_t *existing =
       find_direct_type_query_binding(context, syntax);
   if (existing) {
+    if (context->initialization_replay) {
+      for (int i = 0; i < existing->evaluated_prefix_count; i++) {
+        if (!existing->evaluated_prefixes[i] ||
+            !preflight_direct_expression(
+                context, existing->evaluated_prefixes[i], NULL))
+          return 0;
+      }
+    }
     if (out_binding) *out_binding = existing;
     return 1;
   }
@@ -2498,7 +2575,12 @@ static int mark_direct_assignment_target(
             DIRECT_IDENTIFIER_USAGE_DOES_NOT_REQUIRE_INITIALIZED_VALUE;
       }
       if (context->track_initialization_order) {
-        if (!(binding->usage_flags &
+        if (context->initialization_replay) {
+          if (!set_direct_local_initialized(
+                  context, binding->resolution.symbol.local,
+                  syntax))
+            return 0;
+        } else if (!(binding->usage_flags &
               DIRECT_IDENTIFIER_USAGE_INITIALIZATION_QUEUED)) {
           if (!append_direct_local_initialization_marker(
                   context, binding->resolution.symbol.local, syntax))
@@ -6158,6 +6240,23 @@ static char *new_direct_compound_object_name(
   return name;
 }
 
+static int replay_direct_initializer_syntax(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
+  if (!context || !syntax) return 0;
+  if (syntax->kind != ND_INIT_LIST)
+    return preflight_direct_expression(context, syntax, NULL);
+  const node_init_list_t *list =
+      (const node_init_list_t *)syntax;
+  for (int i = 0; i < list->entry_count; i++) {
+    if (!list->entries[i].value ||
+        !replay_direct_initializer_syntax(
+            context, list->entries[i].value))
+      return 0;
+  }
+  return 1;
+}
+
 static int resolve_direct_compound_literal(
     direct_resolution_context_t *context,
     const node_compound_literal_t *compound,
@@ -6169,6 +6268,10 @@ static int resolve_direct_compound_literal(
   direct_compound_literal_binding_t *existing =
       find_direct_compound_literal_binding(context, compound);
   if (existing) {
+    if (context->initialization_replay &&
+        !replay_direct_initializer_syntax(
+            context, compound->base.rhs))
+      return 0;
     if (out_binding) *out_binding = existing;
     return 1;
   }
@@ -6349,6 +6452,54 @@ static int preflight_direct_local_declaration(
       syntax->declaration;
   if (declaration->declarator_count < 0)
     return 0;
+  if (context->initialization_replay) {
+    direct_local_declaration_binding_t *binding =
+        find_direct_local_declaration(context, syntax);
+    if (!binding ||
+        binding->declarator_count !=
+            declaration->declarator_count)
+      return 0;
+    for (int i = 0; i < binding->declarator_count; i++) {
+      const psx_parsed_declarator_t *parsed =
+          &declaration->declarators[i];
+      direct_local_declarator_binding_t *declarator =
+          &binding->declarators[i];
+      for (int bound_index = 0;
+           bound_index < parsed->array_bound_count;
+           bound_index++) {
+        const node_t *bound =
+            parsed->array_bounds[bound_index].expression.node;
+        if (!bound ||
+            !preflight_direct_expression(context, bound, NULL))
+          return 0;
+      }
+      for (int capture_index = 0;
+           capture_index <
+               declarator->typedef_bound_capture_count;
+           capture_index++) {
+        const node_t *bound =
+            declarator->typedef_bound_captures[
+                capture_index].value_syntax;
+        if (!bound ||
+            !preflight_direct_expression(context, bound, NULL))
+          return 0;
+      }
+      if (declarator->is_semantic_only ||
+          !declarator->local)
+        continue;
+      const psx_parsed_initializer_t *initializer =
+          declarator->initializer;
+      if (initializer && initializer->has_initializer) {
+        if (!initializer->value ||
+            !replay_direct_initializer_syntax(
+                context, initializer->value) ||
+            !set_direct_local_initialized(
+                context, declarator->local, &syntax->base))
+          return 0;
+      }
+    }
+    return 1;
+  }
 
   psx_decl_specifier_value_resolution_t specifier_resolution;
   psx_resolve_decl_specifier_value_in_contexts(
@@ -6842,23 +6993,25 @@ static int preflight_direct_statement_impl(
     case ND_BLOCK: {
       const node_block_t *block = (const node_block_t *)syntax;
       int nested_scope = context->block_depth > 0;
+      int registry_scope =
+          nested_scope && !context->initialization_replay;
       direct_vm_scope_marker_t *vm_scope =
           context->active_vm_scope;
-      if (nested_scope)
+      if (registry_scope)
         ps_decl_enter_scope_in(context->local_registry);
       context->block_depth++;
       for (size_t i = 0; block->body && block->body[i]; i++) {
         if (!preflight_direct_statement(context, block->body[i])) {
           context->block_depth--;
           context->active_vm_scope = vm_scope;
-          if (nested_scope)
+          if (registry_scope)
             ps_decl_leave_scope_in(context->local_registry);
           return 0;
         }
       }
       context->block_depth--;
       context->active_vm_scope = vm_scope;
-      if (nested_scope)
+      if (registry_scope)
         ps_decl_leave_scope_in(context->local_registry);
       return 1;
     }
@@ -6977,6 +7130,8 @@ static int preflight_direct_statement_impl(
           condition_is_constant && condition_value == 0;
       if (suppress_then)
         context->suppress_initialization_diagnostics++;
+      if (suppress_then)
+        terminate_direct_initialization_flow(context);
       int then_resolved =
           preflight_direct_statement(context, syntax->rhs);
       if (suppress_then)
@@ -6992,6 +7147,8 @@ static int preflight_direct_statement_impl(
             condition_is_constant && condition_value != 0;
         if (suppress_else)
           context->suppress_initialization_diagnostics++;
+        if (suppress_else)
+          terminate_direct_initialization_flow(context);
         int else_resolved = preflight_direct_statement(
             context, control->els);
         if (suppress_else)
@@ -7115,9 +7272,11 @@ static int preflight_direct_statement_impl(
       const node_ctrl_t *control = (const node_ctrl_t *)syntax;
       int declaration_scope = control->init &&
           control->init->kind == ND_LOCAL_DECLARATION;
+      int registry_scope =
+          declaration_scope && !context->initialization_replay;
       direct_vm_scope_marker_t *vm_scope =
           context->active_vm_scope;
-      if (declaration_scope) {
+      if (registry_scope) {
         ps_decl_enter_scope_in(context->local_registry);
       }
       int resolved = !control->init ||
@@ -7197,7 +7356,8 @@ static int preflight_direct_statement_impl(
       }
       if (declaration_scope) {
         context->active_vm_scope = vm_scope;
-        ps_decl_leave_scope_in(context->local_registry);
+        if (registry_scope)
+          ps_decl_leave_scope_in(context->local_registry);
       }
       return resolved;
     }
@@ -7269,7 +7429,6 @@ static int preflight_direct_statement_impl(
       return 1;
     }
     case ND_CASE: {
-      psx_qual_type_t case_qual_type;
       long long value;
       if (!context->switch_scope)
         return note_direct_semantic_rejection(
@@ -7282,22 +7441,29 @@ static int preflight_direct_statement_impl(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE,
             syntax);
-      if (!preflight_direct_expression(
-              context, syntax->lhs, &case_qual_type))
-        return 0;
-      if (!direct_qual_type_is_integer(context, case_qual_type) ||
-          !direct_integer_constant(context, syntax->lhs, &value))
-        return note_direct_semantic_rejection(
-            context,
-            PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT,
-            syntax);
-      if (!psx_normalize_integer_constant_cast(
-              &context->switch_scope->promoted_control_type,
-              value, &value))
-        return note_direct_rejection(context, syntax);
-      if (!bind_direct_case_value(
-              context, (const node_case_t *)syntax, value))
-        return 0;
+      if (context->initialization_replay) {
+        if (!direct_case_value(
+                context, (const node_case_t *)syntax, &value))
+          return 0;
+      } else {
+        psx_qual_type_t case_qual_type;
+        if (!preflight_direct_expression(
+                context, syntax->lhs, &case_qual_type))
+          return 0;
+        if (!direct_qual_type_is_integer(context, case_qual_type) ||
+            !direct_integer_constant(context, syntax->lhs, &value))
+          return note_direct_semantic_rejection(
+              context,
+              PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT,
+              syntax);
+        if (!psx_normalize_integer_constant_cast(
+                &context->switch_scope->promoted_control_type,
+                value, &value))
+          return note_direct_rejection(context, syntax);
+        if (!bind_direct_case_value(
+                context, (const node_case_t *)syntax, value))
+          return 0;
+      }
       direct_initialization_snapshot_t fallthrough;
       if (!capture_direct_initialization_snapshot(
               context, &fallthrough, syntax))
@@ -7323,7 +7489,8 @@ static int preflight_direct_statement_impl(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE,
             syntax);
-      if (context->switch_scope->has_default)
+      if (!context->initialization_replay &&
+          context->switch_scope->has_default)
         return note_direct_semantic_rejection(
             context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
             syntax);
@@ -7345,17 +7512,27 @@ static int preflight_direct_statement_impl(
       direct_goto_binding_t *binding = find_direct_goto_binding(
           context, (const node_jump_t *)syntax);
       if (!binding) return note_direct_rejection(context, syntax);
-      binding->vm_scope = context->active_vm_scope;
+      if (!context->initialization_replay)
+        binding->vm_scope = context->active_vm_scope;
       const node_jump_t *jump = (const node_jump_t *)syntax;
       direct_label_scope_state_t *target =
           find_direct_label_scope_state(
               context, jump->name, jump->name_len);
+      direct_initialization_snapshot_t candidate;
       if (!target ||
-          !accumulate_current_direct_initialization_snapshot(
-              context, &target->incoming_initialization,
-              &target->has_incoming_initialization,
-              syntax))
+          !capture_direct_initialization_snapshot(
+              context, &candidate, syntax))
         return note_direct_rejection(context, syntax);
+      if (context->initialization_replay &&
+          direct_initialization_aggregate_would_change(
+              &target->incoming_initialization,
+              target->has_incoming_initialization,
+              &candidate))
+        context->initialization_flow_changed = 1;
+      accumulate_direct_initialization_snapshot(
+          &target->incoming_initialization,
+          &target->has_incoming_initialization,
+          &candidate);
       terminate_direct_initialization_flow(context);
       return 1;
     }
@@ -7364,7 +7541,8 @@ static int preflight_direct_statement_impl(
           find_direct_label_scope_state_for(
               context, (const node_jump_t *)syntax);
       if (!state) return note_direct_rejection(context, syntax);
-      state->vm_scope = context->active_vm_scope;
+      if (!context->initialization_replay)
+        state->vm_scope = context->active_vm_scope;
       direct_initialization_snapshot_t fallthrough;
       if (!capture_direct_initialization_snapshot(
               context, &fallthrough, syntax))
@@ -7412,6 +7590,66 @@ static int preflight_direct_statement_impl(
     default:
       return preflight_direct_expression(context, syntax, NULL);
   }
+}
+
+static void reset_direct_initialization_replay_state(
+    direct_resolution_context_t *context) {
+  if (!context) return;
+  for (direct_initialization_state_t *state =
+           context->initialization_states;
+       state; state = state->next) {
+    state->initialized =
+        direct_local_is_preinitialized(state->local) ? 1 : 0;
+  }
+  context->switch_scope = NULL;
+  context->break_target = NULL;
+  context->active_vm_scope = NULL;
+  context->loop_depth = 0;
+  context->switch_depth = 0;
+  context->block_depth = 0;
+  context->unevaluated_depth = 0;
+  context->suppress_initialization_diagnostics = 0;
+  context->initialization_flow_reachable = 1;
+  context->initialization_flow_changed = 0;
+  context->suppress_value_decay_depth = 0;
+  context->address_operand_depth = 0;
+}
+
+static int stabilize_direct_initialization_flow(
+    direct_resolution_context_t *context,
+    const node_t *body) {
+  if (!context || !body) return 0;
+  if (!context->track_initialization_order || !context->gotos)
+    return 1;
+  size_t state_count = 0;
+  size_t goto_count = 0;
+  for (direct_initialization_state_t *state =
+           context->initialization_states;
+       state; state = state->next)
+    state_count++;
+  for (direct_goto_binding_t *jump = context->gotos;
+       jump; jump = jump->next)
+    goto_count++;
+  size_t max_passes =
+      (state_count + 1) * (goto_count + 1) + 1;
+  context->initialization_replay = 1;
+  for (size_t pass = 0; pass < max_passes; pass++) {
+    reset_direct_initialization_replay_state(context);
+    if (!preflight_direct_statement(context, body)) {
+      context->initialization_replay = 0;
+      return 0;
+    }
+    if (!context->initialization_flow_changed) {
+      context->initialization_replay = 0;
+      return 1;
+    }
+  }
+  context->initialization_replay = 0;
+  context->preflight_failed = 1;
+  set_failure(
+      context->failure, PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE,
+      body);
+  return 0;
 }
 
 static psx_semantic_node_t *build_direct_block_excluding(
@@ -8958,7 +9196,9 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
       !validate_direct_function_jumps(&context) ||
       !preflight_direct_statement(
           &context, syntax_function->body) ||
-      !validate_direct_function_vm_jumps(&context)) {
+      !validate_direct_function_vm_jumps(&context) ||
+      !stabilize_direct_initialization_flow(
+          &context, syntax_function->body)) {
     rollback_direct_function_resolution(
         &transaction, context.function_declarations, 1);
     return context.preflight_failed

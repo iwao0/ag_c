@@ -50,6 +50,9 @@ static const success_case_t success_cases[] = {
     // 定義済みマクロ
     {1,  "int main() { return __STDC__; }"},
     {42, "#if __STDC_VERSION__ >= 201112L\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
+    {42, "#if __STDC_HOSTED__ == 1\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
+    {42, "#if __STDC_NO_THREADS__ == 1\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
+    {42, "#if !defined(__STDC_NO_ATOMICS__) && !defined(__STDC_NO_COMPLEX__) && !defined(__STDC_NO_VLA__)\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     {1,  "int main() { return __LINE__; }"},
     {42, "int main() { char *f = __FILE__; return f[0] ? 42 : 0; }"},
     {42, "int main() { char *d = __DATE__; return d[0] ? 42 : 0; }"},

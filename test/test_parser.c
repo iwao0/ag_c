@@ -17471,6 +17471,27 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok_with_message(test_suite_session,
       "int choose(int selector){int value;switch(selector){case 0:goto done;default:value=10;break;}done:return value;}",
       "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int condition){int value;goto dispatch;done:return value;dispatch:if(condition){value=70;goto done;}goto done;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int first,int second){int value;goto third;first_label:return value;second_label:if(first){value=80;goto first_label;}goto first_label;third:if(second)goto second_label;value=90;goto second_label;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int condition){int source;goto dispatch;use:{int copy=source;return copy;}dispatch:if(condition)source=100;goto use;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "struct S{int value;};int choose(int condition){int source;goto dispatch;use:return ((struct S){source}).value;dispatch:if(condition)source=110;goto use;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int identity(int value){return value;}int choose(int condition){int source;goto dispatch;use:return identity(source);dispatch:if(condition)source=120;goto use;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int condition){int source;goto dispatch;use:return _Generic(0,int:source,default:0);dispatch:if(condition)source=130;goto use;}",
+      "W3004");
+  expect_parse_ok_with_message(test_suite_session,
+      "int choose(int condition){int count;goto dispatch;use:{int values[count];return sizeof(values)>0;}dispatch:if(condition)count=2;goto use;}",
+      "W3004");
   expect_parse_ok_without_message(test_suite_session,
       "int main(void){int x; x=1; x+=2; return x;}",
       "W3004");
@@ -17563,6 +17584,21 @@ static void test_parse_evil_edge_cases(
       "W3004");
   expect_parse_ok_without_message(test_suite_session,
       "int choose(int condition){int value;goto initialize;done:return value;initialize:value=condition?10:20;goto done;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(void){int value;if(0)goto done;value=135;done:return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(void){int value;if(1)value=136;else goto done;done:return value;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int condition){int value;goto dispatch;done:return value;dispatch:if(condition){value=140;goto done;}value=150;goto done;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "void set_value(int*out,int value){*out=value;}int choose(int condition){int value;goto dispatch;done:return value;dispatch:set_value(&value,condition?160:170);goto done;}",
+      "W3004");
+  expect_parse_ok_without_message(test_suite_session,
+      "int choose(int iterations){int value;goto initialize;again:if(iterations-->0){value+=1;goto again;}return value;initialize:value=180;goto again;}",
       "W3004");
   expect_parse_ok_without_message(test_suite_session,
       "int main(void){ struct B { unsigned a:3; unsigned b:5; }; struct B s; s.a=5; s.b=10; return s.a; }",

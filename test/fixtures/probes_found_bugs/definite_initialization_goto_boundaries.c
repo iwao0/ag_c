@@ -53,6 +53,59 @@ initialize:
   goto done;
 }
 
+static int backward_goto_multiple_paths_initialize(int condition) {
+  int value;
+  goto dispatch;
+done:
+  return value;
+dispatch:
+  if (condition) {
+    value = 100;
+    goto done;
+  }
+  value = 110;
+  goto done;
+}
+
+static int backward_goto_cycle_preserves_initialization(
+    int iterations) {
+  int value;
+  goto initialize;
+again:
+  if (iterations-- > 0) {
+    value += 1;
+    goto again;
+  }
+  return value;
+initialize:
+  value = 120;
+  goto again;
+}
+
+static void set_value(int *output, int value) {
+  *output = value;
+}
+
+static int backward_goto_out_parameter_initializes(
+    int condition) {
+  int value;
+  goto dispatch;
+done:
+  return value;
+dispatch:
+  set_value(&value, condition ? 130 : 140);
+  goto done;
+}
+
+static int constant_unreachable_goto_is_ignored(void) {
+  int value;
+  if (0)
+    goto done;
+  value = 150;
+done:
+  return value;
+}
+
 int main(void) {
   assert(forward_goto_paths_initialize(0) == 10);
   assert(forward_goto_paths_initialize(1) == 20);
@@ -63,5 +116,12 @@ int main(void) {
   assert(switch_goto_paths_initialize(1) == 70);
   assert(backward_goto_paths_initialize(0) == 90);
   assert(backward_goto_paths_initialize(1) == 80);
+  assert(backward_goto_multiple_paths_initialize(0) == 110);
+  assert(backward_goto_multiple_paths_initialize(1) == 100);
+  assert(backward_goto_cycle_preserves_initialization(0) == 120);
+  assert(backward_goto_cycle_preserves_initialization(3) == 123);
+  assert(backward_goto_out_parameter_initializes(0) == 140);
+  assert(backward_goto_out_parameter_initializes(1) == 130);
+  assert(constant_unreachable_goto_is_ignored() == 150);
   return 0;
 }
