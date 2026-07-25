@@ -2,6 +2,19 @@
 
 #include <stdlib.h>
 
+#include "../parser/vla_runtime.h"
+
+static ir_type_t vla_runtime_size_type(
+    const hir_ir_context_t *context) {
+  int pointer_size = context && context->options &&
+                             context->options->target
+                         ? ag_data_layout_pointer_size(
+                               ag_target_info_data_layout(
+                                   context->options->target))
+                         : 0;
+  return pointer_size >= 8 ? IR_TY_I64 : IR_TY_I32;
+}
+
 int hir_ir_emit_parameter_array_bounds(
     hir_ir_context_t *context, const psx_hir_node_t *root) {
   size_t bound_count = hir_ir_child_count_for_edge(
@@ -22,7 +35,8 @@ int hir_ir_emit_parameter_array_bounds(
 
 static int emit_vla_stride_value(
     hir_ir_context_t *context, ir_val_t dimension,
-    ir_val_t accumulated, int destination_offset, int slot_size) {
+    ir_val_t accumulated, ir_type_t runtime_size_type,
+    int destination_offset, int slot_size) {
   int product_vreg = hir_ir_new_vreg(context);
   if (product_vreg < 0) return -1;
   ir_inst_t *multiply = ir_inst_new(IR_MUL);
@@ -30,21 +44,29 @@ static int emit_vla_stride_value(
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return -1;
   }
-  multiply->dst = ir_val_vreg(product_vreg, IR_TY_I32);
+  multiply->dst = ir_val_vreg(
+      product_vreg, runtime_size_type);
   multiply->src1 = dimension;
   multiply->src2 = accumulated;
   if (!hir_ir_append_instruction(context, multiply)) return -1;
 
-  int wide_vreg = hir_ir_new_vreg(context);
-  if (wide_vreg < 0) return -1;
-  ir_inst_t *extend = ir_inst_new(IR_ZEXT);
-  if (!extend) {
-    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+  ir_val_t wide_product = multiply->dst;
+  if (runtime_size_type == IR_TY_I32) {
+    int wide_vreg = hir_ir_new_vreg(context);
+    if (wide_vreg < 0) return -1;
+    ir_inst_t *extend = ir_inst_new(IR_ZEXT);
+    if (!extend) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return -1;
+    }
+    extend->dst = ir_val_vreg(wide_vreg, IR_TY_I64);
+    extend->src1 = multiply->dst;
+    if (!hir_ir_append_instruction(context, extend)) return -1;
+    wide_product = extend->dst;
+  } else if (runtime_size_type != IR_TY_I64) {
+    context->status = IR_HIR_BUILD_INVALID;
     return -1;
   }
-  extend->dst = ir_val_vreg(wide_vreg, IR_TY_I64);
-  extend->src1 = multiply->dst;
-  if (!hir_ir_append_instruction(context, extend)) return -1;
 
   int slot = hir_ir_local_storage_address(
       context, destination_offset, slot_size,
@@ -56,7 +78,7 @@ static int emit_vla_stride_value(
     return -1;
   }
   store->src1 = ir_val_vreg(slot, IR_TY_PTR);
-  store->src2 = extend->dst;
+  store->src2 = wide_product;
   if (!hir_ir_append_instruction(context, store)) return -1;
   return product_vreg;
 }
@@ -64,35 +86,47 @@ static int emit_vla_stride_value(
 static int load_vla_dimension(
     hir_ir_context_t *context, const psx_hir_node_t *parameter,
     size_t dimension, ir_val_t *result) {
+  ir_type_t runtime_size_type =
+      vla_runtime_size_type(context);
   int constant = psx_hir_node_vla_dimension_constant(
       parameter, dimension);
   if (constant > 0) {
-    *result = ir_val_imm(IR_TY_I32, constant);
+    *result = ir_val_imm(runtime_size_type, constant);
     return 1;
   }
-  int source_offset = psx_hir_node_vla_dimension_source_offset(
-      parameter, dimension);
-  int source = hir_ir_find_local_address(context, source_offset);
-  if (source < 0) {
+  size_t expression_index = 0;
+  for (size_t prior = 0; prior < dimension; prior++) {
+    if (psx_hir_node_vla_dimension_constant(
+            parameter, prior) == 0)
+      expression_index++;
+  }
+  const psx_hir_node_t *expression = hir_ir_child_for_edge(
+      context, parameter, PSX_HIR_EDGE_VLA_DIMENSION,
+      expression_index);
+  if (!expression) {
     context->status = IR_HIR_BUILD_INVALID;
     return 0;
   }
-  int value_vreg = hir_ir_new_vreg(context);
-  if (value_vreg < 0) return 0;
-  ir_inst_t *load = ir_inst_new(IR_LOAD);
-  if (!load) {
-    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+  ir_val_t value = hir_ir_build_expr(context, expression);
+  ir_mir_type_info_t value_type =
+      hir_ir_classify_node_type(context, expression);
+  if (context->status != IR_HIR_BUILD_OK ||
+      value_type.type_class != IR_MIR_TYPE_INTEGER ||
+      !hir_ir_is_integer_type(value.type)) {
+    if (context->status == IR_HIR_BUILD_OK)
+      context->status = IR_HIR_BUILD_INVALID;
     return 0;
   }
-  load->dst = ir_val_vreg(value_vreg, IR_TY_I32);
-  load->src1 = ir_val_vreg(source, IR_TY_PTR);
-  if (!hir_ir_append_instruction(context, load)) return 0;
-  *result = load->dst;
-  return 1;
+  *result = hir_ir_emit_integer_width_conversion(
+      context, value, runtime_size_type,
+      !value_type.is_unsigned);
+  return context->status == IR_HIR_BUILD_OK;
 }
 
 int hir_ir_emit_vla_parameter_strides(
     hir_ir_context_t *context, const psx_hir_node_t *root) {
+  ir_type_t runtime_size_type =
+      vla_runtime_size_type(context);
   size_t parameter_count = hir_ir_child_count_for_edge(
       root, PSX_HIR_EDGE_PARAMETER);
   for (size_t parameter_index = 0;
@@ -126,31 +160,57 @@ int hir_ir_emit_vla_parameter_strides(
       }
       load->dst = ir_val_vreg(value_vreg, IR_TY_I32);
       load->src1 = ir_val_vreg(source, IR_TY_PTR);
-      if (!hir_ir_append_instruction(context, load) ||
+      if (!hir_ir_append_instruction(context, load))
+        return 0;
+      ir_val_t dimension =
+          hir_ir_emit_integer_width_conversion(
+              context, load->dst, runtime_size_type, 0);
+      if (context->status != IR_HIR_BUILD_OK ||
           emit_vla_stride_value(
-              context, load->dst,
-              ir_val_imm(IR_TY_I32, element_size),
+              context, dimension,
+              ir_val_imm(runtime_size_type, element_size),
+              runtime_size_type,
               frame_offset, slot_size) < 0)
         return 0;
       continue;
     }
 
+    ir_val_t *dimension_values = calloc(
+        dimension_count, sizeof(*dimension_values));
+    if (!dimension_values) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+    for (size_t dimension = 0;
+         dimension < dimension_count; dimension++) {
+      if (!load_vla_dimension(
+              context, parameter, dimension,
+              &dimension_values[dimension])) {
+        free(dimension_values);
+        return 0;
+      }
+    }
+
     int accumulated_vreg = -1;
     for (size_t reverse = dimension_count; reverse > 0; reverse--) {
       size_t dimension = reverse - 1;
-      ir_val_t dimension_value;
-      if (!load_vla_dimension(
-              context, parameter, dimension, &dimension_value))
-        return 0;
       ir_val_t accumulated = dimension == dimension_count - 1
-                                 ? ir_val_imm(IR_TY_I32, element_size)
+                                 ? ir_val_imm(
+                                       runtime_size_type,
+                                       element_size)
                                  : ir_val_vreg(
-                                       accumulated_vreg, IR_TY_I32);
+                                       accumulated_vreg,
+                                       runtime_size_type);
       accumulated_vreg = emit_vla_stride_value(
-          context, dimension_value, accumulated,
+          context, dimension_values[dimension], accumulated,
+          runtime_size_type,
           frame_offset + slot_size * (int)dimension, slot_size);
-      if (accumulated_vreg < 0) return 0;
+      if (accumulated_vreg < 0) {
+        free(dimension_values);
+        return 0;
+      }
     }
+    free(dimension_values);
   }
   return 1;
 }
@@ -169,6 +229,8 @@ static int store_vla_runtime_value(
 
 ir_val_t hir_ir_build_vla_allocation(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
+  ir_type_t runtime_size_type =
+      vla_runtime_size_type(context);
   size_t dimension_count = hir_ir_child_count_for_edge(
       node, PSX_HIR_EDGE_VLA_DIMENSION);
   size_t store_count =
@@ -196,19 +258,27 @@ ir_val_t hir_ir_build_vla_allocation(
       free(suffix_sizes);
       return hir_ir_unsupported_expr(context);
     }
+    ir_mir_type_info_t dimension_type =
+        hir_ir_classify_node_type(context, dimension);
+    if (dimension_type.type_class != IR_MIR_TYPE_INTEGER) {
+      free(suffix_sizes);
+      return hir_ir_unsupported_expr(context);
+    }
     suffix_sizes[i] = hir_ir_emit_integer_width_conversion(
-        context, suffix_sizes[i], IR_TY_I32, 0);
+        context, suffix_sizes[i], runtime_size_type,
+        !dimension_type.is_unsigned);
     if (context->status != IR_HIR_BUILD_OK) {
       free(suffix_sizes);
       return ir_val_none();
     }
   }
 
-  ir_val_t suffix = ir_val_imm(IR_TY_I32, element_size);
+  ir_val_t suffix = ir_val_imm(runtime_size_type, element_size);
   for (size_t reverse = dimension_count; reverse > 0; reverse--) {
     size_t i = reverse - 1;
     suffix = hir_ir_emit_integer_binary(
-        context, IR_MUL, suffix_sizes[i], suffix, IR_TY_I32);
+        context, IR_MUL, suffix_sizes[i], suffix,
+        runtime_size_type);
     if (context->status != IR_HIR_BUILD_OK) {
       free(suffix_sizes);
       return ir_val_none();

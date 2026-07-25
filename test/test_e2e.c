@@ -771,6 +771,8 @@ static const test_case_t test_cases[] = {
     {"probes", "predefined_environment_feature_macros", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/predefined_environment_feature_macros.c", 0, 0},
     {"probes", "vla_bound_assignment_expression", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_bound_assignment_expression.c", 0, 0},
     {"probes", "array_parameter_static_bound_evaluation", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_parameter_static_bound_evaluation.c", 0, 0},
+    {"probes", "array_parameter_inner_bound_evaluation", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_parameter_inner_bound_evaluation.c", 0, 0},
+    {"probes", "vla_wide_runtime_bound", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_wide_runtime_bound.c", 0, 0},
     {"probes", "stdlib_algorithm_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_algorithm_function_pointer_boundaries.c", 0, 0},
     {"probes", "stdlib_integer_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_integer_function_pointer_abi_boundaries.c", 0, 0},
     {"probes", "stdlib_conversion_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_conversion_function_pointer_boundaries.c", 0, 0},

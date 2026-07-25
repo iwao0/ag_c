@@ -404,18 +404,24 @@ void ps_local_registry_set_vla_pointer_indirections(
 void ps_local_registry_set_vla_param_inner_dims(
     psx_local_registry_t *registry, lvar_t *var,
     const int *inner_dim_consts,
-    const int *inner_dim_src_offsets, int inner_dim_count,
+    const int *inner_dim_src_offsets,
+    const psx_semantic_expr_id_t *inner_dim_expression_ids,
+    int inner_dim_count,
     token_t *diagnostic_token) {
   if (!registry || !var) return;
   if (inner_dim_count < 0) inner_dim_count = 0;
   int *constants = NULL;
   int *source_offsets = NULL;
+  psx_semantic_expr_id_t *expression_ids = NULL;
   if (inner_dim_count > 0) {
     constants = calloc((size_t)inner_dim_count, sizeof(*constants));
     source_offsets = calloc((size_t)inner_dim_count, sizeof(*source_offsets));
-    if (!constants || !source_offsets) {
+    expression_ids = calloc(
+        (size_t)inner_dim_count, sizeof(*expression_ids));
+    if (!constants || !source_offsets || !expression_ids) {
       free(constants);
       free(source_offsets);
+      free(expression_ids);
       ps_diag_ctx_in(
           registry->diagnostic_context, diagnostic_token, "vla",
           "VLA runtime dimension allocation failed");
@@ -427,11 +433,16 @@ void ps_local_registry_set_vla_param_inner_dims(
     if (inner_dim_src_offsets)
       memcpy(source_offsets, inner_dim_src_offsets,
              (size_t)inner_dim_count * sizeof(*source_offsets));
+    if (inner_dim_expression_ids)
+      memcpy(expression_ids, inner_dim_expression_ids,
+             (size_t)inner_dim_count * sizeof(*expression_ids));
   }
   free(var->vla_runtime.param_inner_dim_consts);
   free(var->vla_runtime.param_inner_dim_src_offsets);
+  free(var->vla_runtime.param_inner_dim_expression_ids);
   var->vla_runtime.param_inner_dim_consts = constants;
   var->vla_runtime.param_inner_dim_src_offsets = source_offsets;
+  var->vla_runtime.param_inner_dim_expression_ids = expression_ids;
   var->vla_runtime.param_inner_dim_count = inner_dim_count;
 }
 
@@ -491,8 +502,10 @@ static void clear_local_registry_state(psx_local_registry_t *registry) {
       continue;
     free(var->vla_runtime.param_inner_dim_consts);
     free(var->vla_runtime.param_inner_dim_src_offsets);
+    free(var->vla_runtime.param_inner_dim_expression_ids);
     var->vla_runtime.param_inner_dim_consts = NULL;
     var->vla_runtime.param_inner_dim_src_offsets = NULL;
+    var->vla_runtime.param_inner_dim_expression_ids = NULL;
     var->vla_runtime.param_inner_dim_count = 0;
   }
   registry->storage_objects = NULL;

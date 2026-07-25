@@ -128,6 +128,9 @@ static const psx_hir_node_t *find_test_hir_node_kind(
 static const psx_hir_node_t *find_test_named_hir_node(
     const psx_hir_module_t *hir, psx_hir_node_kind_t kind,
     const char *expected_name, size_t occurrence);
+static const psx_hir_node_t *find_test_hir_function_parameter(
+    const psx_hir_module_t *hir, const psx_hir_node_t *function,
+    const char *expected_name);
 
 static ag_diagnostic_context_t *test_diagnostics(
     ag_compilation_session_t *test_suite_session) {
@@ -2422,7 +2425,9 @@ static void test_typed_hir_vla_parameter_metadata_without_ast(
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_MUL) >= 1);
-  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) >= 1);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) +
+                  count_ir_op(ir->funcs, IR_SEXT) >=
+              1);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
@@ -2494,6 +2499,86 @@ static void test_typed_hir_parameter_array_bound_evaluation_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void
+test_typed_hir_parameter_inner_array_bound_evaluation_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_parameter_inner_array_bound_evaluation_without_ast"
+      "...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "int observe_inner_bound(int extent) { return extent; } "
+      "int inner_bounded_parameter("
+      "int rows, int columns, "
+      "int values[rows][observe_inner_bound(columns)]) { "
+      "return values[1][columns - 1]; }"));
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *function = find_test_named_hir_node(
+      hir, PSX_HIR_FUNCTION, "inner_bounded_parameter", 0);
+  const psx_hir_node_t *parameter =
+      find_test_hir_function_parameter(
+          hir, function, "values");
+  ASSERT_TRUE(function != NULL);
+  ASSERT_TRUE(parameter != NULL);
+  ASSERT_EQ(1, psx_hir_node_vla_dimension_count(parameter));
+  ASSERT_EQ(
+      PSX_VLA_RUNTIME_EXPRESSION_DIMENSION_OFFSET,
+      psx_hir_node_vla_dimension_source_offset(parameter, 0));
+  const psx_hir_node_t *bound = NULL;
+  int bound_count = 0;
+  for (size_t i = 0;
+       i < psx_hir_node_child_count(parameter); i++) {
+    if (psx_hir_node_child_edge_at(parameter, i) !=
+        PSX_HIR_EDGE_VLA_DIMENSION)
+      continue;
+    bound = psx_hir_module_lookup(
+        hir, psx_hir_node_child_at(parameter, i));
+    bound_count++;
+  }
+  ASSERT_EQ(1, bound_count);
+  ASSERT_TRUE(bound != NULL);
+  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(bound));
+
+  psx_hir_node_id_t function_id = PSX_HIR_NODE_ID_INVALID;
+  for (size_t i = 0; i < psx_hir_module_root_count(hir); i++) {
+    psx_hir_node_id_t candidate_id =
+        psx_hir_module_root_at(hir, i);
+    if (psx_hir_module_lookup(hir, candidate_id) == function) {
+      function_id = candidate_id;
+      break;
+    }
+  }
+  ASSERT_TRUE(function_id != PSX_HIR_NODE_ID_INVALID);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(bound));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, function_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_MUL) >= 1);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_indirect_vla_parameter_metadata_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_indirect_vla_parameter_metadata_without_ast...\n");
@@ -2559,7 +2644,9 @@ static void test_typed_hir_indirect_vla_parameter_metadata_without_ast(
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_MUL) >= 2);
-  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) >= 2);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) +
+                  count_ir_op(ir->funcs, IR_SEXT) >=
+              2);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
@@ -2623,7 +2710,9 @@ static void test_typed_hir_vla_allocation_without_ast(
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_VLA_ALLOC));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_MUL) >= 3);
-  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) >= 1);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) +
+                  count_ir_op(ir->funcs, IR_SEXT) >=
+              1);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 5);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
@@ -19802,6 +19891,8 @@ int main() {
   test_typed_hir_post_inc_lowering_without_ast(test_suite_session);
   test_typed_hir_vla_parameter_metadata_without_ast(test_suite_session);
   test_typed_hir_parameter_array_bound_evaluation_without_ast(
+      test_suite_session);
+  test_typed_hir_parameter_inner_array_bound_evaluation_without_ast(
       test_suite_session);
   test_typed_hir_indirect_vla_parameter_metadata_without_ast(
       test_suite_session);

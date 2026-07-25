@@ -2,6 +2,7 @@
 #define PARSER_LVAR_PUBLIC_H
 
 #include "core.h"
+#include "../semantic/expression_identity.h"
 #include "../semantic/type_identity.h"
 
 typedef struct lvar_t lvar_t;
@@ -60,5 +61,7 @@ int ps_lvar_vla_row_stride_src_offset(const lvar_t *var);
 int ps_lvar_vla_param_inner_dim_count(const lvar_t *var);
 int ps_lvar_vla_param_inner_dim_const(const lvar_t *var, int idx);
 int ps_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx);
+psx_semantic_expr_id_t ps_lvar_vla_param_inner_dim_expression_id(
+    const lvar_t *var, int idx);
 
 #endif

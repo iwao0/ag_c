@@ -90,7 +90,9 @@ void ps_local_registry_set_vla_pointer_indirections(
 void ps_local_registry_set_vla_param_inner_dims(
     psx_local_registry_t *registry, lvar_t *var,
     const int *inner_dim_consts,
-    const int *inner_dim_src_offsets, int inner_dim_count,
+    const int *inner_dim_src_offsets,
+    const psx_semantic_expr_id_t *inner_dim_expression_ids,
+    int inner_dim_count,
     token_t *diagnostic_token);
 
 #endif

@@ -407,9 +407,12 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
 
     int *constants = calloc((size_t)count, sizeof(*constants));
     int *source_offsets = calloc((size_t)count, sizeof(*source_offsets));
-    if (!constants || !source_offsets) {
+    psx_semantic_expr_id_t *expression_ids =
+        calloc((size_t)count, sizeof(*expression_ids));
+    if (!constants || !source_offsets || !expression_ids) {
       free(constants);
       free(source_offsets);
+      free(expression_ids);
       ps_diag_ctx_in(
           diagnostics, request->diag_tok, "param",
           "VLA parameter dimension allocation failed");
@@ -420,16 +423,19 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
       constants[i] = dimension->is_constant
                          ? (int)dimension->constant_value : 0;
       if (dimension->is_constant) continue;
+      expression_ids[i] = dimension->expression_id;
       const psx_typed_hir_tree_t *expression =
           psx_semantic_expression_table_lookup(
               request->semantic_expressions, dimension->expression_id);
       if (!expression) return result;
+      if (psx_typed_hir_tree_root_kind(expression) !=
+          PSX_HIR_LOCAL) {
+        source_offsets[i] =
+            PSX_VLA_RUNTIME_EXPRESSION_DIMENSION_OFFSET;
+        continue;
+      }
       int source_offset =
-          psx_typed_hir_tree_root_kind(expression) ==
-                  PSX_HIR_LOCAL
-              ? psx_typed_hir_tree_root_storage_offset(
-                    expression)
-              : 0;
+          psx_typed_hir_tree_root_storage_offset(expression);
       lvar_t *source = psx_decl_find_lvar_by_offset_in(
           request->local_registry, source_offset);
       if (!source || !ps_lvar_is_param(source)) {
@@ -451,7 +457,7 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
         0, element_size);
     ps_local_registry_set_vla_param_inner_dims(
         request->local_registry, result.var,
-        constants, source_offsets, count,
+        constants, source_offsets, expression_ids, count,
         request->diag_tok);
     if (count == 1 && constants[0] == 0) {
       ps_local_registry_set_vla_descriptor(
@@ -462,6 +468,7 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
         result.var, request->pointer_indirections);
     free(constants);
     free(source_offsets);
+    free(expression_ids);
   }
 
   /* Keep the current name ineligible while resolving preceding parameters. */

@@ -237,3 +237,11 @@ int ps_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx) {
     return 0;
   return var->vla_runtime.param_inner_dim_src_offsets[idx];
 }
+
+psx_semantic_expr_id_t ps_lvar_vla_param_inner_dim_expression_id(
+    const lvar_t *var, int idx) {
+  if (!var || idx < 0 || idx >= var->vla_runtime.param_inner_dim_count ||
+      !var->vla_runtime.param_inner_dim_expression_ids)
+    return PSX_SEMANTIC_EXPR_ID_INVALID;
+  return var->vla_runtime.param_inner_dim_expression_ids[idx];
+}

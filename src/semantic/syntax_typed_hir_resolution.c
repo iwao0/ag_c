@@ -9260,9 +9260,64 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
           &transaction, context.function_declarations, 1);
       return PSX_SYNTAX_TYPED_HIR_FAILED;
     }
-    children[i] = psx_semantic_node_builder_leaf_expression(
+    size_t runtime_bound_count = 0;
+    int dimension_count =
+        ps_lvar_vla_param_inner_dim_count(parameter);
+    for (int dimension = 0;
+         dimension < dimension_count; dimension++) {
+      if (ps_lvar_vla_param_inner_dim_const(
+              parameter, dimension) == 0)
+        runtime_bound_count++;
+    }
+    psx_semantic_node_t **runtime_bounds = NULL;
+    psx_hir_edge_kind_t *runtime_bound_edges = NULL;
+    if (runtime_bound_count > 0) {
+      runtime_bounds = arena_alloc_in(
+          ps_ctx_arena(semantic_context),
+          runtime_bound_count * sizeof(*runtime_bounds));
+      runtime_bound_edges = arena_alloc_in(
+          ps_ctx_arena(semantic_context),
+          runtime_bound_count * sizeof(*runtime_bound_edges));
+      if (!runtime_bounds || !runtime_bound_edges) {
+        set_failure(
+            failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+            syntax_function->body);
+        rollback_direct_function_resolution(
+            &transaction, context.function_declarations, 1);
+        return PSX_SYNTAX_TYPED_HIR_FAILED;
+      }
+      size_t runtime_bound_index = 0;
+      for (int dimension = 0;
+           dimension < dimension_count; dimension++) {
+        if (ps_lvar_vla_param_inner_dim_const(
+                parameter, dimension) != 0)
+          continue;
+        psx_semantic_expr_id_t expression_id =
+            ps_lvar_vla_param_inner_dim_expression_id(
+                parameter, dimension);
+        const psx_typed_hir_tree_t *bound =
+            ps_ctx_semantic_expression_in(
+                semantic_context, expression_id);
+        if (!bound || !bound->root) {
+          set_failure(
+              failure, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
+              syntax_function->body);
+          rollback_direct_function_resolution(
+              &transaction, context.function_declarations, 1);
+          return PSX_SYNTAX_TYPED_HIR_FAILED;
+        }
+        runtime_bounds[runtime_bound_index] =
+            (psx_semantic_node_t *)bound->root;
+        runtime_bound_edges[runtime_bound_index] =
+            PSX_HIR_EDGE_VLA_DIMENSION;
+        runtime_bound_index++;
+      }
+    }
+    children[i] = psx_semantic_node_builder_expression(
         &context.builder, &parameter_spec,
-        ps_lvar_decl_qual_type(parameter), NULL, ND_IDENTIFIER);
+        ps_lvar_decl_qual_type(parameter),
+        runtime_bounds, runtime_bound_edges,
+        runtime_bound_count, NULL, ND_IDENTIFIER);
     edges[i] = PSX_HIR_EDGE_PARAMETER;
     if (!children[i]) {
       rollback_direct_function_resolution(

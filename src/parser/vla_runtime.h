@@ -1,10 +1,13 @@
 #ifndef PARSER_VLA_RUNTIME_H
 #define PARSER_VLA_RUNTIME_H
 
+#include "../semantic/expression_identity.h"
+
 /* Internal frame ABI. These fixed-width slots are independent from C scalar
  * and pointer layout selected by TargetSpec. */
 enum {
   PSX_VLA_RUNTIME_SLOT_SIZE = 8,
+  PSX_VLA_RUNTIME_EXPRESSION_DIMENSION_OFFSET = -1,
   PSX_VLA_RUNTIME_SIZE_RELATIVE_OFFSET = PSX_VLA_RUNTIME_SLOT_SIZE,
   PSX_VLA_RUNTIME_FIRST_STRIDE_RELATIVE_OFFSET =
       2 * PSX_VLA_RUNTIME_SLOT_SIZE,
@@ -33,6 +36,7 @@ typedef struct {
   int row_stride_elem_size;
   int *param_inner_dim_consts;
   int *param_inner_dim_src_offsets;
+  psx_semantic_expr_id_t *param_inner_dim_expression_ids;
   int param_inner_dim_count;
 } psx_vla_runtime_descriptor_t;
 
