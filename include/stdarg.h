@@ -25,13 +25,14 @@
 
 typedef long va_list;
 
-#define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
+#define va_start(ap, last) \
+  ((void)sizeof(last), (void)((ap) = (va_list)__va_arg_area))
 
 #define va_arg(ap, type) (*(type *)((long)(ap += ((sizeof(type) + 7) & -8)) - ((sizeof(type) + 7) & -8)))
 
 #define va_end(ap) ((void)(ap))
 
 /* Copy current state of src ap into dest ap. C11 7.16.1.2. */
-#define va_copy(dest, src) ((dest) = (src))
+#define va_copy(dest, src) ((void)((dest) = (src)))
 
 #endif /* _STDARG_H */

@@ -80,6 +80,11 @@ long __ag_atomic_fetch_xor(void *obj, long value);
 long __ag_atomic_fetch_and(void *obj, long value);
 int  __ag_atomic_fence(void);
 
+/* memory_order 仮引数と同じ代入変換を適用し、非算術型を拒否する。
+ * compound literal の初期化式なので引数はちょうど1回評価される。 */
+#define __ag_atomic_order(order) \
+  ((void)((memory_order){(order)}))
+
 /* 初期化。公開generic関数と同じ型制約を保つためcompiler intrinsicを通す。
  * seq_cst storeは、共有前の非atomic初期化より強いが規格上安全。 */
 #define atomic_init(obj, value) \
@@ -89,62 +94,70 @@ int  __ag_atomic_fence(void);
  * aggregate/complexを含む対応する非atomic型を返す。 */
 #define atomic_load(obj)                         __ag_atomic_load(obj)
 #define atomic_load_explicit(obj, order) \
-  ((void)(order), __ag_atomic_load(obj))
+  (__ag_atomic_order(order), __ag_atomic_load(obj))
 #define atomic_store(obj, value) \
   ((void)__ag_atomic_store((obj), (value)))
 #define atomic_store_explicit(obj, value, order) \
-  ((void)(order), (void)__ag_atomic_store((obj), (value)))
+  (__ag_atomic_order(order), (void)__ag_atomic_store((obj), (value)))
 
 /* 交換: integer/pointerと1/2/4/8-byte objectはsingle-word exchange、
  * Apple ARM64の16-byte objectはCASPAL retryで旧値を返す。 */
 #define atomic_exchange(obj, value)                 __ag_atomic_exchange((obj), (value))
 #define atomic_exchange_explicit(obj, value, order) \
-  ((void)(order), __ag_atomic_exchange((obj), (value)))
+  (__ag_atomic_order(order), __ag_atomic_exchange((obj), (value)))
 
 /* compare-and-swap: *obj==*expected なら *obj=desired にして 1、
  * さもなくば *expected=*obj にして 0 を返す (C11 7.17.7.4)。
  * Apple ARM64はCASAL/CASPALを使い、weakもspurious失敗なし = strongと同じ。 */
 #define atomic_compare_exchange_strong(obj, expected, desired) \
-  __ag_atomic_cas((obj), (expected), (desired))
+  ((_Bool)__ag_atomic_cas((obj), (expected), (desired)))
 #define atomic_compare_exchange_weak(obj, expected, desired) \
-  __ag_atomic_cas((obj), (expected), (desired))
+  ((_Bool)__ag_atomic_cas((obj), (expected), (desired)))
 #define atomic_compare_exchange_strong_explicit(obj, expected, desired, succ, fail) \
-  ((void)(succ), (void)(fail), __ag_atomic_cas((obj), (expected), (desired)))
+  (__ag_atomic_order(succ), __ag_atomic_order(fail), \
+   (_Bool)__ag_atomic_cas((obj), (expected), (desired)))
 #define atomic_compare_exchange_weak_explicit(obj, expected, desired, succ, fail) \
-  ((void)(succ), (void)(fail), __ag_atomic_cas((obj), (expected), (desired)))
+  (__ag_atomic_order(succ), __ag_atomic_order(fail), \
+   (_Bool)__ag_atomic_cas((obj), (expected), (desired)))
 
 /* 取得して演算 (LDADDAL/LDSETAL/LDCLRAL/LDEORAL): いずれも旧値を返す。 */
 #define atomic_fetch_add(obj, arg)                 __ag_atomic_fetch_add((obj), (arg))
 #define atomic_fetch_add_explicit(obj, arg, order) \
-  ((void)(order), __ag_atomic_fetch_add((obj), (arg)))
+  (__ag_atomic_order(order), __ag_atomic_fetch_add((obj), (arg)))
 #define atomic_fetch_sub(obj, arg)                 __ag_atomic_fetch_sub((obj), (arg))
 #define atomic_fetch_sub_explicit(obj, arg, order) \
-  ((void)(order), __ag_atomic_fetch_sub((obj), (arg)))
+  (__ag_atomic_order(order), __ag_atomic_fetch_sub((obj), (arg)))
 #define atomic_fetch_or(obj, arg)                  __ag_atomic_fetch_or((obj), (arg))
 #define atomic_fetch_or_explicit(obj, arg, order) \
-  ((void)(order), __ag_atomic_fetch_or((obj), (arg)))
+  (__ag_atomic_order(order), __ag_atomic_fetch_or((obj), (arg)))
 #define atomic_fetch_xor(obj, arg)                 __ag_atomic_fetch_xor((obj), (arg))
 #define atomic_fetch_xor_explicit(obj, arg, order) \
-  ((void)(order), __ag_atomic_fetch_xor((obj), (arg)))
+  (__ag_atomic_order(order), __ag_atomic_fetch_xor((obj), (arg)))
 #define atomic_fetch_and(obj, arg)                 __ag_atomic_fetch_and((obj), (arg))
 #define atomic_fetch_and_explicit(obj, arg, order) \
-  ((void)(order), __ag_atomic_fetch_and((obj), (arg)))
+  (__ag_atomic_order(order), __ag_atomic_fetch_and((obj), (arg)))
 
 /* atomic_flag 操作。test_and_set は旧値 (真偽) を返す。 */
 #define atomic_flag_test_and_set(flag) \
-  (__ag_atomic_exchange(&(flag)->__ag_val, 1) != 0)
+  ((_Bool)(__ag_atomic_exchange(&(flag)->__ag_val, 1) != 0))
 #define atomic_flag_test_and_set_explicit(flag, order) \
-  ((void)(order), atomic_flag_test_and_set(flag))
+  (__ag_atomic_order(order), atomic_flag_test_and_set(flag))
 #define atomic_flag_clear(flag)                 ((void)__ag_atomic_store(&(flag)->__ag_val, 0))
 #define atomic_flag_clear_explicit(flag, order) \
-  ((void)(order), (void)__ag_atomic_store(&(flag)->__ag_val, 0))
+  (__ag_atomic_order(order), \
+   (void)__ag_atomic_store(&(flag)->__ag_val, 0))
 
 /* フェンス (DMB ISH)。 */
-#define atomic_thread_fence(order) ((void)(order), __ag_atomic_fence())
-#define atomic_signal_fence(order) ((void)(order), __ag_atomic_fence())
+#define atomic_thread_fence(order) \
+  (__ag_atomic_order(order), (void)__ag_atomic_fence())
+#define atomic_signal_fence(order) \
+  (__ag_atomic_order(order), (void)__ag_atomic_fence())
 
 /* その他。 */
-#define atomic_is_lock_free(obj) ((void)(obj), 1)
-#define kill_dependency(y)       (y)
+#define atomic_is_lock_free(obj) \
+  ((void)(obj), (void)sizeof(__ag_atomic_load(obj)), \
+   (_Bool)(sizeof(*(obj)) <= 16))
+#define kill_dependency(y) \
+  ((void)sizeof((y) ? 1 : 0), (y))
 
 #endif /* _STDATOMIC_H */
