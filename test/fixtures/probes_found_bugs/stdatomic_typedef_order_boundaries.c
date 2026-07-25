@@ -22,6 +22,7 @@ int main(void) {
     atomic_flag flag = ATOMIC_FLAG_INIT;
     int order_count = 0;
     int dependency_count = 0;
+    int lock_free_count = 0;
     int expected;
     int result;
     long old_value;
@@ -110,7 +111,8 @@ int main(void) {
     if (order_count != 16)
         return 10;
 
-    if (!atomic_is_lock_free(&value))
+    if (!atomic_is_lock_free((++lock_free_count, &value)) ||
+        lock_free_count != 1)
         return 11;
     if (kill_dependency(next_dependency(
             &dependency_count, 42)) != 42 || dependency_count != 1)

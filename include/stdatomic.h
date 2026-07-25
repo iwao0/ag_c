@@ -64,7 +64,7 @@ typedef _Atomic intmax_t           atomic_intmax_t;
 typedef _Atomic uintmax_t          atomic_uintmax_t;
 
 /* atomic_flag: テスト&セット用のフラグ。 */
-typedef struct { _Bool __ag_val; } atomic_flag;
+typedef struct { _Atomic _Bool __ag_val; } atomic_flag;
 #define ATOMIC_FLAG_INIT {0}
 
 /* Internal compiler intrinsics used by the public macros below.  They are
@@ -80,26 +80,30 @@ long __ag_atomic_fetch_xor(void *obj, long value);
 long __ag_atomic_fetch_and(void *obj, long value);
 int  __ag_atomic_fence(void);
 
-/* 初期化: オブジェクトはまだ共有されていないので非アトミックでよい (C11 7.17.2.2)。 */
-#define atomic_init(obj, value) ((void)(*(obj) = (value)))
+/* 初期化。公開generic関数と同じ型制約を保つためcompiler intrinsicを通す。
+ * seq_cst storeは、共有前の非atomic初期化より強いが規格上安全。 */
+#define atomic_init(obj, value) \
+  ((void)__ag_atomic_store((obj), (value)))
 
-/* ロード / ストア。atomic lvalue の型を保ったままcompiler loweringへ渡すことで、
- * C11 generic function契約どおりaggregate/complexを含む任意の対応型を返す。 */
-#define atomic_load(obj)                         ((void)0, *(obj))
+/* ロード / ストア。compiler builtinがobject typeを保持し、
+ * aggregate/complexを含む対応する非atomic型を返す。 */
+#define atomic_load(obj)                         __ag_atomic_load(obj)
 #define atomic_load_explicit(obj, order) \
-  ((void)(order), *(obj))
-#define atomic_store(obj, value)                 ((void)(*(obj) = (value)))
+  ((void)(order), __ag_atomic_load(obj))
+#define atomic_store(obj, value) \
+  ((void)__ag_atomic_store((obj), (value)))
 #define atomic_store_explicit(obj, value, order) \
-  ((void)(order), (void)(*(obj) = (value)))
+  ((void)(order), (void)__ag_atomic_store((obj), (value)))
 
-/* 交換 (SWPAL): 旧値を返す。 */
+/* 交換: integer/pointerと1/2/4/8-byte objectはsingle-word exchange、
+ * Apple ARM64の16-byte objectはCASPAL retryで旧値を返す。 */
 #define atomic_exchange(obj, value)                 __ag_atomic_exchange((obj), (value))
 #define atomic_exchange_explicit(obj, value, order) \
   ((void)(order), __ag_atomic_exchange((obj), (value)))
 
-/* compare-and-swap (CASAL): *obj==*expected なら *obj=desired にして 1、
- * さもなくば *expected=*obj にして 0 を返す (C11 7.17.7.4)。単一の CAS 命令なので
- * weak も spurious 失敗なし = strong と同じ。 */
+/* compare-and-swap: *obj==*expected なら *obj=desired にして 1、
+ * さもなくば *expected=*obj にして 0 を返す (C11 7.17.7.4)。
+ * Apple ARM64はCASAL/CASPALを使い、weakもspurious失敗なし = strongと同じ。 */
 #define atomic_compare_exchange_strong(obj, expected, desired) \
   __ag_atomic_cas((obj), (expected), (desired))
 #define atomic_compare_exchange_weak(obj, expected, desired) \
@@ -140,7 +144,7 @@ int  __ag_atomic_fence(void);
 #define atomic_signal_fence(order) ((void)(order), __ag_atomic_fence())
 
 /* その他。 */
-#define atomic_is_lock_free(obj) 1
+#define atomic_is_lock_free(obj) ((void)(obj), 1)
 #define kill_dependency(y)       (y)
 
 #endif /* _STDATOMIC_H */

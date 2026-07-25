@@ -3308,6 +3308,96 @@ static void test_typed_hir_atomic_aggregate_lowering_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_typed_hir_atomic_object_exchange_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_hir_atomic_object_exchange_lowering_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
+      "long __ag_atomic_exchange(void *obj, long value); "
+      "int __ag_atomic_cas(void *obj, void *expected, long desired); "
+      "struct bytes3 { unsigned char a, b, c; }; "
+      "struct words3 { unsigned int a, b, c; }; "
+      "int run(_Atomic(struct bytes3) *small, "
+      "_Atomic(struct words3) *wide, "
+      "struct bytes3 small_value, struct words3 wide_value) { "
+      "struct bytes3 small_old = "
+      "__ag_atomic_exchange(small, small_value); "
+      "struct bytes3 small_expected = small_value; "
+      "int result = __ag_atomic_cas("
+      "small, &small_expected, small_old); "
+      "struct words3 wide_old = "
+      "__ag_atomic_exchange(wide, wide_value); "
+      "struct words3 wide_expected = wide_value; "
+      "result += __ag_atomic_cas("
+      "wide, &wide_expected, wide_old); "
+      "return result + small_old.a + wide_old.c; }");
+  ASSERT_TRUE(program_resolved);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id =
+      psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(
+              test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  int small_exchange = 0;
+  int small_cas = 0;
+  int wide_load = 0;
+  int wide_cas = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op != IR_ATOMIC) continue;
+      if (instruction->atomic_width == 4 &&
+          instruction->atomic_kind == IR_ATOMIC_RMW &&
+          instruction->atomic_rmw_op == IR_ARMW_XCHG &&
+          instruction->src2.type == IR_TY_I32 &&
+          instruction->dst.type == IR_TY_I32)
+        small_exchange++;
+      if (instruction->atomic_width == 4 &&
+          instruction->atomic_kind == IR_ATOMIC_CAS &&
+          instruction->src2.type == IR_TY_PTR &&
+          instruction->src3.type == IR_TY_I32)
+        small_cas++;
+      if (instruction->atomic_width == 16 &&
+          instruction->atomic_kind == IR_ATOMIC_LOAD &&
+          instruction->src2.type == IR_TY_PTR)
+        wide_load++;
+      if (instruction->atomic_width == 16 &&
+          instruction->atomic_kind == IR_ATOMIC_CAS &&
+          instruction->src2.type == IR_TY_PTR &&
+          instruction->src3.type == IR_TY_PTR)
+        wide_cas++;
+    }
+  }
+  ASSERT_EQ(1, small_exchange);
+  ASSERT_EQ(1, small_cas);
+  ASSERT_EQ(1, wide_load);
+  ASSERT_EQ(2, wide_cas);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_BR_COND) >= 1);
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_va_arg_area_lowering_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_va_arg_area_lowering_without_ast...\n");
@@ -19442,6 +19532,8 @@ int main() {
   test_typed_hir_atomic_wide_complex_lowering_without_ast(
       test_suite_session);
   test_typed_hir_atomic_aggregate_lowering_without_ast(test_suite_session);
+  test_typed_hir_atomic_object_exchange_lowering_without_ast(
+      test_suite_session);
   test_typed_hir_va_arg_area_lowering_without_ast(test_suite_session);
   test_typed_hir_register_aggregate_lowering_without_ast(test_suite_session);
   test_typed_hir_aggregate_parameter_lowering_without_ast(test_suite_session);

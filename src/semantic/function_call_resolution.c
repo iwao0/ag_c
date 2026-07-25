@@ -114,6 +114,17 @@ static int atomic_builtin_assignment_is_valid(
   return assignment.status == PSX_ASSIGNMENT_TYPES_OK;
 }
 
+static int atomic_builtin_object_kind_is_valid(
+    psx_type_kind_t kind) {
+  return kind == PSX_TYPE_BOOL ||
+         kind == PSX_TYPE_INTEGER ||
+         kind == PSX_TYPE_FLOAT ||
+         kind == PSX_TYPE_COMPLEX ||
+         kind == PSX_TYPE_POINTER ||
+         kind == PSX_TYPE_STRUCT ||
+         kind == PSX_TYPE_UNION;
+}
+
 int psx_resolve_atomic_builtin_call(
     psx_semantic_context_t *semantic_context,
     psx_builtin_call_kind_t kind,
@@ -139,9 +150,9 @@ int psx_resolve_atomic_builtin_call(
       types, argument_types[0].type_id);
   psx_type_shape_t object_shape = {0};
   if (!describe_qual_type(types, object_type, &object_shape) ||
-      (object_shape.kind != PSX_TYPE_BOOL &&
-       object_shape.kind != PSX_TYPE_INTEGER &&
-       object_shape.kind != PSX_TYPE_POINTER))
+      (object_type.qualifiers &
+       PSX_TYPE_QUALIFIER_ATOMIC) == 0 ||
+      !atomic_builtin_object_kind_is_valid(object_shape.kind))
     return 0;
 
   if (atomic_builtin_returns_object_value(kind) && result_type) {
@@ -166,7 +177,9 @@ int psx_resolve_atomic_builtin_call(
       return 0;
     psx_qual_type_t expected_object = psx_semantic_type_table_base(
         types, argument_types[1].type_id);
-    if (!psx_semantic_type_table_unqualified_types_match(
+    if (expected_object.qualifiers !=
+            PSX_TYPE_QUALIFIER_NONE ||
+        !psx_semantic_type_table_unqualified_types_match(
             types, object_type, expected_object))
       return 0;
     return atomic_builtin_assignment_is_valid(
