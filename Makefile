@@ -170,7 +170,7 @@ $(TEST_WASM32_E2E): test/test_wasm32_e2e.c $(WASM_TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_wasm32_e2e.c
 
-$(TEST_WASM32_OBJECT): test/test_wasm32_object.c $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
+$(TEST_WASM32_OBJECT): test/test_wasm32_object.c $(TEST_E2E) $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_wasm32_object.c
 

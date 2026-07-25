@@ -1038,6 +1038,11 @@ static int run_e2e_fixture_object_scan(void) {
                  "wasm32 object e2e fixture scan");
 }
 
+static int run_e2e_compile_fail_parity(void) {
+  return run_cmd("./build/test_e2e --wasm-object-compile-fail",
+                 "wasm32 object compile-fail parity");
+}
+
 int main(void) {
   int failures = 0;
   if (mkdir("build/wasm32_obj", 0777) != 0) {
@@ -2573,6 +2578,7 @@ int main(void) {
   failures += run_fail_case("missing_o", "./build/ag_c_wasm -c build/wasm32_obj/simple.c",
                             "E0002");
 
+  failures += run_e2e_compile_fail_parity();
   failures += run_e2e_fixture_object_scan();
   failures += run_linked_import_abi_case();
   failures += run_linker_layout_option_cases();

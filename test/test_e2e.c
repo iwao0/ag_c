@@ -2660,8 +2660,9 @@ static int run_ag_c_to_s(const char *input, const char *s_path) {
   return 0;
 }
 
-static int run_ag_c_expect_fail_with_diag(const char *input, const char *expected_diag,
-                                          const char *log_path) {
+static int run_compiler_expect_fail_with_diag(
+    const char *program, const char *object_path, const char *input,
+    const char *expected_diag, const char *log_path) {
   int pipefd[2];
   if (pipe(pipefd) != 0) return -1;
 
@@ -2671,7 +2672,11 @@ static int run_ag_c_expect_fail_with_diag(const char *input, const char *expecte
     dup2(pipefd[1], STDERR_FILENO);
     close(pipefd[1]);
     freopen("/dev/null", "w", stdout);
-    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
+    if (object_path) {
+      execl(program, program, "-c", "-o", object_path, input, (char *)NULL);
+    } else {
+      execl(program, program, input, (char *)NULL);
+    }
     _exit(1);
   }
   close(pipefd[1]);
@@ -2709,6 +2714,12 @@ static int run_ag_c_expect_fail_with_diag(const char *input, const char *expecte
   if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) return -1;
   if (expected_diag && expected_diag[0] != '\0' && !strstr(diag_buf, expected_diag)) return -1;
   return 0;
+}
+
+static int run_ag_c_expect_fail_with_diag(const char *input, const char *expected_diag,
+                                          const char *log_path) {
+  return run_compiler_expect_fail_with_diag(
+      "./build/ag_c", NULL, input, expected_diag, log_path);
 }
 
 static int diag_has_error_code_prefix(const char *diag) {
@@ -3027,6 +3038,88 @@ static int write_source_file_bytes(const char *path, const unsigned char *data, 
   }
   fclose(fp);
   return 0;
+}
+
+static const char *wasm_object_compile_fail_skip_reason(const char *name) {
+  if (name &&
+      strcmp(name, "posix_off_t_pointer_identity_rejected") == 0) {
+    return "wasm32 off_t is long, so assigning &long is valid";
+  }
+  return NULL;
+}
+
+static int run_registered_compile_fail_cases(
+    const char *program, int object_mode, const char *work_dir,
+    const char *log_dir, const char *summary_label) {
+  if (!program || !work_dir || !log_dir ||
+      mkdir_p(work_dir) != 0 || mkdir_p(log_dir) != 0)
+    return 1;
+
+  const size_t count =
+      sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0]);
+  size_t passed = 0;
+  size_t skipped = 0;
+  for (size_t i = 0; i < count; i++) {
+    const compile_fail_case_t *tc = &compile_fail_cases[i];
+    char src_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    char log_path[PATH_MAX];
+    snprintf(src_path, sizeof(src_path), "%s/%s.c", work_dir, tc->name);
+    snprintf(object_path, sizeof(object_path), "%s/%s.o", work_dir, tc->name);
+    snprintf(log_path, sizeof(log_path), "%s/compile_fail_%s.log",
+             log_dir, tc->name);
+    if (object_mode) unlink(object_path);
+
+    const char *skip_reason =
+        object_mode ? wasm_object_compile_fail_skip_reason(tc->name) : NULL;
+    if (skip_reason) {
+      printf("SKIP: %s (%s)\n", tc->name, skip_reason);
+      fflush(stdout);
+      skipped++;
+      continue;
+    }
+
+    int failed =
+        write_source_file(src_path, tc->input) != 0 ||
+        run_compiler_expect_fail_with_diag(
+            program, object_mode ? object_path : NULL, src_path,
+            tc->expected_diag, log_path) != 0;
+    if (!failed && object_mode) unlink(object_path);
+    if (failed) {
+      fprintf(stderr, "Compile-fail case failed: %s (see %s)\n",
+              tc->name, log_path);
+      continue;
+    }
+
+    if (strcmp(tc->name, "c11_implicit_int_objects_rejected") == 0 ||
+        strcmp(tc->name, "multiple_function_syntax_errors_reported") == 0) {
+      FILE *log = fopen(log_path, "r");
+      char diagnostics[8192] = {0};
+      size_t length =
+          log ? fread(diagnostics, 1, sizeof(diagnostics) - 1, log) : 0;
+      if (log) fclose(log);
+      diagnostics[length] = '\0';
+      int diagnostic_count = 0;
+      for (char *match = diagnostics;
+           (match = strstr(match, tc->expected_diag)) != NULL;
+           match += strlen(tc->expected_diag))
+        diagnostic_count++;
+      if (diagnostic_count != 2) {
+        fprintf(stderr,
+                "Compile-fail case did not emit two diagnostics: %s "
+                "(see %s)\n",
+                tc->name, log_path);
+        continue;
+      }
+    }
+    passed++;
+  }
+
+  if (summary_label) {
+    printf("%s: %zu passed, %zu target-specific skipped, %zu registered\n",
+           summary_label, passed, skipped, count);
+  }
+  return passed + skipped == count ? 0 : 1;
 }
 
 static int write_large_single_line_unterminated_string(const char *path, size_t body_len) {
@@ -3663,7 +3756,20 @@ static int run_category(const char *category) {
   return 0;
 }
 
-int main() {
+int main(int argc, char **argv) {
+  if (argc == 2 &&
+      strcmp(argv[1], "--wasm-object-compile-fail") == 0) {
+    return run_registered_compile_fail_cases(
+        "./build/ag_c_wasm", 1,
+        "build/wasm32_obj/compile_fail",
+        "build/wasm32_obj/compile_fail/logs",
+        "wasm32 object compile-fail parity");
+  }
+  if (argc != 1) {
+    fprintf(stderr, "usage: %s [--wasm-object-compile-fail]\n", argv[0]);
+    return 2;
+  }
+
   printf("Running E2E tests...\n");
   fflush(stdout);
 
@@ -3682,36 +3788,10 @@ int main() {
     return 1;
   }
 
-  for (size_t i = 0; i < sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0]); i++) {
-    const compile_fail_case_t *tc = &compile_fail_cases[i];
-    char src_path[PATH_MAX];
-    char log_path[PATH_MAX];
-    snprintf(src_path, sizeof(src_path), "build/e2e/compile_fail/%s.c", tc->name);
-    snprintf(log_path, sizeof(log_path), "build/e2e/logs/compile_fail_%s.log", tc->name);
-    if (mkdir_p("build/e2e/compile_fail") != 0 || write_source_file(src_path, tc->input) != 0 ||
-        run_ag_c_expect_fail_with_diag(src_path, tc->expected_diag, log_path) != 0) {
-      fprintf(stderr, "Compile-fail case failed: %s (see %s)\n", tc->name, log_path);
-      return 1;
-    }
-    if ((strcmp(tc->name, "c11_implicit_int_objects_rejected") == 0 ||
-         strcmp(tc->name, "multiple_function_syntax_errors_reported") == 0)) {
-      FILE *log = fopen(log_path, "r");
-      char diagnostics[8192] = {0};
-      size_t length = log ? fread(diagnostics, 1, sizeof(diagnostics) - 1, log) : 0;
-      if (log) fclose(log);
-      diagnostics[length] = '\0';
-      int count = 0;
-      for (char *match = diagnostics;
-           (match = strstr(match, tc->expected_diag)) != NULL;
-           match += strlen(tc->expected_diag))
-        count++;
-      if (count != 2) {
-        fprintf(stderr, "Compile-fail case did not emit two diagnostics: %s (see %s)\n",
-                tc->name, log_path);
-        return 1;
-      }
-    }
-  }
+  if (run_registered_compile_fail_cases(
+          "./build/ag_c", 0, "build/e2e/compile_fail",
+          "build/e2e/logs", NULL) != 0)
+    return 1;
   {
     const char *missing_path = "build/e2e/compile_fail/__missing_input__.c";
     const char *log_path = "build/e2e/logs/compile_fail_missing_input.log";
