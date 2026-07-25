@@ -42,6 +42,7 @@
 #include "initializer_resolution.h"
 #include "integer_constant_evaluation.h"
 #include "literal_resolution.h"
+#include "record_layout.h"
 #include "semantic_node_builder.h"
 #include "source_cast_type_resolution.h"
 #include "static_assert_resolution.h"
@@ -1534,13 +1535,131 @@ static int resolve_direct_alignof_type_name(
              &binding->plan);
 }
 
+static int resolve_direct_offsetof_query(
+    direct_resolution_context_t *context,
+    const node_offsetof_query_t *query,
+    direct_type_query_binding_t *binding) {
+  if (!context || !query || !query->type_name.syntax || !binding ||
+      !query->designators || query->designator_count <= 0)
+    return 0;
+
+  psx_qual_type_t queried_qual_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!psx_resolve_type_name_qual_type_in_contexts(
+          context->semantic_context, context->global_registry,
+          context->local_registry, &query->type_name,
+          &queried_qual_type))
+    return 0;
+
+  psx_qual_type_t current_type = queried_qual_type;
+  long long offset = 0;
+  for (int i = 0; i < query->designator_count; i++) {
+    const psx_offsetof_designator_t *designator =
+        &query->designators[i];
+    if (designator->kind == PSX_OFFSETOF_DESIGNATOR_MEMBER) {
+      psx_member_access_resolution_t member;
+      psx_resolve_member_access_qual_type_in(
+          context->semantic_context, current_type,
+          designator->member_name, designator->member_name_len, 0,
+          &member);
+      if (member.status == PSX_MEMBER_ACCESS_INVALID_BASE)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+            &query->base);
+      if (member.status == PSX_MEMBER_ACCESS_NOT_FOUND)
+        return note_direct_named_rejection(
+            context, PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_NOT_FOUND,
+            &query->base, designator->member_name,
+            designator->member_name_len);
+      if (member.declaration.bit_width > 0)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
+            &query->base);
+
+      const psx_record_layout_t *layout =
+          psx_record_layout_table_lookup(
+              ps_ctx_record_layout_table_in(context->semantic_context),
+              member.record_id,
+              ps_ctx_data_layout(context->semantic_context));
+      const psx_record_member_layout_t *member_layout =
+          psx_record_layout_member(layout, member.member_index);
+      if (!member_layout || member_layout->offset < 0 ||
+          offset > LLONG_MAX - member_layout->offset)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+            &query->base);
+      offset += member_layout->offset;
+      current_type = member.member_qual_type;
+      continue;
+    }
+
+    if (designator->kind == PSX_OFFSETOF_DESIGNATOR_INDEX) {
+      psx_type_shape_t array_shape = {0};
+      if (!direct_describe_qual_type(
+              context, current_type, &array_shape) ||
+          array_shape.kind != PSX_TYPE_ARRAY)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+            &query->base);
+
+      psx_qual_type_t index_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+      long long index = 0;
+      if (!preflight_direct_expression(
+              context, designator->index_expression, &index_type) ||
+          !direct_qual_type_is_integer(context, index_type) ||
+          !direct_integer_constant(
+              context, designator->index_expression, &index) ||
+          index < 0)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+            &query->base);
+
+      psx_qual_type_t element_type =
+          psx_semantic_type_table_base(
+              direct_semantic_types(context), current_type.type_id);
+      long long element_size = psx_qual_type_layout_sizeof(
+          direct_semantic_types(context),
+          ps_ctx_record_layout_table_in(context->semantic_context),
+          element_type,
+          ps_ctx_data_layout(context->semantic_context));
+      if (element_type.type_id == PSX_TYPE_ID_INVALID ||
+          element_size <= 0 ||
+          (index != 0 && element_size > LLONG_MAX / index) ||
+          offset > LLONG_MAX - index * element_size)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+            &query->base);
+      offset += index * element_size;
+      current_type = element_type;
+      continue;
+    }
+
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+        &query->base);
+  }
+
+  return psx_resolve_sizeof_qual_type_plan_in(
+      context->semantic_context, queried_qual_type, 1, offset,
+      &binding->plan);
+}
+
 static int resolve_direct_type_query(
     direct_resolution_context_t *context, const node_t *syntax,
     direct_type_query_binding_t **out_binding) {
   if (out_binding) *out_binding = NULL;
   if (!context || !syntax ||
       (syntax->kind != ND_SIZEOF_QUERY &&
-       syntax->kind != ND_ALIGNOF_QUERY))
+       syntax->kind != ND_ALIGNOF_QUERY &&
+       syntax->kind != ND_OFFSETOF_QUERY))
     return 0;
   direct_type_query_binding_t *existing =
       find_direct_type_query_binding(context, syntax);
@@ -1566,6 +1685,9 @@ static int resolve_direct_type_query(
         (const node_alignof_query_t *)syntax;
     resolved = resolve_direct_alignof_type_name(
         context, query, binding);
+  } else if (syntax->kind == ND_OFFSETOF_QUERY) {
+    resolved = resolve_direct_offsetof_query(
+        context, (const node_offsetof_query_t *)syntax, binding);
   } else {
     const node_sizeof_query_t *query =
         (const node_sizeof_query_t *)syntax;
@@ -2352,7 +2474,8 @@ static int preflight_direct_expression_impl(
     return 1;
   }
   if (syntax->kind == ND_SIZEOF_QUERY ||
-      syntax->kind == ND_ALIGNOF_QUERY) {
+      syntax->kind == ND_ALIGNOF_QUERY ||
+      syntax->kind == ND_OFFSETOF_QUERY) {
     direct_type_query_binding_t *binding = NULL;
     if (!resolve_direct_type_query(context, syntax, &binding))
       return 0;
@@ -3508,7 +3631,8 @@ static psx_semantic_node_t *build_direct_expression_impl(
     return build_direct_compound_literal(
         context, (const node_compound_literal_t *)syntax);
   if (syntax->kind == ND_SIZEOF_QUERY ||
-      syntax->kind == ND_ALIGNOF_QUERY)
+      syntax->kind == ND_ALIGNOF_QUERY ||
+      syntax->kind == ND_OFFSETOF_QUERY)
     return build_direct_type_query(context, syntax);
 
   if (syntax->kind == ND_GENERIC_SELECTION) {
@@ -4086,7 +4210,8 @@ static int direct_integer_constant_has_allowed_operands(
            resolution.symbol.kind == PSX_IDENTIFIER_ENUM_CONSTANT;
   }
   if (syntax->kind == ND_SIZEOF_QUERY ||
-      syntax->kind == ND_ALIGNOF_QUERY) {
+      syntax->kind == ND_ALIGNOF_QUERY ||
+      syntax->kind == ND_OFFSETOF_QUERY) {
     direct_type_query_binding_t *binding =
         find_direct_type_query_binding(context, syntax);
     return binding &&
@@ -4268,7 +4393,8 @@ static int direct_integer_constant(
     return 1;
   }
   if (syntax->kind == ND_SIZEOF_QUERY ||
-      syntax->kind == ND_ALIGNOF_QUERY) {
+      syntax->kind == ND_ALIGNOF_QUERY ||
+      syntax->kind == ND_OFFSETOF_QUERY) {
     direct_type_query_binding_t *binding =
         find_direct_type_query_binding(context, syntax);
     if (!binding ||

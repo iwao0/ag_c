@@ -978,6 +978,112 @@ static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx
   return (node_t *)identifier;
 }
 
+static int token_is_builtin_offsetof(const token_t *token) {
+  if (!token || token->kind != TK_IDENT) return 0;
+  const token_ident_t *identifier = (const token_ident_t *)token;
+  static const char name[] = "__builtin_offsetof";
+  return identifier->len == (int)(sizeof(name) - 1) &&
+         memcmp(identifier->str, name, sizeof(name) - 1) == 0;
+}
+
+static psx_offsetof_designator_t *append_offsetof_designator(
+    psx_offsetof_designator_t **designators, int *count, int *capacity,
+    expr_parse_ctx_t *ctx) {
+  if (!designators || !count || !capacity || !ctx) return NULL;
+  if (*count >= *capacity) {
+    *capacity = pda_next_cap_in(
+        diagnostics(ctx), *capacity, *count + 1);
+    *designators = pda_xreallocarray_in(
+        diagnostics(ctx), *designators, (size_t)*capacity,
+        sizeof(**designators));
+  }
+  return &(*designators)[(*count)++];
+}
+
+static node_t *parse_builtin_offsetof(expr_parse_ctx_t *ctx) {
+  token_t *builtin_token = curtok(ctx);
+  set_curtok(ctx, curtok(ctx)->next);
+  tk_expect_ctx(ctx->tokenizer_context, '(');
+
+  psx_type_name_ref_t type_name = {0};
+  token_t *type_end = NULL;
+  if (!capture_type_name_ref_at(
+          curtok(ctx), 0, &type_name, &type_end, ctx) ||
+      !type_end || type_end->kind != TK_COMMA) {
+    ps_diag_ctx_in(
+        diagnostics(ctx), curtok(ctx), "offsetof", "%s",
+        diag_message_for_in(
+            diagnostics(ctx), DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
+  }
+  set_curtok(ctx, type_end->next);
+
+  int count = 0;
+  int capacity = 4;
+  psx_offsetof_designator_t *designators =
+      calloc((size_t)capacity, sizeof(*designators));
+  token_ident_t *member =
+      tk_consume_ident_ctx(ctx->tokenizer_context);
+  if (!member) {
+    ps_diag_missing_in(
+        diagnostics(ctx), curtok(ctx),
+        diag_text_for_in(diagnostics(ctx), DIAG_TEXT_MEMBER_NAME));
+  }
+  psx_offsetof_designator_t *designator =
+      append_offsetof_designator(
+          &designators, &count, &capacity, ctx);
+  *designator = (psx_offsetof_designator_t){
+      .kind = PSX_OFFSETOF_DESIGNATOR_MEMBER,
+      .member_name = member->str,
+      .member_name_len = member->len,
+      .tok = (token_t *)member,
+  };
+
+  while (curtok(ctx)->kind == TK_DOT ||
+         curtok(ctx)->kind == TK_LBRACKET) {
+    if (curtok(ctx)->kind == TK_DOT) {
+      token_t *dot = curtok(ctx);
+      set_curtok(ctx, curtok(ctx)->next);
+      member = tk_consume_ident_ctx(ctx->tokenizer_context);
+      if (!member) {
+        ps_diag_missing_in(
+            diagnostics(ctx), curtok(ctx),
+            diag_text_for_in(diagnostics(ctx), DIAG_TEXT_MEMBER_NAME));
+      }
+      designator = append_offsetof_designator(
+          &designators, &count, &capacity, ctx);
+      *designator = (psx_offsetof_designator_t){
+          .kind = PSX_OFFSETOF_DESIGNATOR_MEMBER,
+          .member_name = member->str,
+          .member_name_len = member->len,
+          .tok = dot,
+      };
+      continue;
+    }
+
+    token_t *bracket = curtok(ctx);
+    set_curtok(ctx, curtok(ctx)->next);
+    node_t *index = conditional_ctx(ctx);
+    tk_expect_ctx(ctx->tokenizer_context, ']');
+    designator = append_offsetof_designator(
+        &designators, &count, &capacity, ctx);
+    *designator = (psx_offsetof_designator_t){
+        .kind = PSX_OFFSETOF_DESIGNATOR_INDEX,
+        .index_expression = index,
+        .tok = bracket,
+    };
+  }
+  tk_expect_ctx(ctx->tokenizer_context, ')');
+
+  node_offsetof_query_t *query = arena_alloc_in(
+      ctx->arena_context, sizeof(*query));
+  query->base.kind = ND_OFFSETOF_QUERY;
+  query->base.tok = builtin_token;
+  query->type_name = type_name;
+  query->designators = designators;
+  query->designator_count = count;
+  return (node_t *)query;
+}
+
 static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
   node_t *cl = try_parse_compound_literal(ctx);
   if (cl) return cl;
@@ -985,6 +1091,9 @@ static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
   if (curtok(ctx)->kind == TK_GENERIC) return parse_generic_selection(ctx);
 
   if (curtok(ctx)->kind == TK_NUM) return parse_num_literal(ctx);
+
+  if (token_is_builtin_offsetof(curtok(ctx)))
+    return parse_builtin_offsetof(ctx);
 
   if (curtok(ctx)->kind == TK_LPAREN && curtok(ctx)->next &&
       curtok(ctx)->next->kind == TK_LBRACE) {

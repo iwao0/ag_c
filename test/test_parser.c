@@ -14955,6 +14955,8 @@ static void test_expr_sizeof(
       {"_Alignof(int (*)[3])", ND_ALIGNOF_QUERY, 8},
       {"_Alignof((int[3]))", ND_ALIGNOF_QUERY, 4},
       {"_Alignof(_Imaginary double)", ND_ALIGNOF_QUERY, 8},
+      {"__builtin_offsetof(struct { char lead; int value; }, value)",
+       ND_OFFSETOF_QUERY, 4},
   };
   for (size_t i = 0;
        i < sizeof(type_queries) / sizeof(type_queries[0]); i++) {

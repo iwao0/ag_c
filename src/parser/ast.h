@@ -121,6 +121,26 @@ typedef struct {
   psx_type_name_ref_t type_name;
 } node_alignof_query_t;
 
+typedef enum {
+  PSX_OFFSETOF_DESIGNATOR_MEMBER = 0,
+  PSX_OFFSETOF_DESIGNATOR_INDEX,
+} psx_offsetof_designator_kind_t;
+
+typedef struct {
+  psx_offsetof_designator_kind_t kind;
+  node_t *index_expression;
+  char *member_name;
+  int member_name_len;
+  token_t *tok;
+} psx_offsetof_designator_t;
+
+typedef struct {
+  node_t base;
+  psx_type_name_ref_t type_name;
+  psx_offsetof_designator_t *designators;
+  int designator_count;
+} node_offsetof_query_t;
+
 typedef struct {
   node_t base;
   psx_initializer_entry_t *entries;
