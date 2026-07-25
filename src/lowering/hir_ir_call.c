@@ -127,6 +127,35 @@ static int atomic_object_uses_memory_value(
          object_kind == PSX_TYPE_UNION;
 }
 
+static ir_val_t build_atomic_converted_argument(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    psx_qual_type_t target_qual_type) {
+  if (!node ||
+      target_qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return hir_ir_unsupported_expr(context);
+  ir_mir_type_context_t type_context = {
+      .semantic_types = context->options->semantic_types,
+      .record_layouts = context->options->record_layouts,
+      .data_layout =
+          ag_target_info_data_layout(context->options->target),
+  };
+  ir_mir_type_info_t source_type =
+      hir_ir_classify_node_type(context, node);
+  ir_mir_type_info_t target_type =
+      ir_mir_classify_type_id(
+          &type_context, target_qual_type.type_id);
+  if (!hir_ir_is_scalar_value_type(source_type) &&
+      !hir_ir_is_complex_type(source_type))
+    return hir_ir_unsupported_expr(context);
+  ir_val_t value = hir_ir_build_expr(context, node);
+  if (context->status == IR_HIR_BUILD_OK)
+    value = hir_ir_coerce_direct_value_to_qual_type(
+        context, value, source_type, target_type,
+        target_qual_type);
+  return context->status == IR_HIR_BUILD_OK
+             ? value : ir_val_none();
+}
+
 static ir_type_t atomic_storage_type(int width) {
   switch (width) {
     case 1: return IR_TY_I8;
@@ -192,6 +221,7 @@ static ir_val_t load_atomic_object_bits(
 
 static ir_val_t materialize_atomic_object_argument(
     hir_ir_context_t *context, const psx_hir_node_t *node,
+    psx_qual_type_t object_qual_type,
     ir_mir_type_info_t object_type) {
   if (!node) return hir_ir_unsupported_expr(context);
   ir_mir_type_info_t source_type =
@@ -206,12 +236,11 @@ static ir_val_t materialize_atomic_object_argument(
     return hir_ir_materialize_complex_operand(
         context, node, object_type);
   if (object_type.type_class != IR_MIR_TYPE_FLOAT ||
-      !hir_ir_is_scalar_value_type(source_type))
+      (!hir_ir_is_scalar_value_type(source_type) &&
+       !hir_ir_is_complex_type(source_type)))
     return hir_ir_unsupported_expr(context);
-  ir_val_t value = hir_ir_build_expr(context, node);
-  if (context->status == IR_HIR_BUILD_OK)
-    value = hir_ir_coerce_direct_value(
-        context, value, source_type, object_type);
+  ir_val_t value = build_atomic_converted_argument(
+      context, node, object_qual_type);
   int alignment = object_type.source_size >= 8 ? 8 : 4;
   int temporary = hir_ir_allocate_scalar_temp(
       context, object_type.source_size, alignment);
@@ -225,9 +254,10 @@ static ir_val_t materialize_atomic_object_argument(
 
 static ir_val_t prepare_atomic_object_argument(
     hir_ir_context_t *context, const psx_hir_node_t *node,
+    psx_qual_type_t object_qual_type,
     ir_mir_type_info_t object_type, int width) {
   ir_val_t value = materialize_atomic_object_argument(
-      context, node, object_type);
+      context, node, object_qual_type, object_type);
   if (context->status != IR_HIR_BUILD_OK ||
       value.type != IR_TY_PTR)
     return ir_val_none();
@@ -378,6 +408,7 @@ static ir_val_t build_atomic_memory_object_call(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     const char *suffix, size_t suffix_length,
     size_t argument_count, ir_val_t pointer,
+    psx_qual_type_t object_qual_type,
     ir_mir_type_info_t object_type, int width) {
   if (object_type.source_size <= 0 ||
       object_type.source_size > width ||
@@ -419,7 +450,8 @@ static ir_val_t build_atomic_memory_object_call(
         hir_ir_child_for_edge(
             context, node, PSX_HIR_EDGE_ARGUMENT, 1);
     ir_val_t value = prepare_atomic_object_argument(
-        context, value_node, object_type, width);
+        context, value_node, object_qual_type,
+        object_type, width);
     if (context->status != IR_HIR_BUILD_OK ||
         value.type != IR_TY_PTR)
       return ir_val_none();
@@ -442,7 +474,8 @@ static ir_val_t build_atomic_memory_object_call(
         hir_ir_child_for_edge(
             context, node, PSX_HIR_EDGE_ARGUMENT, 1);
     ir_val_t desired = prepare_atomic_object_argument(
-        context, value_node, object_type, width);
+        context, value_node, object_qual_type,
+        object_type, width);
     if (context->status != IR_HIR_BUILD_OK ||
         desired.type != IR_TY_PTR)
       return ir_val_none();
@@ -490,7 +523,8 @@ static ir_val_t build_atomic_memory_object_call(
           context, expected_original,
           object_type.source_size, width);
     ir_val_t desired = prepare_atomic_object_argument(
-        context, desired_node, object_type, width);
+        context, desired_node, object_qual_type,
+        object_type, width);
     if (context->status != IR_HIR_BUILD_OK ||
         expected_original.type != IR_TY_PTR ||
         expected.type != IR_TY_PTR ||
@@ -523,23 +557,20 @@ static ir_val_t build_atomic_memory_object_call(
 }
 
 static ir_val_t scale_atomic_pointer_delta(
-    hir_ir_context_t *context, const psx_hir_node_t *value_node,
-    ir_val_t value, psx_qual_type_t pointer_object_type, int width) {
+    hir_ir_context_t *context, ir_val_t value,
+    psx_qual_type_t pointer_object_type, int width) {
   psx_qual_type_t element_type = psx_semantic_type_table_base(
       context->options->semantic_types, pointer_object_type.type_id);
   int stride = psx_qual_type_layout_sizeof(
       context->options->semantic_types, context->options->record_layouts,
       element_type,
       ag_target_info_data_layout(context->options->target));
-  ir_mir_type_info_t value_info = hir_ir_classify_node_type(
-      context, value_node);
   if (stride <= 0 ||
-      value_info.type_class != IR_MIR_TYPE_INTEGER ||
       !hir_ir_is_integer_type(value.type))
     return hir_ir_unsupported_expr(context);
   ir_type_t delta_type = width == 8 ? IR_TY_I64 : IR_TY_I32;
   value = hir_ir_emit_integer_width_conversion(
-      context, value, delta_type, !value_info.is_unsigned);
+      context, value, delta_type, 1);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   return hir_ir_emit_integer_binary(
       context, IR_MUL, value,
@@ -594,7 +625,8 @@ static ir_val_t hir_ir_build_atomic_call(
   if (atomic_object_uses_memory_value(object_shape.kind))
     return build_atomic_memory_object_call(
         context, node, suffix, suffix_length,
-        argument_count, pointer, object_type, width);
+        argument_count, pointer, object_qual_type,
+        object_type, width);
   ir_type_t value_type = object_shape.kind == PSX_TYPE_POINTER
                              ? IR_TY_PTR
                              : width == 8 ? IR_TY_I64 : IR_TY_I32;
@@ -621,7 +653,8 @@ static ir_val_t hir_ir_build_atomic_call(
     if (argument_count != 2) return hir_ir_unsupported_expr(context);
     const psx_hir_node_t *value_node = hir_ir_child_for_edge(
         context, node, PSX_HIR_EDGE_ARGUMENT, 1);
-    ir_val_t value = hir_ir_build_expr(context, value_node);
+    ir_val_t value = build_atomic_converted_argument(
+        context, value_node, object_qual_type);
     if (context->status != IR_HIR_BUILD_OK ||
         !atomic_value_matches_object(object_shape.kind, value))
       return hir_ir_unsupported_expr(context);
@@ -645,7 +678,8 @@ static ir_val_t hir_ir_build_atomic_call(
     const psx_hir_node_t *desired_node = hir_ir_child_for_edge(
         context, node, PSX_HIR_EDGE_ARGUMENT, 2);
     ir_val_t expected = hir_ir_build_expr(context, expected_node);
-    ir_val_t desired = hir_ir_build_expr(context, desired_node);
+    ir_val_t desired = build_atomic_converted_argument(
+        context, desired_node, object_qual_type);
     if (context->status != IR_HIR_BUILD_OK ||
         expected.type != IR_TY_PTR ||
         !atomic_value_matches_object(object_shape.kind, desired))
@@ -692,13 +726,23 @@ static ir_val_t hir_ir_build_atomic_call(
 
   const psx_hir_node_t *value_node = hir_ir_child_for_edge(
       context, node, PSX_HIR_EDGE_ARGUMENT, 1);
-  ir_val_t value = hir_ir_build_expr(context, value_node);
+  psx_qual_type_t operand_qual_type = object_qual_type;
+  if (object_shape.kind == PSX_TYPE_POINTER &&
+      (rmw_operation == IR_ARMW_ADD ||
+       rmw_operation == IR_ARMW_SUB)) {
+    operand_qual_type =
+        psx_semantic_type_table_fundamental_integer(
+            context->options->semantic_types,
+            PSX_INTEGER_KIND_LONG, 0, 0);
+  }
+  ir_val_t value = build_atomic_converted_argument(
+      context, value_node, operand_qual_type);
   if (context->status != IR_HIR_BUILD_OK)
     return hir_ir_unsupported_expr(context);
   if (object_shape.kind == PSX_TYPE_POINTER) {
     if (rmw_operation == IR_ARMW_ADD || rmw_operation == IR_ARMW_SUB) {
       value = scale_atomic_pointer_delta(
-          context, value_node, value, object_qual_type, width);
+          context, value, object_qual_type, width);
       if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
     } else if (rmw_operation != IR_ARMW_XCHG || value.type != IR_TY_PTR) {
       return hir_ir_unsupported_expr(context);

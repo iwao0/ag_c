@@ -154,6 +154,10 @@ int psx_resolve_atomic_builtin_call(
        PSX_TYPE_QUALIFIER_ATOMIC) == 0 ||
       !atomic_builtin_object_kind_is_valid(object_shape.kind))
     return 0;
+  if (kind != PSX_BUILTIN_CALL_ATOMIC_LOAD &&
+      (object_type.qualifiers &
+       PSX_TYPE_QUALIFIER_CONST) != 0)
+    return 0;
 
   if (atomic_builtin_returns_object_value(kind) && result_type) {
     *result_type = object_type;
@@ -187,18 +191,23 @@ int psx_resolve_atomic_builtin_call(
         argument_is_null_pointer_constant[2]);
   }
 
-  psx_type_shape_t operand_shape = {0};
-  if (!describe_qual_type(types, argument_types[1], &operand_shape) ||
-      (operand_shape.kind != PSX_TYPE_BOOL &&
-       operand_shape.kind != PSX_TYPE_INTEGER))
+  psx_qual_type_t operand_type = object_type;
+  if (object_shape.kind == PSX_TYPE_POINTER) {
+    if ((kind != PSX_BUILTIN_CALL_ATOMIC_FETCH_ADD &&
+         kind != PSX_BUILTIN_CALL_ATOMIC_FETCH_SUB) ||
+        !psx_semantic_pointer_points_to_complete_object_in(
+            semantic_context, object_type))
+      return 0;
+    operand_type =
+        psx_semantic_type_table_fundamental_integer(
+            types, PSX_INTEGER_KIND_LONG, 0, 0);
+  } else if (object_shape.kind != PSX_TYPE_BOOL &&
+             object_shape.kind != PSX_TYPE_INTEGER) {
     return 0;
-  if (object_shape.kind == PSX_TYPE_POINTER)
-    return (kind == PSX_BUILTIN_CALL_ATOMIC_FETCH_ADD ||
-            kind == PSX_BUILTIN_CALL_ATOMIC_FETCH_SUB) &&
-           psx_semantic_pointer_points_to_complete_object_in(
-               semantic_context, object_type);
-  return object_shape.kind == PSX_TYPE_BOOL ||
-         object_shape.kind == PSX_TYPE_INTEGER;
+  }
+  return atomic_builtin_assignment_is_valid(
+      semantic_context, operand_type, argument_types[1],
+      argument_is_null_pointer_constant[1]);
 }
 
 const node_t *psx_builtin_expect_value_operand(
