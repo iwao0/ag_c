@@ -24,13 +24,9 @@ typedef struct {
   const char *rename_other_symbol;
 } wasm_link2_case_t;
 
-#define MAX_EXTRA_CASES 1024
 #define MAX_STUB_SYMBOLS 512
 
-static wasm_e2e_case_t extra_cases[MAX_EXTRA_CASES];
-static char extra_case_categories[MAX_EXTRA_CASES][64];
-static char extra_case_names[MAX_EXTRA_CASES][192];
-static char extra_case_paths[MAX_EXTRA_CASES][256];
+static wasm_e2e_case_t *extra_cases;
 
 typedef struct {
   char names[MAX_STUB_SYMBOLS][64];
@@ -526,14 +522,6 @@ static const wasm_e2e_case_t cases[] = {
     {"type_decl", "long_double_sizeof", "test/fixtures/type_decl/long_double_sizeof.c"},
     {"type_decl", "complex_sizeof", "test/fixtures/type_decl/complex_sizeof.c"},
     {"type_decl", "complex_float_sizeof", "test/fixtures/type_decl/complex_float_sizeof.c"},
-    {"type_decl", "complex_init_copy", "test/fixtures/type_decl/complex_init_copy.c"},
-    {"type_decl", "complex_add", "test/fixtures/type_decl/complex_add.c"},
-    {"type_decl", "complex_sub", "test/fixtures/type_decl/complex_sub.c"},
-    {"type_decl", "complex_mul", "test/fixtures/type_decl/complex_mul.c"},
-    {"type_decl", "complex_div", "test/fixtures/type_decl/complex_div.c"},
-    {"type_decl", "complex_ne", "test/fixtures/type_decl/complex_ne.c"},
-    {"type_decl", "complex_chain_ops", "test/fixtures/type_decl/complex_chain_ops.c"},
-    {"type_decl", "complex_in_loop", "test/fixtures/type_decl/complex_in_loop.c"},
     {"type_decl", "extern_inline_funcspec", "test/fixtures/type_decl/extern_inline_funcspec.c"},
     {"type_decl", "noreturn_spec_parse", "test/fixtures/type_decl/noreturn_spec_parse.c"},
     {"type_decl", "static_assert_typedef_array_sizeof",
@@ -555,10 +543,6 @@ static const wasm_e2e_case_t cases[] = {
     {"type_decl", "atomic_type_spec", "test/fixtures/type_decl/atomic_type_spec.c"},
     {"type_decl", "atomic_type_qual_postfix", "test/fixtures/type_decl/atomic_type_qual_postfix.c"},
     {"type_decl", "atomic_type_qual_postfix_ptr", "test/fixtures/type_decl/atomic_type_qual_postfix_ptr.c"},
-    {"type_decl", "atomic_global", "test/fixtures/type_decl/atomic_global.c"},
-    {"type_decl", "atomic_in_loop", "test/fixtures/type_decl/atomic_in_loop.c"},
-    {"type_decl", "atomic_load_store", "test/fixtures/type_decl/atomic_load_store.c"},
-    {"type_decl", "cast_atomic_int", "test/fixtures/type_decl/cast_atomic_int.c"},
     {"evil", "anon_enum_negative", "test/fixtures/evil/anon_enum_negative.c"},
     {"evil", "sizeof_no_eval", "test/fixtures/evil/sizeof_no_eval.c"},
     {"evil", "cast_uchar_neg", "test/fixtures/evil/cast_uchar_neg.c"},
@@ -617,446 +601,6 @@ static const wasm_e2e_case_t cases[] = {
      "test/fixtures/probes_found_bugs/indirect_struct_return_funcptr.c"},
     {"probes_found_bugs", "typedef_void_funcptr_param",
      "test/fixtures/probes_found_bugs/typedef_void_funcptr_param.c"},
-    {"probes_found_bugs", "formatted_output_boundaries",
-     "test/fixtures/probes_found_bugs/formatted_output_boundaries.c"},
-    {"probes_found_bugs", "formatted_output_integer_base_boundaries",
-     "test/fixtures/probes_found_bugs/formatted_output_integer_base_boundaries.c"},
-    {"probes_found_bugs", "formatted_output_string_character_boundaries",
-     "test/fixtures/probes_found_bugs/formatted_output_string_character_boundaries.c"},
-    {"probes_found_bugs", "formatted_output_floating_boundaries",
-     "test/fixtures/probes_found_bugs/formatted_output_floating_boundaries.c"},
-    {"probes_found_bugs", "formatted_output_narrow_wide_composition",
-     "test/fixtures/probes_found_bugs/formatted_output_narrow_wide_composition.c"},
-    {"probes_found_bugs", "formatted_output_wide_character_conversion_boundaries",
-     "test/fixtures/probes_found_bugs/formatted_output_wide_character_conversion_boundaries.c"},
-    {"probes_found_bugs", "sprintf_common_formatter_boundaries",
-     "test/fixtures/probes_found_bugs/sprintf_common_formatter_boundaries.c"},
-    {"probes_found_bugs", "formatted_scan_boundaries",
-     "test/fixtures/probes_found_bugs/formatted_scan_boundaries.c"},
-    {"probes_found_bugs", "wide_format_scan_boundaries",
-     "test/fixtures/probes_found_bugs/wide_format_scan_boundaries.c"},
-    {"probes_found_bugs", "wide_format_output_boundaries",
-     "test/fixtures/probes_found_bugs/wide_format_output_boundaries.c"},
-    {"probes_found_bugs", "wide_format_integer_base_output_boundaries",
-     "test/fixtures/probes_found_bugs/wide_format_integer_base_output_boundaries.c"},
-    {"probes_found_bugs", "wide_format_string_character_output_boundaries",
-     "test/fixtures/probes_found_bugs/wide_format_string_character_output_boundaries.c"},
-    {"probes_found_bugs", "wide_format_floating_output_boundaries",
-     "test/fixtures/probes_found_bugs/wide_format_floating_output_boundaries.c"},
-    {"probes_found_bugs", "wide_format_input_va_list_boundaries",
-     "test/fixtures/probes_found_bugs/wide_format_input_va_list_boundaries.c"},
-    {"probes_found_bugs", "wide_format_stream_output_boundaries",
-     "test/fixtures/probes_found_bugs/wide_format_stream_output_boundaries.c"},
-    {"probes_found_bugs", "wide_format_stream_input_boundaries",
-     "test/fixtures/probes_found_bugs/wide_format_stream_input_boundaries.c"},
-    {"probes_found_bugs", "inttypes_max_format_macro_boundaries",
-     "test/fixtures/probes_found_bugs/inttypes_max_format_macro_boundaries.c"},
-    {"probes_found_bugs", "stdlib_algorithm_function_pointer_boundaries",
-     "test/fixtures/probes_found_bugs/stdlib_algorithm_function_pointer_boundaries.c"},
-    {"probes_found_bugs", "stdlib_const_input_qualifier_boundaries",
-     "test/fixtures/probes_found_bugs/stdlib_const_input_qualifier_boundaries.c"},
-    {"probes_found_bugs", "stdlib_conversion_function_pointer_boundaries",
-     "test/fixtures/probes_found_bugs/stdlib_conversion_function_pointer_boundaries.c"},
-    {"probes_found_bugs", "stdlib_integer_function_pointer_abi_boundaries",
-     "test/fixtures/probes_found_bugs/stdlib_integer_function_pointer_abi_boundaries.c"},
-    {"probes_found_bugs", "stdlib_macro_runtime_boundaries",
-     "test/fixtures/probes_found_bugs/stdlib_macro_runtime_boundaries.c"},
-    {"probes_found_bugs", "stdlib_management_signature_boundaries",
-     "test/fixtures/probes_found_bugs/stdlib_management_signature_boundaries.c"},
-    {"probes_found_bugs", "stdlib_multibyte_const_boundaries",
-     "test/fixtures/probes_found_bugs/stdlib_multibyte_const_boundaries.c"},
-    {"probes_found_bugs", "string_function_pointer_boundaries",
-     "test/fixtures/probes_found_bugs/string_function_pointer_boundaries.c"},
-    {"probes_found_bugs", "wide_string_function_pointer_boundaries",
-     "test/fixtures/probes_found_bugs/wide_string_function_pointer_boundaries.c"},
-    {"probes_found_bugs", "stdio_function_pointer_state_boundaries",
-     "test/fixtures/probes_found_bugs/stdio_function_pointer_state_boundaries.c"},
-    {"probes_found_bugs", "stdio_macro_constant_boundaries",
-     "test/fixtures/probes_found_bugs/stdio_macro_constant_boundaries.c"},
-    {"probes_found_bugs", "stdio_opaque_file_type_boundaries",
-     "test/fixtures/probes_found_bugs/stdio_opaque_file_type_boundaries.c"},
-    {"probes_found_bugs", "stdio_position_type_abi_boundaries",
-     "test/fixtures/probes_found_bugs/stdio_position_type_abi_boundaries.c"},
-    {"probes_found_bugs", "wchar_stream_function_pointer_state_boundaries",
-     "test/fixtures/probes_found_bugs/wchar_stream_function_pointer_state_boundaries.c"},
-    {"probes_found_bugs", "fenv_function_pointer_boundaries",
-     "test/fixtures/probes_found_bugs/fenv_function_pointer_boundaries.c"},
-    {"probes_found_bugs", "math_classification_macro_boundaries",
-     "test/fixtures/probes_found_bugs/math_classification_macro_boundaries.c"},
-    {"probes_found_bugs", "math_mixed_function_pointer_boundaries",
-     "test/fixtures/probes_found_bugs/math_mixed_function_pointer_boundaries.c"},
-    {"probes_found_bugs", "math_output_pointer_function_boundaries",
-     "test/fixtures/probes_found_bugs/math_output_pointer_function_boundaries.c"},
-    {"probes_found_bugs", "math_special_macro_boundaries",
-     "test/fixtures/probes_found_bugs/math_special_macro_boundaries.c"},
-    {"probes_found_bugs", "math_unary_function_pointer_boundaries",
-     "test/fixtures/probes_found_bugs/math_unary_function_pointer_boundaries.c"},
-    {"probes_found_bugs", "tgmath_mixed_dispatch_boundaries",
-     "test/fixtures/probes_found_bugs/tgmath_mixed_dispatch_boundaries.c"},
-    {"probes_found_bugs", "localeconv_full_layout_boundaries",
-     "test/fixtures/probes_found_bugs/localeconv_full_layout_boundaries.c"},
-    {"probes_found_bugs", "time_locale_function_pointer_boundaries",
-     "test/fixtures/probes_found_bugs/time_locale_function_pointer_boundaries.c"},
-    {"probes_found_bugs", "time_target_type_abi_boundaries",
-     "test/fixtures/probes_found_bugs/time_target_type_abi_boundaries.c"},
-    {"probes_found_bugs", "signal_function_pointer_boundaries",
-     "test/fixtures/probes_found_bugs/signal_function_pointer_boundaries.c"},
-    {"probes_found_bugs", "atomic_float_complex_value_boundaries",
-     "test/fixtures/probes_found_bugs/atomic_float_complex_value_boundaries.c"},
-    {"probes_found_bugs", "atomic_wide_complex_compound_boundaries",
-     "test/fixtures/probes_found_bugs/atomic_wide_complex_compound_boundaries.c"},
-    {"probes_found_bugs", "atomic_wide_complex_value_boundaries",
-     "test/fixtures/probes_found_bugs/atomic_wide_complex_value_boundaries.c"},
-    {"probes_found_bugs", "complex_brace_init",
-     "test/fixtures/probes_found_bugs/complex_brace_init.c"},
-    {"probes_found_bugs", "complex_by_value_abi",
-     "test/fixtures/probes_found_bugs/complex_by_value_abi.c"},
-    {"probes_found_bugs", "complex_component_function_unit_boundaries",
-     "test/fixtures/probes_found_bugs/complex_component_function_unit_boundaries.c"},
-    {"probes_found_bugs", "complex_compound_assignment",
-     "test/fixtures/probes_found_bugs/complex_compound_assignment.c"},
-    {"probes_found_bugs", "complex_conditional_width_boundaries",
-     "test/fixtures/probes_found_bugs/complex_conditional_width_boundaries.c"},
-    {"probes_found_bugs", "complex_construction_macro_boundaries",
-     "test/fixtures/probes_found_bugs/complex_construction_macro_boundaries.c"},
-    {"probes_found_bugs", "complex_control_flow_truth_boundaries",
-     "test/fixtures/probes_found_bugs/complex_control_flow_truth_boundaries.c"},
-    {"probes_found_bugs", "complex_float_double_convert",
-     "test/fixtures/probes_found_bugs/complex_float_double_convert.c"},
-    {"probes_found_bugs", "complex_function_pointer_abi_boundaries",
-     "test/fixtures/probes_found_bugs/complex_function_pointer_abi_boundaries.c"},
-    {"probes_found_bugs", "complex_runtime_scalar_conversion_boundaries",
-     "test/fixtures/probes_found_bugs/complex_runtime_scalar_conversion_boundaries.c"},
-    {"probes_found_bugs", "complex_scalar_conversion_context_boundaries",
-     "test/fixtures/probes_found_bugs/complex_scalar_conversion_context_boundaries.c"},
-    {"probes_found_bugs", "complex_special_scalar_boundaries",
-     "test/fixtures/probes_found_bugs/complex_special_scalar_boundaries.c"},
-    {"probes_found_bugs", "complex_static_initializer_boundaries",
-     "test/fixtures/probes_found_bugs/complex_static_initializer_boundaries.c"},
-    {"probes_found_bugs", "complex_static_scalar_conversion_boundaries",
-     "test/fixtures/probes_found_bugs/complex_static_scalar_conversion_boundaries.c"},
-    {"probes_found_bugs", "complex_value_function_boundaries",
-     "test/fixtures/probes_found_bugs/complex_value_function_boundaries.c"},
-    {"probes_found_bugs", "complex_width_variant_function_boundaries",
-     "test/fixtures/probes_found_bugs/complex_width_variant_function_boundaries.c"},
-    {"probes_found_bugs", "generic_complex_derived_type",
-     "test/fixtures/probes_found_bugs/generic_complex_derived_type.c"},
-    {"probes_found_bugs", "generic_complex_derived_type_global",
-     "test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c"},
-    {"probes_found_bugs", "tag_return_complex_declarator",
-     "test/fixtures/probes_found_bugs/tag_return_complex_declarator.c"},
-    {"probes_found_bugs", "variadic_complex_arguments",
-     "test/fixtures/probes_found_bugs/variadic_complex_arguments.c"},
-    {"probes_found_bugs", "atomic_aggregate_member_array_layout",
-     "test/fixtures/probes_found_bugs/atomic_aggregate_member_array_layout.c"},
-    {"probes_found_bugs", "atomic_aggregate_value_boundaries",
-     "test/fixtures/probes_found_bugs/atomic_aggregate_value_boundaries.c"},
-    {"probes_found_bugs", "atomic_brace_initializer_extension",
-     "test/fixtures/probes_found_bugs/atomic_brace_initializer_extension.c"},
-    {"probes_found_bugs", "atomic_compound_assignment",
-     "test/fixtures/probes_found_bugs/atomic_compound_assignment.c"},
-    {"probes_found_bugs", "atomic_pointer_conversion_constraints",
-     "test/fixtures/probes_found_bugs/atomic_pointer_conversion_constraints.c"},
-    {"probes_found_bugs", "atomic_qualified_layout",
-     "test/fixtures/probes_found_bugs/atomic_qualified_layout.c"},
-    {"probes_found_bugs", "atomic_qualifier_typedef_constraints",
-     "test/fixtures/probes_found_bugs/atomic_qualifier_typedef_constraints.c"},
-    {"probes_found_bugs", "atomic_type_constraints",
-     "test/fixtures/probes_found_bugs/atomic_type_constraints.c"},
-    {"probes_found_bugs", "atomic_union_member_array_layout",
-     "test/fixtures/probes_found_bugs/atomic_union_member_array_layout.c"},
-    {"probes_found_bugs", "stdatomic_const_volatile_object_boundaries",
-     "test/fixtures/probes_found_bugs/stdatomic_const_volatile_object_boundaries.c"},
-    {"probes_found_bugs", "stdatomic_generic_object_exchange",
-     "test/fixtures/probes_found_bugs/stdatomic_generic_object_exchange.c"},
-    {"probes_found_bugs", "stdatomic_generic_object_load_store",
-     "test/fixtures/probes_found_bugs/stdatomic_generic_object_load_store.c"},
-    {"probes_found_bugs", "stdatomic_generic_operand_conversions",
-     "test/fixtures/probes_found_bugs/stdatomic_generic_operand_conversions.c"},
-    {"probes_found_bugs", "stdatomic_generic_return_type_boundaries",
-     "test/fixtures/probes_found_bugs/stdatomic_generic_return_type_boundaries.c"},
-    {"probes_found_bugs", "stdatomic_kill_dependency_constraints",
-     "test/fixtures/probes_found_bugs/stdatomic_kill_dependency_constraints.c"},
-    {"probes_found_bugs", "stdatomic_lock_free_query_boundaries",
-     "test/fixtures/probes_found_bugs/stdatomic_lock_free_query_boundaries.c"},
-    {"probes_found_bugs", "stdatomic_memory_order_argument_constraints",
-     "test/fixtures/probes_found_bugs/stdatomic_memory_order_argument_constraints.c"},
-    {"probes_found_bugs", "stdatomic_pointer_operations",
-     "test/fixtures/probes_found_bugs/stdatomic_pointer_operations.c"},
-    {"probes_found_bugs", "stdatomic_typedef_order_boundaries",
-     "test/fixtures/probes_found_bugs/stdatomic_typedef_order_boundaries.c"},
-    {"probes_found_bugs", "aggregate_return_register_width_boundaries",
-     "test/fixtures/probes_found_bugs/aggregate_return_register_width_boundaries.c"},
-    {"probes_found_bugs", "bool_func_return_normalize",
-     "test/fixtures/probes_found_bugs/bool_func_return_normalize.c"},
-    {"probes_found_bugs", "float_to_int_return_narrowing",
-     "test/fixtures/probes_found_bugs/float_to_int_return_narrowing.c"},
-    {"probes_found_bugs", "func_pointer_return_subscript",
-     "test/fixtures/probes_found_bugs/func_pointer_return_subscript.c"},
-    {"probes_found_bugs", "func_return_funcptr_ptrptr",
-     "test/fixtures/probes_found_bugs/func_return_funcptr_ptrptr.c"},
-    {"probes_found_bugs", "func_return_pointer_to_2d_array",
-     "test/fixtures/probes_found_bugs/func_return_pointer_to_2d_array.c"},
-    {"probes_found_bugs", "func_return_pointer_to_array",
-     "test/fixtures/probes_found_bugs/func_return_pointer_to_array.c"},
-    {"probes_found_bugs", "func_returning_funcptr",
-     "test/fixtures/probes_found_bugs/func_returning_funcptr.c"},
-    {"probes_found_bugs", "funcptr_array_fp_return",
-     "test/fixtures/probes_found_bugs/funcptr_array_fp_return.c"},
-    {"probes_found_bugs", "funcptr_fp_return",
-     "test/fixtures/probes_found_bugs/funcptr_fp_return.c"},
-    {"probes_found_bugs", "funcptr_global_array_fp_return",
-     "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c"},
-    {"probes_found_bugs", "funcptr_global_fp_return",
-     "test/fixtures/probes_found_bugs/funcptr_global_fp_return.c"},
-    {"probes_found_bugs", "funcptr_member_fp_return",
-     "test/fixtures/probes_found_bugs/funcptr_member_fp_return.c"},
-    {"probes_found_bugs", "function_argument_return_constraints",
-     "test/fixtures/probes_found_bugs/function_argument_return_constraints.c"},
-    {"probes_found_bugs", "function_default_argument_promotions",
-     "test/fixtures/probes_found_bugs/function_default_argument_promotions.c"},
-    {"probes_found_bugs", "indirect_aggregate_return",
-     "test/fixtures/probes_found_bugs/indirect_aggregate_return.c"},
-    {"probes_found_bugs", "int_cast_truncates_long_return",
-     "test/fixtures/probes_found_bugs/int_cast_truncates_long_return.c"},
-    {"probes_found_bugs", "int_cmp_width_and_subint_return",
-     "test/fixtures/probes_found_bugs/int_cmp_width_and_subint_return.c"},
-    {"probes_found_bugs", "long_return_value",
-     "test/fixtures/probes_found_bugs/long_return_value.c"},
-    {"probes_found_bugs", "multilevel_pointer_return",
-     "test/fixtures/probes_found_bugs/multilevel_pointer_return.c"},
-    {"probes_found_bugs", "narrow_integer_return_boundaries",
-     "test/fixtures/probes_found_bugs/narrow_integer_return_boundaries.c"},
-    {"probes_found_bugs", "old_style_function_definition_boundaries",
-     "test/fixtures/probes_found_bugs/old_style_function_definition_boundaries.c"},
-    {"probes_found_bugs", "oldstyle_prototype_default_promotion",
-     "test/fixtures/probes_found_bugs/oldstyle_prototype_default_promotion.c"},
-    {"probes_found_bugs", "qualified_pointer_return",
-     "test/fixtures/probes_found_bugs/qualified_pointer_return.c"},
-    {"probes_found_bugs", "static_tag_return_function",
-     "test/fixtures/probes_found_bugs/static_tag_return_function.c"},
-    {"probes_found_bugs", "struct_value_arg_return",
-     "test/fixtures/probes_found_bugs/struct_value_arg_return.c"},
-    {"probes_found_bugs", "typedef_unsigned_subint_return",
-     "test/fixtures/probes_found_bugs/typedef_unsigned_subint_return.c"},
-    {"probes_found_bugs", "unsigned_long_return_signedness",
-     "test/fixtures/probes_found_bugs/unsigned_long_return_signedness.c"},
-    {"probes_found_bugs", "unsigned_subint_return_promote",
-     "test/fixtures/probes_found_bugs/unsigned_subint_return_promote.c"},
-    {"probes_found_bugs", "void_ptr_return",
-     "test/fixtures/probes_found_bugs/void_ptr_return.c"},
-    {"probes_found_bugs", "address_of_parameter_subarray",
-     "test/fixtures/probes_found_bugs/address_of_parameter_subarray.c"},
-    {"probes_found_bugs", "address_of_vla_subarray",
-     "test/fixtures/probes_found_bugs/address_of_vla_subarray.c"},
-    {"probes_found_bugs", "array_parameter_const_adjustment",
-     "test/fixtures/probes_found_bugs/array_parameter_const_adjustment.c"},
-    {"probes_found_bugs", "array_parameter_inner_bound_evaluation",
-     "test/fixtures/probes_found_bugs/array_parameter_inner_bound_evaluation.c"},
-    {"probes_found_bugs", "array_parameter_outer_qualifiers",
-     "test/fixtures/probes_found_bugs/array_parameter_outer_qualifiers.c"},
-    {"probes_found_bugs", "array_parameter_static_bound_evaluation",
-     "test/fixtures/probes_found_bugs/array_parameter_static_bound_evaluation.c"},
-    {"probes_found_bugs", "fp_array_parameter",
-     "test/fixtures/probes_found_bugs/fp_array_parameter.c"},
-    {"probes_found_bugs", "fp_pointer_parameter",
-     "test/fixtures/probes_found_bugs/fp_pointer_parameter.c"},
-    {"probes_found_bugs", "function_parameter_adjustment_redeclaration",
-     "test/fixtures/probes_found_bugs/function_parameter_adjustment_redeclaration.c"},
-    {"probes_found_bugs", "function_parameter_tag_scope_boundaries",
-     "test/fixtures/probes_found_bugs/function_parameter_tag_scope_boundaries.c"},
-    {"probes_found_bugs", "goto_vla_scope_constraints",
-     "test/fixtures/probes_found_bugs/goto_vla_scope_constraints.c"},
-    {"probes_found_bugs", "incomplete_array_pointer_parameter",
-     "test/fixtures/probes_found_bugs/incomplete_array_pointer_parameter.c"},
-    {"probes_found_bugs", "incomplete_parameter_prototype",
-     "test/fixtures/probes_found_bugs/incomplete_parameter_prototype.c"},
-    {"probes_found_bugs", "incomplete_record_parameter_prototype",
-     "test/fixtures/probes_found_bugs/incomplete_record_parameter_prototype.c"},
-    {"probes_found_bugs", "incomplete_return_prototype",
-     "test/fixtures/probes_found_bugs/incomplete_return_prototype.c"},
-    {"probes_found_bugs", "literal_vla_boundaries",
-     "test/fixtures/probes_found_bugs/literal_vla_boundaries.c"},
-    {"probes_found_bugs", "nested_parameter_subarray_address",
-     "test/fixtures/probes_found_bugs/nested_parameter_subarray_address.c"},
-    {"probes_found_bugs", "nested_vla_star_prototype",
-     "test/fixtures/probes_found_bugs/nested_vla_star_prototype.c"},
-    {"probes_found_bugs", "out_parameter_initialization_usage_boundaries",
-     "test/fixtures/probes_found_bugs/out_parameter_initialization_usage_boundaries.c"},
-    {"probes_found_bugs", "parameter_shadows_function_name",
-     "test/fixtures/probes_found_bugs/parameter_shadows_function_name.c"},
-    {"probes_found_bugs", "pointer_to_vla",
-     "test/fixtures/probes_found_bugs/pointer_to_vla.c"},
-    {"probes_found_bugs", "qualified_pointer_array_function",
-     "test/fixtures/probes_found_bugs/qualified_pointer_array_function.c"},
-    {"probes_found_bugs", "sizeof_vla_subscript",
-     "test/fixtures/probes_found_bugs/sizeof_vla_subscript.c"},
-    {"probes_found_bugs", "sizeof_vla_type_name",
-     "test/fixtures/probes_found_bugs/sizeof_vla_type_name.c"},
-    {"probes_found_bugs", "typedef_void_parameter_marker",
-     "test/fixtures/probes_found_bugs/typedef_void_parameter_marker.c"},
-    {"vla", "basic_elem", "test/fixtures/vla/basic_elem.c"},
-    {"vla", "bound_evaluated_once", "test/fixtures/vla/bound_evaluated_once.c"},
-    {"vla", "loop_fill", "test/fixtures/vla/loop_fill.c"},
-    {"vla", "param_size", "test/fixtures/vla/param_size.c"},
-    {"vla", "pointer_to_multidim_vla", "test/fixtures/vla/pointer_to_multidim_vla.c"},
-    {"vla", "sizeof_vla", "test/fixtures/vla/sizeof_vla.c"},
-    {"vla", "static_pointer_to_vla", "test/fixtures/vla/static_pointer_to_vla.c"},
-    {"vla_2d", "const_inner_loop", "test/fixtures/vla_2d/const_inner_loop.c"},
-    {"vla_2d", "const_inner_read", "test/fixtures/vla_2d/const_inner_read.c"},
-    {"vla_2d", "runtime_inner_loop", "test/fixtures/vla_2d/runtime_inner_loop.c"},
-    {"vla_2d", "runtime_inner_read", "test/fixtures/vla_2d/runtime_inner_read.c"},
-    {"vla_param", "basic_access", "test/fixtures/vla_param/basic_access.c"},
-    {"vla_param", "sizeof_is_ptr", "test/fixtures/vla_param/sizeof_is_ptr.c"},
-    {"vla_param", "static_restrict_access", "test/fixtures/vla_param/static_restrict_access.c"},
-    {"vla_param", "write_through", "test/fixtures/vla_param/write_through.c"},
-    {"probes_found_bugs", "alignof_aggregate",
-     "test/fixtures/probes_found_bugs/alignof_aggregate.c"},
-    {"probes_found_bugs", "anon_struct_bitfield_promote",
-     "test/fixtures/probes_found_bugs/anon_struct_bitfield_promote.c"},
-    {"probes_found_bugs", "anon_struct_union_local",
-     "test/fixtures/probes_found_bugs/anon_struct_union_local.c"},
-    {"probes_found_bugs", "anon_union_member",
-     "test/fixtures/probes_found_bugs/anon_union_member.c"},
-    {"probes_found_bugs", "anon_union_promoted_array_designator",
-     "test/fixtures/probes_found_bugs/anon_union_promoted_array_designator.c"},
-    {"probes_found_bugs", "anonymous_union_relocation_initializer",
-     "test/fixtures/probes_found_bugs/anonymous_union_relocation_initializer.c"},
-    {"probes_found_bugs", "array_designator_with_struct_designator",
-     "test/fixtures/probes_found_bugs/array_designator_with_struct_designator.c"},
-    {"probes_found_bugs", "bool_bitfield",
-     "test/fixtures/probes_found_bugs/bool_bitfield.c"},
-    {"probes_found_bugs", "generic_struct_vs_scalar",
-     "test/fixtures/probes_found_bugs/generic_struct_vs_scalar.c"},
-    {"probes_found_bugs", "global_nested_struct_init",
-     "test/fixtures/probes_found_bugs/global_nested_struct_init.c"},
-    {"probes_found_bugs", "global_nested_union_pointer_init",
-     "test/fixtures/probes_found_bugs/global_nested_union_pointer_init.c"},
-    {"probes_found_bugs", "local_designator_aggregate_leaf",
-     "test/fixtures/probes_found_bugs/local_designator_aggregate_leaf.c"},
-    {"probes_found_bugs", "long_bitfield",
-     "test/fixtures/probes_found_bugs/long_bitfield.c"},
-    {"probes_found_bugs", "mixed_base_bitfield_tail_layout",
-     "test/fixtures/probes_found_bugs/mixed_base_bitfield_tail_layout.c"},
-    {"probes_found_bugs", "nested_struct_brace_elision",
-     "test/fixtures/probes_found_bugs/nested_struct_brace_elision.c"},
-    {"probes_found_bugs", "nested_union_activation_identity",
-     "test/fixtures/probes_found_bugs/nested_union_activation_identity.c"},
-    {"probes_found_bugs", "nested_union_designator_ordinal",
-     "test/fixtures/probes_found_bugs/nested_union_designator_ordinal.c"},
-    {"probes_found_bugs", "nested_union_initializer_cursor",
-     "test/fixtures/probes_found_bugs/nested_union_initializer_cursor.c"},
-    {"probes_found_bugs", "nested_union_string_bitfield_activation",
-     "test/fixtures/probes_found_bugs/nested_union_string_bitfield_activation.c"},
-    {"probes_found_bugs", "packed_bitfield_tail_layout",
-     "test/fixtures/probes_found_bugs/packed_bitfield_tail_layout.c"},
-    {"probes_found_bugs", "return_struct_funccall",
-     "test/fixtures/probes_found_bugs/return_struct_funccall.c"},
-    {"probes_found_bugs", "static_local_struct_persist",
-     "test/fixtures/probes_found_bugs/static_local_struct_persist.c"},
-    {"probes_found_bugs", "struct_of_struct_of_array",
-     "test/fixtures/probes_found_bugs/struct_of_struct_of_array.c"},
-    {"probes_found_bugs", "tentative_incomplete_union_completion",
-     "test/fixtures/probes_found_bugs/tentative_incomplete_union_completion.c"},
-    {"probes_found_bugs", "triple_nested_union_activation_reset",
-     "test/fixtures/probes_found_bugs/triple_nested_union_activation_reset.c"},
-    {"probes_found_bugs", "union_aggregate_positional_continuation",
-     "test/fixtures/probes_found_bugs/union_aggregate_positional_continuation.c"},
-    {"probes_found_bugs", "union_bitfield_initializer_offsets",
-     "test/fixtures/probes_found_bugs/union_bitfield_initializer_offsets.c"},
-    {"probes_found_bugs", "union_padded_struct_initializer_offsets",
-     "test/fixtures/probes_found_bugs/union_padded_struct_initializer_offsets.c"},
-    {"probes_found_bugs", "vla_struct_local",
-     "test/fixtures/probes_found_bugs/vla_struct_local.c"},
-    {"probes_found_bugs", "zero_width_unnamed_bitfield_initializer",
-     "test/fixtures/probes_found_bugs/zero_width_unnamed_bitfield_initializer.c"},
-    {"struct_arg", "large_sum", "test/fixtures/struct_arg/large_sum.c"},
-    {"probes_found_bugs", "addr_of_array_compound_literal",
-     "test/fixtures/probes_found_bugs/addr_of_array_compound_literal.c"},
-    {"probes_found_bugs", "aggregate_copy_designator_override",
-     "test/fixtures/probes_found_bugs/aggregate_copy_designator_override.c"},
-    {"probes_found_bugs", "aggregate_repeated_designator_last_wins",
-     "test/fixtures/probes_found_bugs/aggregate_repeated_designator_last_wins.c"},
-    {"probes_found_bugs", "anon_global_array_member_designator",
-     "test/fixtures/probes_found_bugs/anon_global_array_member_designator.c"},
-    {"probes_found_bugs", "anon_ptr_to_array_member_designator",
-     "test/fixtures/probes_found_bugs/anon_ptr_to_array_member_designator.c"},
-    {"probes_found_bugs", "array_designator_brace_mix",
-     "test/fixtures/probes_found_bugs/array_designator_brace_mix.c"},
-    {"probes_found_bugs", "array_nested_designator_2d",
-     "test/fixtures/probes_found_bugs/array_nested_designator_2d.c"},
-    {"probes_found_bugs", "array_nested_designator_3d",
-     "test/fixtures/probes_found_bugs/array_nested_designator_3d.c"},
-    {"probes_found_bugs", "bool_array_member_designator",
-     "test/fixtures/probes_found_bugs/bool_array_member_designator.c"},
-    {"probes_found_bugs", "bool_initializer_normalization",
-     "test/fixtures/probes_found_bugs/bool_initializer_normalization.c"},
-    {"probes_found_bugs", "deep_initializer_designator_chain",
-     "test/fixtures/probes_found_bugs/deep_initializer_designator_chain.c"},
-    {"probes_found_bugs", "duplicate_designator_override",
-     "test/fixtures/probes_found_bugs/duplicate_designator_override.c"},
-    {"probes_found_bugs", "file_scope_addr_of_compound_literal",
-     "test/fixtures/probes_found_bugs/file_scope_addr_of_compound_literal.c"},
-    {"probes_found_bugs", "file_scope_aggregate_compound_literal_addr",
-     "test/fixtures/probes_found_bugs/file_scope_aggregate_compound_literal_addr.c"},
-    {"probes_found_bugs", "file_scope_array_compound_literal_decay",
-     "test/fixtures/probes_found_bugs/file_scope_array_compound_literal_decay.c"},
-    {"probes_found_bugs", "file_scope_compound_literal_init",
-     "test/fixtures/probes_found_bugs/file_scope_compound_literal_init.c"},
-    {"probes_found_bugs", "float_array_member_designator",
-     "test/fixtures/probes_found_bugs/float_array_member_designator.c"},
-    {"probes_found_bugs", "funcptr_array_compound_literal",
-     "test/fixtures/probes_found_bugs/funcptr_array_compound_literal.c"},
-    {"probes_found_bugs", "global_designator",
-     "test/fixtures/probes_found_bugs/global_designator.c"},
-    {"probes_found_bugs", "global_designator_member_index",
-     "test/fixtures/probes_found_bugs/global_designator_member_index.c"},
-    {"probes_found_bugs", "global_designator_nested_slot",
-     "test/fixtures/probes_found_bugs/global_designator_nested_slot.c"},
-    {"probes_found_bugs", "global_multidim_array_nested_designator",
-     "test/fixtures/probes_found_bugs/global_multidim_array_nested_designator.c"},
-    {"probes_found_bugs", "global_multidim_array_nested_designator_plain",
-     "test/fixtures/probes_found_bugs/global_multidim_array_nested_designator_plain.c"},
-    {"probes_found_bugs", "global_multidim_member_funcptr_designator",
-     "test/fixtures/probes_found_bugs/global_multidim_member_funcptr_designator.c"},
-    {"probes_found_bugs", "global_multidim_struct_pointer_designator",
-     "test/fixtures/probes_found_bugs/global_multidim_struct_pointer_designator.c"},
-    {"probes_found_bugs", "global_nested_brace_designator",
-     "test/fixtures/probes_found_bugs/global_nested_brace_designator.c"},
-    {"probes_found_bugs", "global_struct_member_multidim_nested_designator",
-     "test/fixtures/probes_found_bugs/global_struct_member_multidim_nested_designator.c"},
-    {"probes_found_bugs", "global_struct_member_multidim_struct_array_designator",
-     "test/fixtures/probes_found_bugs/global_struct_member_multidim_struct_array_designator.c"},
-    {"probes_found_bugs", "global_subarray_address_initializer",
-     "test/fixtures/probes_found_bugs/global_subarray_address_initializer.c"},
-    {"probes_found_bugs", "incomplete_array_designator_positional",
-     "test/fixtures/probes_found_bugs/incomplete_array_designator_positional.c"},
-    {"probes_found_bugs", "negative_fp_global_init",
-     "test/fixtures/probes_found_bugs/negative_fp_global_init.c"},
-    {"probes_found_bugs", "negative_global",
-     "test/fixtures/probes_found_bugs/negative_global.c"},
-    {"probes_found_bugs", "nested_array_designator",
-     "test/fixtures/probes_found_bugs/nested_array_designator.c"},
-    {"probes_found_bugs", "nested_compound_literal",
-     "test/fixtures/probes_found_bugs/nested_compound_literal.c"},
-    {"probes_found_bugs", "sizeof_global_array_inferred_size",
-     "test/fixtures/probes_found_bugs/sizeof_global_array_inferred_size.c"},
-    {"probes_found_bugs", "static_initializer_floating_conditions",
-     "test/fixtures/probes_found_bugs/static_initializer_floating_conditions.c"},
-    {"probes_found_bugs", "static_initializer_short_circuit",
-     "test/fixtures/probes_found_bugs/static_initializer_short_circuit.c"},
-    {"probes_found_bugs", "static_local_subarray_address_initializer",
-     "test/fixtures/probes_found_bugs/static_local_subarray_address_initializer.c"},
-    {"probes_found_bugs", "struct_copy_init_from_global",
-     "test/fixtures/probes_found_bugs/struct_copy_init_from_global.c"},
-    {"probes_found_bugs", "tentative_definition_with_initializer",
-     "test/fixtures/probes_found_bugs/tentative_definition_with_initializer.c"},
-    {"probes_found_bugs", "union_array_sparse_designators",
-     "test/fixtures/probes_found_bugs/union_array_sparse_designators.c"},
-    {"probes_found_bugs", "union_mixed_relocation_initializer_offsets",
-     "test/fixtures/probes_found_bugs/union_mixed_relocation_initializer_offsets.c"},
-    {"probes_found_bugs", "union_repeated_designator_last_wins",
-     "test/fixtures/probes_found_bugs/union_repeated_designator_last_wins.c"},
     {"func_name", "each_func_distinct", "test/fixtures/func_name/each_func_distinct.c"},
     {"func_name", "first_char_helper", "test/fixtures/func_name/first_char_helper.c"},
     {"func_name", "first_char_main", "test/fixtures/func_name/first_char_main.c"},
@@ -1348,8 +892,27 @@ static int run_link2_case(const wasm_link2_case_t *tc, int *executed) {
   return run_wabt_case(case_id, wat_path, tc->expected_i, executed);
 }
 
+static char *copy_case_text(const char *text, size_t length) {
+  char *copy = (char *)malloc(length + 1);
+  if (!copy) return NULL;
+  memcpy(copy, text, length);
+  copy[length] = '\0';
+  return copy;
+}
+
+static void free_extra_cases(size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    free((void *)extra_cases[i].category);
+    free((void *)extra_cases[i].name);
+    free((void *)extra_cases[i].path);
+  }
+  free(extra_cases);
+  extra_cases = NULL;
+}
+
 static int load_extra_cases(const char *path, size_t *out_count) {
   *out_count = 0;
+  size_t capacity = 0;
   FILE *fp = fopen(path, "rb");
   if (!fp) {
     fprintf(stderr, "FAIL: open extra Wasm E2E case list %s\n", path);
@@ -1367,41 +930,96 @@ static int load_extra_cases(const char *path, size_t *out_count) {
       *--end = '\0';
     }
     if (*p == '\0') continue;
-    if (*out_count >= MAX_EXTRA_CASES) {
-      fclose(fp);
-      fprintf(stderr, "FAIL: too many extra Wasm E2E cases\n");
-      return 1;
-    }
 
     char *slash = strchr(p, '/');
     char *dot = strrchr(p, '.');
     if (!slash || !dot || strcmp(dot, ".c") != 0 || slash == p || dot <= slash + 1) {
       fclose(fp);
+      free_extra_cases(*out_count);
+      *out_count = 0;
       fprintf(stderr, "FAIL: invalid extra Wasm E2E case path '%s'\n", p);
       return 1;
     }
 
-    size_t idx = *out_count;
     size_t cat_len = (size_t)(slash - p);
     size_t name_len = (size_t)(dot - slash - 1);
-    if (cat_len >= sizeof(extra_case_categories[idx]) || name_len >= sizeof(extra_case_names[idx])) {
+    size_t relative_len = strlen(p);
+    const char *fixture_prefix = "test/fixtures/";
+    size_t prefix_len = strlen(fixture_prefix);
+
+    char *category = copy_case_text(p, cat_len);
+    char *name = copy_case_text(slash + 1, name_len);
+    char *fixture_path = (char *)malloc(prefix_len + relative_len + 1);
+    if (!category || !name || !fixture_path) {
+      free(category);
+      free(name);
+      free(fixture_path);
       fclose(fp);
-      fprintf(stderr, "FAIL: extra Wasm E2E case path too long '%s'\n", p);
+      free_extra_cases(*out_count);
+      *out_count = 0;
+      fprintf(stderr, "FAIL: allocate extra Wasm E2E case '%s'\n", p);
       return 1;
     }
-    memcpy(extra_case_categories[idx], p, cat_len);
-    extra_case_categories[idx][cat_len] = '\0';
-    memcpy(extra_case_names[idx], slash + 1, name_len);
-    extra_case_names[idx][name_len] = '\0';
-    snprintf(extra_case_paths[idx], sizeof(extra_case_paths[idx]), "test/fixtures/%s", p);
+    memcpy(fixture_path, fixture_prefix, prefix_len);
+    memcpy(fixture_path + prefix_len, p, relative_len + 1);
 
-    extra_cases[idx].category = extra_case_categories[idx];
-    extra_cases[idx].name = extra_case_names[idx];
-    extra_cases[idx].path = extra_case_paths[idx];
+    if (*out_count == capacity) {
+      size_t next_capacity = capacity ? capacity * 2 : 64;
+      wasm_e2e_case_t *grown =
+          (wasm_e2e_case_t *)realloc(extra_cases, next_capacity * sizeof(*extra_cases));
+      if (!grown) {
+        free(category);
+        free(name);
+        free(fixture_path);
+        fclose(fp);
+        free_extra_cases(*out_count);
+        *out_count = 0;
+        fprintf(stderr, "FAIL: grow extra Wasm E2E case list\n");
+        return 1;
+      }
+      extra_cases = grown;
+      capacity = next_capacity;
+    }
+
+    extra_cases[*out_count].category = category;
+    extra_cases[*out_count].name = name;
+    extra_cases[*out_count].path = fixture_path;
     (*out_count)++;
   }
   fclose(fp);
   return 0;
+}
+
+static int verify_wasm_e2e_fixture_uniqueness(size_t nextra) {
+  size_t nstatic = sizeof(cases) / sizeof(cases[0]);
+  int duplicates = 0;
+
+  for (size_t i = 0; i < nstatic; i++) {
+    for (size_t j = i + 1; j < nstatic; j++) {
+      if (strcmp(cases[i].path, cases[j].path) == 0) {
+        fprintf(stderr, "FAIL: duplicate static Wasm E2E fixture %s\n", cases[i].path);
+        duplicates++;
+      }
+    }
+  }
+  for (size_t i = 0; i < nextra; i++) {
+    for (size_t j = i + 1; j < nextra; j++) {
+      if (strcmp(extra_cases[i].path, extra_cases[j].path) == 0) {
+        fprintf(stderr, "FAIL: duplicate extra Wasm E2E fixture %s\n", extra_cases[i].path);
+        duplicates++;
+      }
+    }
+  }
+  for (size_t i = 0; i < nstatic; i++) {
+    for (size_t j = 0; j < nextra; j++) {
+      if (strcmp(cases[i].path, extra_cases[j].path) == 0) {
+        fprintf(stderr, "FAIL: Wasm E2E fixture registered as both static and extra: %s\n",
+                cases[i].path);
+        duplicates++;
+      }
+    }
+  }
+  return duplicates ? 1 : 0;
 }
 
 static int has_wasm_e2e_fixture_path(const char *path, size_t nextra) {
@@ -1727,9 +1345,13 @@ int main(void) {
   }
   size_t nextra = 0;
   if (load_extra_cases("test/wasm32_e2e_extra_cases.txt", &nextra) != 0) return 1;
-  if (verify_test_e2e_fixture_parity(nextra) != 0) return 1;
-  if (verify_minimal_libc_stub_table_sync() != 0) return 1;
-  if (verify_runtime_backed_std_headers_have_standalone_stubs() != 0) return 1;
+  if (verify_wasm_e2e_fixture_uniqueness(nextra) != 0 ||
+      verify_test_e2e_fixture_parity(nextra) != 0 ||
+      verify_minimal_libc_stub_table_sync() != 0 ||
+      verify_runtime_backed_std_headers_have_standalone_stubs() != 0) {
+    free_extra_cases(nextra);
+    return 1;
+  }
 
   int failures = 0;
   int executed = 0;
@@ -1753,6 +1375,7 @@ int main(void) {
   }
   if (failures) {
     fprintf(stderr, "wasm32 e2e tests failed: %d/%zu\n", failures, ncases);
+    free_extra_cases(nextra);
     return 1;
   }
   if (executed == 0) {
@@ -1760,5 +1383,6 @@ int main(void) {
   } else {
     printf("wasm32 e2e tests passed (%zu compiled, %d executed)\n", ncases, executed);
   }
+  free_extra_cases(nextra);
   return 0;
 }

@@ -78,18 +78,54 @@ const probeFixtureNames = (await readdir(probeFixtureDirectory))
   .filter((name) => name.endsWith(".c"))
   .sort();
 const nativeE2ESource = await readFile("test/test_e2e.c", "utf8");
-const wasm32E2EExtraCases = new Set(
-  (await readFile("test/wasm32_e2e_extra_cases.txt", "utf8"))
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean),
+const wasm32E2ESource = await readFile("test/test_wasm32_e2e.c", "utf8");
+const wasm32E2EExtraCaseList = (
+  await readFile("test/wasm32_e2e_extra_cases.txt", "utf8")
+)
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter((line) => line && !line.startsWith("#"));
+const wasm32E2EExtraCases = new Set(wasm32E2EExtraCaseList);
+const staticCaseMarker = "static const wasm_e2e_case_t cases[] = {";
+const staticCaseStart = wasm32E2ESource.indexOf(staticCaseMarker);
+const staticCaseEnd = wasm32E2ESource.indexOf("\n};", staticCaseStart);
+if (staticCaseStart < 0 || staticCaseEnd < 0) {
+  throw new Error("cannot locate static Wasm E2E fixture table");
+}
+const wasm32E2EStaticCaseList = [
+  ...wasm32E2ESource
+    .slice(staticCaseStart, staticCaseEnd)
+    .matchAll(/"test\/fixtures\/([^"]+\.c)"/g),
+].map((match) => match[1]);
+const duplicateExtraCases = wasm32E2EExtraCaseList.filter(
+  (path, index) => wasm32E2EExtraCaseList.indexOf(path) !== index,
 );
+const duplicateStaticCases = wasm32E2EStaticCaseList.filter(
+  (path, index) => wasm32E2EStaticCaseList.indexOf(path) !== index,
+);
+const staticCaseSet = new Set(wasm32E2EStaticCaseList);
+const staticExtraOverlap = wasm32E2EExtraCaseList.filter((path) =>
+  staticCaseSet.has(path)
+);
+const duplicateWasmE2ECases = [
+  ...new Set([
+    ...duplicateStaticCases,
+    ...duplicateExtraCases,
+    ...staticExtraOverlap,
+  ]),
+].sort();
+if (duplicateWasmE2ECases.length) {
+  throw new Error(
+    "duplicate Wasm E2E fixture registration:\n" +
+      duplicateWasmE2ECases.join("\n"),
+  );
+}
 const expectedNativeProbeRegistrationExclusions = [
   "gnu_attribute_parse.c",
   "gnu_statement_expression.c",
   "unsupported_gnu_extensions_warn_skip.c",
 ];
-const expectedWasmProbeRegistrationExclusions = [
+const wasmMultiTuProbeFixtures = [
   "atomic_aggregate_callback_xtu_main.c",
   "atomic_aggregate_callback_xtu_other.c",
   "extern_funcptr_xtu_main.c",
@@ -104,7 +140,9 @@ const missingNativeProbeRegistrations = probeFixtureNames.filter(
     !nativeE2ESource.includes(`"${probeFixtureDirectory}/${name}"`),
 );
 const missingWasmProbeRegistrations = probeFixtureNames.filter(
-  (name) => !wasm32E2EExtraCases.has(`probes_found_bugs/${name}`),
+  (name) =>
+    !wasm32E2ESource.includes(`"${probeFixtureDirectory}/${name}"`) &&
+    !wasm32E2EExtraCases.has(`probes_found_bugs/${name}`),
 );
 const wasm32ObjectLinkFixtureScan = await readFile(
   "scripts/run_wasm32_object_link_fixture_scan.sh",
@@ -117,15 +155,14 @@ if (JSON.stringify(missingNativeProbeRegistrations) !==
       missingNativeProbeRegistrations.join("\n"),
   );
 }
-if (JSON.stringify(missingWasmProbeRegistrations) !==
-      JSON.stringify(expectedWasmProbeRegistrationExclusions)) {
+if (missingWasmProbeRegistrations.length) {
   throw new Error(
     "Wasm E2E probe fixture registration drift:\n" +
       missingWasmProbeRegistrations.join("\n"),
   );
 }
 const missingWasmMultiTuLinkRegistrations =
-  expectedWasmProbeRegistrationExclusions.filter(
+  wasmMultiTuProbeFixtures.filter(
     (name) =>
       !wasm32ObjectLinkFixtureScan.includes(
         `${probeFixtureDirectory}/${name}`,

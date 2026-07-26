@@ -45,6 +45,7 @@ probes_found_bugs/bool_2d_array_normalize.c
 probes_found_bugs/bool_array_element_normalize.c
 probes_found_bugs/bool_bitfield.c
 probes_found_bugs/bool_compound_assign_normalize.c
+probes_found_bugs/bitfield_conditional_promotion_boundaries.c
 probes_found_bugs/bool_func_return_normalize.c
 probes_found_bugs/bool_initializer_normalization.c
 probes_found_bugs/bool_normalization.c
@@ -641,7 +642,6 @@ probes_found_bugs/tentative_incomplete_array_completion.c
 probes_found_bugs/tentative_definition_with_initializer.c
 probes_found_bugs/function_parameter_adjustment_redeclaration.c
 probes_found_bugs/block_scope_extern_binding.c
-array/char_3d_string_rows.c
 pointer/comma_postfix.c
 type_decl/vla_typedef_capture.c
 probes_found_bugs/deferred_type_name_binding.c
@@ -751,8 +751,6 @@ probes_found_bugs/bitfield_overlapping_storage_units.c
 probes_found_bugs/zero_width_unnamed_bitfield_initializer.c
 probes_found_bugs/mixed_base_bitfield_tail_layout.c
 probes_found_bugs/packed_bitfield_tail_layout.c
-probes_found_bugs/indirect_struct_return_funcptr.c
-probes_found_bugs/int_expr_pointer_cast_deref.c
 probes_found_bugs/narrow_integer_return_boundaries.c
 probes_found_bugs/formatted_scan_boundaries.c
 probes_found_bugs/wide_format_scan_boundaries.c
@@ -817,10 +815,6 @@ probes_found_bugs/wide_format_floating_output_boundaries.c
 probes_found_bugs/wide_format_input_va_list_boundaries.c
 probes_found_bugs/wide_format_stream_output_boundaries.c
 probes_found_bugs/wide_format_stream_input_boundaries.c
-probes_found_bugs/pointer_constant_cast_wrapper.c
-probes_found_bugs/ptrptr_deref_subscript_member.c
-probes_found_bugs/typedef_void_funcptr_param.c
-probes_found_bugs/void_cast_wrapper_side_effect.c
 probes_found_bugs/hir_ir_dynamic_capacity_boundaries.c
 flex_array/union_contains_flex.c
 wasm32/libc_funcptr_stub_ops.c

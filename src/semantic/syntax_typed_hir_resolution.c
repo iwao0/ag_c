@@ -2404,6 +2404,31 @@ static int resolve_direct_member_access(
   return 0;
 }
 
+static psx_qual_type_t direct_conditional_operand_qual_type(
+    direct_resolution_context_t *context,
+    const node_t *syntax, psx_qual_type_t operand_type) {
+  const node_t *selected =
+      direct_selected_expression(context, syntax);
+  if (!selected || selected->kind != ND_MEMBER_ACCESS)
+    return operand_type;
+  psx_hir_member_resolution_t member;
+  if (!resolve_direct_member_access(
+          context, (const node_member_access_t *)selected,
+          1, &member) ||
+      member.member.declaration.bit_width <= 0)
+    return operand_type;
+  int int_bits = CHAR_BIT * ag_data_layout_scalar_size(
+      ps_ctx_data_layout(context->semantic_context),
+      AG_TARGET_SCALAR_INT);
+  int fits_signed_int =
+      member.member.declaration.bit_is_signed
+          ? member.member.declaration.bit_width <= int_bits
+          : member.member.declaration.bit_width < int_bits;
+  if (!fits_signed_int) return operand_type;
+  return ps_ctx_intern_integer_qual_type_in(
+      context->semantic_context, PSX_INTEGER_KIND_INT, 0, 0);
+}
+
 static int resolve_direct_deref_operand(
     direct_resolution_context_t *context,
     const node_t *syntax, psx_qual_type_t *result_type) {
@@ -3375,6 +3400,10 @@ static int preflight_direct_expression_impl(
         direct_integer_constant(
             context, ternary->els, &else_constant) &&
         else_constant == 0;
+    then_type = direct_conditional_operand_qual_type(
+        context, syntax->rhs, then_type);
+    else_type = direct_conditional_operand_qual_type(
+        context, ternary->els, else_type);
     psx_conditional_types_resolution_t resolution;
     psx_resolve_conditional_qual_types_in(
         context->semantic_context, condition_type,
@@ -4720,12 +4749,19 @@ static psx_semantic_node_t *build_direct_expression_impl(
         direct_integer_constant(
             context, ternary->els, &else_constant) &&
         else_constant == 0;
+    psx_qual_type_t then_type =
+        direct_conditional_operand_qual_type(
+            context, syntax->rhs,
+            psx_semantic_node_expression_qual_type(then_value));
+    psx_qual_type_t else_type =
+        direct_conditional_operand_qual_type(
+            context, ternary->els,
+            psx_semantic_node_expression_qual_type(else_value));
     psx_conditional_types_resolution_t resolution;
     psx_resolve_conditional_qual_types_in(
         context->semantic_context,
         psx_semantic_node_expression_qual_type(condition),
-        psx_semantic_node_expression_qual_type(then_value),
-        psx_semantic_node_expression_qual_type(else_value),
+        then_type, else_type,
         then_is_null_pointer_constant,
         else_is_null_pointer_constant, &resolution);
     if (resolution.status != PSX_CONDITIONAL_TYPES_OK) {
@@ -5980,8 +6016,10 @@ static int preflight_direct_flat_initializer(
           ps_ctx_semantic_type_table_in(context->semantic_context),
           ps_ctx_record_decl_table_in(context->semantic_context),
           ps_ctx_record_layout_table_in(context->semantic_context),
-          ps_lowering_data_layout(context->lowering_context), object_qual_type,
-          list, resolve_direct_initializer_member,
+          context->lowering_context
+              ? ps_lowering_data_layout(context->lowering_context)
+              : ps_ctx_data_layout(context->semantic_context),
+          object_qual_type, list, resolve_direct_initializer_member,
           resolve_direct_initializer_index,
           resolve_direct_initializer_value_type, context, plan);
   if (status == PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY) {

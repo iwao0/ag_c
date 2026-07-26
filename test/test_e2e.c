@@ -1199,6 +1199,7 @@ static const test_case_t test_cases[] = {
     {"probes", "integer_const_overflow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/integer_const_overflow.c", 0, 0},
     {"probes", "bool_bitfield", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/bool_bitfield.c", 0, 0},
     {"probes", "anon_struct_bitfield_promote", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/anon_struct_bitfield_promote.c", 0, 0},
+    {"probes", "bitfield_conditional_promotion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/bitfield_conditional_promotion_boundaries.c", 0, 0},
     {"probes", "struct_pointer_typedef_member", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_pointer_typedef_member.c", 0, 0},
     {"probes", "struct_array_typedef_member", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_array_typedef_member.c", 0, 0},
     {"probes", "static_local_array_param_overlap", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_local_array_param_overlap.c", 0, 0},
