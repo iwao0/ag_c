@@ -78,10 +78,25 @@ static int token_starts_identifier_list(
 
 static int parse_identifier_list(
     psx_parsed_function_parameters_t *parameters,
-    psx_parser_runtime_context_t *runtime_context) {
+    psx_parser_runtime_context_t *runtime_context,
+    const psx_decl_specifier_syntax_options_t *options) {
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   parameters->is_identifier_list = 1;
   for (;;) {
+    token_t *candidate = current_token(runtime_context);
+    if (candidate->kind == TK_IDENT &&
+        options->name_classifier &&
+        ps_name_classifier_is_typedef_name(
+            options->name_classifier, candidate)) {
+      token_ident_t *typedef_name = (token_ident_t *)candidate;
+      ps_diag_ctx_in(
+          diagnostics(runtime_context), candidate,
+          "function-parameters",
+          "typedef name '%.*s' cannot be used as an old-style "
+          "function parameter name",
+          typedef_name->len, typedef_name->str);
+      return 0;
+    }
     token_ident_t *identifier = tk_consume_ident_ctx(tk_ctx);
     if (!identifier) {
       ps_diag_ctx_in(
@@ -143,7 +158,7 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
   if (tk_consume_ctx(tk_ctx, ')')) return 1;
   if (token_starts_identifier_list(
           type_mode, options, current_token(runtime_context)))
-    return parse_identifier_list(parameters, runtime_context);
+    return parse_identifier_list(parameters, runtime_context, options);
   for (;;) {
     if (current_token(runtime_context)->kind == TK_ELLIPSIS) {
       if (parameters->count == 0) {

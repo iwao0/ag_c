@@ -59,6 +59,12 @@ const int values[static 3];
   return values[0] + values[1] + values[2];
 }
 
+int qualified_array_sum(values)
+int values[const restrict static 3];
+{
+  return values[0] + values[1] + values[2];
+}
+
 int apply(callback, value)
 int callback(int);
 int value;
@@ -88,6 +94,12 @@ int count, values[count];
   return values[count - 1];
 }
 
+int same_declaration_matrix(matrix, rows, columns)
+int rows, columns, matrix[rows][columns];
+{
+  return matrix[rows - 1][columns - 1];
+}
+
 int compatible_integer(int, int);
 int compatible_integer(left, right)
 char left;
@@ -112,6 +124,10 @@ const int value;
 
 int main(void) {
   int values[] = {3, 5, 7};
+  int matrix[2][3] = {
+      {11, 13, 17},
+      {19, 23, 29},
+  };
   struct Pair pair = {11, 13};
   assert(narrow_char(257) == 1);
   assert(narrow_unsigned(513) == 1);
@@ -120,10 +136,12 @@ int main(void) {
   assert(narrow_float(1.5f) == 1.75);
   assert(sum_array(values, 3) == 15);
   assert(static_array_sum(values) == 15);
+  assert(qualified_array_sum(values) == 15);
   assert(apply(add_one, 41) == 42);
   assert(pair_sum(pair) == 24);
   assert(sum_pair(17, 19) == 36);
   assert(same_declaration_vla(values, 3) == 7);
+  assert(same_declaration_matrix(matrix, 2, 3) == 29);
   assert(compatible_integer(257, 65538) == 3);
   assert(compatible_float(2.5f) == 2.5);
   assert(compatible_const(23) == 23);

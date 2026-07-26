@@ -2630,12 +2630,23 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"old_style_parameter_duplicate_identifier_rejected",
      "int old_style(value, value) int value; { return value; }",
      "duplicate parameter name 'value' in old-style function identifier list"},
+    {"old_style_typedef_name_parameter_rejected",
+     "typedef int count_t; "
+     "int add_count(value, count_t) "
+     "int value; int count_t; "
+     "{ return value + count_t; }",
+     "typedef name 'count_t' cannot be used as an old-style function parameter name"},
     {"old_style_parameter_duplicate_declaration_rejected",
      "int old_style(value) int value; long value; { return value; }",
      "old-style function parameter 'value' is declared more than once"},
     {"old_style_parameter_initializer_rejected",
      "int old_style(value) int value = 1; { return value; }",
      "old-style function parameter cannot have an initializer"},
+    {"old_style_const_array_parameter_reassignment_rejected",
+     "int replace(values) "
+     "int values[const 3]; "
+     "{ values = 0; return 0; }",
+     "E3077"},
     {"old_style_parameter_static_storage_rejected",
      "int old_style(value) static int value; { return value; }",
      "old-style parameter declaration may only use the 'register' storage class"},

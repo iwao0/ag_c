@@ -7644,6 +7644,9 @@ static void test_function_prototype_type_identity_boundary(
   expect_parse_fail(test_suite_session,
       "int old_style(value, value) int value; { return value; }");
   expect_parse_fail(test_suite_session,
+      "typedef int count_t; int old_style(value, count_t) "
+      "int value; int count_t; { return value + count_t; }");
+  expect_parse_fail(test_suite_session,
       "int old_style(value); int main(void) { return 0; }");
 }
 
