@@ -171,15 +171,32 @@ static int ag_rt_general_format_precision(int precision) {
   return precision == 0 ? 1 : precision;
 }
 
+static double ag_rt_multiply_error(double left, double right, double product) {
+  double left_split = 134217729.0 * left;
+  double left_high = left_split - (left_split - left);
+  double left_low = left - left_high;
+  double right_split = 134217729.0 * right;
+  double right_high = right_split - (right_split - right);
+  double right_low = right - right_high;
+  return (((left_high * right_high - product) + left_high * right_low) +
+          left_low * right_high) +
+         left_low * right_low;
+}
+
 static double ag_rt_round_decimal_nearest_even(double v, unsigned long scale) {
   double scaled;
+  double error;
   unsigned long integral;
   double remainder;
   if (v > 9007199254740991.0 / (double)scale) return v;
   scaled = v * (double)scale;
+  error = ag_rt_multiply_error(v, (double)scale, scaled);
   integral = (unsigned long)scaled;
   remainder = scaled - (double)integral;
-  if (remainder > 0.5 || (remainder == 0.5 && (integral & 1u))) integral++;
+  if (remainder > 0.5 ||
+      (remainder == 0.5 &&
+       (error > 0.0 || (error == 0.0 && (integral & 1u)))))
+    integral++;
   return (double)integral / (double)scale;
 }
 
