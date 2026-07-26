@@ -1,6 +1,8 @@
 #ifndef DECLARATION_PIPELINE_H
 #define DECLARATION_PIPELINE_H
 
+#include <stddef.h>
+
 #include "compilation_options.h"
 #include "semantic/declaration_application.h"
 #include "parser/declaration_syntax.h"
@@ -97,6 +99,10 @@ typedef struct {
   int parameter_count;
   int primary_is_identifier_list;
   int args_capacity;
+  const psx_parsed_decl_specifier_t **shared_specifiers;
+  psx_qual_type_t *shared_specifier_qual_types;
+  int shared_specifier_count;
+  size_t old_style_declaration_start;
 } psx_function_definition_pipeline_state_t;
 
 int psx_begin_function_definition_pipeline(

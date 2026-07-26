@@ -837,11 +837,8 @@ static int append_definition_parameter(
     psx_lowering_context_t *lowering_context,
     psx_function_definition_pipeline_result_t *result, int *capacity,
     const psx_parsed_function_parameter_t *parameter,
+    psx_qual_type_t base_qual_type,
     int apply_default_argument_promotions) {
-  psx_qual_type_t base_qual_type =
-      psx_apply_parsed_decl_specifier_qual_type_in_contexts(
-          semantic_context, global_registry, local_registry,
-          &parameter->specifier);
   if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context),
@@ -1031,6 +1028,23 @@ int psx_begin_function_definition_pipeline(
       primary_suffix->parameters &&
       primary_suffix->parameters->is_identifier_list;
   state->args_capacity = 16;
+  if (state->primary_is_identifier_list &&
+      state->parameter_count > 0) {
+    state->shared_specifiers = arena_alloc_in(
+        ps_ctx_arena(request->semantic_context),
+        (size_t)state->parameter_count *
+            sizeof(*state->shared_specifiers));
+    state->shared_specifier_qual_types = arena_alloc_in(
+        ps_ctx_arena(request->semantic_context),
+        (size_t)state->parameter_count *
+            sizeof(*state->shared_specifier_qual_types));
+    if (!state->shared_specifiers ||
+        !state->shared_specifier_qual_types)
+      return 0;
+  }
+  state->old_style_declaration_start =
+      psx_scope_graph_declaration_count(
+          ps_ctx_scope_graph(request->semantic_context));
   result->parameter_vars = calloc(
       (size_t)state->args_capacity, sizeof(*result->parameter_vars));
   result->parameter_qual_types = calloc(
@@ -1043,10 +1057,37 @@ int psx_apply_function_definition_parameter_pipeline(
     psx_function_definition_pipeline_state_t *state,
     const psx_parsed_function_parameter_t *parameter) {
   if (!state || !state->result || !parameter) return 0;
+  psx_qual_type_t base_qual_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (state->primary_is_identifier_list &&
+      parameter->shared_specifier) {
+    for (int i = 0; i < state->shared_specifier_count; i++) {
+      if (state->shared_specifiers[i] !=
+          parameter->shared_specifier)
+        continue;
+      base_qual_type = state->shared_specifier_qual_types[i];
+      break;
+    }
+  }
+  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    base_qual_type =
+        psx_apply_parsed_decl_specifier_qual_type_in_contexts(
+            state->semantic_context, state->global_registry,
+            state->local_registry, &parameter->specifier);
+    if (state->primary_is_identifier_list &&
+        parameter->shared_specifier) {
+      if (state->shared_specifier_count >= state->parameter_count)
+        return 0;
+      int index = state->shared_specifier_count++;
+      state->shared_specifiers[index] =
+          parameter->shared_specifier;
+      state->shared_specifier_qual_types[index] = base_qual_type;
+    }
+  }
   int applied = append_definition_parameter(
       state->semantic_context, state->global_registry,
       state->local_registry, state->lowering_context, state->result,
-      &state->args_capacity, parameter,
+      &state->args_capacity, parameter, base_qual_type,
       state->primary_is_identifier_list);
   if (applied < 0) {
     if (state->parameter_count != 1) {
@@ -1072,6 +1113,38 @@ int psx_finish_function_definition_pipeline(
       state->base_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
   psx_function_definition_pipeline_result_t *result = state->result;
+  if (state->primary_is_identifier_list) {
+    /* Tags and enumerators introduced by an old-style declaration list are
+     * available while that list is resolved, but their scope ends before the
+     * function body. Keep parameter objects in the function scope and move
+     * only the declaration-list bindings into their own scope. */
+    psx_scope_graph_t *scope_graph =
+        ps_ctx_scope_graph(state->semantic_context);
+    psx_scope_id_t function_scope =
+        psx_scope_graph_current_scope(scope_graph);
+    psx_scope_id_t declaration_list_scope =
+        psx_scope_graph_create_scope_at(
+            scope_graph, function_scope,
+            PSX_SCOPE_FUNCTION_PROTOTYPE);
+    if (declaration_list_scope == PSX_SCOPE_ID_INVALID)
+      return 0;
+    size_t declaration_count =
+        psx_scope_graph_declaration_count(scope_graph);
+    for (size_t i = state->old_style_declaration_start;
+         i < declaration_count; i++) {
+      const psx_scope_declaration_t *declaration =
+          psx_scope_graph_declaration_at(scope_graph, i);
+      if (!declaration ||
+          declaration->scope_id != function_scope ||
+          (declaration->kind != PSX_DECL_TAG &&
+           declaration->kind != PSX_DECL_ENUM_CONSTANT))
+        continue;
+      if (!psx_scope_graph_rehome_declaration_at(
+              scope_graph, declaration->id,
+              declaration_list_scope))
+        return 0;
+    }
+  }
   psx_declarator_op_t *primary =
       &state->application.shape.ops[state->primary_function_op_index];
   psx_qual_type_t *function_parameter_qual_types =

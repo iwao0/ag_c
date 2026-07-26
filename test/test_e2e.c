@@ -1169,6 +1169,7 @@ static const test_case_t test_cases[] = {
     {"probes", "file_scope_ptr_from_array_compound", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/file_scope_ptr_from_array_compound.c", 0, 0},
     {"probes", "function_redecl_signature", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_redecl_signature.c", 0, 0},
     {"probes", "old_style_function_definition_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/old_style_function_definition_boundaries.c", 0, 0},
+    {"probes", "function_parameter_tag_scope_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_parameter_tag_scope_boundaries.c", 0, 0},
     {"probes", "function_duplicate_def", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_duplicate_def.c", 0, 0},
     {"probes", "decl_spec_order_and_dup", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/decl_spec_order_and_dup.c", 0, 0},
     {"probes", "name_namespace_collision", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/name_namespace_collision.c", 0, 0},
@@ -2647,6 +2648,16 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"old_style_incompatible_float_prototype_rejected",
      "double old_style(float); "
      "double old_style(value) float value; { return value; }",
+     "E3064"},
+    {"old_style_parameter_enum_constant_scope_rejected",
+     "int old_style(value) "
+     "enum HeaderEnum { HEADER_ENUM_VALUE = 1 } value; "
+     "{ return HEADER_ENUM_VALUE; }",
+     "E3066"},
+    {"old_style_parameter_tag_scope_rejected",
+     "int old_style(value) "
+     "struct HeaderStruct { int member; } value; "
+     "{ struct HeaderStruct local; return 0; }",
      "E3064"},
     {"c11_block_implicit_int_rejected",
      "int block_scope(void) { static local; return 0; }",

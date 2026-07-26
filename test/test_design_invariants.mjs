@@ -6435,6 +6435,9 @@ if (!/PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST/.test(
     !/old-style function parameter[^]*?requires an explicit[^]*?declaration before the function body/.test(
       functionParameterSyntaxSource,
     ) ||
+    !/parameter->shared_specifier\s*=\s*&declaration->specifier/.test(
+      functionParameterSyntaxSource,
+    ) ||
     !/identifier list is only permitted in an old-style[^]*?function definition/.test(
       toplevelDeclarationSyntaxSource,
     ) ||
@@ -6450,6 +6453,15 @@ if (!/PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST/.test(
     !/!state->primary_is_identifier_list[^]*?primary->function_is_variadic/.test(
       declarationPipelineSource,
     ) ||
+    !/shared_specifiers[^]*?shared_specifier_qual_types/.test(
+      `${declarationPipelineHeader}\n${declarationPipelineSource}`,
+    ) ||
+    !/PSX_SCOPE_FUNCTION_PROTOTYPE[^]*?PSX_DECL_TAG[^]*?PSX_DECL_ENUM_CONSTANT[^]*?psx_scope_graph_rehome_declaration_at/.test(
+      declarationPipelineSource,
+    ) ||
+    !/\(!replay_recorded\s*&&\s*specifier->binding_events_recorded\)/.test(
+      declarationBindingEventsSource,
+    ) ||
     !/needs_assignment_conversion\s*=[^]*?function_type->params\[i\]\.type_id\s*!=[^]*?psx_hir_node_qual_type\(parameter\)\.type_id/.test(
       hirIrCallAbiSource,
     ) ||
@@ -6457,7 +6469,7 @@ if (!/PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST/.test(
       hirIrCallAbiSource,
     )) {
   throw new Error(
-    "old-style function definitions must keep identifier-list syntax distinct, promote their non-prototype function signature with DataLayout, and convert incoming values into declared parameter objects",
+    "old-style function definitions must keep identifier-list syntax distinct, replay parameter bindings, share declaration specifiers, isolate declaration-list tags, promote their non-prototype function signature with DataLayout, and convert incoming values into declared parameter objects",
   );
 }
 const parserDeclarationSyntaxSource = await readFile(

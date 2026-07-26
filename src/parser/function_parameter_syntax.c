@@ -401,6 +401,7 @@ int psx_function_definition_parameter_syntax_at(
         continue;
       parameter->specifier = declaration->specifier;
       parameter->declarator = declaration->declarators[i];
+      parameter->shared_specifier = &declaration->specifier;
       return 1;
     }
   }
