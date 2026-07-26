@@ -40,10 +40,12 @@ typedef struct wasm32_machine_data_object_t
 
 typedef struct {
   char *target;
+  char *reference_c_signature;
   const wasm32_machine_data_object_t *resolved_target;
   wasm32_machine_signature_t function_signature;
   long long addend;
   int target_len;
+  int reference_c_signature_len;
   int offset;
   int width;
   wasm32_machine_data_reloc_kind_t kind;

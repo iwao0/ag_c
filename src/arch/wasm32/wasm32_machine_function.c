@@ -668,6 +668,13 @@ static int initialize_instructions(
               &machine_instruction->sym,
               instruction->sym, instruction->sym_len))
         return 0;
+      machine_instruction->reference_c_signature_len =
+          instruction->reference_c_signature_len;
+      if (!copy_string(
+              &machine_instruction->reference_c_signature,
+              instruction->reference_c_signature,
+              instruction->reference_c_signature_len))
+        return 0;
       machine_instruction->object_size = instruction->object_size;
       machine_instruction->parameter_index = instruction->parameter_index;
       machine_instruction->is_unsigned = instruction->is_unsigned;
@@ -988,6 +995,7 @@ void wasm32_machine_function_dispose(
   wasm32_machine_copy_plan_dispose(&function->result_copy);
   for (int i = 0; i < function->instruction_count; i++) {
     free(function->instructions[i].sym);
+    free(function->instructions[i].reference_c_signature);
     wasm32_machine_signature_dispose(
         &function->instructions[i].call.signature);
     wasm32_machine_signature_dispose(

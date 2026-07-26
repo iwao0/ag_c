@@ -767,6 +767,9 @@ static int type_equal(const type_t *a, const type_t *b) {
   return a->raw_len == b->raw_len && memcmp(a->raw, b->raw, a->raw_len) == 0;
 }
 
+static const c_signature_t *find_c_signature(
+    const object_t *obj, str_t name);
+
 static int func_signature_matches(object_t *ref_obj, int ref_func,
                                   object_t *def_obj, int def_func) {
   if (ref_func < 0 || ref_func >= ref_obj->func_count ||
@@ -779,7 +782,16 @@ static int func_signature_matches(object_t *ref_obj, int ref_func,
       def_type < 0 || def_type >= def_obj->type_count) {
     return 0;
   }
-  return type_equal(&ref_obj->types[ref_type], &def_obj->types[def_type]);
+  if (!type_equal(
+          &ref_obj->types[ref_type],
+          &def_obj->types[def_type]))
+    return 0;
+  const c_signature_t *reference = find_c_signature(
+      ref_obj, ref_obj->funcs[ref_func].name);
+  const c_signature_t *definition = find_c_signature(
+      def_obj, def_obj->funcs[def_func].name);
+  if (!reference || !definition) return 1;
+  return str_eq(reference->signature, definition->signature);
 }
 
 static void check_duplicate_definitions(object_t *objs, int obj_count) {
@@ -2888,7 +2900,15 @@ static void add_unresolved_function_imports(object_t *objs, int obj_count,
         continue;
       }
       int final_type = intern_type(types, type_count, type_cap, &o->types[o->funcs[sym->index].type_index]);
-      if (find_import(*imports, *import_count, sym->name, final_type) >= 0) continue;
+      int existing =
+          find_import(*imports, *import_count, sym->name, final_type);
+      if (existing >= 0) {
+        if (!func_signature_matches(
+                o, sym->index, (*imports)[existing].obj,
+                (*imports)[existing].func_index))
+          dief("function signature mismatch: %s", sym->name.s);
+        continue;
+      }
       int existing_name = find_import_by_name(*imports, *import_count, sym->name);
       if (existing_name >= 0 && (*imports)[existing_name].type_index != final_type) {
         dief("function signature mismatch: %s", sym->name.s);

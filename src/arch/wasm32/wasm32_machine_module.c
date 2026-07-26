@@ -65,6 +65,7 @@ static void dispose_data_object(
   free(object->bytes);
   for (int i = 0; i < object->relocation_count; i++) {
     free(object->relocations[i].target);
+    free(object->relocations[i].reference_c_signature);
     wasm32_machine_signature_dispose(
         &object->relocations[i].function_signature);
   }
@@ -153,6 +154,13 @@ static int copy_data_object(
             relocation->target, relocation->target_len))
       return 0;
     if (machine->kind == WASM32_MACHINE_DATA_RELOC_FUNCTION) {
+      machine->reference_c_signature_len =
+          relocation->reference_c_signature_len;
+      if (!copy_name(
+              &machine->reference_c_signature,
+              relocation->reference_c_signature,
+              relocation->reference_c_signature_len))
+        return 0;
       const ir_abi_signature_t *abi =
           ir_abi_data_relocation_signature(data_abi, relocation);
       if (!wasm32_machine_signature_from_abi(

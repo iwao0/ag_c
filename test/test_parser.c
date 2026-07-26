@@ -4891,6 +4891,14 @@ static void test_typed_hir_atomic_aggregate_callback_relocation_without_ast(
       ASSERT_TRUE(
           relocation->function_type.type_id !=
           PSX_TYPE_ID_INVALID);
+      ASSERT_TRUE(
+          relocation->reference_c_signature != NULL);
+      ASSERT_TRUE(
+          relocation->reference_c_signature_len > 0);
+      ASSERT_TRUE(
+          strchr(
+              relocation->reference_c_signature,
+              'A') != NULL);
       ASSERT_EQ(1,
                 relocation->function_type.param_count);
       ASSERT_TRUE(
@@ -5042,6 +5050,10 @@ static void test_typed_hir_atomic_aggregate_callback_expression_lowering_without
     ASSERT_TRUE(call->callee.id >= 0);
     ASSERT_EQ(IR_TY_PTR, call->callee.type);
     ASSERT_TRUE(call->has_function_type);
+    ASSERT_TRUE(call->reference_c_signature != NULL);
+    ASSERT_TRUE(call->reference_c_signature_len > 0);
+    ASSERT_TRUE(
+        strchr(call->reference_c_signature, 'A') != NULL);
     ASSERT_EQ(1, call->function_type.param_count);
     ASSERT_TRUE(
         (call->function_type.params[0].qualifiers &

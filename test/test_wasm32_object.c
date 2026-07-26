@@ -213,6 +213,36 @@ static int run_linked_import_abi_case(void) {
       "function signature mismatch: host_value");
 }
 
+static int run_atomic_aggregate_signature_mismatch_case(void) {
+  const char *main_source =
+      "test/fixtures/wasm32/"
+      "atomic_aggregate_signature_mismatch_main.c";
+  const char *other_source =
+      "test/fixtures/wasm32/"
+      "atomic_aggregate_signature_mismatch_other.c";
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/atomic_aggregate_signature_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "atomic_aggregate_signature_mismatch_main.c",
+          main_source) != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/atomic_aggregate_signature_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "atomic_aggregate_signature_mismatch_other.c",
+          other_source) != 0) {
+    return 1;
+  }
+  return run_fail_case(
+      "atomic_aggregate_signature_mismatch",
+      "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+      "-o build/wasm32_obj/atomic_aggregate_signature_mismatch.wasm "
+      "build/wasm32_obj/atomic_aggregate_signature_mismatch_main.o "
+      "build/wasm32_obj/atomic_aggregate_signature_mismatch_other.o",
+      "function signature mismatch: transform_words");
+}
+
 typedef struct {
   int has_memory;
   unsigned memory_flags;
@@ -2581,6 +2611,7 @@ int main(void) {
   failures += run_e2e_compile_fail_parity();
   failures += run_e2e_fixture_object_scan();
   failures += run_linked_import_abi_case();
+  failures += run_atomic_aggregate_signature_mismatch_case();
   failures += run_linker_layout_option_cases();
   failures += run_optional_link_case();
 

@@ -321,7 +321,8 @@ const ir_symbol_func_ref_t *ir_symbol_find_func_ref(
 }
 
 /* 関数 1 つ分の IR を解放する (関数ごとストリーミング codegen 用)。
- * 所有しているのは block / inst / inst->args / f->name / f->c_signature /
+ * 所有しているのは block / inst / inst->args /
+ * inst->reference_c_signature / f->name / f->c_signature /
  * f->vreg_phys_reg のみ。
  * inst->sym は gv->name / 文字列ラベル / AST funcname の alias なので解放しない。 */
 void ir_func_free(ir_func_t *f) {
@@ -331,6 +332,7 @@ void ir_func_free(ir_func_t *f) {
     for (ir_inst_t *i = b->head; i; ) {
       ir_inst_t *inext = i->next;
       free(i->args);   /* IR_CALL の実引数列 (calloc)。NULL なら no-op */
+      free(i->reference_c_signature);
       ir_function_type_dispose(&i->function_type);
       free(i);
       i = inext;

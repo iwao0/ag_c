@@ -2569,7 +2569,14 @@ static ir_val_t build_function_reference(
   if (!ir_function_type_from_type_id(
           context->options->semantic_types,
           psx_hir_node_qual_type(node).type_id,
-          &load->function_type)) {
+          &load->function_type) ||
+      !ir_function_type_format_c_signature(
+          context->options->semantic_types, &load->function_type,
+          ag_target_info_data_layout(context->options->target),
+          &load->reference_c_signature,
+          &load->reference_c_signature_len)) {
+    ir_function_type_dispose(&load->function_type);
+    free(load->reference_c_signature);
     free(load);
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return ir_val_none();

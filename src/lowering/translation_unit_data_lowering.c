@@ -220,6 +220,15 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
       function_type.type_id != PSX_TYPE_ID_INVALID
           ? &function_type : NULL);
   int added = reloc != NULL;
+  if (added && kind == IR_DATA_RELOC_FUNCTION) {
+    added =
+        reloc->has_function_type &&
+        ir_function_type_format_c_signature(
+            ctx->lowering->semantic_types, &reloc->function_type,
+            ctx->lowering->data_layout,
+            &reloc->reference_c_signature,
+            &reloc->reference_c_signature_len);
+  }
   ir_function_type_dispose(&function_type);
   return added;
 }

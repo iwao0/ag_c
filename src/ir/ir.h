@@ -230,6 +230,9 @@ typedef struct ir_inst_t {
 
   /* --- 8 バイト (ポインタ / ir_val_t)。汎用オペランド走査が触るため union 外 --- */
   char *sym;          /* CALL / LOAD_SYM / LOAD_STR のシンボル */
+  /* semantic passで確定したCALL / function LOAD_SYM参照のcanonical C関数型。
+   * backendはsemantic type tableへ戻らず、object metadataへそのまま運ぶ。 */
+  char *reference_c_signature;
   ir_call_argument_t *args; /* CALL のsource-level実引数列 */
   /* IR_CALL のsource-level object結果を受け取る保存先。直接/間接returnや
    * register pieceへの分解はAbiLowering sidecarが決定する。 */
@@ -241,6 +244,7 @@ typedef struct ir_inst_t {
 
   /* --- 4 バイト --- */
   int sym_len;        /* CALL / LOAD_* のシンボル長 (sym と対) */
+  int reference_c_signature_len;
   int object_size;    /* IR_LOAD_STR: 終端を含むlower済みデータサイズ */
 
   /* --- 1 バイト (複数 op 族で共有するため union 外) --- */

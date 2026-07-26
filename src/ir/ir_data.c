@@ -112,6 +112,7 @@ void ir_data_module_free(ir_data_module_t *module) {
     for (ir_data_reloc_t *reloc = object->relocs; reloc; ) {
       ir_data_reloc_t *reloc_next = reloc->next;
       ir_function_type_dispose(&reloc->function_type);
+      free(reloc->reference_c_signature);
       free(reloc->target);
       free(reloc);
       reloc = reloc_next;

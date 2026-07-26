@@ -1,6 +1,7 @@
 #include "function_type_lowering.h"
 
 #include "../semantic/type_identity.h"
+#include "../type_signature.h"
 
 #include <stdlib.h>
 
@@ -47,4 +48,36 @@ int ir_function_type_from_type_id(
       function.has_function_prototype);
   free(params);
   return ok;
+}
+
+int ir_function_type_format_c_signature(
+    const psx_semantic_type_table_t *semantic_types,
+    const ir_function_type_t *function_type,
+    const ag_data_layout_t *data_layout,
+    char **out, int *out_length) {
+  if (out) *out = NULL;
+  if (out_length) *out_length = 0;
+  if (!semantic_types || !function_type || !data_layout || !out ||
+      !out_length ||
+      function_type->type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  int length = psx_format_canonical_type_signature(
+      semantic_types,
+      (psx_qual_type_t){
+          function_type->type_id, PSX_TYPE_QUALIFIER_NONE},
+      data_layout, NULL, 0);
+  if (length <= 0) return 0;
+  char *signature = malloc((size_t)length + 1);
+  if (!signature) return 0;
+  if (psx_format_canonical_type_signature(
+          semantic_types,
+          (psx_qual_type_t){
+              function_type->type_id, PSX_TYPE_QUALIFIER_NONE},
+          data_layout, signature, (size_t)length + 1) != length) {
+    free(signature);
+    return 0;
+  }
+  *out = signature;
+  *out_length = length;
+  return 1;
 }

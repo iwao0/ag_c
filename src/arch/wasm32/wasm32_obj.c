@@ -766,6 +766,33 @@ static obj_sig_t func_sig_from_machine_callable(
   return copy_signature(context, &inst->reference_signature);
 }
 
+static void set_func_c_signature(
+    wasm32_obj_context_t *context, obj_func_t *function,
+    const char *signature, int signature_len) {
+  if (!function || !signature || signature_len <= 0) {
+    obj_unsupported_msg(
+        context, "missing function-reference C signature");
+    return;
+  }
+  if (function->c_signature) {
+    if (function->c_signature_len != signature_len ||
+        memcmp(
+            function->c_signature, signature,
+            (size_t)signature_len) != 0)
+      obj_unsupported_msg(
+          context, "conflicting Wasm object C function signature");
+    return;
+  }
+  function->c_signature = xrealloc(
+      context->diagnostic_context, function->c_signature,
+      (size_t)signature_len + 1);
+  memcpy(
+      function->c_signature, signature,
+      (size_t)signature_len);
+  function->c_signature[signature_len] = '\0';
+  function->c_signature_len = signature_len;
+}
+
 static void ensure_func_sig_for_address(
     wasm32_obj_context_t *context,
     char *sym, int sym_len, obj_sig_t sig) {
@@ -1419,6 +1446,9 @@ static void gen_func_body(
               target->sig = func_sig_from_machine_callable(
                   context, i, i->sym, i->sym_len);
             }
+            set_func_c_signature(
+                context, target, i->reference_c_signature,
+                i->reference_c_signature_len);
             of = &g_obj.funcs[of_index];
             wb_u8(&body, 0x41);
             uint32_t imm_off = wb_uleb5(&body, 0);
@@ -1711,6 +1741,9 @@ static void gen_func_body(
           }
           if (!i->sym) obj_unsupported_inst(context, i);
           obj_func_t *target = intern_func(context, i->sym, i->sym_len);
+          set_func_c_signature(
+              context, target, i->reference_c_signature,
+              i->reference_c_signature_len);
           of = &g_obj.funcs[of_index];
           obj_sig_t *emit_sig = &target->sig;
           if (target->sig.nparams == 0 && target->sig.result == IR_TY_VOID && !target->defined) {
@@ -1958,16 +1991,6 @@ static void assign_indices(wasm32_obj_context_t *context) {
   }
 }
 
-static void set_helper_c_signature(
-    wasm32_obj_context_t *context,
-    obj_func_t *helper, const char *signature) {
-  int len = (int)strlen(signature);
-  helper->c_signature = xrealloc(
-      context->diagnostic_context, helper->c_signature, (size_t)len + 1);
-  memcpy(helper->c_signature, signature, (size_t)len + 1);
-  helper->c_signature_len = len;
-}
-
 static obj_func_t *define_continuation_helper(
     wasm32_obj_context_t *context,
     const char *name, int param_count) {
@@ -1985,8 +2008,10 @@ static obj_func_t *define_continuation_helper(
     for (int i = 0; i < param_count; i++)
       helper->sig.params[i] = IR_TY_I32;
   }
-  set_helper_c_signature(
-      context, helper, param_count ? "i32(i32)" : "i32()");
+  const char *signature =
+      param_count ? "i32(i32)" : "i32()";
+  set_func_c_signature(
+      context, helper, signature, (int)strlen(signature));
   return helper;
 }
 
@@ -2136,14 +2161,10 @@ void wasm32_obj_gen_machine_module_in(
     } else {
       of->sig = def_sig;
     }
-    if (function->c_signature && function->c_signature_len > 0) {
-      of->c_signature = xrealloc(
-          context->diagnostic_context, of->c_signature,
-          (size_t)function->c_signature_len + 1);
-      memcpy(of->c_signature, function->c_signature,
-             (size_t)function->c_signature_len + 1);
-      of->c_signature_len = function->c_signature_len;
-    }
+    if (function->c_signature && function->c_signature_len > 0)
+      set_func_c_signature(
+          context, of, function->c_signature,
+          function->c_signature_len);
     of->defined = 1;
     of->is_static = function->is_static;
     gen_func_body(context, of, function);
@@ -2233,6 +2254,9 @@ static void emit_obj_data_reloc(
         context, reloc->target, reloc->target_len);
     if (!target)
       obj_unsupported_msg(context, "missing function relocation target");
+    set_func_c_signature(
+        context, target, reloc->reference_c_signature,
+        reloc->reference_c_signature_len);
     data_add_reloc(
                    context,
                    data, R_WASM_TABLE_INDEX_I32, (uint32_t)reloc->offset,

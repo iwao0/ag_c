@@ -156,7 +156,9 @@ typedef struct {
   ir_val_t callee;
   ir_val_t result_storage;
   char *sym;
+  char *reference_c_signature;
   int sym_len;
+  int reference_c_signature_len;
   int object_size;
   size_t parameter_index;
   unsigned char is_unsigned;

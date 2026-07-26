@@ -588,6 +588,8 @@ int main(void) {
     return 1;
   }
 
+  char reference_c_signature[] = "i32(i64)";
+  char call_c_signature[] = "i32(i32,...)";
   ir_inst_t function_instructions[16] = {0};
   function_instructions[0].op = IR_ALLOCA;
   function_instructions[0].dst =
@@ -620,6 +622,9 @@ int main(void) {
       (ir_val_t){.id = 4, .type = IR_TY_PTR};
   function_instructions[5].sym = "planned_ref";
   function_instructions[5].sym_len = 11;
+  function_instructions[5].reference_c_signature =
+      reference_c_signature;
+  function_instructions[5].reference_c_signature_len = 8;
   function_instructions[5].is_function_symbol = 1;
   function_instructions[6].op = IR_VLA_ALLOC;
   function_instructions[6].dst =
@@ -669,6 +674,9 @@ int main(void) {
       (ir_val_t){.id = IR_VAL_NONE, .type = IR_TY_VOID};
   function_instructions[12].sym = "planned_call";
   function_instructions[12].sym_len = 12;
+  function_instructions[12].reference_c_signature =
+      call_c_signature;
+  function_instructions[12].reference_c_signature_len = 12;
   function_instructions[13].op = IR_PARAM_BIND;
   function_instructions[13].src1 =
       (ir_val_t){.id = 0, .type = IR_TY_PTR};
@@ -904,6 +912,14 @@ int main(void) {
       !selected_reference ||
       selected_reference->sym == function_instructions[5].sym ||
       strcmp(selected_reference->sym, function_instructions[5].sym) != 0 ||
+      !selected_reference->reference_c_signature ||
+      selected_reference->reference_c_signature ==
+          function_instructions[5].reference_c_signature ||
+      selected_reference->reference_c_signature_len !=
+          function_instructions[5].reference_c_signature_len ||
+      strcmp(
+          selected_reference->reference_c_signature,
+          reference_c_signature) != 0 ||
       !selected_reference->has_reference_signature ||
       selected_reference->reference_signature.result != IR_TY_I32 ||
       selected_reference->reference_signature.nparams != 1 ||
@@ -932,6 +948,14 @@ int main(void) {
       selected_cas->atomic.comparison.opcode != WASM32_MI_I64_EQ ||
       !selected_call ||
       selected_call->kind != WASM32_MACHINE_INST_CALL ||
+      !selected_call->reference_c_signature ||
+      selected_call->reference_c_signature ==
+          function_instructions[12].reference_c_signature ||
+      selected_call->reference_c_signature_len !=
+          function_instructions[12].reference_c_signature_len ||
+      strcmp(
+          selected_call->reference_c_signature,
+          call_c_signature) != 0 ||
       selected_call->call.signature.nparams != 2 ||
       selected_call->call.signature.params[0] != IR_TY_I32 ||
       selected_call->call.signature.params[1] != IR_TY_I32 ||
@@ -1053,9 +1077,12 @@ int main(void) {
   }
   unsigned char target_bytes[] = {1, 2, 3, 4};
   unsigned char holder_bytes[8] = {0};
+  char relocation_c_signature[] = "i32(i64)";
   ir_data_reloc_t function_data_relocation = {
       .target = "planned_function",
+      .reference_c_signature = relocation_c_signature,
       .target_len = 16,
+      .reference_c_signature_len = 8,
       .offset = 4,
       .width = 4,
       .kind = IR_DATA_RELOC_FUNCTION,
@@ -1106,6 +1133,8 @@ int main(void) {
   }
   const unsigned char *source_target_bytes = target_bytes;
   const unsigned char *source_holder_bytes = holder_bytes;
+  const char *source_relocation_c_signature =
+      function_data_relocation.reference_c_signature;
   memset(&source_module, 0, sizeof(source_module));
   memset(&source_symbol, 0, sizeof(source_symbol));
   memset(&source_func_ref, 0, sizeof(source_func_ref));
@@ -1164,6 +1193,13 @@ int main(void) {
       machine_holder->relocations[0].addend != 2 ||
       machine_holder->relocations[1].kind !=
           WASM32_MACHINE_DATA_RELOC_FUNCTION ||
+      !machine_holder->relocations[1].reference_c_signature ||
+      machine_holder->relocations[1].reference_c_signature ==
+          source_relocation_c_signature ||
+      machine_holder->relocations[1].reference_c_signature_len != 8 ||
+      strcmp(
+          machine_holder->relocations[1].reference_c_signature,
+          "i32(i64)") != 0 ||
       !machine_holder->relocations[1].has_function_signature ||
       machine_holder->relocations[1].function_signature.nparams != 1 ||
       machine_holder->relocations[1].function_signature.params[0] !=

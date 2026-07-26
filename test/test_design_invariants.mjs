@@ -90,6 +90,8 @@ const expectedNativeProbeRegistrationExclusions = [
   "unsupported_gnu_extensions_warn_skip.c",
 ];
 const expectedWasmProbeRegistrationExclusions = [
+  "atomic_aggregate_callback_xtu_main.c",
+  "atomic_aggregate_callback_xtu_other.c",
   "extern_funcptr_xtu_main.c",
   "extern_funcptr_xtu_other.c",
   "inherited_static_linkage_xtu_main.c",

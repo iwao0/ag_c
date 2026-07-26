@@ -17,7 +17,9 @@ typedef enum {
 typedef struct ir_data_reloc_t {
   struct ir_data_reloc_t *next;
   char *target;
+  char *reference_c_signature;
   int target_len;
+  int reference_c_signature_len;
   int offset;
   int width;
   long long addend;

@@ -1107,8 +1107,15 @@ ir_val_t hir_ir_build_call(
       psx_hir_node_is_implicit_call(node) ? 1 : 0;
   if (!ir_function_type_from_type_id(
           context->options->semantic_types,
-          callable_type.type_id, &call->function_type)) {
+          callable_type.type_id, &call->function_type) ||
+      !ir_function_type_format_c_signature(
+          context->options->semantic_types, &call->function_type,
+          ag_target_info_data_layout(context->options->target),
+          &call->reference_c_signature,
+          &call->reference_c_signature_len)) {
     free(arguments);
+    ir_function_type_dispose(&call->function_type);
+    free(call->reference_c_signature);
     free(call);
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return ir_val_none();
