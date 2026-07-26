@@ -2660,6 +2660,65 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "double old_style(float); "
      "double old_style(value) float value; { return value; }",
      "E3064"},
+    {"old_style_incompatible_bool_prototype_rejected",
+     "int boolean_value(_Bool value); "
+     "int boolean_value(value) _Bool value; { return value; }",
+     "E3064"},
+    {"old_style_incompatible_complex_prototype_rejected",
+     "int has_expected_value(double _Complex value); "
+     "int has_expected_value(value) float _Complex value; "
+     "{ return value == 0.0f; }",
+     "E3064"},
+    {"old_style_array_pointee_qualifier_prototype_rejected",
+     "int first_value(int *values); "
+     "int first_value(values) "
+     "const int values[]; "
+     "{ return values[0]; }",
+     "E3064"},
+    {"old_style_function_parameter_prototype_rejected",
+     "int apply(int (*callback)(long), int value); "
+     "int apply(callback, value) "
+     "int callback(int); int value; "
+     "{ return callback(value); }",
+     "E3064"},
+    {"old_style_variadic_function_parameter_prototype_rejected",
+     "int apply(int (*callback)(int), int value); "
+     "int apply(callback, value) "
+     "int callback(int, ...); int value; "
+     "{ return callback(value, 1); }",
+     "E3064"},
+    {"old_style_declaration_variadic_prototype_rejected",
+     "int variadic(); int variadic(int first, ...); "
+     "int main(void) { return 0; }",
+     "E3064"},
+    {"old_style_parameter_count_prototype_rejected",
+     "int sum_values(int left, int right); "
+     "int sum_values(left) int left; { return left; }",
+     "E3064"},
+    {"old_style_signed_enum_unsigned_prototype_rejected",
+     "enum code { CODE_NEGATIVE = -1, CODE_VALUE = 41 }; "
+     "int enum_identity(unsigned int value); "
+     "int enum_identity(value) enum code value; { return value; }",
+     "E3064"},
+    {"old_style_unsigned_enum_signed_prototype_rejected",
+     "enum code { CODE_ZERO = 0, CODE_VALUE = 42 }; "
+     "int enum_identity(int value); "
+     "int enum_identity(value) enum code value; { return value; }",
+     "E3064"},
+    {"old_style_distinct_record_prototype_rejected",
+     "struct left_record { int value; }; "
+     "struct right_record { int value; }; "
+     "int read_value(struct left_record value); "
+     "int read_value(value) struct right_record value; "
+     "{ return value.value; }",
+     "E3064"},
+    {"old_style_record_kind_prototype_rejected",
+     "struct record { int value; }; "
+     "union choice { int value; }; "
+     "int read_value(struct record value); "
+     "int read_value(value) union choice value; "
+     "{ return value.value; }",
+     "E3064"},
     {"old_style_parameter_enum_constant_scope_rejected",
      "int old_style(value) "
      "enum HeaderEnum { HEADER_ENUM_VALUE = 1 } value; "

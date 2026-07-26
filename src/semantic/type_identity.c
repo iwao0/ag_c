@@ -691,7 +691,11 @@ static int semantic_function_entries_compatible(
       left_shape->has_function_prototype ? left_entry : right_entry;
   const psx_semantic_type_entry_t *old_style =
       left_shape->has_function_prototype ? right_entry : left_entry;
-  if (prototype->shape.is_variadic_function) return 0;
+  /* An empty-list declaration is incompatible with an ellipsis, but an
+   * identifier-list definition can match the fixed parameter portion. */
+  if (prototype->shape.is_variadic_function &&
+      old_style->parameter_count == 0)
+    return 0;
   if (old_style->parameter_count > 0 &&
       old_style->parameter_count != prototype->parameter_count)
     return 0;

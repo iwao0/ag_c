@@ -1,11 +1,27 @@
 #include <assert.h>
+#include <complex.h>
 
 struct Pair {
   int left;
   int right;
 };
 
+union Number {
+  int integer;
+  float floating;
+};
+
 typedef unsigned short small_t;
+
+enum signed_code {
+  SIGNED_CODE_NEGATIVE = -1,
+  SIGNED_CODE_VALUE = 41
+};
+
+enum unsigned_code {
+  UNSIGNED_CODE_ZERO = 0,
+  UNSIGNED_CODE_VALUE = 42
+};
 
 int narrow_char(value)
 char value;
@@ -59,11 +75,19 @@ const int values[static 3];
   return values[0] + values[1] + values[2];
 }
 
+/* Qualifiers written inside [] apply to the adjusted pointer itself. The
+ * definition therefore remains compatible with this unqualified prototype. */
+int qualified_array_sum(int *values);
+
 int qualified_array_sum(values)
 int values[const restrict static 3];
 {
   return values[0] + values[1] + values[2];
 }
+
+/* A function parameter declaration adjusts to the corresponding pointer
+ * type before the old-style definition is compared with this prototype. */
+int apply(int (*callback)(int), int value);
 
 int apply(callback, value)
 int callback(int);
@@ -72,14 +96,41 @@ int value;
   return callback(value);
 }
 
+int apply_variadic(int (*callback)(int, ...), int value);
+int apply_variadic(callback, value)
+int callback(int, ...);
+int value;
+{
+  return callback(value, 1);
+}
+
 int add_one(int value) {
   return value + 1;
 }
 
+int add_one_variadic(int value, ...) {
+  return value + 1;
+}
+
+int variadic_prefix(int first, ...);
+int variadic_prefix(first)
+int first;
+{
+  return first;
+}
+
+int pair_sum(struct Pair pair);
 int pair_sum(pair)
 struct Pair pair;
 {
   return pair.left + pair.right;
+}
+
+int integer_value(union Number value);
+int integer_value(value)
+union Number value;
+{
+  return value.integer;
 }
 
 int sum_pair(left, right)
@@ -108,6 +159,14 @@ short right;
   return left + right;
 }
 
+int compatible_subinteger(int, int);
+int compatible_subinteger(left, right)
+_Bool left;
+unsigned short right;
+{
+  return left + right;
+}
+
 double compatible_float(double);
 double compatible_float(value)
 float value;
@@ -115,9 +174,30 @@ float value;
   return value;
 }
 
+int compatible_float_complex(float _Complex);
+int compatible_float_complex(value)
+float _Complex value;
+{
+  return crealf(value) == 2.0f && cimagf(value) == 3.0f;
+}
+
 int compatible_const(int);
 int compatible_const(value)
 const int value;
+{
+  return value;
+}
+
+int compatible_signed_enum(int);
+int compatible_signed_enum(value)
+enum signed_code value;
+{
+  return value;
+}
+
+int compatible_unsigned_enum(unsigned int);
+int compatible_unsigned_enum(value)
+enum unsigned_code value;
 {
   return value;
 }
@@ -129,6 +209,7 @@ int main(void) {
       {19, 23, 29},
   };
   struct Pair pair = {11, 13};
+  union Number number = {31};
   assert(narrow_char(257) == 1);
   assert(narrow_unsigned(513) == 1);
   assert(narrow_short(65537) == 1);
@@ -138,12 +219,19 @@ int main(void) {
   assert(static_array_sum(values) == 15);
   assert(qualified_array_sum(values) == 15);
   assert(apply(add_one, 41) == 42);
+  assert(apply_variadic(add_one_variadic, 41) == 42);
+  assert(variadic_prefix(42, 1, 2) == 42);
   assert(pair_sum(pair) == 24);
+  assert(integer_value(number) == 31);
   assert(sum_pair(17, 19) == 36);
   assert(same_declaration_vla(values, 3) == 7);
   assert(same_declaration_matrix(matrix, 2, 3) == 29);
   assert(compatible_integer(257, 65538) == 3);
+  assert(compatible_subinteger(7, 41) == 42);
   assert(compatible_float(2.5f) == 2.5);
+  assert(compatible_float_complex(2.0f + 3.0f * I));
   assert(compatible_const(23) == 23);
+  assert(compatible_signed_enum(SIGNED_CODE_VALUE) == 41);
+  assert(compatible_unsigned_enum(UNSIGNED_CODE_VALUE) == 42);
   return 0;
 }
