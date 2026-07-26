@@ -377,7 +377,7 @@ struct declaration_declarator_parse_context_t {
   const psx_decl_specifier_syntax_options_t *options;
   psx_parser_runtime_context_t *runtime_context;
   const psx_name_classifier_t *name_classifier;
-  int allow_implicit_function_parameters;
+  int allow_function_identifier_list;
   int allow_vla_star;
   int has_syntax_error;
 };
@@ -559,10 +559,10 @@ static int consume_declarator_suffix(
   if (!psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
           parameters,
           parse_context->name_classifier &&
-                  !parse_context->allow_implicit_function_parameters
+                  !parse_context->allow_function_identifier_list
               ? PSX_PARAMETER_TYPE_C11_STRICT
-              : (parse_context->allow_implicit_function_parameters
-                     ? PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT
+              : (parse_context->allow_function_identifier_list
+                     ? PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST
                      : PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF),
           parse_context->options))
     parse_context->has_syntax_error = 1;
@@ -633,7 +633,7 @@ static int parse_declarator_syntax_tree_into(
     int is_abstract,
     int (*is_grouping_parenthesis)(void *, int),
     const psx_decl_specifier_syntax_options_t *options,
-    int allow_implicit_function_parameters,
+    int allow_function_identifier_list,
     int allow_vla_star) {
   psx_parser_runtime_context_t *runtime_context =
       options ? options->runtime_context : NULL;
@@ -644,8 +644,8 @@ static int parse_declarator_syntax_tree_into(
       .options = options,
       .runtime_context = runtime_context,
       .name_classifier = options ? options->name_classifier : NULL,
-      .allow_implicit_function_parameters =
-          allow_implicit_function_parameters,
+      .allow_function_identifier_list =
+          allow_function_identifier_list,
       .allow_vla_star = allow_vla_star,
   };
   declarator->identifier = psx_parse_declarator_syntax(

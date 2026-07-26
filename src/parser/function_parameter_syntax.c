@@ -1,6 +1,5 @@
 #include "function_parameter_syntax.h"
 
-#include "declarator_shape_builder.h"
 #include "diag.h"
 #include "dynarray.h"
 #include "runtime_context.h"
@@ -63,7 +62,7 @@ static int token_starts_identifier_list(
     psx_function_parameter_type_mode_t type_mode,
     const psx_decl_specifier_syntax_options_t *options,
     token_t *token) {
-  return type_mode == PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT &&
+  return type_mode == PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST &&
          token && token->kind == TK_IDENT &&
          (!options->name_classifier ||
           !ps_name_classifier_is_typedef_name(
@@ -95,8 +94,6 @@ static int parse_identifier_list(
     }
     psx_parsed_function_parameter_t *parameter =
         append_function_parameter(parameters, runtime_context);
-    ps_declarator_shape_init(
-        &parameter->declarator.declarator_shape);
     parameter->declarator.identifier = identifier;
     parameter->declarator.diagnostic_token =
         (token_t *)identifier;

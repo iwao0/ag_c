@@ -7558,11 +7558,15 @@ static void test_function_prototype_type_identity_boundary(
   reset_test_translation_unit_state(test_suite_session);
   ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __unprototyped(); int __void_prototype(void); "
+      "int __old_style(first, second) "
+      "char first; float second; "
+      "{ return first + (int)second; } "
       "int __prototype_use(void) { "
       "return __unprototyped(1) + __void_prototype(); }"));
 
   static char unprototyped_name[] = "__unprototyped";
   static char void_prototype_name[] = "__void_prototype";
+  static char old_style_name[] = "__old_style";
   psx_qual_type_t unprototyped_type =
       ps_ctx_get_function_qual_type_in(
           test_semantic_context(test_suite_session), unprototyped_name,
@@ -7571,8 +7575,13 @@ static void test_function_prototype_type_identity_boundary(
       ps_ctx_get_function_qual_type_in(
           test_semantic_context(test_suite_session), void_prototype_name,
           (int)sizeof(void_prototype_name) - 1);
+  psx_qual_type_t old_style_type =
+      ps_ctx_get_function_qual_type_in(
+          test_semantic_context(test_suite_session), old_style_name,
+          (int)sizeof(old_style_name) - 1);
   ASSERT_TRUE(unprototyped_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(void_prototype_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(old_style_type.type_id != PSX_TYPE_ID_INVALID);
   psx_type_shape_t unprototyped_shape =
       test_qual_type_shape(test_suite_session, unprototyped_type);
   psx_type_shape_t void_prototype_shape =
@@ -7584,6 +7593,30 @@ static void test_function_prototype_type_identity_boundary(
   ASSERT_EQ(0, unprototyped_shape.parameter_count);
   ASSERT_EQ(0, void_prototype_shape.parameter_count);
   ASSERT_TRUE(unprototyped_type.type_id != void_prototype_type.type_id);
+
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session));
+  psx_type_shape_t old_style_shape =
+      test_qual_type_shape(test_suite_session, old_style_type);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, old_style_shape.kind);
+  ASSERT_TRUE(!old_style_shape.has_function_prototype);
+  ASSERT_EQ(2, old_style_shape.parameter_count);
+  psx_type_shape_t promoted_first =
+      test_qual_type_shape(
+          test_suite_session,
+          psx_semantic_type_table_parameter(
+              types, old_style_type.type_id, 0));
+  psx_type_shape_t promoted_second =
+      test_qual_type_shape(
+          test_suite_session,
+          psx_semantic_type_table_parameter(
+              types, old_style_type.type_id, 1));
+  ASSERT_EQ(PSX_TYPE_INTEGER, promoted_first.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, promoted_first.integer_kind);
+  ASSERT_EQ(PSX_TYPE_FLOAT, promoted_second.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            promoted_second.floating_kind);
 
   char signature[16];
   ASSERT_EQ(5, ps_ctx_format_function_signature_in(
@@ -7603,6 +7636,15 @@ static void test_function_prototype_type_identity_boundary(
   psx_resolve_call_qual_types_in(
       test_semantic_context(test_suite_session), void_prototype_type, 0, &resolution);
   ASSERT_EQ(PSX_CALL_TYPES_OK, resolution.status);
+
+  expect_parse_fail(test_suite_session,
+      "int old_style(value) { return value; }");
+  expect_parse_fail(test_suite_session,
+      "int old_style(value) int other; { return value; }");
+  expect_parse_fail(test_suite_session,
+      "int old_style(value, value) int value; { return value; }");
+  expect_parse_fail(test_suite_session,
+      "int old_style(value); int main(void) { return 0; }");
 }
 
 static void test_cast_typed_hir_boundary(

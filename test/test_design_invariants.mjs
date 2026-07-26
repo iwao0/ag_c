@@ -6420,6 +6420,46 @@ if (/\bPS_MAX_DECLARATOR_COUNT\b|function parameter limit exceeded/.test(
     "function parameter syntax must use dynamic storage without a fixed argument-count cap",
   );
 }
+if (!/PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST/.test(
+      functionParameterSyntaxSource,
+    ) ||
+    /PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT/.test(
+      functionParameterSyntaxSource,
+    ) ||
+    !/parameters->is_identifier_list\s*=\s*1/.test(
+      functionParameterSyntaxSource,
+    ) ||
+    !/specifier_options\.allow_implicit_int\s*=\s*0/.test(
+      functionParameterSyntaxSource,
+    ) ||
+    !/old-style function parameter[^]*?requires an explicit[^]*?declaration before the function body/.test(
+      functionParameterSyntaxSource,
+    ) ||
+    !/identifier list is only permitted in an old-style[^]*?function definition/.test(
+      toplevelDeclarationSyntaxSource,
+    ) ||
+    !/primary_is_identifier_list/.test(
+      `${declarationPipelineHeader}\n${declarationPipelineSource}`,
+    ) ||
+    !/psx_integer_promotion_for_data_layout\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
+      declarationPipelineSource,
+    ) ||
+    !/PSX_FLOATING_KIND_FLOAT[^]*?PSX_FLOATING_KIND_DOUBLE/.test(
+      declarationPipelineSource,
+    ) ||
+    !/!state->primary_is_identifier_list[^]*?primary->function_is_variadic/.test(
+      declarationPipelineSource,
+    ) ||
+    !/needs_assignment_conversion\s*=[^]*?function_type->params\[i\]\.type_id\s*!=[^]*?psx_hir_node_qual_type\(parameter\)\.type_id/.test(
+      hirIrCallAbiSource,
+    ) ||
+    !/needs_assignment_conversion[^]*?hir_ir_coerce_direct_value_to_qual_type\s*\([^]*?hir_ir_store_direct_value\s*\(/.test(
+      hirIrCallAbiSource,
+    )) {
+  throw new Error(
+    "old-style function definitions must keep identifier-list syntax distinct, promote their non-prototype function signature with DataLayout, and convert incoming values into declared parameter objects",
+  );
+}
 const parserDeclarationSyntaxSource = await readFile(
   "src/parser/declaration_syntax.c",
   "utf8",
@@ -9370,7 +9410,7 @@ if (!/PSX_AGGREGATE_MEMBER_ATOMIC_BITFIELD_UNSUPPORTED/.test(
 if (!/parsed_declarator_has_explicit_vla_star\s*\([^]*?op->kind\s*!=\s*PSX_DECL_OP_ARRAY\s*\|\|\s*!op->is_vla_array[^]*?declarator->array_bound_count[^]*?!has_bound_expression\s*\)\s*return\s+1/.test(
       frontendDeclarationSources,
     ) ||
-    !/validate_function_definition_parameter_vla_stars\s*\([^]*?psx_declarator_outermost_function_suffix[^]*?parameters->items\[i\][^]*?parsed_declarator_has_explicit_vla_star/.test(
+    !/validate_function_definition_parameter_vla_stars\s*\([^]*?psx_declarator_outermost_function_suffix[^]*?psx_function_definition_parameter_syntax_at\s*\([^]*?parsed_declarator_has_explicit_vla_star/.test(
       frontendDeclarationSources,
     ) ||
     !/resolve_function_definition_header\s*\([^]*?validate_function_definition_parameter_vla_stars\s*\(\s*diagnostics,\s*definition\s*\)/.test(

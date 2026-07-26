@@ -29,7 +29,7 @@ struct psx_parsed_function_parameters_t {
 
 typedef enum {
   PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF = 0,
-  PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT,
+  PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST,
   PSX_PARAMETER_TYPE_C11_STRICT,
 } psx_function_parameter_type_mode_t;
 
