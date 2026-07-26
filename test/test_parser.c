@@ -10938,7 +10938,7 @@ static void test_dynamic_function_parameter_capacity(
     ag_compilation_session_t *test_suite_session) {
   printf("test_dynamic_function_parameter_capacity...\n");
   reset_test_translation_unit_state(test_suite_session);
-  enum { PARAM_COUNT = PS_MAX_DECLARATOR_COUNT + 1 };
+  enum { PARAM_COUNT = 1025 };
   size_t capacity = (size_t)PARAM_COUNT * 24 + 64;
   char *source = malloc(capacity);
   ASSERT_TRUE(source != NULL);
@@ -18101,19 +18101,19 @@ static char *build_many_array_init_elements_program(int nelems) {
   return buf;
 }
 
-static void test_parser_width_limits(
+static void test_parser_dynamic_widths(
     ag_compilation_session_t *test_suite_session) {
-  printf("test_parser_width_limits...\n");
+  printf("test_parser_dynamic_widths...\n");
 
   char *ok_decls = build_many_declarators_program(64);
   ASSERT_TRUE(ok_decls != NULL);
   expect_parse_ok(test_suite_session, ok_decls);
   free(ok_decls);
 
-  char *too_many_decls = build_many_declarators_program(1300);
-  ASSERT_TRUE(too_many_decls != NULL);
-  expect_parse_fail_with_message(test_suite_session, too_many_decls, "宣言子列が多すぎます");
-  free(too_many_decls);
+  char *many_decls = build_many_declarators_program(1300);
+  ASSERT_TRUE(many_decls != NULL);
+  expect_parse_ok(test_suite_session, many_decls);
+  free(many_decls);
 
   char *ok_inits = build_many_array_init_elements_program(128);
   ASSERT_TRUE(ok_inits != NULL);
@@ -18127,10 +18127,10 @@ static void test_parser_width_limits(
       "[0][0][0][0][0][0][0][0][0][0] = 1}; "
       "return values[0][0][0][0][0][0][0][0][0][0]; }");
 
-  char *too_many_inits = build_many_array_init_elements_program(5000);
-  ASSERT_TRUE(too_many_inits != NULL);
-  expect_parse_fail_with_message(test_suite_session, too_many_inits, "初期化子要素数が多すぎます");
-  free(too_many_inits);
+  char *many_inits = build_many_array_init_elements_program(5000);
+  ASSERT_TRUE(many_inits != NULL);
+  expect_parse_ok(test_suite_session, many_inits);
+  free(many_inits);
 }
 
 static void test_semantic_canonical_type_invariant(
@@ -20055,7 +20055,7 @@ int main() {
   test_parse_evil_edge_cases(test_suite_session);
   test_parser_config_matrix(test_suite_session);
   test_expr_nest_limits(test_suite_session);
-  test_parser_width_limits(test_suite_session);
+  test_parser_dynamic_widths(test_suite_session);
   test_semantic_canonical_type_invariant(test_suite_session);
 
   ASSERT_TRUE(ag_compilation_session_dispose(&suite_session));

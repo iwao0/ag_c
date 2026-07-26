@@ -7,9 +7,6 @@
 #include "name_classifier.h"
 #include <stdbool.h>
 
-#define PS_MAX_DECLARATOR_COUNT 1024
-#define PS_MAX_INITIALIZER_ELEMENTS 4096
-
 typedef struct tokenizer_context_t tokenizer_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 

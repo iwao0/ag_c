@@ -25,12 +25,6 @@ void psx_parse_enum_body_syntax(
         "an enumeration requires at least one enumerator");
   }
   while (!tk_consume_ctx(tokenizer_context, '}')) {
-    if (body->member_count >= PS_MAX_DECLARATOR_COUNT) {
-      ps_diag_ctx_in(
-          context->diagnostics,
-          tk_get_current_token_ctx(tokenizer_context), "enum-syntax",
-          "enum member limit exceeded");
-    }
     if (body->member_count == body->member_capacity) {
       body->member_capacity = pda_next_cap_in(
           context->diagnostics, body->member_capacity,

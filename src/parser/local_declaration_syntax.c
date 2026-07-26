@@ -4,6 +4,7 @@
 #include "arena.h"
 #include "declaration_binding_events.h"
 #include "diag.h"
+#include "dynarray.h"
 #include "function_parameter_syntax.h"
 #include "node_utils.h"
 #include "parser_recovery.h"
@@ -59,36 +60,46 @@ static int append_declarator_slot(
     psx_parsed_local_declaration_t *declaration,
     const psx_local_declaration_callbacks_t *callbacks) {
   if (!declaration || !arena(callbacks)) return 0;
-  if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
+  if (declaration->declarator_count < 0 ||
+      declaration->declarator_capacity < 0 ||
+      declaration->declarator_count >
+          declaration->declarator_capacity) {
     ps_diag_ctx_in(
         diagnostics(callbacks), curtok(callbacks), "decl",
-        diag_message_for_in(
-            diagnostics(callbacks),
-            DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
-        PS_MAX_DECLARATOR_COUNT);
+        "invalid local declarator storage");
     return 0;
   }
-  int next_count = declaration->declarator_count + 1;
-  psx_parsed_declarator_t *declarators = arena_alloc_in(
-      arena(callbacks),
-      (size_t)next_count * sizeof(*declarators));
-  psx_parsed_initializer_t *initializers = arena_alloc_in(
-      arena(callbacks),
-      (size_t)next_count * sizeof(*initializers));
-  if (!declarators || !initializers) return 0;
-  if (declaration->declarator_count > 0) {
-    memcpy(
-        declarators, declaration->declarators,
-        (size_t)declaration->declarator_count * sizeof(*declarators));
-    memcpy(
-        initializers, declaration->initializers,
-        (size_t)declaration->declarator_count * sizeof(*initializers));
+  if (declaration->declarator_count ==
+      declaration->declarator_capacity) {
+    int capacity = pda_next_cap_in(
+        diagnostics(callbacks), declaration->declarator_capacity,
+        declaration->declarator_count + 1);
+    psx_parsed_declarator_t *declarators = arena_alloc_in(
+        arena(callbacks),
+        (size_t)capacity * sizeof(*declarators));
+    psx_parsed_initializer_t *initializers = arena_alloc_in(
+        arena(callbacks),
+        (size_t)capacity * sizeof(*initializers));
+    if (!declarators || !initializers) return 0;
+    if (declaration->declarator_count > 0) {
+      memcpy(
+          declarators, declaration->declarators,
+          (size_t)declaration->declarator_count *
+              sizeof(*declarators));
+      memcpy(
+          initializers, declaration->initializers,
+          (size_t)declaration->declarator_count *
+              sizeof(*initializers));
+    }
+    declaration->declarators = declarators;
+    declaration->initializers = initializers;
+    declaration->declarator_capacity = capacity;
   }
-  declarators[next_count - 1] = (psx_parsed_declarator_t){0};
-  initializers[next_count - 1] = (psx_parsed_initializer_t){0};
-  declaration->declarators = declarators;
-  declaration->initializers = initializers;
-  declaration->declarator_count = next_count;
+  int index = declaration->declarator_count++;
+  declaration->declarators[index] =
+      (psx_parsed_declarator_t){0};
+  declaration->initializers[index] =
+      (psx_parsed_initializer_t){0};
   return 1;
 }
 

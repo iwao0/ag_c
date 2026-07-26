@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-26（文字列literal registry所有まで）
+最終更新: 2026-07-26（syntax list固定上限の撤廃まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -252,6 +252,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | `_Alignas(>16)` のローカル変数 | 🔧 | alignas_overaligned_local | x29 が 16 整列のみで固定オフセットでは過剰整列不可。align_bytes>16 のローカルだけ予備領域+実行時丸め (IR_ALIGN_PTR=add #A-1;and #-A)。併せて `_Alignas(N) struct ...` 局所の (N) を読み飛ばせず E3015 だったパースも修正 |
 | **Wasm objectの過剰整列global/static配置** `_Alignas(64/128)` | 🔧 | alignas_global_static_storage, alignas_redeclaration_consistency / object: overaligned_data_segments | object emitterがlinking sectionのsegment alignmentを最大`p2align=3`へ丸め、link後のglobal/static/static-localが要求alignmentを満たさなかった。メモリアクセス命令の自然alignment上限とdata segment配置を分離し、要求値を`p2align=6/7`として保持。object link実行scanで両fixtureの`main() => i32:0`を固定 |
 | **同一宣言の多数alignment specifier** 17個の`_Alignas` | 🔧 | dynamic_alignas_specifiers | C11では同一宣言に複数のalignment specifierを置けるが、Syntax specifierが8要素固定配列を持ち、9個目を`E3064 declaration alignas limit exceeded`で拒否していた。expression形・type-name形を動的配列へ移し、宣言phase/function definitionへのmove ownershipとdisposeを維持する。旧上限と初期動的容量16を超える17個をglobal/local、native/WAT/objectで固定し、設計invariantで固定配列の再導入を拒否する |
+| **大規模syntax listの動的容量** 1025 declarator/member/enumerator、4097 initializer | 🔧 | dynamic_syntax_list_capacities | 関数parameterは動的化済みだったが、top-level/local宣言子・aggregate宣言/item・enum memberは`PS_MAX_DECLARATOR_COUNT=1024`、initializer listは`PS_MAX_INITIALIZER_ELEMENTS=4096`で、Clang strictが受理する標準CをE3064で拒否していた。全listをallocation可能な範囲まで動的に伸長し、特に毎要素realloc/copyしていたtop-level/local宣言を明示capacityによる倍増へ修正。標準macro展開で旧上限を1件超えるtypedef・record・enum・静的配列をcompactに生成し、native/WAT/objectと設計invariantで固定する |
 | enum 値・算術 | ✅ | control_flow_enum_compound_boundaries | 加算・shift・単項minus・剰余からなる列挙定数と実行時利用をnative/Wasmで固定 |
 | switch / fallthrough / default | ✅ | control_flow_enum_compound_boundaries, switch_edge/nested_switch | enum case、fallthrough、break、default、nested switchを正式fixture化 |
 | **switch case 値の制御型変換後の重複判定** `switch(unsigned x)` で `case -1` / `case 4294967295u` | 🔧 | switch_case_promoted_values / compile_fail: switch_duplicate_case_* | C11 6.8.4.2p3。case 定数を生の `long long` 値で比較していたため、整数昇格後の制御式型へ変換すると同値になる case を見逃していた。switch scope に昇格後の整数型を保持し、各 case 値をその型で正規化してから重複判定する。signed/unsigned int、unsigned char/short の int 昇格、正負enumのcompatible integer型、定数式の wrap、変換後も異なる合法 case を網羅 |

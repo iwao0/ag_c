@@ -12,6 +12,7 @@ typedef struct psx_parsed_local_declaration_t {
   psx_parsed_declarator_t *declarators;
   psx_parsed_initializer_t *initializers;
   int declarator_count;
+  int declarator_capacity;
   int is_typedef;
   int is_extern;
   int is_static;

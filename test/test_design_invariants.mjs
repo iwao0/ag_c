@@ -4297,6 +4297,10 @@ const localDeclarationSyntaxSource = await readFile(
   "src/parser/local_declaration_syntax.c",
   "utf8",
 );
+const localDeclarationSyntaxHeader = await readFile(
+  "src/parser/local_declaration_syntax.h",
+  "utf8",
+);
 const enumConstSource = await readFile("src/parser/enum_const.c", "utf8");
 const enumConstHeader = await readFile("src/parser/enum_const.h", "utf8");
 const enumBodySyntaxBoundary = enumConstSource.match(
@@ -6428,6 +6432,50 @@ const aggregateMemberSyntaxSource = await readFile(
   "src/parser/aggregate_member_syntax.c",
   "utf8",
 );
+const scalableSyntaxListSources = [
+  parserCoreHeader,
+  toplevelDeclarationHeader,
+  toplevelDeclarationSyntaxSource,
+  localDeclarationSyntaxHeader,
+  localDeclarationSyntaxSource,
+  aggregateMemberSyntaxSource,
+  enumConstSource,
+  initializerSyntaxSource,
+].join("\n");
+if (/\bPS_MAX_(?:DECLARATOR_COUNT|INITIALIZER_ELEMENTS)\b/.test(
+      scalableSyntaxListSources,
+    ) ||
+    /(?:declarator|aggregate declaration|aggregate declarator|enum member|initializer element) limit exceeded/.test(
+      scalableSyntaxListSources,
+    ) ||
+    !/int\s+declarator_capacity\s*;/.test(
+      toplevelDeclarationHeader,
+    ) ||
+    !/append_declarator_slot\s*\([^]*?pda_next_cap_in\s*\([^]*?pda_xreallocarray_in\s*\(/.test(
+      toplevelDeclarationSyntaxSource,
+    ) ||
+    !/int\s+declarator_capacity\s*;/.test(
+      localDeclarationSyntaxHeader,
+    ) ||
+    !/append_declarator_slot\s*\([^]*?pda_next_cap_in\s*\([^]*?arena_alloc_in\s*\(/.test(
+      localDeclarationSyntaxSource,
+    ) ||
+    !/append_aggregate_item\s*\([^]*?pda_next_cap_in\s*\([^]*?pda_xreallocarray_in\s*\(/.test(
+      aggregateMemberSyntaxSource,
+    ) ||
+    !/append_aggregate_declarator\s*\([^]*?pda_next_cap_in\s*\([^]*?pda_xreallocarray_in\s*\(/.test(
+      aggregateMemberSyntaxSource,
+    ) ||
+    !/member_count\s*==\s*body->member_capacity[^]*?pda_next_cap_in\s*\([^]*?pda_xreallocarray_in\s*\(/.test(
+      enumConstSource,
+    ) ||
+    !/grow_initializer_syntax_array\s*\([^]*?next_capacity[^]*?arena_alloc_in\s*\(/.test(
+      initializerSyntaxSource,
+    )) {
+  throw new Error(
+    "standard declaration, aggregate, enum, and initializer syntax lists must grow dynamically without fixed element-count caps",
+  );
+}
 const staticAssertDeclarationSource = await readFile(
   "src/parser/static_assert_declaration.c",
   "utf8",

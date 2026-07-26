@@ -37,10 +37,6 @@ static node_t *parse_aggregate_static_assert_assignment_expression(
 static psx_parsed_aggregate_item_t *append_aggregate_item(
     psx_parsed_aggregate_body_t *body,
     psx_parser_runtime_context_t *runtime_context) {
-  if (body->item_count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "aggregate-syntax",
-                 "aggregate declaration limit exceeded");
-  }
   if (body->item_count == body->item_capacity) {
     body->item_capacity = pda_next_cap_in(diagnostics(runtime_context),
         body->item_capacity, body->item_count + 1);
@@ -55,10 +51,6 @@ static psx_parsed_aggregate_item_t *append_aggregate_item(
 static psx_parsed_declarator_t *append_aggregate_declarator(
     psx_parsed_aggregate_member_declaration_t *declaration,
     psx_parser_runtime_context_t *runtime_context) {
-  if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "aggregate-syntax",
-                 "aggregate declarator limit exceeded");
-  }
   if (declaration->declarator_count == declaration->declarator_capacity) {
     declaration->declarator_capacity = pda_next_cap_in(diagnostics(runtime_context),
         declaration->declarator_capacity,

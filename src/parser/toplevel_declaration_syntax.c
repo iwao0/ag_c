@@ -2,6 +2,7 @@
 
 #include "core.h"
 #include "diag.h"
+#include "dynarray.h"
 #include "runtime_context.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
@@ -38,32 +39,32 @@ static void require_declarator_name(
 static void append_declarator_slot(
     psx_parsed_toplevel_declaration_t *declaration,
     psx_parser_runtime_context_t *runtime_context) {
-  if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx_in(diagnostics(runtime_context),
-        current_token(runtime_context), "decl",
-        diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
-        PS_MAX_DECLARATOR_COUNT);
+  if (!declaration || declaration->declarator_count < 0 ||
+      declaration->declarator_capacity < 0 ||
+      declaration->declarator_count > declaration->declarator_capacity) {
+    ps_diag_ctx_in(
+        diagnostics(runtime_context), current_token(runtime_context),
+        "decl", "invalid top-level declarator storage");
   }
-  int next_count = declaration->declarator_count + 1;
-  psx_parsed_declarator_t *grown = realloc(
-      declaration->declarators,
-      sizeof(*declaration->declarators) * (size_t)next_count);
-  if (!grown) {
-    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "decl",
-                "top-level declaration syntax allocation failed");
+  if (declaration->declarator_count ==
+      declaration->declarator_capacity) {
+    int capacity = pda_next_cap_in(
+        diagnostics(runtime_context),
+        declaration->declarator_capacity,
+        declaration->declarator_count + 1);
+    declaration->declarators = pda_xreallocarray_in(
+        diagnostics(runtime_context), declaration->declarators,
+        (size_t)capacity, sizeof(*declaration->declarators));
+    declaration->initializers = pda_xreallocarray_in(
+        diagnostics(runtime_context), declaration->initializers,
+        (size_t)capacity, sizeof(*declaration->initializers));
+    declaration->declarator_capacity = capacity;
   }
-  declaration->declarators = grown;
-  psx_parsed_initializer_t *grown_initializers = realloc(
-      declaration->initializers,
-      sizeof(*declaration->initializers) * (size_t)next_count);
-  if (!grown_initializers) {
-    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "decl",
-                "top-level initializer syntax allocation failed");
-  }
-  declaration->initializers = grown_initializers;
-  declaration->initializers[declaration->declarator_count] =
+  int index = declaration->declarator_count++;
+  declaration->declarators[index] =
+      (psx_parsed_declarator_t){0};
+  declaration->initializers[index] =
       (psx_parsed_initializer_t){0};
-  declaration->declarator_count = next_count;
 }
 
 static int parse_declarator_head(

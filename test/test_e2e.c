@@ -1439,6 +1439,7 @@ static const test_case_t test_cases[] = {
     {"probes", "alignas_global_static_storage", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignas_global_static_storage.c", 0, 0},
     {"probes", "alignas_redeclaration_consistency", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignas_redeclaration_consistency.c", 0, 0},
     {"probes", "dynamic_alignas_specifiers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/dynamic_alignas_specifiers.c", 0, 0},
+    {"probes", "dynamic_syntax_list_capacities", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/dynamic_syntax_list_capacities.c", 0, 0},
     {"probes", "goto_vla_scope_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/goto_vla_scope_constraints.c", 0, 0},
     {"probes", "storage_class_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/storage_class_constraints.c", 0, 0},
     {"probes", "function_specifier_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_specifier_constraints.c", 0, 0},
@@ -3203,28 +3204,6 @@ static int write_pp_if_token_limit_source(const char *path, int terms) {
   return 0;
 }
 
-static int write_parser_decl_width_limit_source(const char *path, int ndecls) {
-  if (ndecls < 1) return -1;
-  FILE *fp = fopen(path, "w");
-  if (!fp) return -1;
-  if (fprintf(fp, "int main(){ int ") < 0) {
-    fclose(fp);
-    return -1;
-  }
-  for (int i = 0; i < ndecls; i++) {
-    if (fprintf(fp, "%sv%d", i == 0 ? "" : ",", i) < 0) {
-      fclose(fp);
-      return -1;
-    }
-  }
-  if (fprintf(fp, "; return 0; }\n") < 0) {
-    fclose(fp);
-    return -1;
-  }
-  fclose(fp);
-  return 0;
-}
-
 static void build_category_bin_path(const char *category, char *bin_path) {
   snprintf(bin_path, PATH_MAX, "build/e2e/%s/%s_category_runner", category, category);
 }
@@ -3863,16 +3842,6 @@ int main(int argc, char **argv) {
         write_pp_if_token_limit_source(pp_if_limit_path, 4200) != 0 ||
         run_ag_c_expect_fail_profiled(pp_if_limit_path, "E1037", log_path, 1024) != 0) {
       fprintf(stderr, "Compile-fail case failed: preprocess_if_token_limit (see %s)\n", log_path);
-      return 1;
-    }
-  }
-  {
-    const char *parser_width_path = "build/e2e/compile_fail/parser_decl_width_limit.c";
-    const char *log_path = "build/e2e/logs/compile_fail_parser_decl_width_limit.log";
-    if (mkdir_p("build/e2e/compile_fail") != 0 ||
-        write_parser_decl_width_limit_source(parser_width_path, 1300) != 0 ||
-        run_ag_c_expect_fail_profiled(parser_width_path, "E3064", log_path, 1024) != 0) {
-      fprintf(stderr, "Compile-fail case failed: parser_decl_width_limit (see %s)\n", log_path);
       return 1;
     }
   }

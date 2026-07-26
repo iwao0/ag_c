@@ -106,15 +106,6 @@ node_t *psx_parse_initializer_syntax_list_with_context(
       ps_parser_runtime_arena(runtime_context);
   if (!tk_consume_ctx(tk_ctx, '}')) {
     for (;;) {
-      if (count >= PS_MAX_INITIALIZER_ELEMENTS) {
-        ps_diag_ctx_in(
-            diagnostics(runtime_context), curtok(runtime_context),
-            "initializer-syntax",
-            diag_message_for_in(
-                diagnostics(runtime_context),
-                DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED),
-            PS_MAX_INITIALIZER_ELEMENTS);
-      }
       if (count == capacity) {
         psx_initializer_entry_t *next =
             grow_initializer_syntax_array(
