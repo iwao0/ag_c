@@ -116,6 +116,32 @@ typedef struct {
   psx_parser_runtime_context_t *runtime_context;
 } declaration_alignas_parse_context_t;
 
+static psx_parsed_alignas_t *append_declaration_alignas(
+    psx_parsed_decl_specifier_t *specifier,
+    psx_parser_runtime_context_t *runtime_context) {
+  if (!specifier || specifier->alignas_specifier_count < 0 ||
+      specifier->alignas_specifier_capacity < 0 ||
+      specifier->alignas_specifier_count >
+          specifier->alignas_specifier_capacity) {
+    ps_diag_ctx_in(
+        diagnostics(runtime_context), current_token(runtime_context),
+        "declaration-syntax", "invalid declaration alignas storage");
+  }
+  if (specifier->alignas_specifier_count ==
+      specifier->alignas_specifier_capacity) {
+    int capacity = pda_next_cap_in(
+        diagnostics(runtime_context),
+        specifier->alignas_specifier_capacity,
+        specifier->alignas_specifier_count + 1);
+    specifier->alignas_specifiers = pda_xreallocarray_in(
+        diagnostics(runtime_context), specifier->alignas_specifiers,
+        (size_t)capacity, sizeof(*specifier->alignas_specifiers));
+    specifier->alignas_specifier_capacity = capacity;
+  }
+  return &specifier->alignas_specifiers[
+      specifier->alignas_specifier_count++];
+}
+
 int psx_token_starts_type_name_syntax(
     token_t *token, const psx_name_classifier_t *name_classifier) {
   if (!token) return 0;
@@ -145,17 +171,16 @@ static void consume_declaration_alignas(
   const psx_decl_specifier_syntax_options_t *options =
       parse_context ? parse_context->options : NULL;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
-  if (!specifier || !options || specifier->alignas_specifier_count >= 8) {
-    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
-                 "declaration alignas limit exceeded");
-  }
+  if (!specifier || !options)
+    ps_diag_ctx_in(
+        diagnostics(runtime_context), current_token(runtime_context),
+        "declaration-syntax", "invalid declaration alignas context");
   tk_set_current_token_ctx(
       tk_ctx, current_token(runtime_context)->next);
   tk_expect_ctx(tk_ctx, '(');
   token_t *start = current_token(runtime_context);
   psx_parsed_alignas_t *alignas =
-      &specifier->alignas_specifiers[
-          specifier->alignas_specifier_count++];
+      append_declaration_alignas(specifier, runtime_context);
   *alignas = (psx_parsed_alignas_t){
       .diagnostic_token = start,
       .scope_seq = PSX_SCOPE_ID_INVALID,
@@ -1026,6 +1051,10 @@ void ps_dispose_decl_specifier_syntax(
       free(alignas->type_name);
     }
   }
+  free(specifier->alignas_specifiers);
+  specifier->alignas_specifiers = NULL;
+  specifier->alignas_specifier_count = 0;
+  specifier->alignas_specifier_capacity = 0;
   if (specifier->atomic_type_name) {
     psx_dispose_type_name_syntax(specifier->atomic_type_name);
     free(specifier->atomic_type_name);

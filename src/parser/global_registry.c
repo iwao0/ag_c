@@ -65,6 +65,30 @@ static void free_owned_names_until(
   }
 }
 
+static void free_string_literals_until(
+    psx_global_registry_t *registry, string_lit_t *stop) {
+  if (!registry) return;
+  while (registry->string_literals != stop) {
+    string_lit_t *literal = registry->string_literals;
+    if (!literal) break;
+    registry->string_literals = literal->next;
+    free(literal->label);
+    free(literal->str);
+    free(literal);
+  }
+}
+
+static void free_float_literals_until(
+    psx_global_registry_t *registry, float_lit_t *stop) {
+  if (!registry) return;
+  while (registry->float_literals != stop) {
+    float_lit_t *literal = registry->float_literals;
+    if (!literal) break;
+    registry->float_literals = literal->next;
+    free(literal);
+  }
+}
+
 psx_global_registry_t *ps_global_registry_create(
     const psx_semantic_type_table_t *semantic_types,
     psx_scope_graph_t *scope_graph) {
@@ -81,6 +105,8 @@ psx_global_registry_t *ps_global_registry_create(
 void ps_global_registry_destroy(psx_global_registry_t *registry) {
   if (!registry) return;
   free_global_registry_transaction(registry->active_transaction);
+  free_string_literals_until(registry, NULL);
+  free_float_literals_until(registry, NULL);
   free_owned_names_until(registry, NULL);
   free(registry);
 }
@@ -195,8 +221,8 @@ void psx_global_registry_checkpoint_rollback(
            transaction->global_snapshots;
        snapshot; snapshot = snapshot->next)
     *snapshot->global = snapshot->value;
-  registry->string_literals = transaction->string_literals;
-  registry->float_literals = transaction->float_literals;
+  free_string_literals_until(registry, transaction->string_literals);
+  free_float_literals_until(registry, transaction->float_literals);
   registry->next_string_literal_id = transaction->next_string_literal_id;
   registry->next_float_literal_id = transaction->next_float_literal_id;
   free_owned_names_until(registry, transaction->owned_names);
@@ -383,9 +409,9 @@ bool ps_iter_float_literals_in(
 void ps_global_registry_reset_translation_unit_in(
     psx_global_registry_t *registry) {
   if (!registry) return;
+  free_string_literals_until(registry, NULL);
+  free_float_literals_until(registry, NULL);
   free_owned_names_until(registry, NULL);
-  registry->string_literals = NULL;
-  registry->float_literals = NULL;
   registry->next_string_literal_id = 0;
   registry->next_float_literal_id = 0;
 }

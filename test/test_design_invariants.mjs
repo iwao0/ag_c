@@ -9884,8 +9884,20 @@ if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\b/.test(
     !/psx_parsed_type_name_t\s*\*type_name\s*;/.test(
       parsedAlignasDefinition,
     ) ||
-    !/psx_parsed_alignas_t\s+alignas_specifiers\s*\[8\]\s*;/.test(
+    /psx_parsed_alignas_t\s+alignas_specifiers\s*\[/.test(
       declarationSyntaxHeader,
+    ) ||
+    !/psx_parsed_alignas_t\s*\*alignas_specifiers\s*;/.test(
+      declarationSyntaxHeader,
+    ) ||
+    !/int\s+alignas_specifier_capacity\s*;/.test(
+      declarationSyntaxHeader,
+    ) ||
+    !/append_declaration_alignas\s*\([^]*?pda_next_cap_in\s*\([^]*?pda_xreallocarray_in\s*\(/.test(
+      parserDeclarationSyntaxSource,
+    ) ||
+    !/free\s*\(specifier->alignas_specifiers\)/.test(
+      parserDeclarationSyntaxSource,
     ) ||
     /alignas_expressions|alignas_expression_count/.test(
       declarationSyntaxHeader,
@@ -10031,6 +10043,28 @@ if (/\bps_type_new_[a-z0-9_]*\s*\(|\bps_node_bind_(?:type|qual_type)\s*\(|(?:->|
     )) {
   throw new Error(
     "expression parser must build typeless Syntax AST nodes without canonical type or literal-pool registration",
+  );
+}
+if (!/char\s*\*string_contents\s*=\s*malloc\s*\(/.test(
+      literalResolutionSource,
+    ) ||
+    !/memcpy\s*\(\s*string_contents,\s*literal->contents/.test(
+      literalResolutionSource,
+    ) ||
+    !/registered->str\s*=\s*string_contents/.test(
+      literalResolutionSource,
+    ) ||
+    !/free_string_literals_until\s*\([^]*?free\s*\(literal->label\)[^]*?free\s*\(literal->str\)[^]*?free\s*\(literal\)/.test(
+      globalRegistrySource,
+    ) ||
+    !/psx_global_registry_checkpoint_rollback\s*\([^]*?free_string_literals_until\s*\(\s*registry,\s*transaction->string_literals\s*\)/.test(
+      globalRegistrySource,
+    ) ||
+    !/ps_global_registry_reset_translation_unit_in\s*\([^]*?free_string_literals_until\s*\(\s*registry,\s*NULL\s*\)/.test(
+      globalRegistrySource,
+    )) {
+  throw new Error(
+    "persistent literal registries must own copied string contents across stream teardown and release them on rollback or reset",
   );
 }
 

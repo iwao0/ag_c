@@ -80,8 +80,9 @@ typedef struct {
   psx_parsed_type_name_t *atomic_type_name;
   token_t *diagnostic_token;
   psx_parsed_tag_action_t tag_action;
-  psx_parsed_alignas_t alignas_specifiers[8];
+  psx_parsed_alignas_t *alignas_specifiers;
   int alignas_specifier_count;
+  int alignas_specifier_capacity;
   unsigned char binding_events_recorded;
 } psx_parsed_decl_specifier_t;
 

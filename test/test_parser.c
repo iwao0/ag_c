@@ -8052,12 +8052,17 @@ static void test_global_registry_checkpoint_boundary(
       .name_len = (int)strlen("__checkpoint_added"),
   };
   ps_register_global_var_in(test_global_registry(test_suite_session), &added);
-  string_lit_t literal = {
-      .label = (char *)".L.checkpoint",
-      .str = (char *)"checkpoint",
-      .len = 10,
-  };
-  psx_register_string_lit_in(test_global_registry(test_suite_session), &literal);
+  string_lit_t *literal = calloc(1, sizeof(*literal));
+  ASSERT_TRUE(literal != NULL);
+  literal->label = malloc(sizeof(".L.checkpoint"));
+  literal->str = malloc(sizeof("checkpoint"));
+  ASSERT_TRUE(literal->label != NULL);
+  ASSERT_TRUE(literal->str != NULL);
+  memcpy(literal->label, ".L.checkpoint", sizeof(".L.checkpoint"));
+  memcpy(literal->str, "checkpoint", sizeof("checkpoint"));
+  literal->len = 10;
+  psx_register_string_lit_in(
+      test_global_registry(test_suite_session), literal);
   ASSERT_EQ(1, ps_global_registry_next_string_literal_id(
                    test_global_registry(test_suite_session)));
 
@@ -8071,7 +8076,8 @@ static void test_global_registry_checkpoint_boundary(
   ASSERT_TRUE(find_test_global_var_in(
       test_global_registry(test_suite_session), added.name, added.name_len) == NULL);
   ASSERT_TRUE(ps_find_string_lit_by_label_in(
-      test_global_registry(test_suite_session), literal.label) == NULL);
+      test_global_registry(test_suite_session),
+      (char *)".L.checkpoint") == NULL);
   ASSERT_TRUE(existing.is_extern_decl);
   ASSERT_TRUE(!existing.is_static);
   ASSERT_EQ(1, ps_global_registry_next_string_literal_id(

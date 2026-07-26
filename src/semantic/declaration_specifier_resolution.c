@@ -63,7 +63,11 @@ static int tag_action_syntax_supported(
 static int decl_specifier_syntax_supported(
     const psx_parsed_decl_specifier_t *specifier) {
   if (!specifier || specifier->alignas_specifier_count < 0 ||
-      specifier->alignas_specifier_count > 8 ||
+      specifier->alignas_specifier_capacity < 0 ||
+      specifier->alignas_specifier_count >
+          specifier->alignas_specifier_capacity ||
+      (specifier->alignas_specifier_count > 0 &&
+       !specifier->alignas_specifiers) ||
       !tag_action_syntax_supported(&specifier->tag_action))
     return 0;
   if (specifier->source == PSX_PARSED_DECL_TYPE_ATOMIC_TYPE_NAME &&

@@ -40,6 +40,7 @@ bool ps_iter_string_literals_in(
 bool ps_iter_float_literals_in(
     psx_global_registry_t *registry,
     float_lit_visitor_t visitor, void *user);
+/* The registry takes ownership of the literal and its heap-owned fields. */
 void psx_register_string_lit_in(
     psx_global_registry_t *registry, string_lit_t *literal);
 void psx_register_float_lit_in(

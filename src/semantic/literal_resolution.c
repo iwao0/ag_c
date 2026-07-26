@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "../parser/ast.h"
 #include "../parser/global_registry.h"
@@ -108,7 +109,10 @@ int psx_resolve_string_literal_value_in_contexts(
     const psx_string_literal_value_t *literal,
     psx_literal_semantic_resolution_t *resolution) {
   if (resolution) *resolution = (psx_literal_semantic_resolution_t){0};
-  if (!semantic_context || !literal || !resolution) return 0;
+  if (!semantic_context || !literal || !resolution ||
+      literal->length < 0 ||
+      (literal->length > 0 && !literal->contents))
+    return 0;
   int element_width = literal->character_width
                           ? literal->character_width
                           : TK_CHAR_WIDTH_CHAR;
@@ -133,14 +137,23 @@ int psx_resolve_string_literal_value_in_contexts(
         global_registry);
     int label_length = snprintf(NULL, 0, ".LC%d", id);
     char *string_label = calloc((size_t)label_length + 1, 1);
-    if (!string_label) {
+    char *string_contents =
+        malloc((size_t)literal->length + 1);
+    if (!string_label || !string_contents) {
+      free(string_contents);
+      free(string_label);
       free(registered);
       return 0;
     }
     snprintf(
         string_label, (size_t)label_length + 1, ".LC%d", id);
+    if (literal->length > 0)
+      memcpy(
+          string_contents, literal->contents,
+          (size_t)literal->length);
+    string_contents[literal->length] = '\0';
     registered->label = string_label;
-    registered->str = literal->contents;
+    registered->str = string_contents;
     registered->len = literal->length;
     registered->char_width = (tk_char_width_t)literal->character_width;
     registered->str_prefix_kind =
