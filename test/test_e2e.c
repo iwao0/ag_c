@@ -736,6 +736,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "stdio_snprintf_binary_halfway_rounding", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdio_snprintf_binary_halfway_rounding.c", 0, 0},
     {"stdheader", "stdio_snprintf_float_integer_digits", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdio_snprintf_float_integer_digits.c", 0, 0},
     {"stdheader", "stdio_snprintf_significant_rounding", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdio_snprintf_significant_rounding.c", 0, 0},
+    {"stdheader", "stdio_snprintf_hex_default_precision", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdio_snprintf_hex_default_precision.c", 0, 0},
     {"stdheader", "stdio_sprintf_formats", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdio_sprintf_formats.c", 0, 0},
     {"stdheader", "stdio_getline_decl", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdio_getline_decl.c", 0, 0},
     {"stdheader", "stdlib_malloc_free", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_malloc_free.c", 0, 0},

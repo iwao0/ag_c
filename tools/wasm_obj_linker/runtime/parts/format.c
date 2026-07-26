@@ -526,12 +526,22 @@ static void ag_rt_write_hex_float(char *buf, size_t size, int bounded, size_t *p
                                   double v, int precision, int upper, int alternate, int sign_ch) {
   const char *digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
   int exp = 0;
+  int default_precision = precision < 0;
+  int extra_zeros = 0;
   if (ag_rt_double_is_nan(v) || ag_rt_double_is_inf(v)) {
     ag_rt_write_fixed(buf, size, bounded, pos, v, precision, upper, alternate, sign_ch);
     return;
   }
-  if (precision < 0) precision = 13;
-  if (precision > 13) precision = 13;
+  if (default_precision) {
+    precision = 13;
+  } else {
+    if (precision > AG_RT_DECIMAL_FORMAT_MAX_PRECISION)
+      precision = AG_RT_DECIMAL_FORMAT_MAX_PRECISION;
+    if (precision > 13) {
+      extra_zeros = precision - 13;
+      precision = 13;
+    }
+  }
   if (ag_rt_double_is_negative(v)) {
     ag_rt_putc(buf, size, bounded, pos, '-');
     v = -v;
@@ -541,13 +551,13 @@ static void ag_rt_write_hex_float(char *buf, size_t size, int bounded, size_t *p
   ag_rt_putc(buf, size, bounded, pos, '0');
   ag_rt_putc(buf, size, bounded, pos, upper ? 'X' : 'x');
   if (v == 0.0) {
+    if (default_precision) precision = 0;
     ag_rt_putc(buf, size, bounded, pos, '0');
-    if (precision > 0 || alternate) {
+    if (precision > 0 || extra_zeros > 0 || alternate) {
       ag_rt_putc(buf, size, bounded, pos, '.');
     }
-    if (precision > 0) {
-      for (int i = 0; i < precision; i++) ag_rt_putc(buf, size, bounded, pos, '0');
-    }
+    for (int i = 0; i < precision + extra_zeros; i++)
+      ag_rt_putc(buf, size, bounded, pos, '0');
     ag_rt_write_hex_exp_suffix(buf, size, bounded, pos, 0, upper);
     return;
   }
@@ -561,17 +571,29 @@ static void ag_rt_write_hex_float(char *buf, size_t size, int bounded, size_t *p
   }
   unsigned long scale = 1;
   for (int i = 0; i < precision; i++) scale *= 16;
-  double frac_units_d = (v - 1.0) * (double)scale + 0.5;
-  unsigned long frac_units = (unsigned long)frac_units_d;
+  double frac_units_d = (v - 1.0) * (double)scale;
+  unsigned long frac_units;
+  if (default_precision) {
+    frac_units = (unsigned long)frac_units_d;
+    while (precision > 0 && (frac_units & 15u) == 0) {
+      frac_units /= 16;
+      scale /= 16;
+      precision--;
+    }
+  } else if (extra_zeros > 0) {
+    frac_units = (unsigned long)frac_units_d;
+  } else {
+    frac_units = (unsigned long)(frac_units_d + 0.5);
+  }
   if (frac_units >= scale) {
     frac_units = 0;
     exp++;
   }
   ag_rt_putc(buf, size, bounded, pos, '1');
-  if (precision > 0 || alternate) {
+  if (precision > 0 || extra_zeros > 0 || alternate) {
     unsigned long div = scale / 16;
     ag_rt_putc(buf, size, bounded, pos, '.');
-    if (precision == 0) {
+    if (precision == 0 && extra_zeros == 0) {
       ag_rt_write_hex_exp_suffix(buf, size, bounded, pos, exp, upper);
       return;
     }
@@ -581,6 +603,8 @@ static void ag_rt_write_hex_float(char *buf, size_t size, int bounded, size_t *p
       frac_units %= div;
       div /= 16;
     }
+    for (int i = 0; i < extra_zeros; i++)
+      ag_rt_putc(buf, size, bounded, pos, '0');
   }
   ag_rt_write_hex_exp_suffix(buf, size, bounded, pos, exp, upper);
 }
