@@ -33,6 +33,7 @@
 #include "semantic/syntax_typed_hir_resolution.h"
 #include "semantic/typed_hir_materialization.h"
 #include "semantic/parameter_declaration_resolution.h"
+#include "type_system/integer_conversion.h"
 
 
 #include <stdlib.h>
@@ -835,7 +836,8 @@ static int append_definition_parameter(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     psx_function_definition_pipeline_result_t *result, int *capacity,
-    const psx_parsed_function_parameter_t *parameter) {
+    const psx_parsed_function_parameter_t *parameter,
+    int apply_default_argument_promotions) {
   psx_qual_type_t base_qual_type =
       psx_apply_parsed_decl_specifier_qual_type_in_contexts(
           semantic_context, global_registry, local_registry,
@@ -897,10 +899,52 @@ static int append_definition_parameter(
         ps_ctx_diagnostics(semantic_context), result->parameter_qual_types,
         (size_t)*capacity, sizeof(*result->parameter_qual_types));
   }
+  psx_qual_type_t function_parameter_qual_type =
+      resolution.function_qual_type;
+  if (apply_default_argument_promotions) {
+    psx_type_shape_t parameter_shape = {0};
+    if (!psx_semantic_type_table_describe(
+            ps_ctx_semantic_type_table_in(semantic_context),
+            function_parameter_qual_type.type_id,
+            &parameter_shape)) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context),
+          parameter->declarator.diagnostic_token, "param",
+          "old-style function parameter type description failed");
+    }
+    if (parameter_shape.kind == PSX_TYPE_FLOAT &&
+        parameter_shape.floating_kind ==
+            PSX_FLOATING_KIND_FLOAT) {
+      function_parameter_qual_type =
+          ps_ctx_intern_floating_qual_type_in(
+              semantic_context, PSX_FLOATING_KIND_DOUBLE, 0);
+    } else {
+      psx_integer_conversion_t integer =
+          psx_integer_conversion_from_shape(&parameter_shape);
+      if (integer.is_integer && integer.rank < 3) {
+        psx_integer_conversion_t promoted =
+            psx_integer_promotion_for_data_layout(
+                integer, ps_ctx_data_layout(semantic_context));
+        function_parameter_qual_type =
+            ps_ctx_intern_integer_qual_type_in(
+                semantic_context, PSX_INTEGER_KIND_INT,
+                promoted.is_unsigned, 0);
+      }
+    }
+    function_parameter_qual_type.qualifiers =
+        PSX_TYPE_QUALIFIER_NONE;
+    if (function_parameter_qual_type.type_id ==
+        PSX_TYPE_ID_INVALID) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context),
+          parameter->declarator.diagnostic_token, "param",
+          "old-style function parameter promotion failed");
+    }
+  }
   if (!name) {
     result->parameter_vars[result->nargs] = NULL;
     result->parameter_qual_types[result->nargs] =
-        resolution.declaration_qual_type;
+        function_parameter_qual_type;
     result->nargs++;
     return 1;
   }
@@ -938,7 +982,7 @@ static int append_definition_parameter(
     ps_local_registry_mark_register(lowered);
   result->parameter_vars[result->nargs] = lowered;
   result->parameter_qual_types[result->nargs] =
-      resolution.declaration_qual_type;
+      function_parameter_qual_type;
   result->nargs++;
   return 0;
 }
@@ -983,6 +1027,9 @@ int psx_begin_function_definition_pipeline(
       primary_suffix->declarator_op_index;
   state->parameter_count = primary_suffix->parameters
                                ? primary_suffix->parameters->count : 0;
+  state->primary_is_identifier_list =
+      primary_suffix->parameters &&
+      primary_suffix->parameters->is_identifier_list;
   state->args_capacity = 16;
   result->parameter_vars = calloc(
       (size_t)state->args_capacity, sizeof(*result->parameter_vars));
@@ -999,7 +1046,8 @@ int psx_apply_function_definition_parameter_pipeline(
   int applied = append_definition_parameter(
       state->semantic_context, state->global_registry,
       state->local_registry, state->lowering_context, state->result,
-      &state->args_capacity, parameter);
+      &state->args_capacity, parameter,
+      state->primary_is_identifier_list);
   if (applied < 0) {
     if (state->parameter_count != 1) {
       ps_diag_ctx_in(
@@ -1043,7 +1091,9 @@ int psx_finish_function_definition_pipeline(
       ps_ctx_arena(state->semantic_context), primary,
       function_parameter_qual_types, result->nargs,
       primary->function_is_variadic,
-      state->parameter_count > 0 || primary->function_is_variadic);
+      !state->primary_is_identifier_list &&
+          (state->parameter_count > 0 ||
+           primary->function_is_variadic));
 
   result->function_qual_type = psx_resolve_decl_qual_type(
       &(psx_decl_type_request_t){

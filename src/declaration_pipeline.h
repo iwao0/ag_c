@@ -95,6 +95,7 @@ typedef struct {
   psx_function_definition_pipeline_result_t *result;
   int primary_function_op_index;
   int parameter_count;
+  int primary_is_identifier_list;
   int args_capacity;
 } psx_function_definition_pipeline_state_t;
 

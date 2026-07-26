@@ -49,8 +49,12 @@ static int validate_function_definition_parameter_vla_stars(
   const psx_parsed_function_parameters_t *parameters =
       primary_suffix ? primary_suffix->parameters : NULL;
   for (int i = 0; parameters && i < parameters->count; i++) {
+    psx_parsed_function_parameter_t parameter_storage;
+    if (!psx_function_definition_parameter_syntax_at(
+            parameters, i, &parameter_storage))
+      return 0;
     const psx_parsed_function_parameter_t *parameter =
-        &parameters->items[i];
+        &parameter_storage;
     if (!parsed_declarator_has_explicit_vla_star(
             &parameter->declarator))
       continue;
@@ -154,8 +158,17 @@ static int resolve_function_definition_header(
   const psx_parsed_function_parameters_t *parameters =
       primary_suffix ? primary_suffix->parameters : NULL;
   for (int i = 0; parameters && i < parameters->count; i++) {
+    psx_parsed_function_parameter_t parameter_storage;
+    if (!psx_function_definition_parameter_syntax_at(
+            parameters, i, &parameter_storage)) {
+      ps_diag_ctx_in(
+          diagnostics, definition->declarator.diagnostic_token,
+          "funcdef",
+          "old-style function parameter declaration lookup failed");
+      return 0;
+    }
     const psx_parsed_function_parameter_t *parameter =
-        &parameters->items[i];
+        &parameter_storage;
     if (!psx_apply_function_definition_parameter_pipeline(
             &pipeline, parameter)) {
       ps_diag_ctx_in(

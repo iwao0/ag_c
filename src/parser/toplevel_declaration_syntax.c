@@ -3,6 +3,7 @@
 #include "core.h"
 #include "diag.h"
 #include "dynarray.h"
+#include "function_parameter_syntax.h"
 #include "runtime_context.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
@@ -81,6 +82,46 @@ static int parse_declarator_head(
   return 1;
 }
 
+static psx_parsed_function_parameters_t *
+outermost_function_parameters(
+    psx_parsed_declarator_t *declarator) {
+  const psx_parsed_function_suffix_t *suffix =
+      psx_declarator_outermost_function_suffix(declarator);
+  return suffix ? suffix->parameters : NULL;
+}
+
+static int declarator_has_nonouter_identifier_list(
+    const psx_parsed_declarator_t *declarator,
+    const psx_parsed_function_parameters_t *outermost) {
+  for (int i = 0;
+       declarator && i < declarator->function_suffix_count; i++) {
+    const psx_parsed_function_parameters_t *parameters =
+        declarator->function_suffixes[i].parameters;
+    if (parameters && parameters->is_identifier_list &&
+        parameters != outermost)
+      return 1;
+  }
+  return 0;
+}
+
+static int declarator_has_identifier_list(
+    const psx_parsed_declarator_t *declarator) {
+  for (int i = 0;
+       declarator && i < declarator->function_suffix_count; i++) {
+    const psx_parsed_function_parameters_t *parameters =
+        declarator->function_suffixes[i].parameters;
+    if (parameters && parameters->is_identifier_list)
+      return 1;
+  }
+  return 0;
+}
+
+static int token_can_follow_nondefinition_declarator(
+    token_kind_t kind) {
+  return kind == TK_SEMI || kind == TK_COMMA ||
+         kind == TK_ASSIGN;
+}
+
 int psx_parse_toplevel_declaration_head_syntax_with_context(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_syntax_context_t *context) {
@@ -131,6 +172,26 @@ int psx_parse_toplevel_declaration_head_syntax_with_context(
       !parse_declarator_head(
           declaration, &syntax_options))
     return 0;
+  if (!declaration->is_standalone_tag) {
+    psx_parsed_function_parameters_t *parameters =
+        outermost_function_parameters(
+            &declaration->declarators[0]);
+    if (declarator_has_nonouter_identifier_list(
+            &declaration->declarators[0], parameters)) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context),
+          declaration->declarators[0].diagnostic_token, "decl",
+          "an identifier list is only permitted in the outermost "
+          "declarator of an old-style function definition");
+      return 0;
+    }
+    if (parameters && parameters->is_identifier_list &&
+        !token_can_follow_nondefinition_declarator(
+            current_token(runtime_context)->kind) &&
+        !psx_parse_old_style_function_parameter_declarations_syntax_in_contexts(
+            parameters, &syntax_options))
+      return 0;
+  }
   return 1;
 }
 
@@ -169,6 +230,14 @@ int psx_finish_toplevel_declaration_syntax_with_context(
   for (;;) {
     psx_parsed_declarator_t *declarator =
         &declaration->declarators[declaration->declarator_count - 1];
+    if (declarator_has_identifier_list(declarator)) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context),
+          declarator->diagnostic_token, "decl",
+          "an identifier list is only permitted in an old-style "
+          "function definition");
+      return 0;
+    }
     psx_parsed_initializer_t *initializer =
         &declaration->initializers[declaration->declarator_count - 1];
     psx_prepare_optional_initializer_syntax(

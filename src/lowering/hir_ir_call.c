@@ -23,6 +23,15 @@ int hir_ir_setup_parameter_bindings(
     }
     ir_mir_type_info_t type = hir_ir_classify_node_type(
         context, parameter);
+    ir_mir_type_context_t type_context = {
+        .semantic_types = context->options->semantic_types,
+        .record_layouts = context->options->record_layouts,
+        .data_layout =
+            ag_target_info_data_layout(context->options->target),
+    };
+    ir_mir_type_info_t incoming_type =
+        ir_mir_classify_type_id(
+            &type_context, function_type->params[i].type_id);
     if ((!hir_ir_is_scalar_value_type(type) &&
          !hir_ir_is_complex_type(type) &&
          type.type_class != IR_MIR_TYPE_AGGREGATE) ||
@@ -42,14 +51,58 @@ int hir_ir_setup_parameter_bindings(
     int pointer = hir_ir_local_address_with_minimum(
         context, parameter, minimum_size, minimum_align);
     if (pointer < 0) return 0;
+    int binding_pointer = pointer;
+    int needs_assignment_conversion =
+        function_type->params[i].type_id !=
+            psx_hir_node_qual_type(parameter).type_id;
+    if (needs_assignment_conversion) {
+      if (!hir_ir_is_scalar_value_type(incoming_type) ||
+          !hir_ir_is_scalar_value_type(type) ||
+          incoming_type.source_size <= 0) {
+        context->status = IR_HIR_BUILD_UNSUPPORTED;
+        return 0;
+      }
+      int incoming_alignment =
+          incoming_type.source_size >= 8 ? 8
+          : incoming_type.source_size >= 4 ? 4
+          : incoming_type.source_size >= 2 ? 2 : 1;
+      binding_pointer = hir_ir_allocate_scalar_temp(
+          context, incoming_type.source_size, incoming_alignment);
+      if (binding_pointer < 0) return 0;
+    }
     ir_inst_t *binding = ir_inst_new(IR_PARAM_BIND);
     if (!binding) {
       context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
       return 0;
     }
-    binding->src1 = ir_val_vreg(pointer, IR_TY_PTR);
+    binding->src1 = ir_val_vreg(binding_pointer, IR_TY_PTR);
     binding->parameter_index = i;
     if (!hir_ir_append_instruction(context, binding)) return 0;
+    if (needs_assignment_conversion) {
+      int incoming_value = hir_ir_new_vreg(context);
+      if (incoming_value < 0) return 0;
+      ir_inst_t *load = ir_inst_new(IR_LOAD);
+      if (!load) {
+        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+        return 0;
+      }
+      load->dst = ir_val_vreg(
+          incoming_value,
+          hir_ir_scalar_storage_type(incoming_type));
+      load->src1 =
+          ir_val_vreg(binding_pointer, IR_TY_PTR);
+      load->is_unsigned = incoming_type.is_unsigned ? 1 : 0;
+      if (!hir_ir_append_instruction(context, load)) return 0;
+      ir_val_t converted =
+          hir_ir_coerce_direct_value_to_qual_type(
+              context, load->dst, incoming_type, type,
+              psx_hir_node_qual_type(parameter));
+      if (context->status != IR_HIR_BUILD_OK ||
+          !hir_ir_store_direct_value(
+              context, ir_val_vreg(pointer, IR_TY_PTR),
+              converted))
+        return 0;
+    }
   }
   return 1;
 }

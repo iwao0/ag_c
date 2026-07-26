@@ -106,4 +106,18 @@ void psx_record_function_definition_declarator_binding_events(
   }
   psx_record_function_parameter_binding_events(
       primary->parameters, name_classifier);
+  const psx_parsed_function_parameters_t *parameters =
+      primary->parameters;
+  for (int d = 0;
+       parameters && parameters->is_identifier_list &&
+       d < parameters->old_style_declaration_count;
+       d++) {
+    const psx_parsed_old_style_parameter_declaration_t *declaration =
+        &parameters->old_style_declarations[d];
+    psx_record_decl_specifier_binding_events(
+        &declaration->specifier, name_classifier);
+    for (int i = 0; i < declaration->declarator_count; i++)
+      psx_record_declarator_binding_events(
+          &declaration->declarators[i], name_classifier);
+  }
 }

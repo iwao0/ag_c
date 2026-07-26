@@ -699,7 +699,7 @@ int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_context
   if (!declarator || !options || !options->runtime_context)
     return 0;
   int parsed = parse_declarator_syntax_tree_into(
-      declarator, 0, NULL, options, 0, 0);
+      declarator, 0, NULL, options, 1, 0);
   if (parsed)
     psx_materialize_declarator_expression_syntax(declarator, options);
   return parsed;
