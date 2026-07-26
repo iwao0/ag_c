@@ -233,6 +233,22 @@ int value[const _Atomic 1];
   return value[0];
 }
 
+int decrement_register_atomic(value)
+register _Atomic int value;
+{
+  return --value;
+}
+
+struct Pair reverse_register_atomic_pair(
+    _Atomic(struct Pair));
+struct Pair reverse_register_atomic_pair(value)
+register _Atomic(struct Pair) value;
+{
+  struct Pair snapshot = value;
+  value = (struct Pair){snapshot.right, snapshot.left};
+  return value;
+}
+
 int main(void) {
   int values[] = {3, 5, 7};
   int matrix[2][3] = {
@@ -240,6 +256,8 @@ int main(void) {
       {19, 23, 29},
   };
   struct Pair pair = {11, 13};
+  struct Pair reversed_atomic_pair =
+      reverse_register_atomic_pair((struct Pair){17, 19});
   union Number number = {31};
   atomic_callback_t *atomic_callback = compatible_atomic_int;
   plain_callback_t *plain_callback = compatible_const;
@@ -255,6 +273,8 @@ int main(void) {
   assert(apply_variadic(add_one_variadic, 41) == 42);
   assert(variadic_prefix(42, 1, 2) == 42);
   assert(pair_sum(pair) == 24);
+  assert(reversed_atomic_pair.left == 19 &&
+         reversed_atomic_pair.right == 17);
   assert(integer_value(number) == 31);
   assert(sum_pair(17, 19) == 36);
   assert(same_declaration_vla(values, 3) == 7);
@@ -270,6 +290,7 @@ int main(void) {
   assert(compatible_atomic_short(19) == 19);
   assert(compatible_atomic_pointer(values) == 3);
   assert(compatible_atomic_array(values) == 3);
+  assert(decrement_register_atomic(43) == 42);
   assert(atomic_callback(29) == 29);
   assert(_Generic(atomic_callback,
       atomic_callback_t *: 1,

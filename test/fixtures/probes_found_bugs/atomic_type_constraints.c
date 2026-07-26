@@ -29,6 +29,11 @@ static int read_atomic_unspecified(int values[_Atomic]) {
   return values[0];
 }
 
+static int bump_register_atomic(register _Atomic int value) {
+  value += 2;
+  return ++value;
+}
+
 int main(void) {
   int value = 41;
   int * _Atomic atomic_pointer = &value;
@@ -52,6 +57,7 @@ int main(void) {
   assert(atomic_array_callback(values) == 13);
   assert(read_static_atomic_bound(values) == 13);
   assert(read_atomic_unspecified(values) == 13);
+  assert(bump_register_atomic(39) == 42);
   assert(result == 7);
   assert(_Generic(1, _Atomic(int): 1, default: 2) == 2);
   assert(_Generic(atomic_value,

@@ -99,6 +99,22 @@ static int is_words4(
          value.c == c && value.d == d;
 }
 
+static struct bytes3 rotate_register_atomic_bytes(
+    register _Atomic(struct bytes3) value) {
+  struct bytes3 snapshot = value;
+  value = (struct bytes3){
+      snapshot.b, snapshot.c, snapshot.a};
+  return value;
+}
+
+static struct words3 rotate_register_atomic_words(
+    register _Atomic(struct words3) value) {
+  struct words3 snapshot = value;
+  value = (struct words3){
+      snapshot.b, snapshot.c, snapshot.a};
+  return value;
+}
+
 static _Atomic(struct pair) *selected_pair(void) {
   lhs_evaluations++;
   return &pair_slots[1];
@@ -124,6 +140,10 @@ int main(void) {
   struct words4 words4 = global_words4;
   union word word = global_word;
   union wide wide = global_wide;
+  struct bytes3 register_bytes = rotate_register_atomic_bytes(
+      (struct bytes3){21, 22, 23});
+  struct words3 register_words = rotate_register_atomic_words(
+      (struct words3){31, 32, 33});
 
   assert(byte1.a == 1);
   assert(bytes2.a == 2 && bytes2.b == 3);
@@ -136,6 +156,9 @@ int main(void) {
   assert(word.bits == 0x12345678u);
   assert(wide.values[0] == 0x1122334455667788ULL);
   assert(wide.values[1] == 0x99aabbccddeeff00ULL);
+  assert(register_bytes.a == 22 && register_bytes.b == 23 &&
+         register_bytes.c == 21);
+  assert(is_words3(register_words, 32, 33, 31));
 
   byte1 = (global_byte1 = (struct byte1){14});
   bytes2 = (global_bytes2 = (struct bytes2){15, 16});

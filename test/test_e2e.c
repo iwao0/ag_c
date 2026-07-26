@@ -2216,6 +2216,17 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"address_of_register_parameter_rejected",
      "static int read(register int value) { return &value != 0; } int main(void) { return read(1); }",
      "E3119"},
+    {"address_of_register_atomic_parameter_rejected",
+     "static int read(register _Atomic int value) "
+     "{ return *&value; } "
+     "int main(void) { return read(1); }",
+     "E3119"},
+    {"address_of_register_atomic_aggregate_parameter_rejected",
+     "struct pair { int left; int right; }; "
+     "static int read(register _Atomic(struct pair) value) "
+     "{ return &value != 0; } "
+     "int main(void) { return read((struct pair){1, 2}); }",
+     "E3119"},
     {"address_of_register_member_rejected",
      "struct pair { int first; int second; }; int main(void) { register struct pair value = {1, 2}; return &value.second != 0; }",
      "E3119"},
