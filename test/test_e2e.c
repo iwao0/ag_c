@@ -2659,6 +2659,13 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "struct HeaderStruct { int member; } value; "
      "{ struct HeaderStruct local; return 0; }",
      "E3064"},
+    {"old_style_parameter_later_bound_identifier_rejected",
+     "int matrix(values, rows, columns) "
+     "int values[rows][columns]; "
+     "int rows; "
+     "int columns; "
+     "{ return 0; }",
+     "E3066"},
     {"c11_block_implicit_int_rejected",
      "int block_scope(void) { static local; return 0; }",
      "E3088"},

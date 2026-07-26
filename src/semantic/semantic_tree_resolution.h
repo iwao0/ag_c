@@ -9,10 +9,16 @@ typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
 typedef struct psx_parsed_function_definition_t
     psx_parsed_function_definition_t;
+typedef struct psx_resolved_hir_build_failure_t
+    psx_resolved_hir_build_failure_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct node_t node_t;
 typedef struct token_t token_t;
 
+int psx_diagnose_syntax_typed_hir_rejection_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_resolved_hir_build_failure_t *failure,
+    const token_t *fallback_diag_tok);
 int psx_resolve_parsed_function_hir_from_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

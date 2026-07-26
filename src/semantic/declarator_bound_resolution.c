@@ -2,6 +2,7 @@
 
 #include "../diag/diag.h"
 #include "../parser/semantic_ctx.h"
+#include "semantic_tree_resolution.h"
 #include "syntax_typed_hir_resolution.h"
 #include "typed_hir_materialization.h"
 
@@ -17,7 +18,6 @@ int psx_resolve_declarator_bound_in_contexts(
   if (!semantic_context || !global_registry || !local_registry ||
       !syntax_expression || !resolution)
     return 0;
-  (void)fallback_diag_tok;
   psx_resolved_hir_build_failure_t failure;
   psx_syntax_integer_constant_result_t constant_result;
   psx_syntax_typed_hir_resolution_status_t status =
@@ -27,6 +27,10 @@ int psx_resolve_declarator_bound_in_contexts(
           &constant_result, &failure);
   if (status != PSX_SYNTAX_TYPED_HIR_RESOLVED ||
       !resolution->typed_expression) {
+    if (status == PSX_SYNTAX_TYPED_HIR_REJECTED &&
+        psx_diagnose_syntax_typed_hir_rejection_in_context(
+            semantic_context, &failure, fallback_diag_tok))
+      return 0;
     ag_diagnostic_context_t *diagnostics =
         ps_ctx_diagnostics(semantic_context);
     diag_emit_internalf_in(

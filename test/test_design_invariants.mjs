@@ -5197,7 +5197,7 @@ if (directFunctionRejections.length === 0 ||
       (name) => !syntaxTypedHirResolutionSource.includes(name) ||
                 !semanticTreeResolutionSource.includes(name),
     ) ||
-    !/resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?diagnose_direct_syntax_rejection\s*\(/.test(
+    !/resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?psx_diagnose_syntax_typed_hir_rejection_in_context\s*\(/.test(
       semanticTreeResolutionSource,
     ) ||
     /psx_legacy_syntax_diagnostics_accept_/.test(
@@ -5598,6 +5598,12 @@ if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
     ) ||
     !/psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
       declaratorBoundResolutionSource,
+    ) ||
+    !/status\s*==\s*PSX_SYNTAX_TYPED_HIR_REJECTED\s*&&[^]*?psx_diagnose_syntax_typed_hir_rejection_in_context\s*\(/.test(
+      declaratorBoundResolutionSource,
+    ) ||
+    !/int\s+psx_diagnose_syntax_typed_hir_rejection_in_context\s*\(/.test(
+      semanticTreeResolutionSource,
     ) ||
     /psx_resolution_work_tree_|psx_bind_identifier_tree|psx_semantic_resolve_tree|psx_typed_hir_tree_materialize/.test(
       declaratorBoundResolutionSource,
@@ -11371,7 +11377,7 @@ const directInitializerTypedHirDispatch =
   );
 const directDiagnosticDispatch =
   semanticTreeResolutionSource.indexOf(
-    "diagnose_direct_syntax_rejection",
+    "psx_diagnose_syntax_typed_hir_rejection_in_context",
     nonfunctionTypedResolutionStart,
   );
 if (nonfunctionTypedResolutionStart < 0 ||
@@ -11521,7 +11527,7 @@ const directFunctionDispatch = semanticTreeResolutionSource.indexOf(
   directFunctionDispatchStart,
 );
 const directFunctionDiagnosticDispatch = semanticTreeResolutionSource.indexOf(
-  "diagnose_direct_syntax_rejection",
+  "psx_diagnose_syntax_typed_hir_rejection_in_context",
   directFunctionDispatchStart,
 );
 if (!/psx_resolve_syntax_function_direct_to_typed_hir_in_contexts\s*\(/.test(
@@ -11897,7 +11903,7 @@ if (remainingMutableCompatibilitySources.length > 0 ||
     !/psx_resolve_initializer_hir_from_syntax_in_contexts\s*\(/.test(
       semanticTreeResolutionHeader,
     ) ||
-    !/diagnose_direct_syntax_rejection\s*\(/.test(
+    !/psx_diagnose_syntax_typed_hir_rejection_in_context\s*\(/.test(
       semanticTreeResolutionSource,
     ) ||
     /parser\/|\bnode_t\b|\bnode_kind_t\b/.test(resolvedTreeHeader) ||

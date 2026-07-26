@@ -32,7 +32,7 @@ static token_kind_t aggregate_token_kind(psx_type_kind_t type_kind) {
                                      : TK_EOF;
 }
 
-static int diagnose_direct_syntax_rejection(
+int psx_diagnose_syntax_typed_hir_rejection_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_resolved_hir_build_failure_t *failure,
     const token_t *fallback_diag_tok) {
@@ -606,7 +606,7 @@ resolve_parsed_function_typed_hir_from_syntax_in_contexts(
         syntax_function->declarator.identifier->str);
     return NULL;
   }
-  if (diagnose_direct_syntax_rejection(
+  if (psx_diagnose_syntax_typed_hir_rejection_in_context(
           semantic_context, &direct_failure, fallback_diag_tok))
     return NULL;
   ag_diagnostic_context_t *diagnostics =
@@ -662,7 +662,7 @@ resolve_nonfunction_typed_hir_from_syntax_in_contexts(
         direct_failure.source_node_kind);
     return NULL;
   }
-  if (diagnose_direct_syntax_rejection(
+  if (psx_diagnose_syntax_typed_hir_rejection_in_context(
           semantic_context, &direct_failure, fallback_diag_tok))
     return NULL;
   ag_diagnostic_context_t *diagnostics =
