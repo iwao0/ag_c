@@ -2780,6 +2780,25 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "int atomic_identity(_Atomic int value) { return value; } "
      "int main(void) { return apply(atomic_identity, 42); }",
      "E3120"},
+    {"atomic_aggregate_callback_assignment_rejected",
+     "struct bytes3 { unsigned char a, b, c; }; "
+     "typedef struct bytes3 atomic_callback("
+     "_Atomic(struct bytes3)); "
+     "struct bytes3 plain(struct bytes3 value) { return value; } "
+     "int main(void) { atomic_callback *callback = plain; "
+     "return callback != 0; }",
+     "E3099"},
+    {"atomic_aggregate_callback_return_rejected",
+     "struct bytes3 { unsigned char a, b, c; }; "
+     "typedef struct bytes3 atomic_callback("
+     "_Atomic(struct bytes3)); "
+     "typedef struct bytes3 plain_callback(struct bytes3); "
+     "struct bytes3 atomic_identity(_Atomic(struct bytes3) value) "
+     "{ return value; } "
+     "plain_callback *pick_plain(void) "
+     "{ return atomic_identity; } "
+     "int main(void) { return pick_plain() != 0; }",
+     "E3108"},
     {"old_style_parameter_enum_constant_scope_rejected",
      "int old_style(value) "
      "enum HeaderEnum { HEADER_ENUM_VALUE = 1 } value; "

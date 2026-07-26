@@ -6,6 +6,9 @@ struct Pair {
   int right;
 };
 
+typedef struct Pair atomic_pair_callback_t(
+    _Atomic(struct Pair));
+
 union Number {
   int integer;
   float floating;
@@ -249,6 +252,10 @@ register _Atomic(struct Pair) value;
   return value;
 }
 
+static atomic_pair_callback_t *select_atomic_pair_callback(void) {
+  return reverse_register_atomic_pair;
+}
+
 int main(void) {
   int values[] = {3, 5, 7};
   int matrix[2][3] = {
@@ -258,6 +265,12 @@ int main(void) {
   struct Pair pair = {11, 13};
   struct Pair reversed_atomic_pair =
       reverse_register_atomic_pair((struct Pair){17, 19});
+  atomic_pair_callback_t *atomic_pair_callback =
+      reverse_register_atomic_pair;
+  struct Pair callback_atomic_pair =
+      atomic_pair_callback((struct Pair){23, 29});
+  struct Pair returned_callback_atomic_pair =
+      select_atomic_pair_callback()((struct Pair){31, 37});
   union Number number = {31};
   atomic_callback_t *atomic_callback = compatible_atomic_int;
   plain_callback_t *plain_callback = compatible_const;
@@ -275,6 +288,10 @@ int main(void) {
   assert(pair_sum(pair) == 24);
   assert(reversed_atomic_pair.left == 19 &&
          reversed_atomic_pair.right == 17);
+  assert(callback_atomic_pair.left == 29 &&
+         callback_atomic_pair.right == 23);
+  assert(returned_callback_atomic_pair.left == 37 &&
+         returned_callback_atomic_pair.right == 31);
   assert(integer_value(number) == 31);
   assert(sum_pair(17, 19) == 36);
   assert(same_declaration_vla(values, 3) == 7);

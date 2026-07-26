@@ -36,6 +36,11 @@ struct words3 {
   unsigned int c;
 };
 
+typedef struct bytes3 atomic_bytes_callback_t(
+    _Atomic(struct bytes3));
+typedef struct words3 atomic_words_callback_t(
+    _Atomic(struct words3));
+
 struct words4 {
   unsigned int a;
   unsigned int b;
@@ -115,6 +120,24 @@ static struct words3 rotate_register_atomic_words(
   return value;
 }
 
+static struct bytes3 apply_atomic_bytes(
+    atomic_bytes_callback_t *callback, struct bytes3 value) {
+  return callback(value);
+}
+
+static struct words3 apply_atomic_words(
+    atomic_words_callback_t *callback, struct words3 value) {
+  return callback(value);
+}
+
+static atomic_bytes_callback_t *select_atomic_bytes_callback(void) {
+  return rotate_register_atomic_bytes;
+}
+
+static atomic_words_callback_t *select_atomic_words_callback(void) {
+  return rotate_register_atomic_words;
+}
+
 static _Atomic(struct pair) *selected_pair(void) {
   lhs_evaluations++;
   return &pair_slots[1];
@@ -144,6 +167,20 @@ int main(void) {
       (struct bytes3){21, 22, 23});
   struct words3 register_words = rotate_register_atomic_words(
       (struct words3){31, 32, 33});
+  atomic_bytes_callback_t *bytes_callback =
+      rotate_register_atomic_bytes;
+  atomic_words_callback_t *words_callback =
+      rotate_register_atomic_words;
+  struct bytes3 callback_bytes = apply_atomic_bytes(
+      bytes_callback, (struct bytes3){41, 42, 43});
+  struct words3 callback_words = apply_atomic_words(
+      words_callback, (struct words3){51, 52, 53});
+  struct bytes3 returned_callback_bytes =
+      select_atomic_bytes_callback()(
+          (struct bytes3){61, 62, 63});
+  struct words3 returned_callback_words =
+      select_atomic_words_callback()(
+          (struct words3){71, 72, 73});
 
   assert(byte1.a == 1);
   assert(bytes2.a == 2 && bytes2.b == 3);
@@ -159,6 +196,13 @@ int main(void) {
   assert(register_bytes.a == 22 && register_bytes.b == 23 &&
          register_bytes.c == 21);
   assert(is_words3(register_words, 32, 33, 31));
+  assert(callback_bytes.a == 42 && callback_bytes.b == 43 &&
+         callback_bytes.c == 41);
+  assert(is_words3(callback_words, 52, 53, 51));
+  assert(returned_callback_bytes.a == 62 &&
+         returned_callback_bytes.b == 63 &&
+         returned_callback_bytes.c == 61);
+  assert(is_words3(returned_callback_words, 72, 73, 71));
 
   byte1 = (global_byte1 = (struct byte1){14});
   bytes2 = (global_bytes2 = (struct bytes2){15, 16});
