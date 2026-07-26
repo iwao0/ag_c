@@ -82,6 +82,12 @@ int left, right;
   return left + right;
 }
 
+int same_declaration_vla(values, count)
+int count, values[count];
+{
+  return values[count - 1];
+}
+
 int compatible_integer(int, int);
 int compatible_integer(left, right)
 char left;
@@ -117,6 +123,7 @@ int main(void) {
   assert(apply(add_one, 41) == 42);
   assert(pair_sum(pair) == 24);
   assert(sum_pair(17, 19) == 36);
+  assert(same_declaration_vla(values, 3) == 7);
   assert(compatible_integer(257, 65538) == 3);
   assert(compatible_float(2.5f) == 2.5);
   assert(compatible_const(23) == 23);

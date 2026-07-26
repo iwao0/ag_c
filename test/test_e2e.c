@@ -2666,6 +2666,11 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "int columns; "
      "{ return 0; }",
      "E3066"},
+    {"old_style_same_declaration_later_bound_identifier_rejected",
+     "int last_value(values, rows) "
+     "int values[rows], rows; "
+     "{ return values[0]; }",
+     "E3066"},
     {"c11_block_implicit_int_rejected",
      "int block_scope(void) { static local; return 0; }",
      "E3088"},
