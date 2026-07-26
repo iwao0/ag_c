@@ -2811,6 +2811,31 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "plain_callback *right = plain_identity; "
      "return (1 ? left : right) != 0; }",
      "E3101"},
+    {"atomic_aggregate_callback_pointer_to_pointer_rejected",
+     "struct words3 { unsigned int a, b, c; }; "
+     "typedef struct words3 atomic_callback("
+     "_Atomic(struct words3)); "
+     "typedef struct words3 plain_callback(struct words3); "
+     "struct words3 atomic_identity(_Atomic(struct words3) value) "
+     "{ return value; } "
+     "struct words3 plain_identity(struct words3 value) "
+     "{ return value; } "
+     "int main(void) { "
+     "atomic_callback *atomic_value = atomic_identity; "
+     "plain_callback *plain_value = plain_identity; "
+     "atomic_callback **invalid = &plain_value; "
+     "return invalid == &atomic_value; }",
+     "E3099"},
+    {"atomic_aggregate_variadic_callback_assignment_rejected",
+     "struct words3 { unsigned int a, b, c; }; "
+     "typedef struct words3 variadic_callback("
+     "_Atomic(struct words3), ...); "
+     "struct words3 fixed_identity(_Atomic(struct words3) value) "
+     "{ return value; } "
+     "int main(void) { "
+     "variadic_callback *invalid = fixed_identity; "
+     "return invalid != 0; }",
+     "E3099"},
     {"atomic_aggregate_callback_return_rejected",
      "struct bytes3 { unsigned char a, b, c; }; "
      "typedef struct bytes3 atomic_callback("

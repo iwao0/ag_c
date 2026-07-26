@@ -1,6 +1,7 @@
 // Atomic aggregate load/store, promotion, and lvalue-path boundaries.
 // Expected: exit=0
 #include <assert.h>
+#include <stdarg.h>
 
 struct byte1 {
   unsigned char a;
@@ -40,6 +41,9 @@ typedef struct bytes3 atomic_bytes_callback_t(
     _Atomic(struct bytes3));
 typedef struct words3 atomic_words_callback_t(
     _Atomic(struct words3));
+typedef struct words3 mixed_atomic_callback_t(
+    _Atomic(struct bytes3), int,
+    _Atomic(struct words3), ...);
 
 struct callback_holder {
   atomic_bytes_callback_t *bytes;
@@ -131,6 +135,23 @@ static struct words3 reverse_register_atomic_words(
   value = (struct words3){
       snapshot.c, snapshot.b, snapshot.a};
   return value;
+}
+
+static struct words3 combine_atomic_words_variadic(
+    _Atomic(struct bytes3) small, int bias,
+    _Atomic(struct words3) wide, ...) {
+  struct bytes3 small_snapshot = small;
+  struct words3 wide_snapshot = wide;
+  va_list arguments;
+  va_start(arguments, wide);
+  int extra = va_arg(arguments, int);
+  va_end(arguments);
+  return (struct words3){
+      wide_snapshot.a + small_snapshot.a +
+          (unsigned int)bias,
+      wide_snapshot.b + small_snapshot.b +
+          (unsigned int)extra,
+      wide_snapshot.c + small_snapshot.c};
 }
 
 static atomic_bytes_callback_t *global_bytes_callback =
@@ -244,6 +265,38 @@ int main(void) {
            ? expression_callback
            : rotate_register_atomic_words)(
           (struct words3){161, 162, 163});
+  atomic_words_callback_t **words_callback_pointer =
+      &words_callback;
+  struct words3 pointer_callback_words =
+      (*words_callback_pointer)(
+          (struct words3){171, 172, 173});
+  struct words3 dereferenced_callback_words =
+      (*words_callback)(
+          (struct words3){181, 182, 183});
+  struct words3 double_dereferenced_callback_words =
+      (**words_callback)(
+          (struct words3){191, 192, 193});
+  atomic_words_callback_t **compound_callbacks =
+      (atomic_words_callback_t *[2]){
+          rotate_register_atomic_words,
+          reverse_register_atomic_words};
+  struct words3 compound_callback_words =
+      compound_callbacks[1](
+          (struct words3){201, 202, 203});
+  atomic_words_callback_t *(*callback_array_pointer)[2] =
+      &(atomic_words_callback_t *[2]){
+          rotate_register_atomic_words,
+          reverse_register_atomic_words};
+  struct words3 array_pointer_callback_words =
+      (*callback_array_pointer)[0](
+          (struct words3){211, 212, 213});
+  mixed_atomic_callback_t *mixed_callback =
+      combine_atomic_words_variadic;
+  struct words3 mixed_variadic_callback_words =
+      mixed_callback(
+          (struct bytes3){1, 2, 3}, 10,
+          (struct words3){220, 230, 240},
+          (unsigned char)20);
 
   assert(byte1.a == 1);
   assert(bytes2.a == 2 && bytes2.b == 3);
@@ -285,6 +338,18 @@ int main(void) {
       assignment_callback_words, 153, 152, 151));
   assert(is_words3(
       pointer_conditional_callback_words, 162, 163, 161));
+  assert(is_words3(
+      pointer_callback_words, 172, 173, 171));
+  assert(is_words3(
+      dereferenced_callback_words, 182, 183, 181));
+  assert(is_words3(
+      double_dereferenced_callback_words, 192, 193, 191));
+  assert(is_words3(
+      compound_callback_words, 203, 202, 201));
+  assert(is_words3(
+      array_pointer_callback_words, 212, 213, 211));
+  assert(is_words3(
+      mixed_variadic_callback_words, 231, 252, 243));
   assert(callback_expression_evaluations == 1);
 
   byte1 = (global_byte1 = (struct byte1){14});
