@@ -4812,6 +4812,290 @@ static void test_typed_hir_returned_atomic_aggregate_callback_lowering_without_a
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_typed_hir_atomic_aggregate_callback_relocation_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_atomic_aggregate_callback_relocation_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
+      "struct words3 { unsigned int a, b, c; }; "
+      "typedef struct words3 callback_t(_Atomic(struct words3)); "
+      "static struct words3 rotate(_Atomic(struct words3) value) { "
+      "struct words3 snapshot = value; "
+      "return (struct words3){snapshot.b, snapshot.c, snapshot.a}; } "
+      "struct holder { callback_t *callback; }; "
+      "static callback_t *global_callback = rotate; "
+      "static struct holder global_holder = { rotate }; "
+      "static callback_t *callback_array[2] = { rotate, rotate };");
+  ASSERT_TRUE(program_resolved);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_data_module_t *data =
+      lower_ir_translation_unit_data_in_session(
+          test_suite_session);
+  ASSERT_TRUE(data != NULL);
+  ir_data_object_t *global_callback =
+      ir_data_module_find_object(
+          data, "global_callback", 15);
+  ir_data_object_t *global_holder =
+      ir_data_module_find_object(
+          data, "global_holder", 13);
+  ir_data_object_t *callback_array =
+      ir_data_module_find_object(
+          data, "callback_array", 14);
+  ASSERT_TRUE(global_callback != NULL);
+  ASSERT_TRUE(global_holder != NULL);
+  ASSERT_TRUE(callback_array != NULL);
+
+  int pointer_size = test_target_pointer_size(
+      ag_compilation_session_target(test_suite_session));
+  ir_data_object_t *objects[] = {
+      global_callback, global_holder, callback_array};
+  int expected_sizes[] = {
+      pointer_size, pointer_size, 2 * pointer_size};
+  int expected_relocation_counts[] = {1, 1, 2};
+  int expected_offsets[][2] = {
+      {0, 0},
+      {0, 0},
+      {0, pointer_size},
+  };
+
+  for (size_t object_index = 0;
+       object_index < sizeof(objects) / sizeof(objects[0]);
+       object_index++) {
+    ir_data_object_t *object = objects[object_index];
+    ASSERT_TRUE(object->is_static);
+    ASSERT_TRUE(object->has_explicit_initializer);
+    ASSERT_EQ(expected_sizes[object_index],
+              object->byte_size);
+    const ir_data_reloc_t *relocation = object->relocs;
+    for (int relocation_index = 0;
+         relocation_index <
+             expected_relocation_counts[object_index];
+         relocation_index++) {
+      ASSERT_TRUE(relocation != NULL);
+      ASSERT_EQ(IR_DATA_RELOC_FUNCTION,
+                relocation->kind);
+      ASSERT_EQ(expected_offsets[object_index][relocation_index],
+                relocation->offset);
+      ASSERT_EQ(pointer_size, relocation->width);
+      ASSERT_EQ(0, relocation->addend);
+      ASSERT_EQ(6, relocation->target_len);
+      ASSERT_TRUE(memcmp(
+          relocation->target, "rotate", 6) == 0);
+      ASSERT_TRUE(relocation->has_function_type);
+      ASSERT_TRUE(
+          relocation->function_type.type_id !=
+          PSX_TYPE_ID_INVALID);
+      ASSERT_EQ(1,
+                relocation->function_type.param_count);
+      ASSERT_TRUE(
+          (relocation->function_type.params[0].qualifiers &
+           PSX_TYPE_QUALIFIER_ATOMIC) != 0);
+      ASSERT_EQ(
+          PSX_TYPE_STRUCT,
+          test_qual_type_shape(
+              test_suite_session,
+              relocation->function_type.params[0]).kind);
+      ASSERT_EQ(
+          PSX_TYPE_STRUCT,
+          test_qual_type_shape(
+              test_suite_session,
+              relocation->function_type.result).kind);
+      relocation = relocation->next;
+    }
+    ASSERT_TRUE(relocation == NULL);
+  }
+
+  ir_abi_type_context_t abi_context = {
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .target =
+          ag_compilation_session_target(test_suite_session),
+  };
+  ir_abi_data_module_t *data_abi =
+      ir_abi_lower_data_module(&abi_context, data);
+  ASSERT_TRUE(data_abi != NULL);
+  ASSERT_EQ(4, data_abi->relocation_count);
+  for (size_t object_index = 0;
+       object_index < sizeof(objects) / sizeof(objects[0]);
+       object_index++) {
+    for (const ir_data_reloc_t *relocation =
+             objects[object_index]->relocs;
+         relocation; relocation = relocation->next) {
+      const ir_abi_signature_t *signature =
+          ir_abi_data_relocation_signature(
+              data_abi, relocation);
+      ASSERT_TRUE(signature != NULL);
+      ASSERT_EQ(1, signature->fixed_param_count);
+      ASSERT_EQ(1, signature->param_count);
+      ASSERT_EQ(IR_TY_PTR,
+                signature->param_pieces[0].type);
+      ASSERT_EQ(0,
+                signature->param_pieces[0].source_index);
+      ASSERT_EQ(12,
+                signature->param_pieces[0].source_size);
+      ASSERT_EQ(IR_ABI_PIECE_INDIRECT,
+                signature->param_pieces[0].kind);
+      ASSERT_TRUE(
+          ir_abi_signature_result_is_direct_aggregate(
+              signature));
+      ASSERT_EQ(
+          12,
+          ir_abi_signature_result_source_size(signature));
+      size_t result_piece_count = 0;
+      const ir_abi_piece_t *result_pieces =
+          ir_abi_signature_result_pieces(
+              signature, &result_piece_count);
+      ASSERT_TRUE(result_pieces != NULL);
+      ASSERT_EQ(2, result_piece_count);
+      ASSERT_EQ(IR_ABI_PIECE_DIRECT_AGGREGATE,
+                result_pieces[0].kind);
+      ASSERT_EQ(IR_ABI_PIECE_DIRECT_AGGREGATE,
+                result_pieces[1].kind);
+    }
+  }
+
+  ir_abi_data_module_free(data_abi);
+  ir_data_module_free(data);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void test_typed_hir_atomic_aggregate_callback_expression_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_atomic_aggregate_callback_expression_lowering_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
+      "struct words3 { unsigned int a, b, c; }; "
+      "typedef struct words3 callback_t(_Atomic(struct words3)); "
+      "struct words3 apply(int choose, callback_t *left, "
+      "callback_t *right, struct words3 value) { "
+      "callback_t *selected = left; "
+      "struct words3 conditional = "
+      "(choose ? left : right)(value); "
+      "struct words3 comma = "
+      "((void)choose, left)(conditional); "
+      "return (selected = right)(comma); }");
+  ASSERT_TRUE(program_resolved);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id =
+      psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(find_test_hir_node_kind(
+                  hir, PSX_HIR_TERNARY, 0) != NULL);
+  ASSERT_TRUE(find_test_hir_node_kind(
+                  hir, PSX_HIR_COMMA, 0) != NULL);
+  ASSERT_TRUE(find_test_hir_node_kind(
+                  hir, PSX_HIR_ASSIGN, 0) != NULL);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target =
+          ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(
+              test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(3, count_ir_op(ir->funcs, IR_CALL));
+
+  const ir_inst_t *calls[3] = {0};
+  size_t call_count = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op != IR_CALL) continue;
+      ASSERT_TRUE(call_count < 3);
+      calls[call_count++] = instruction;
+    }
+  }
+  ASSERT_EQ(3, call_count);
+
+  ir_abi_module_t *call_abi =
+      test_lower_ir_abi(test_suite_session, ir);
+  ASSERT_TRUE(call_abi != NULL);
+  for (size_t call_index = 0;
+       call_index < call_count; call_index++) {
+    const ir_inst_t *call = calls[call_index];
+    ASSERT_TRUE(call != NULL);
+    ASSERT_TRUE(call->sym == NULL);
+    ASSERT_TRUE(call->callee.id >= 0);
+    ASSERT_EQ(IR_TY_PTR, call->callee.type);
+    ASSERT_TRUE(call->has_function_type);
+    ASSERT_EQ(1, call->function_type.param_count);
+    ASSERT_TRUE(
+        (call->function_type.params[0].qualifiers &
+         PSX_TYPE_QUALIFIER_ATOMIC) != 0);
+    ASSERT_EQ(
+        PSX_TYPE_STRUCT,
+        test_qual_type_shape(
+            test_suite_session,
+            call->function_type.params[0]).kind);
+    ASSERT_EQ(1, call->nargs);
+    ASSERT_TRUE(
+        (call->args[0].type.qualifiers &
+         PSX_TYPE_QUALIFIER_ATOMIC) != 0);
+    ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS,
+              call->args[0].representation);
+    ASSERT_TRUE(
+        call->result_storage.id != IR_VAL_NONE);
+
+    const ir_abi_signature_t *signature =
+        ir_abi_call_signature(call_abi, call);
+    ASSERT_TRUE(signature != NULL);
+    ASSERT_EQ(1, signature->fixed_param_count);
+    ASSERT_EQ(1, signature->param_count);
+    ASSERT_EQ(IR_TY_PTR,
+              signature->param_pieces[0].type);
+    ASSERT_EQ(0,
+              signature->param_pieces[0].source_index);
+    ASSERT_EQ(12,
+              signature->param_pieces[0].source_size);
+    ASSERT_EQ(IR_ABI_PIECE_INDIRECT,
+              signature->param_pieces[0].kind);
+    ASSERT_TRUE(
+        ir_abi_signature_result_is_direct_aggregate(
+            signature));
+    ASSERT_EQ(
+        12,
+        ir_abi_signature_result_source_size(signature));
+    size_t physical_argument_count = 0;
+    const ir_abi_argument_t *physical_arguments =
+        ir_abi_call_arguments(
+            call_abi, call, &physical_argument_count);
+    ASSERT_TRUE(physical_arguments != NULL);
+    ASSERT_EQ(1, physical_argument_count);
+    ASSERT_EQ(IR_ABI_ARGUMENT_DIRECT,
+              physical_arguments[0].access);
+    ASSERT_EQ(call->args[0].value.id,
+              physical_arguments[0].source.id);
+  }
+
+  ir_abi_module_free(call_abi);
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_unprototyped_indirect_call_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_unprototyped_indirect_call_without_ast...\n");
@@ -20486,6 +20770,10 @@ int main() {
   test_typed_hir_atomic_aggregate_indirect_call_lowering_without_ast(
       test_suite_session);
   test_typed_hir_returned_atomic_aggregate_callback_lowering_without_ast(
+      test_suite_session);
+  test_typed_hir_atomic_aggregate_callback_relocation_without_ast(
+      test_suite_session);
+  test_typed_hir_atomic_aggregate_callback_expression_lowering_without_ast(
       test_suite_session);
   test_typed_hir_unprototyped_indirect_call_without_ast(test_suite_session);
   test_typed_hir_void_function_lowering_without_ast(test_suite_session);

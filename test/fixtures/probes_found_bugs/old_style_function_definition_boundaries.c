@@ -9,6 +9,10 @@ struct Pair {
 typedef struct Pair atomic_pair_callback_t(
     _Atomic(struct Pair));
 
+struct atomic_pair_callback_holder {
+  atomic_pair_callback_t *callback;
+};
+
 union Number {
   int integer;
   float floating;
@@ -256,6 +260,17 @@ static atomic_pair_callback_t *select_atomic_pair_callback(void) {
   return reverse_register_atomic_pair;
 }
 
+static atomic_pair_callback_t *global_atomic_pair_callback =
+    reverse_register_atomic_pair;
+static atomic_pair_callback_t *global_atomic_pair_callbacks[2] = {
+    reverse_register_atomic_pair,
+    reverse_register_atomic_pair,
+};
+static struct atomic_pair_callback_holder
+    global_atomic_pair_callback_holder = {
+        reverse_register_atomic_pair,
+    };
+
 int main(void) {
   int values[] = {3, 5, 7};
   int matrix[2][3] = {
@@ -271,6 +286,17 @@ int main(void) {
       atomic_pair_callback((struct Pair){23, 29});
   struct Pair returned_callback_atomic_pair =
       select_atomic_pair_callback()((struct Pair){31, 37});
+  static atomic_pair_callback_t *static_atomic_pair_callback =
+      reverse_register_atomic_pair;
+  struct Pair global_callback_atomic_pair =
+      global_atomic_pair_callback((struct Pair){41, 43});
+  struct Pair array_callback_atomic_pair =
+      global_atomic_pair_callbacks[1]((struct Pair){47, 53});
+  struct Pair member_callback_atomic_pair =
+      global_atomic_pair_callback_holder.callback(
+          (struct Pair){59, 61});
+  struct Pair static_callback_atomic_pair =
+      static_atomic_pair_callback((struct Pair){67, 71});
   union Number number = {31};
   atomic_callback_t *atomic_callback = compatible_atomic_int;
   plain_callback_t *plain_callback = compatible_const;
@@ -292,6 +318,14 @@ int main(void) {
          callback_atomic_pair.right == 23);
   assert(returned_callback_atomic_pair.left == 37 &&
          returned_callback_atomic_pair.right == 31);
+  assert(global_callback_atomic_pair.left == 43 &&
+         global_callback_atomic_pair.right == 41);
+  assert(array_callback_atomic_pair.left == 53 &&
+         array_callback_atomic_pair.right == 47);
+  assert(member_callback_atomic_pair.left == 61 &&
+         member_callback_atomic_pair.right == 59);
+  assert(static_callback_atomic_pair.left == 71 &&
+         static_callback_atomic_pair.right == 67);
   assert(integer_value(number) == 31);
   assert(sum_pair(17, 19) == 36);
   assert(same_declaration_vla(values, 3) == 7);

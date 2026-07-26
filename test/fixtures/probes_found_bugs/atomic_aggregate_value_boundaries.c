@@ -41,6 +41,11 @@ typedef struct bytes3 atomic_bytes_callback_t(
 typedef struct words3 atomic_words_callback_t(
     _Atomic(struct words3));
 
+struct callback_holder {
+  atomic_bytes_callback_t *bytes;
+  atomic_words_callback_t *words;
+};
+
 struct words4 {
   unsigned int a;
   unsigned int b;
@@ -120,6 +125,25 @@ static struct words3 rotate_register_atomic_words(
   return value;
 }
 
+static struct words3 reverse_register_atomic_words(
+    register _Atomic(struct words3) value) {
+  struct words3 snapshot = value;
+  value = (struct words3){
+      snapshot.c, snapshot.b, snapshot.a};
+  return value;
+}
+
+static atomic_bytes_callback_t *global_bytes_callback =
+    rotate_register_atomic_bytes;
+static atomic_words_callback_t *global_words_callbacks[2] = {
+    rotate_register_atomic_words,
+    rotate_register_atomic_words,
+};
+static struct callback_holder global_callback_holder = {
+    rotate_register_atomic_bytes,
+    rotate_register_atomic_words,
+};
+
 static struct bytes3 apply_atomic_bytes(
     atomic_bytes_callback_t *callback, struct bytes3 value) {
   return callback(value);
@@ -181,6 +205,45 @@ int main(void) {
   struct words3 returned_callback_words =
       select_atomic_words_callback()(
           (struct words3){71, 72, 73});
+  static atomic_bytes_callback_t *static_bytes_callback =
+      rotate_register_atomic_bytes;
+  struct bytes3 global_callback_bytes =
+      global_bytes_callback((struct bytes3){81, 82, 83});
+  struct words3 array_callback_words =
+      global_words_callbacks[1](
+          (struct words3){91, 92, 93});
+  struct bytes3 member_callback_bytes =
+      global_callback_holder.bytes(
+          (struct bytes3){101, 102, 103});
+  struct words3 member_callback_words =
+      global_callback_holder.words(
+          (struct words3){111, 112, 113});
+  struct bytes3 static_callback_bytes =
+      static_bytes_callback(
+          (struct bytes3){121, 122, 123});
+  int choose_rotate_callback = 1;
+  int callback_expression_evaluations = 0;
+  atomic_words_callback_t *expression_callback =
+      rotate_register_atomic_words;
+  struct words3 conditional_callback_words =
+      (choose_rotate_callback
+           ? rotate_register_atomic_words
+           : reverse_register_atomic_words)(
+          (struct words3){131, 132, 133});
+  struct words3 comma_callback_words =
+      (callback_expression_evaluations++,
+       reverse_register_atomic_words)(
+          (struct words3){141, 142, 143});
+  struct words3 assignment_callback_words =
+      (expression_callback =
+           reverse_register_atomic_words)(
+          (struct words3){151, 152, 153});
+  choose_rotate_callback = 0;
+  struct words3 pointer_conditional_callback_words =
+      (choose_rotate_callback
+           ? expression_callback
+           : rotate_register_atomic_words)(
+          (struct words3){161, 162, 163});
 
   assert(byte1.a == 1);
   assert(bytes2.a == 2 && bytes2.b == 3);
@@ -203,6 +266,26 @@ int main(void) {
          returned_callback_bytes.b == 63 &&
          returned_callback_bytes.c == 61);
   assert(is_words3(returned_callback_words, 72, 73, 71));
+  assert(global_callback_bytes.a == 82 &&
+         global_callback_bytes.b == 83 &&
+         global_callback_bytes.c == 81);
+  assert(is_words3(array_callback_words, 92, 93, 91));
+  assert(member_callback_bytes.a == 102 &&
+         member_callback_bytes.b == 103 &&
+         member_callback_bytes.c == 101);
+  assert(is_words3(member_callback_words, 112, 113, 111));
+  assert(static_callback_bytes.a == 122 &&
+         static_callback_bytes.b == 123 &&
+         static_callback_bytes.c == 121);
+  assert(is_words3(
+      conditional_callback_words, 132, 133, 131));
+  assert(is_words3(
+      comma_callback_words, 143, 142, 141));
+  assert(is_words3(
+      assignment_callback_words, 153, 152, 151));
+  assert(is_words3(
+      pointer_conditional_callback_words, 162, 163, 161));
+  assert(callback_expression_evaluations == 1);
 
   byte1 = (global_byte1 = (struct byte1){14});
   bytes2 = (global_bytes2 = (struct bytes2){15, 16});
