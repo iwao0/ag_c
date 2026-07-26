@@ -8646,14 +8646,20 @@ if (!/\bpsx_resolve_parameter_declaration\s*\(/.test(
     !/resolution->declaration_qual_type\s*=\s*identity\s*;/.test(
       parameterDeclarationResolutionSource,
     ) ||
-    !/resolution->function_qual_type\s*=\s*identity\s*;[^]*?resolution->function_qual_type\.qualifiers\s*=\s*PSX_TYPE_QUALIFIER_NONE\s*;/.test(
+    !/resolution->function_qual_type\s*=\s*identity\s*;[^]*?resolution->function_qual_type\.qualifiers\s*&=\s*PSX_TYPE_QUALIFIER_ATOMIC\s*;/.test(
       parameterDeclarationResolutionSource,
+    ) ||
+    !/function_parameter_qual_type\.qualifiers\s*&=\s*PSX_TYPE_QUALIFIER_ATOMIC\s*;/.test(
+      declarationPipelineSource,
+    ) ||
+    !/function_parameter_qual_types\[i\]\.qualifiers\s*&=\s*PSX_TYPE_QUALIFIER_ATOMIC\s*;/.test(
+      declarationPipelineSource,
     ) ||
     /\bps_type_adjust_parameter_type_in\s*\(/.test(
       declarationApplicationSource,
     )) {
   throw new Error(
-    "prototype and definition parameter types must share canonical adjustment while preserving definition-object qualifiers",
+    "prototype and definition parameter types must share canonical adjustment while preserving definition-object and atomic function-type qualifiers",
   );
 }
 if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
@@ -11797,7 +11803,7 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     !/function_parameter_qual_types\s*,\s*result->nargs/.test(
       explicitArenaDeclarationPipelineSource,
     ) ||
-    !/function_parameter_qual_types\[i\]\.qualifiers\s*=\s*PSX_TYPE_QUALIFIER_NONE\s*;/.test(
+    !/function_parameter_qual_types\[i\]\.qualifiers\s*&=\s*PSX_TYPE_QUALIFIER_ATOMIC\s*;/.test(
       explicitArenaDeclarationPipelineSource,
     ) ||
     /parameter_types\s*\[[^\]]+\]\s*=\s*ps_node_get_type\s*\(/.test(

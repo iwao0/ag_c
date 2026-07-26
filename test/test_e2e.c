@@ -2719,6 +2719,35 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "int read_value(value) union choice value; "
      "{ return value.value; }",
      "E3064"},
+    {"old_style_atomic_int_plain_prototype_rejected",
+     "int atomic_value(int value); "
+     "int atomic_value(value) _Atomic int value; "
+     "{ return value; }",
+     "E3064"},
+    {"old_style_plain_int_atomic_prototype_rejected",
+     "int atomic_value(_Atomic int value); "
+     "int atomic_value(value) int value; "
+     "{ return value; }",
+     "E3064"},
+    {"old_style_atomic_short_int_prototype_rejected",
+     "int atomic_value(int value); "
+     "int atomic_value(value) _Atomic short value; "
+     "{ return value; }",
+     "E3064"},
+    {"old_style_atomic_pointer_plain_prototype_rejected",
+     "int atomic_value(int *value); "
+     "int atomic_value(value) int * _Atomic value; "
+     "{ return *value; }",
+     "E3064"},
+    {"prototype_atomic_pointer_plain_redeclaration_rejected",
+     "int atomic_value(int *value); "
+     "int atomic_value(int * _Atomic value);",
+     "E3064"},
+    {"call_argument_atomic_function_pointer_rejected",
+     "int apply(int (*callback)(int), int value); "
+     "int atomic_identity(_Atomic int value) { return value; } "
+     "int main(void) { return apply(atomic_identity, 42); }",
+     "E3120"},
     {"old_style_parameter_enum_constant_scope_rejected",
      "int old_style(value) "
      "enum HeaderEnum { HEADER_ENUM_VALUE = 1 } value; "

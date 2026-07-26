@@ -118,10 +118,11 @@ int psx_resolve_parameter_declaration(
     return 0;
   resolution->declaration_qual_type = identity;
   resolution->function_qual_type = identity;
-  /* C11 6.7.6.3p15 removes top-level qualifiers from the function
-   * type, while the parameter object in a definition remains qualified. */
-  resolution->function_qual_type.qualifiers =
-      PSX_TYPE_QUALIFIER_NONE;
+  /* C11 6.7.6.3p15 removes ordinary top-level qualification from a
+   * parameter's function type.  C11 6.2.5p27 distinguishes an atomic
+   * type from the "qualified type" covered by that rule. */
+  resolution->function_qual_type.qualifiers &=
+      PSX_TYPE_QUALIFIER_ATOMIC;
   if (is_incomplete_aggregate) return 1;
 
   int leaf_is_aggregate = derived_leaf_is_aggregate(

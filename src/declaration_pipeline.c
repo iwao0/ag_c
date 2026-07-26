@@ -911,27 +911,30 @@ static int append_definition_parameter(
           parameter->declarator.diagnostic_token, "param",
           "old-style function parameter type description failed");
     }
-    if (parameter_shape.kind == PSX_TYPE_FLOAT &&
-        parameter_shape.floating_kind ==
-            PSX_FLOATING_KIND_FLOAT) {
-      function_parameter_qual_type =
-          ps_ctx_intern_floating_qual_type_in(
-              semantic_context, PSX_FLOATING_KIND_DOUBLE, 0);
-    } else {
-      psx_integer_conversion_t integer =
-          psx_integer_conversion_from_shape(&parameter_shape);
-      if (integer.is_integer && integer.rank < 3) {
-        psx_integer_conversion_t promoted =
-            psx_integer_promotion_for_data_layout(
-                integer, ps_ctx_data_layout(semantic_context));
+    if ((function_parameter_qual_type.qualifiers &
+         PSX_TYPE_QUALIFIER_ATOMIC) == 0) {
+      if (parameter_shape.kind == PSX_TYPE_FLOAT &&
+          parameter_shape.floating_kind ==
+              PSX_FLOATING_KIND_FLOAT) {
         function_parameter_qual_type =
-            ps_ctx_intern_integer_qual_type_in(
-                semantic_context, PSX_INTEGER_KIND_INT,
-                promoted.is_unsigned, 0);
+            ps_ctx_intern_floating_qual_type_in(
+                semantic_context, PSX_FLOATING_KIND_DOUBLE, 0);
+      } else {
+        psx_integer_conversion_t integer =
+            psx_integer_conversion_from_shape(&parameter_shape);
+        if (integer.is_integer && integer.rank < 3) {
+          psx_integer_conversion_t promoted =
+              psx_integer_promotion_for_data_layout(
+                  integer, ps_ctx_data_layout(semantic_context));
+          function_parameter_qual_type =
+              ps_ctx_intern_integer_qual_type_in(
+                  semantic_context, PSX_INTEGER_KIND_INT,
+                  promoted.is_unsigned, 0);
+        }
       }
     }
-    function_parameter_qual_type.qualifiers =
-        PSX_TYPE_QUALIFIER_NONE;
+    function_parameter_qual_type.qualifiers &=
+        PSX_TYPE_QUALIFIER_ATOMIC;
     if (function_parameter_qual_type.type_id ==
         PSX_TYPE_ID_INVALID) {
       ps_diag_ctx_in(
@@ -1160,8 +1163,8 @@ int psx_finish_function_definition_pipeline(
   if (result->nargs > 0 && !function_parameter_qual_types) return 0;
   for (int i = 0; i < result->nargs; i++) {
     function_parameter_qual_types[i] = result->parameter_qual_types[i];
-    function_parameter_qual_types[i].qualifiers =
-        PSX_TYPE_QUALIFIER_NONE;
+    function_parameter_qual_types[i].qualifiers &=
+        PSX_TYPE_QUALIFIER_ATOMIC;
   }
   psx_set_resolved_function_parameter_qual_types(
       ps_ctx_arena(state->semantic_context), primary,

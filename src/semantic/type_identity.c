@@ -629,6 +629,8 @@ static int semantic_integer_shapes_compatible(
 static int parameter_is_unchanged_by_default_argument_promotions(
     const psx_semantic_type_table_t *table, psx_qual_type_t parameter) {
   if (!semantic_type_id_is_valid(table, parameter.type_id)) return 0;
+  if ((parameter.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0)
+    return 1;
   const psx_type_shape_t *shape = &table->entries[parameter.type_id].shape;
   switch (shape->kind) {
     case PSX_TYPE_INTEGER:

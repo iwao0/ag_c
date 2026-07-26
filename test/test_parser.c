@@ -7564,6 +7564,12 @@ static void test_function_prototype_type_identity_boundary(
       "int __variadic_old_style(int first, ...); "
       "int __variadic_old_style(first) "
       "int first; { return first; } "
+      "int __atomic_short(_Atomic short value); "
+      "int __atomic_short(value) "
+      "_Atomic short value; { return value; } "
+      "int __atomic_pointer(int * _Atomic value); "
+      "int __atomic_pointer(value) "
+      "int * _Atomic value; { return *value; } "
       "int __prototype_use(void) { "
       "return __unprototyped(1) + __void_prototype(); }"));
 
@@ -7571,6 +7577,8 @@ static void test_function_prototype_type_identity_boundary(
   static char void_prototype_name[] = "__void_prototype";
   static char old_style_name[] = "__old_style";
   static char variadic_old_style_name[] = "__variadic_old_style";
+  static char atomic_short_name[] = "__atomic_short";
+  static char atomic_pointer_name[] = "__atomic_pointer";
   psx_qual_type_t unprototyped_type =
       ps_ctx_get_function_qual_type_in(
           test_semantic_context(test_suite_session), unprototyped_name,
@@ -7588,11 +7596,23 @@ static void test_function_prototype_type_identity_boundary(
           test_semantic_context(test_suite_session),
           variadic_old_style_name,
           (int)sizeof(variadic_old_style_name) - 1);
+  psx_qual_type_t atomic_short_type =
+      ps_ctx_get_function_qual_type_in(
+          test_semantic_context(test_suite_session),
+          atomic_short_name,
+          (int)sizeof(atomic_short_name) - 1);
+  psx_qual_type_t atomic_pointer_type =
+      ps_ctx_get_function_qual_type_in(
+          test_semantic_context(test_suite_session),
+          atomic_pointer_name,
+          (int)sizeof(atomic_pointer_name) - 1);
   ASSERT_TRUE(unprototyped_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(void_prototype_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(old_style_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(
       variadic_old_style_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(atomic_short_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(atomic_pointer_type.type_id != PSX_TYPE_ID_INVALID);
   psx_type_shape_t unprototyped_shape =
       test_qual_type_shape(test_suite_session, unprototyped_type);
   psx_type_shape_t void_prototype_shape =
@@ -7635,6 +7655,26 @@ static void test_function_prototype_type_identity_boundary(
   ASSERT_TRUE(variadic_old_style_shape.has_function_prototype);
   ASSERT_TRUE(variadic_old_style_shape.is_variadic_function);
   ASSERT_EQ(1, variadic_old_style_shape.parameter_count);
+  psx_qual_type_t atomic_short_parameter =
+      psx_semantic_type_table_parameter(
+          types, atomic_short_type.type_id, 0);
+  psx_qual_type_t atomic_pointer_parameter =
+      psx_semantic_type_table_parameter(
+          types, atomic_pointer_type.type_id, 0);
+  ASSERT_TRUE((atomic_short_parameter.qualifiers &
+               PSX_TYPE_QUALIFIER_ATOMIC) != 0);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            test_qual_type_shape(
+                test_suite_session, atomic_short_parameter).kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_SHORT,
+            test_qual_type_shape(
+                test_suite_session,
+                atomic_short_parameter).integer_kind);
+  ASSERT_TRUE((atomic_pointer_parameter.qualifiers &
+               PSX_TYPE_QUALIFIER_ATOMIC) != 0);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(
+                test_suite_session, atomic_pointer_parameter).kind);
 
   char signature[16];
   ASSERT_EQ(5, ps_ctx_format_function_signature_in(
@@ -7667,6 +7707,13 @@ static void test_function_prototype_type_identity_boundary(
   expect_parse_fail(test_suite_session,
       "int variadic(); int variadic(int first, ...); "
       "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int atomic_value(int value); "
+      "int atomic_value(value) _Atomic int value; "
+      "{ return value; }");
+  expect_parse_fail(test_suite_session,
+      "int atomic_value(int *value); "
+      "int atomic_value(int * _Atomic value);");
   expect_parse_fail(test_suite_session,
       "int old_style(value); int main(void) { return 0; }");
 }

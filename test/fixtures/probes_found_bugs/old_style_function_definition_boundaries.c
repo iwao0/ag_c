@@ -12,6 +12,9 @@ union Number {
 };
 
 typedef unsigned short small_t;
+typedef _Atomic short atomic_short_t;
+typedef int atomic_callback_t(_Atomic int);
+typedef int plain_callback_t(int);
 
 enum signed_code {
   SIGNED_CODE_NEGATIVE = -1,
@@ -202,6 +205,27 @@ enum unsigned_code value;
   return value;
 }
 
+int compatible_atomic_int(_Atomic int);
+int compatible_atomic_int(value)
+_Atomic int value;
+{
+  return value;
+}
+
+int compatible_atomic_short(atomic_short_t);
+int compatible_atomic_short(value)
+atomic_short_t value;
+{
+  return value;
+}
+
+int compatible_atomic_pointer(int * _Atomic);
+int compatible_atomic_pointer(value)
+int * _Atomic value;
+{
+  return *value;
+}
+
 int main(void) {
   int values[] = {3, 5, 7};
   int matrix[2][3] = {
@@ -210,6 +234,8 @@ int main(void) {
   };
   struct Pair pair = {11, 13};
   union Number number = {31};
+  atomic_callback_t *atomic_callback = compatible_atomic_int;
+  plain_callback_t *plain_callback = compatible_const;
   assert(narrow_char(257) == 1);
   assert(narrow_unsigned(513) == 1);
   assert(narrow_short(65537) == 1);
@@ -233,5 +259,15 @@ int main(void) {
   assert(compatible_const(23) == 23);
   assert(compatible_signed_enum(SIGNED_CODE_VALUE) == 41);
   assert(compatible_unsigned_enum(UNSIGNED_CODE_VALUE) == 42);
+  assert(compatible_atomic_int(37) == 37);
+  assert(compatible_atomic_short(19) == 19);
+  assert(compatible_atomic_pointer(values) == 3);
+  assert(atomic_callback(29) == 29);
+  assert(_Generic(atomic_callback,
+      atomic_callback_t *: 1,
+      plain_callback_t *: 2) == 1);
+  assert(_Generic(plain_callback,
+      atomic_callback_t *: 1,
+      plain_callback_t *: 2) == 2);
   return 0;
 }
