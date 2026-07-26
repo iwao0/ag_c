@@ -641,6 +641,7 @@ static const wasm_e2e_case_t cases[] = {
     {"stdheader", "string_strerror", "test/fixtures/stdheader/string_strerror.c"},
     {"stdheader", "string_memset", "test/fixtures/stdheader/string_memset.c"},
     {"stdheader", "stdio_snprintf_formats", "test/fixtures/stdheader/stdio_snprintf_formats.c"},
+    {"stdheader", "stdio_snprintf_float_rounding", "test/fixtures/stdheader/stdio_snprintf_float_rounding.c"},
     {"stdheader", "stdio_sprintf_formats", "test/fixtures/stdheader/stdio_sprintf_formats.c"},
     {"stdheader", "stdio_getline_decl", "test/fixtures/stdheader/stdio_getline_decl.c"},
     {"stdheader", "ctype_isdigit", "test/fixtures/stdheader/ctype_isdigit.c"},

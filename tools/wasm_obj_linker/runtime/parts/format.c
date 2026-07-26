@@ -215,7 +215,7 @@ static void ag_rt_write_fixed(char *buf, size_t size, int bounded, size_t *pos,
   double rounded = ag_rt_round_decimal_nearest_even(v, scale);
   unsigned long whole = (unsigned long)rounded;
   double frac_ld = (rounded - (double)whole) * (double)scale;
-  unsigned long frac = (unsigned long)frac_ld;
+  unsigned long frac = (unsigned long)(frac_ld + 0.5);
 
   ag_rt_write_udec(buf, size, bounded, pos, whole, 0, 0);
   if (precision == 0) {
@@ -318,7 +318,7 @@ static void ag_rt_write_scientific(char *buf, size_t size, int bounded, size_t *
   }
   unsigned long whole = (unsigned long)rounded;
   double frac_ld = (rounded - (double)whole) * (double)scale;
-  unsigned long frac = (unsigned long)frac_ld;
+  unsigned long frac = (unsigned long)(frac_ld + 0.5);
 
   ag_rt_putc(buf, size, bounded, pos, '0' + (int)whole);
   if (precision != 0 || alternate) {
