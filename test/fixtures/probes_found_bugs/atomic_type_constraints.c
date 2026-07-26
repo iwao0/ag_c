@@ -5,6 +5,10 @@ struct pair {
   int right;
 };
 
+/* A qualifier inside a parameter's [] is applied to the adjusted pointer.
+ * _Atomic therefore remains part of this callback's parameter type. */
+typedef int atomic_array_callback_t(int values[_Atomic 1]);
+
 static int add_one(int value) {
   return value + 1;
 }
@@ -36,6 +40,8 @@ int main(void) {
   _Atomic(int (*)(int)) atomic_callback = add_one;
   int values[1] = {13};
   _Atomic int result = atomic_result();
+  atomic_array_callback_t *atomic_array_callback =
+      read_atomic_bound;
 
   assert(*atomic_pointer == 41);
   assert(*atomic_to_atomic == 41);
@@ -43,6 +49,7 @@ int main(void) {
   assert(sizeof(atomic_pair) == sizeof(struct pair));
   assert(atomic_callback(41) == 42);
   assert(read_atomic_bound(values) == 13);
+  assert(atomic_array_callback(values) == 13);
   assert(read_static_atomic_bound(values) == 13);
   assert(read_atomic_unspecified(values) == 13);
   assert(result == 7);

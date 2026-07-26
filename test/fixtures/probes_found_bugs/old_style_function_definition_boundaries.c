@@ -226,6 +226,13 @@ int * _Atomic value;
   return *value;
 }
 
+int compatible_atomic_array(int value[const _Atomic 1]);
+int compatible_atomic_array(value)
+int value[const _Atomic 1];
+{
+  return value[0];
+}
+
 int main(void) {
   int values[] = {3, 5, 7};
   int matrix[2][3] = {
@@ -262,6 +269,7 @@ int main(void) {
   assert(compatible_atomic_int(37) == 37);
   assert(compatible_atomic_short(19) == 19);
   assert(compatible_atomic_pointer(values) == 3);
+  assert(compatible_atomic_array(values) == 3);
   assert(atomic_callback(29) == 29);
   assert(_Generic(atomic_callback,
       atomic_callback_t *: 1,

@@ -3158,6 +3158,67 @@ static void test_typed_hir_atomic_lowering_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_typed_hir_atomic_array_parameter_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_hir_atomic_array_parameter_lowering_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
+      "int run(int values[_Atomic 2]) { "
+      "int *original = values; "
+      "values = original + 1; "
+      "return values[-1] + values[0]; }"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  int pointer_width = test_target_pointer_size(
+      ag_compilation_session_target(test_suite_session));
+  ir_type_t pointer_bits_type =
+      pointer_width == 8 ? IR_TY_I64 : IR_TY_I32;
+  int atomic_loads = 0;
+  int atomic_stores = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op != IR_ATOMIC ||
+          instruction->atomic_width != pointer_width)
+        continue;
+      if (instruction->atomic_kind == IR_ATOMIC_LOAD &&
+          instruction->dst.type == pointer_bits_type)
+        atomic_loads++;
+      if (instruction->atomic_kind == IR_ATOMIC_STORE &&
+          instruction->src2.type == pointer_bits_type)
+        atomic_stores++;
+    }
+  }
+  ASSERT_EQ(4, count_ir_op(ir->funcs, IR_ATOMIC));
+  ASSERT_EQ(3, atomic_loads);
+  ASSERT_EQ(1, atomic_stores);
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_atomic_compound_lowering_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_atomic_compound_lowering_without_ast...\n");
@@ -7570,6 +7631,9 @@ static void test_function_prototype_type_identity_boundary(
       "int __atomic_pointer(int * _Atomic value); "
       "int __atomic_pointer(value) "
       "int * _Atomic value; { return *value; } "
+      "int __atomic_array(int * _Atomic value); "
+      "int __atomic_array(int value[const _Atomic 1]) "
+      "{ return value[0]; } "
       "int __prototype_use(void) { "
       "return __unprototyped(1) + __void_prototype(); }"));
 
@@ -7579,6 +7643,7 @@ static void test_function_prototype_type_identity_boundary(
   static char variadic_old_style_name[] = "__variadic_old_style";
   static char atomic_short_name[] = "__atomic_short";
   static char atomic_pointer_name[] = "__atomic_pointer";
+  static char atomic_array_name[] = "__atomic_array";
   psx_qual_type_t unprototyped_type =
       ps_ctx_get_function_qual_type_in(
           test_semantic_context(test_suite_session), unprototyped_name,
@@ -7606,6 +7671,11 @@ static void test_function_prototype_type_identity_boundary(
           test_semantic_context(test_suite_session),
           atomic_pointer_name,
           (int)sizeof(atomic_pointer_name) - 1);
+  psx_qual_type_t atomic_array_type =
+      ps_ctx_get_function_qual_type_in(
+          test_semantic_context(test_suite_session),
+          atomic_array_name,
+          (int)sizeof(atomic_array_name) - 1);
   ASSERT_TRUE(unprototyped_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(void_prototype_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(old_style_type.type_id != PSX_TYPE_ID_INVALID);
@@ -7613,6 +7683,7 @@ static void test_function_prototype_type_identity_boundary(
       variadic_old_style_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(atomic_short_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(atomic_pointer_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(atomic_array_type.type_id != PSX_TYPE_ID_INVALID);
   psx_type_shape_t unprototyped_shape =
       test_qual_type_shape(test_suite_session, unprototyped_type);
   psx_type_shape_t void_prototype_shape =
@@ -7661,6 +7732,9 @@ static void test_function_prototype_type_identity_boundary(
   psx_qual_type_t atomic_pointer_parameter =
       psx_semantic_type_table_parameter(
           types, atomic_pointer_type.type_id, 0);
+  psx_qual_type_t atomic_array_parameter =
+      psx_semantic_type_table_parameter(
+          types, atomic_array_type.type_id, 0);
   ASSERT_TRUE((atomic_short_parameter.qualifiers &
                PSX_TYPE_QUALIFIER_ATOMIC) != 0);
   ASSERT_EQ(PSX_TYPE_INTEGER,
@@ -7675,6 +7749,11 @@ static void test_function_prototype_type_identity_boundary(
   ASSERT_EQ(PSX_TYPE_POINTER,
             test_qual_type_shape(
                 test_suite_session, atomic_pointer_parameter).kind);
+  ASSERT_TRUE((atomic_array_parameter.qualifiers &
+               PSX_TYPE_QUALIFIER_ATOMIC) != 0);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(
+                test_suite_session, atomic_array_parameter).kind);
 
   char signature[16];
   ASSERT_EQ(5, ps_ctx_format_function_signature_in(
@@ -7714,6 +7793,10 @@ static void test_function_prototype_type_identity_boundary(
   expect_parse_fail(test_suite_session,
       "int atomic_value(int *value); "
       "int atomic_value(int * _Atomic value);");
+  expect_parse_fail(test_suite_session,
+      "int atomic_value(int *value); "
+      "int atomic_value(int value[_Atomic 1]) "
+      "{ return value[0]; }");
   expect_parse_fail(test_suite_session,
       "int old_style(value); int main(void) { return 0; }");
 }
@@ -20020,6 +20103,8 @@ int main() {
   test_typed_hir_variadic_aggregate_call_without_ast(test_suite_session);
   test_typed_hir_variadic_complex_call_without_ast(test_suite_session);
   test_typed_hir_atomic_lowering_without_ast(test_suite_session);
+  test_typed_hir_atomic_array_parameter_lowering_without_ast(
+      test_suite_session);
   test_typed_hir_atomic_compound_lowering_without_ast(test_suite_session);
   test_typed_hir_atomic_complex_lowering_without_ast(test_suite_session);
   test_typed_hir_atomic_wide_complex_lowering_without_ast(

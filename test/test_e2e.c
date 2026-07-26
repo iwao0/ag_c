@@ -1700,6 +1700,11 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"const_array_parameter_reassignment_rejected",
      "int f(int values[const]) { values = 0; return 0; } int main(void) { return 0; }",
      "E3077"},
+    {"const_atomic_array_parameter_reassignment_rejected",
+     "int f(int values[const _Atomic 1]) "
+     "{ values = 0; return 0; } "
+     "int main(void) { return 0; }",
+     "E3077"},
     {"restrict_nonpointer_prefix_rejected",
      "restrict int value; int main(void) { return value; }",
      "E3064"},
@@ -1763,6 +1768,22 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"array_parameter_nested_atomic_rejected",
      "int f(int (*values)[_Atomic 3]); int main(void) { return 0; }",
      "E3064"},
+    {"array_parameter_atomic_pointer_redeclaration_rejected",
+     "int read_value(int *value); "
+     "int read_value(int value[_Atomic 1]) { return value[0]; }",
+     "E3064"},
+    {"old_style_array_parameter_atomic_pointer_redeclaration_rejected",
+     "int read_value(int *value); "
+     "int read_value(value) int value[_Atomic 1]; "
+     "{ return value[0]; }",
+     "E3064"},
+    {"array_parameter_atomic_callback_argument_rejected",
+     "typedef int atomic_callback(int value[_Atomic 1]); "
+     "int apply(atomic_callback *callback, int *value) "
+     "{ return callback(value); } "
+     "int plain(int *value) { return *value; } "
+     "int main(void) { int value = 7; return apply(plain, &value); }",
+     "E3120"},
     {"array_parameter_incomplete_element_rejected",
      "struct incomplete; int f(struct incomplete values[]); int main(void) { return 0; }",
      "E3064"},
@@ -2644,7 +2665,7 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "old-style function parameter cannot have an initializer"},
     {"old_style_const_array_parameter_reassignment_rejected",
      "int replace(values) "
-     "int values[const 3]; "
+     "int values[const _Atomic 3]; "
      "{ values = 0; return 0; }",
      "E3077"},
     {"old_style_parameter_static_storage_rejected",
