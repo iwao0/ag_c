@@ -838,7 +838,8 @@ static int append_definition_parameter(
     psx_function_definition_pipeline_result_t *result, int *capacity,
     const psx_parsed_function_parameter_t *parameter,
     psx_qual_type_t base_qual_type,
-    int apply_default_argument_promotions) {
+    int apply_default_argument_promotions,
+    int result_index) {
   if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context),
@@ -885,10 +886,11 @@ static int append_definition_parameter(
         parameter->declarator.diagnostic_token, "param",
         "canonical parameter declaration resolution failed");
   }
-  if (result->nargs + 1 >= *capacity) {
+  if (result_index < 0) result_index = result->nargs;
+  if (result_index + 1 >= *capacity) {
     *capacity = pda_next_cap_in(
         ps_ctx_diagnostics(semantic_context),
-        *capacity, result->nargs + 2);
+        *capacity, result_index + 2);
     result->parameter_vars = pda_xreallocarray_in(
         ps_ctx_diagnostics(semantic_context), result->parameter_vars,
         (size_t)*capacity, sizeof(*result->parameter_vars));
@@ -939,8 +941,8 @@ static int append_definition_parameter(
     }
   }
   if (!name) {
-    result->parameter_vars[result->nargs] = NULL;
-    result->parameter_qual_types[result->nargs] =
+    result->parameter_vars[result_index] = NULL;
+    result->parameter_qual_types[result_index] =
         function_parameter_qual_type;
     result->nargs++;
     return 1;
@@ -977,8 +979,8 @@ static int append_definition_parameter(
   }
   if (parameter->specifier.type_spec.is_register)
     ps_local_registry_mark_register(lowered);
-  result->parameter_vars[result->nargs] = lowered;
-  result->parameter_qual_types[result->nargs] =
+  result->parameter_vars[result_index] = lowered;
+  result->parameter_qual_types[result_index] =
       function_parameter_qual_type;
   result->nargs++;
   return 0;
@@ -1088,7 +1090,8 @@ int psx_apply_function_definition_parameter_pipeline(
       state->semantic_context, state->global_registry,
       state->local_registry, state->lowering_context, state->result,
       &state->args_capacity, parameter, base_qual_type,
-      state->primary_is_identifier_list);
+      state->primary_is_identifier_list,
+      parameter->definition_index);
   if (applied < 0) {
     if (state->parameter_count != 1) {
       ps_diag_ctx_in(

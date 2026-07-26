@@ -47,15 +47,22 @@ static int identifier_names_equal(
          memcmp(left->str, right->str, (size_t)left->len) == 0;
 }
 
-static int parameter_list_contains_identifier(
+static int parameter_list_identifier_index(
     const psx_parsed_function_parameters_t *parameters,
     const token_ident_t *identifier) {
   for (int i = 0; parameters && i < parameters->count; i++) {
     if (identifier_names_equal(
             parameters->items[i].declarator.identifier, identifier))
-      return 1;
+      return i;
   }
-  return 0;
+  return -1;
+}
+
+static int parameter_list_contains_identifier(
+    const psx_parsed_function_parameters_t *parameters,
+    const token_ident_t *identifier) {
+  return parameter_list_identifier_index(
+             parameters, identifier) >= 0;
 }
 
 static int token_starts_identifier_list(
@@ -388,20 +395,23 @@ int psx_function_definition_parameter_syntax_at(
     return 0;
   if (!parameters->is_identifier_list) {
     *parameter = parameters->items[index];
+    parameter->definition_index = index;
     return 1;
   }
-  token_ident_t *identifier =
-      parameters->items[index].declarator.identifier;
+  int source_index = 0;
   for (int d = 0; d < parameters->old_style_declaration_count; d++) {
     const psx_parsed_old_style_parameter_declaration_t *declaration =
         &parameters->old_style_declarations[d];
     for (int i = 0; i < declaration->declarator_count; i++) {
-      if (!identifier_names_equal(
-              declaration->declarators[i].identifier, identifier))
+      if (source_index++ != index)
         continue;
+      int definition_index = parameter_list_identifier_index(
+          parameters, declaration->declarators[i].identifier);
+      if (definition_index < 0) return 0;
       parameter->specifier = declaration->specifier;
       parameter->declarator = declaration->declarators[i];
       parameter->shared_specifier = &declaration->specifier;
+      parameter->definition_index = definition_index;
       return 1;
     }
   }

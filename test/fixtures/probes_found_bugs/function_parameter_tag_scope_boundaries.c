@@ -75,6 +75,22 @@ int values[rows][columns];
   return values[rows - 1][columns - 1];
 }
 
+int old_declaration_order(values, marker)
+enum DeclarationOrderEnum {
+  DECLARATION_ORDER_BOUND = 3
+} marker;
+int values[DECLARATION_ORDER_BOUND];
+{
+  return values[2] + marker;
+}
+
+int old_identifier_order(left, right)
+int right;
+int left;
+{
+  return left * 10 + right;
+}
+
 int main(void) {
   int matrix[2][3] = {
       {1, 2, 3},
@@ -85,5 +101,7 @@ int main(void) {
   assert(old_enum_parameter(7) == 18);
   assert(old_shared_enum_parameters(13, 17) == 30);
   assert(old_matrix_value(2, 3, matrix) == 6);
+  assert(old_declaration_order(matrix[0], 2) == 5);
+  assert(old_identifier_order(3, 7) == 37);
   return 0;
 }

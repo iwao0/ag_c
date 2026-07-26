@@ -6438,6 +6438,13 @@ if (!/PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST/.test(
     !/parameter->shared_specifier\s*=\s*&declaration->specifier/.test(
       functionParameterSyntaxSource,
     ) ||
+    !/source_index\+\+\s*!=\s*index[^]*?parameter_list_identifier_index\s*\([^]*?parameter->definition_index\s*=\s*definition_index/.test(
+      functionParameterSyntaxSource,
+    ) ||
+    !/result->parameter_vars\[result_index\][^]*?result->parameter_qual_types\[result_index\]/.test(
+      declarationPipelineSource,
+    ) ||
+    !/parameter->definition_index/.test(declarationPipelineSource) ||
     !/identifier list is only permitted in an old-style[^]*?function definition/.test(
       toplevelDeclarationSyntaxSource,
     ) ||
@@ -6469,7 +6476,7 @@ if (!/PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST/.test(
       hirIrCallAbiSource,
     )) {
   throw new Error(
-    "old-style function definitions must keep identifier-list syntax distinct, replay parameter bindings, share declaration specifiers, isolate declaration-list tags, promote their non-prototype function signature with DataLayout, and convert incoming values into declared parameter objects",
+    "old-style function definitions must resolve declaration lists in source order, preserve identifier-list ABI order, replay parameter bindings, share declaration specifiers, isolate declaration-list tags, promote their non-prototype function signature with DataLayout, and convert incoming values into declared parameter objects",
   );
 }
 const parserDeclarationSyntaxSource = await readFile(

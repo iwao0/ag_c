@@ -8,6 +8,8 @@ typedef struct {
   psx_parsed_declarator_t declarator;
   /* Non-owning identity of a shared old-style declaration specifier. */
   const psx_parsed_decl_specifier_t *shared_specifier;
+  /* Identifier-list position used by the resolved function signature. */
+  int definition_index;
 } psx_parsed_function_parameter_t;
 
 typedef struct {
