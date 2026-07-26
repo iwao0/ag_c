@@ -200,6 +200,31 @@ static double ag_rt_round_decimal_nearest_even(double v, unsigned long scale) {
   return (double)integral / (double)scale;
 }
 
+static double ag_rt_round_decimal_places(double v, int decimal_places) {
+  unsigned long scale = 1;
+  unsigned long quotient;
+  double lower;
+  double remainder;
+  double halfway;
+  if (decimal_places >= 0) {
+    if (decimal_places > AG_RT_DECIMAL_FORMAT_MAX_PRECISION) return -1.0;
+    for (int i = 0; i < decimal_places; i++) scale *= 10;
+    return ag_rt_round_decimal_nearest_even(v, scale);
+  }
+  if (decimal_places < -AG_RT_DECIMAL_FORMAT_MAX_PRECISION ||
+      v > 9007199254740991.0)
+    return -1.0;
+  for (int i = 0; i < -decimal_places; i++) scale *= 10;
+  quotient = (unsigned long)(v / (double)scale);
+  lower = (double)quotient * (double)scale;
+  remainder = v - lower;
+  halfway = (double)scale / 2.0;
+  if (remainder > halfway ||
+      (remainder == halfway && (quotient & 1u)))
+    quotient++;
+  return (double)quotient * (double)scale;
+}
+
 static void ag_rt_write_fixed(char *buf, size_t size, int bounded, size_t *pos,
                               double v, int precision, int upper, int alternate, int sign_ch) {
   if (ag_rt_double_is_nan(v)) {
@@ -304,6 +329,8 @@ static void ag_rt_write_exp_suffix(char *buf, size_t size, int bounded, size_t *
 static void ag_rt_write_scientific(char *buf, size_t size, int bounded, size_t *pos,
                                    double v, int precision, int upper, int alternate, int sign_ch) {
   int exp = 0;
+  double magnitude;
+  double rounded_magnitude;
   if (ag_rt_double_is_nan(v) || ag_rt_double_is_inf(v)) {
     ag_rt_write_fixed(buf, size, bounded, pos, v, precision, upper, alternate, sign_ch);
     return;
@@ -315,6 +342,7 @@ static void ag_rt_write_scientific(char *buf, size_t size, int bounded, size_t *
   } else if (sign_ch) {
     ag_rt_putc(buf, size, bounded, pos, sign_ch);
   }
+  magnitude = v;
   if (v != 0.0) {
     while (v >= 10.0) {
       v = v / 10.0;
@@ -328,13 +356,28 @@ static void ag_rt_write_scientific(char *buf, size_t size, int bounded, size_t *
 
   unsigned long scale = 1;
   for (int i = 0; i < precision; i++) scale *= 10;
-  double rounded = ag_rt_round_decimal_nearest_even(v, scale);
-  if (rounded >= 10.0) {
-    rounded = rounded / 10.0;
-    exp++;
+  rounded_magnitude =
+      ag_rt_round_decimal_places(magnitude, precision - exp);
+  if (rounded_magnitude >= 0.0) {
+    exp = 0;
+    v = rounded_magnitude;
+    while (v >= 10.0) {
+      v = v / 10.0;
+      exp++;
+    }
+    while (v != 0.0 && v < 1.0) {
+      v = v * 10.0;
+      exp--;
+    }
+  } else {
+    v = ag_rt_round_decimal_nearest_even(v, scale);
+    if (v >= 10.0) {
+      v = v / 10.0;
+      exp++;
+    }
   }
-  unsigned long whole = (unsigned long)rounded;
-  double frac_ld = (rounded - (double)whole) * (double)scale;
+  unsigned long whole = (unsigned long)v;
+  double frac_ld = (v - (double)whole) * (double)scale;
   unsigned long frac = (unsigned long)(frac_ld + 0.5);
 
   ag_rt_putc(buf, size, bounded, pos, '0' + (int)whole);
@@ -366,8 +409,11 @@ static void ag_rt_write_scientific_padded(char *buf, size_t size, int bounded, s
 static int ag_rt_float_exp10_rounded(double v, int precision) {
   int exp = 0;
   unsigned long scale = 1;
+  double magnitude;
+  double rounded_magnitude;
   if (ag_rt_double_is_negative(v)) v = -v;
   if (v == 0.0) return 0;
+  magnitude = v;
   while (v >= 10.0) {
     v = v / 10.0;
     exp++;
@@ -375,6 +421,22 @@ static int ag_rt_float_exp10_rounded(double v, int precision) {
   while (v < 1.0) {
     v = v * 10.0;
     exp--;
+  }
+  rounded_magnitude =
+      ag_rt_round_decimal_places(magnitude, precision - exp - 1);
+  if (rounded_magnitude >= 0.0) {
+    exp = 0;
+    v = rounded_magnitude;
+    if (v == 0.0) return 0;
+    while (v >= 10.0) {
+      v = v / 10.0;
+      exp++;
+    }
+    while (v < 1.0) {
+      v = v * 10.0;
+      exp--;
+    }
+    return exp;
   }
   for (int i = 1; i < precision; i++) scale *= 10;
   if (ag_rt_round_decimal_nearest_even(v, scale) >= 10.0) exp++;
