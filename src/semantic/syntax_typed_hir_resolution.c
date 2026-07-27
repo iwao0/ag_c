@@ -1660,8 +1660,10 @@ static int direct_sizeof_operand_is_bitfield(
     const node_t *operand) {
   if (!context) return 0;
   context->unevaluated_depth++;
+  context->suppress_value_decay_depth++;
   const node_t *selected = direct_selected_expression(context, operand);
   if (!selected || selected->kind != ND_MEMBER_ACCESS) {
+    context->suppress_value_decay_depth--;
     context->unevaluated_depth--;
     return 0;
   }
@@ -1669,6 +1671,7 @@ static int direct_sizeof_operand_is_bitfield(
   int resolved = resolve_direct_member_access(
       context, (const node_member_access_t *)selected,
       1, &member);
+  context->suppress_value_decay_depth--;
   context->unevaluated_depth--;
   return resolved && member.member.declaration.bit_width > 0;
 }
@@ -1804,12 +1807,13 @@ static int resolve_direct_sizeof_type_name(
 static int resolve_direct_sizeof_vla_derived_expression(
     direct_resolution_context_t *context,
     const node_sizeof_query_t *query,
+    const node_t *operand,
     direct_type_query_binding_t *binding) {
-  if (!context || !query || !query->operand || !binding ||
-      (query->operand->kind != ND_SUBSCRIPT &&
-       query->operand->kind != ND_UNARY_DEREF))
+  if (!context || !query || !operand || !binding ||
+      (operand->kind != ND_SUBSCRIPT &&
+       operand->kind != ND_UNARY_DEREF))
     return 0;
-  const node_t *base = query->operand;
+  const node_t *base = operand;
   int derived_operation_count = 0;
   int evaluated_prefix_count = 0;
   while (base) {
@@ -1866,7 +1870,7 @@ static int resolve_direct_sizeof_vla_derived_expression(
     }
   }
   int prefix_index = evaluated_prefix_count;
-  const node_t *derived = query->operand;
+  const node_t *derived = operand;
   while (derived) {
     if (derived->kind == ND_SUBSCRIPT) {
       binding->evaluated_prefixes[--prefix_index] = derived->rhs;
@@ -2138,31 +2142,34 @@ static int resolve_direct_type_query(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_SIZEOF_BITFIELD,
             syntax);
+      const node_t *operand =
+          direct_selected_expression(context, query->operand);
+      if (!operand) return 0;
       psx_qual_type_t queried_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
       int derived_operand =
-          query->operand->kind == ND_SUBSCRIPT ||
-          query->operand->kind == ND_UNARY_DEREF;
+          operand->kind == ND_SUBSCRIPT ||
+          operand->kind == ND_UNARY_DEREF;
       int operand_has_vla_binding = 0;
       if (derived_operand) {
         context->unevaluated_depth++;
         operand_has_vla_binding =
             direct_syntax_has_vla_binding(
-                context, query->operand);
+                context, operand);
         context->unevaluated_depth--;
       }
       if (derived_operand && operand_has_vla_binding) {
         resolved = resolve_direct_sizeof_vla_derived_expression(
-            context, query, binding);
+            context, query, operand, binding);
         if (!resolved &&
             !preflight_direct_sizeof_operand(
-                context, query->operand, &queried_qual_type))
+                context, operand, &queried_qual_type))
           return 0;
       } else if (
-          query->operand->kind == ND_IDENTIFIER &&
+          operand->kind == ND_IDENTIFIER &&
           direct_is_predefined_function_name(
               context,
-              (const node_identifier_t *)query->operand)) {
+              (const node_identifier_t *)operand)) {
         if (!resolve_direct_predefined_function_name_type(
                 context, &queried_qual_type))
           return 0;
@@ -2170,11 +2177,11 @@ static int resolve_direct_type_query(
             context->semantic_context, queried_qual_type, 1,
             (long long)context->function_name_len + 1,
             &binding->plan);
-      } else if (query->operand->kind == ND_IDENTIFIER) {
+      } else if (operand->kind == ND_IDENTIFIER) {
         psx_identifier_expression_resolution_t identifier;
         context->unevaluated_depth++;
         int identifier_resolved = resolve_direct_identifier(
-            context, (const node_identifier_t *)query->operand,
+            context, (const node_identifier_t *)operand,
             &identifier);
         context->unevaluated_depth--;
         if (!identifier_resolved) return 0;
@@ -2191,7 +2198,7 @@ static int resolve_direct_type_query(
               &binding->plan);
         }
       } else if (!preflight_direct_sizeof_operand(
-                     context, query->operand,
+                     context, operand,
                      &queried_qual_type)) {
         return 0;
       }
@@ -2199,9 +2206,9 @@ static int resolve_direct_type_query(
           !validate_direct_type_query_type(
               context, syntax, queried_qual_type, 1, 0))
         return 0;
-      if (!resolved && query->operand->kind == ND_STRING) {
+      if (!resolved && operand->kind == ND_STRING) {
         const node_string_t *string =
-            (const node_string_t *)query->operand;
+            (const node_string_t *)operand;
         int width = string->char_width ? (int)string->char_width : 1;
         resolved = psx_resolve_sizeof_qual_type_plan_in(
             context->semantic_context, queried_qual_type, 1,
@@ -2404,18 +2411,43 @@ static int resolve_direct_member_access(
   return 0;
 }
 
+// A later integer promotion can still see the source bit-field through
+// assignment, prefix update, and the right operand of a comma expression.
+// Postfix update deliberately stops this chain.
+static int resolve_direct_bitfield_source(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_hir_member_resolution_t *member) {
+  if (!context || !syntax || !member) return 0;
+  const node_t *selected =
+      direct_selected_expression(context, syntax);
+  if (!selected) return 0;
+  switch (selected->kind) {
+    case ND_MEMBER_ACCESS:
+      return resolve_direct_member_access(
+                 context, (const node_member_access_t *)selected,
+                 1, member) &&
+             member->member.declaration.bit_width > 0;
+    case ND_ASSIGN:
+    case ND_COMPOUND_ASSIGN:
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+      return resolve_direct_bitfield_source(
+          context, selected->lhs, member);
+    case ND_COMMA:
+      return resolve_direct_bitfield_source(
+          context, selected->rhs, member);
+    default:
+      return 0;
+  }
+}
+
 static psx_qual_type_t direct_promoted_bitfield_qual_type(
     direct_resolution_context_t *context,
     const node_t *syntax, psx_qual_type_t operand_type) {
-  const node_t *selected =
-      direct_selected_expression(context, syntax);
-  if (!selected || selected->kind != ND_MEMBER_ACCESS)
-    return operand_type;
   psx_hir_member_resolution_t member;
-  if (!resolve_direct_member_access(
-          context, (const node_member_access_t *)selected,
-          1, &member) ||
-      member.member.declaration.bit_width <= 0)
+  if (!resolve_direct_bitfield_source(
+          context, syntax, &member))
     return operand_type;
   int int_bits = CHAR_BIT * ag_data_layout_scalar_size(
       ps_ctx_data_layout(context->semantic_context),
