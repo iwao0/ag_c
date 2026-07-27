@@ -482,7 +482,7 @@ static int analysis_declaration_type_word(const char *source, size_t start,
   static const char *const words[] = {
       "void", "char", "short", "int", "long", "float", "double",
       "signed", "unsigned", "_Bool", "struct", "union", "enum",
-      "_Atomic",
+      "_Atomic", "_Complex", "_Imaginary",
   };
   for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++)
     if (analysis_word_is(source, start, length, words[i])) return 1;
@@ -494,6 +494,17 @@ static int analysis_non_declaration_word(const char *source, size_t start,
   static const char *const words[] = {
       "return", "if", "else", "while", "do", "for", "switch",
       "case", "default", "goto", "break", "continue",
+  };
+  for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++)
+    if (analysis_word_is(source, start, length, words[i])) return 1;
+  return 0;
+}
+
+static int analysis_declaration_modifier_word(
+    const char *source, size_t start, size_t length) {
+  static const char *const words[] = {
+      "const", "volatile", "restrict", "static", "extern", "register",
+      "auto", "_Thread_local",
   };
   for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++)
     if (analysis_word_is(source, start, length, words[i])) return 1;
@@ -582,6 +593,7 @@ static int object_declaration_prefix(
   }
 
   int has_type = 0;
+  int typedef_candidate_count = 0;
   int has_non_declaration = 0;
   int assignment_after_comma = 0;
   int local_parens = 0;
@@ -631,9 +643,15 @@ static int object_declaration_prefix(
              is_identifier_byte((unsigned char)source[i + 1]))
         i++;
       size_t word_length = i + 1 - word_start;
-      if (analysis_declaration_type_word(
-              source, word_start, word_length))
+      int is_type = analysis_declaration_type_word(
+          source, word_start, word_length);
+      if (is_type)
         has_type = 1;
+      else if (!analysis_declaration_modifier_word(
+                   source, word_start, word_length) &&
+               !analysis_non_declaration_word(
+                   source, word_start, word_length))
+        typedef_candidate_count++;
       if (analysis_non_declaration_word(
               source, word_start, word_length))
         has_non_declaration = 1;
@@ -652,7 +670,9 @@ static int object_declaration_prefix(
              local_braces == 0)
       assignment_after_comma = 1;
   }
-  if (!has_type || has_non_declaration || assignment_after_comma) return 0;
+  if ((!has_type && typedef_candidate_count != 1) ||
+      has_non_declaration || assignment_after_comma)
+    return 0;
   *outer_brace_count = open_braces;
   *paren_depth = local_parens;
   *bracket_depth = local_brackets;
@@ -1051,6 +1071,71 @@ static char *format_type(snapshot_builder_t *builder,
   char *result = snapshot_alloc(builder, (size_t)needed + 1);
   if (!result) return NULL;
   if (ag_format_c_type(types, type, result, (size_t)needed + 1) < 0)
+    result[0] = '\0';
+  return result;
+}
+
+static const char *object_signature_storage_prefix(
+    const psx_scope_declaration_t *declaration) {
+  if (!declaration || !declaration->payload) return "";
+  if (declaration->kind == PSX_DECL_LOCAL_OBJECT) {
+    const lvar_t *local = declaration->payload;
+    if (ps_lvar_is_static_local(local)) {
+      const global_var_t *global = ps_lvar_static_storage_global(local);
+      return global && ps_gvar_is_thread_local(global)
+                 ? "static _Thread_local "
+                 : "static ";
+    }
+    if (ps_lvar_is_register(local)) return "register ";
+    return "";
+  }
+  if (declaration->kind == PSX_DECL_GLOBAL_OBJECT) {
+    const global_var_t *global = declaration->payload;
+    int is_thread_local = ps_gvar_is_thread_local(global);
+    if (ps_gvar_is_extern_decl(global))
+      return is_thread_local ? "extern _Thread_local " : "extern ";
+    if (ps_gvar_is_static_storage(global))
+      return is_thread_local ? "static _Thread_local " : "static ";
+    if (is_thread_local) return "_Thread_local ";
+  }
+  return "";
+}
+
+static char *format_object_signature(
+    snapshot_builder_t *builder,
+    const psx_semantic_type_table_t *types, psx_qual_type_t type,
+    const psx_scope_declaration_t *declaration) {
+  if (!builder || !types || !declaration ||
+      type.type_id == PSX_TYPE_ID_INVALID ||
+      !declaration->name || declaration->name_len <= 0)
+    return snapshot_copy(builder, "");
+  int declaration_length = ag_format_c_declaration(
+      types, type, declaration->name, (size_t)declaration->name_len,
+      NULL, 0);
+  if (declaration_length < 0) return snapshot_copy(builder, "");
+  const char *prefix = object_signature_storage_prefix(declaration);
+  size_t prefix_length = strlen(prefix);
+  size_t formatted_length = (size_t)declaration_length;
+  if (prefix_length > SIZE_MAX - formatted_length) {
+    builder_limit(builder, "maxAnalysisStringBytes",
+                  "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES",
+                  (size_t)builder->limits.max_string_bytes, SIZE_MAX);
+    return NULL;
+  }
+  size_t total_length = prefix_length + formatted_length;
+  if (total_length > (size_t)builder->limits.max_string_bytes) {
+    builder_limit(builder, "maxAnalysisStringBytes",
+                  "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES",
+                  (size_t)builder->limits.max_string_bytes, total_length);
+    return NULL;
+  }
+  char *result = snapshot_alloc(builder, total_length + 1);
+  if (!result) return NULL;
+  memcpy(result, prefix, prefix_length);
+  if (ag_format_c_declaration(
+          types, type, declaration->name,
+          (size_t)declaration->name_len,
+          result + prefix_length, formatted_length + 1) < 0)
     result[0] = '\0';
   return result;
 }
@@ -1456,6 +1541,11 @@ static int add_declaration_symbol(
   symbol->storage_class = snapshot_copy(builder, "");
   symbol->constant_value = snapshot_copy(builder, "");
   symbol->macro_replacement = snapshot_copy(builder, "");
+  if (symbol->kind == AG_LANGUAGE_SYMBOL_OBJECT) {
+    free(symbol->signature);
+    symbol->signature = format_object_signature(
+        builder, types, qual_type, declaration);
+  }
   if (symbol->kind == AG_LANGUAGE_SYMBOL_FUNCTION) {
     free(symbol->signature);
     symbol->signature = snapshot_copy(builder, symbol->type);

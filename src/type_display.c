@@ -193,7 +193,8 @@ static void write_terminal_type(type_writer_t *writer,
 
 static int format_type(type_writer_t *writer,
                        const psx_semantic_type_table_t *types,
-                       psx_qual_type_t type, int depth) {
+                       psx_qual_type_t type, int depth,
+                       const char *identifier, size_t identifier_length) {
   if (!writer || !types || depth > 64) return 0;
   declarator_fragment_t declarator = {0};
   if (!fragment_init(&declarator)) return 0;
@@ -247,7 +248,8 @@ static int format_type(type_writer_t *writer,
           psx_qual_type_t parameter = psx_semantic_type_table_parameter(
               types, current.type_id, i);
           type_writer_t parameter_writer = {0};
-          if (!format_type(&parameter_writer, types, parameter, depth + 1) ||
+          if (!format_type(
+                  &parameter_writer, types, parameter, depth + 1, NULL, 0) ||
               parameter_writer.failed ||
               !fragment_reserve(
                   &declarator,
@@ -263,7 +265,7 @@ static int format_type(type_writer_t *writer,
           parameter_writer = (type_writer_t){
               parameter_text, parameter_writer.length + 1, 0, 0};
           int parameter_ok = format_type(
-              &parameter_writer, types, parameter, depth + 1);
+              &parameter_writer, types, parameter, depth + 1, NULL, 0);
           parameter_text[parameter_writer.length] = '\0';
           int appended = parameter_ok && fragment_append_n(
               &declarator, parameter_text, parameter_writer.length);
@@ -292,14 +294,20 @@ static int format_type(type_writer_t *writer,
   }
 
   write_terminal_type(writer, &shape, current.qualifiers);
-  if (!writer->failed && declarator.length > 1) {
+  if (!writer->failed && (declarator.length > 1 ||
+                          identifier_length > 0)) {
     write_literal(writer, " ");
     for (size_t i = 0; i < declarator.length; i++) {
-      if (declarator.bytes[i] == ' ' && i + 1 < declarator.length &&
+      if (identifier_length == 0 &&
+          declarator.bytes[i] == ' ' && i + 1 < declarator.length &&
           declarator.bytes[i + 1] == '@')
         continue;
-      if (declarator.bytes[i] != '@')
+      if (declarator.bytes[i] == '@') {
+        if (identifier_length > 0)
+          write_bytes(writer, identifier, identifier_length);
+      } else {
         write_bytes(writer, declarator.bytes + i, 1);
+      }
     }
   }
   free(declarator.bytes);
@@ -310,7 +318,25 @@ int ag_format_c_type(const psx_semantic_type_table_t *types,
                      psx_qual_type_t type, char *out, size_t out_size) {
   type_writer_t writer = {out, out_size, 0, 0};
   if (type.type_id == PSX_TYPE_ID_INVALID ||
-      !format_type(&writer, types, type, 0))
+      !format_type(&writer, types, type, 0, NULL, 0))
+    writer.failed = 1;
+  if (out && out_size > 0) {
+    size_t end = writer.length < out_size ? writer.length : out_size - 1;
+    out[end] = '\0';
+  }
+  return writer.failed ? -1 : (int)writer.length;
+}
+
+int ag_format_c_declaration(const psx_semantic_type_table_t *types,
+                            psx_qual_type_t type,
+                            const char *identifier,
+                            size_t identifier_length,
+                            char *out, size_t out_size) {
+  type_writer_t writer = {out, out_size, 0, 0};
+  if (type.type_id == PSX_TYPE_ID_INVALID ||
+      !identifier || identifier_length == 0 ||
+      !format_type(
+          &writer, types, type, 0, identifier, identifier_length))
     writer.failed = 1;
   if (out && out_size > 0) {
     size_t end = writer.length < out_size ? writer.length : out_size - 1;

@@ -13,4 +13,13 @@ typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 int ag_format_c_type(const psx_semantic_type_table_t *types,
                      psx_qual_type_t type, char *out, size_t out_size);
 
+/* Formats an interned semantic type as a C declaration containing the given
+ * identifier. The returned declaration does not include a storage-class
+ * specifier, initializer, or trailing semicolon. */
+int ag_format_c_declaration(const psx_semantic_type_table_t *types,
+                            psx_qual_type_t type,
+                            const char *identifier,
+                            size_t identifier_length,
+                            char *out, size_t out_size);
+
 #endif

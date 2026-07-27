@@ -131,6 +131,19 @@ static int same_object_hover(
              &left->initializer_range, &right->initializer_range);
 }
 
+static int same_object_display(
+    const ag_language_symbol_t *left,
+    const ag_language_symbol_t *right) {
+  return left && right &&
+         left->kind == AG_LANGUAGE_SYMBOL_OBJECT &&
+         right->kind == AG_LANGUAGE_SYMBOL_OBJECT &&
+         strcmp(left->name, right->name) == 0 &&
+         strcmp(left->type, right->type) == 0 &&
+         strcmp(left->signature, right->signature) == 0 &&
+         left->initializer_state == right->initializer_state &&
+         strcmp(left->constant_value, right->constant_value) == 0;
+}
+
 #define CHECK(condition, label)                                                  \
   do {                                                                           \
     if (!(condition)) {                                                           \
@@ -580,6 +593,8 @@ int main(int argc, char **argv) {
             object_use_hover->kind == AG_LANGUAGE_SYMBOL_OBJECT &&
             strcmp(object_use_hover->name, "player_x") == 0 &&
             strcmp(object_use_hover->type, "int") == 0 &&
+            strcmp(object_use_hover->signature,
+                   "static int player_x") == 0 &&
             object_use_hover->initializer_state ==
                 AG_LANGUAGE_INITIALIZER_ZERO,
         "object use hover baseline fields");
@@ -622,6 +637,8 @@ int main(int argc, char **argv) {
     const char *name;
     ag_language_initializer_state_t initializer_state;
     const char *constant_value;
+    const char *signature;
+    int reparse_signature;
   } object_declaration_cases[] = {
       {
           "explicit file-scope object",
@@ -630,6 +647,8 @@ int main(int argc, char **argv) {
           "explicit_value",
           AG_LANGUAGE_INITIALIZER_EXPLICIT_CONSTANT,
           "42",
+          "static int explicit_value",
+          0,
       },
       {
           "non-static file-scope object",
@@ -638,6 +657,8 @@ int main(int argc, char **argv) {
           "global_value",
           AG_LANGUAGE_INITIALIZER_ZERO,
           "",
+          "int global_value",
+          0,
       },
       {
           "block-scope local object",
@@ -645,6 +666,8 @@ int main(int argc, char **argv) {
           "local_value",
           AG_LANGUAGE_INITIALIZER_RUNTIME,
           "",
+          "int local_value",
+          0,
       },
       {
           "first object in multi-declarator declaration",
@@ -653,6 +676,8 @@ int main(int argc, char **argv) {
           "first_value",
           AG_LANGUAGE_INITIALIZER_EXPLICIT_CONSTANT,
           "1",
+          "int first_value",
+          0,
       },
       {
           "second object in multi-declarator declaration",
@@ -661,6 +686,87 @@ int main(int argc, char **argv) {
           "second_value",
           AG_LANGUAGE_INITIALIZER_EXPLICIT_CONSTANT,
           "2",
+          "int second_value",
+          0,
+      },
+      {
+          "block-scope static object",
+          "int main(void) { static int local_static; return local_static; }\n",
+          "local_static",
+          AG_LANGUAGE_INITIALIZER_ZERO,
+          "",
+          "static int local_static",
+          0,
+      },
+      {
+          "block-scope extern object",
+          "int main(void) { extern int local_extern; return local_extern; }\n",
+          "local_extern",
+          AG_LANGUAGE_INITIALIZER_NONE,
+          "",
+          "extern int local_extern",
+          0,
+      },
+      {
+          "block-scope register object",
+          "int main(void) { register int local_register = 1; "
+          "return local_register; }\n",
+          "local_register",
+          AG_LANGUAGE_INITIALIZER_RUNTIME,
+          "",
+          "register int local_register",
+          0,
+      },
+      {
+          "qualified pointer object",
+          "const int *score_pointer;\n"
+          "int main(void) { return score_pointer != 0; }\n",
+          "score_pointer",
+          AG_LANGUAGE_INITIALIZER_ZERO,
+          "",
+          "const int *score_pointer",
+          1,
+      },
+      {
+          "volatile object",
+          "volatile int volatile_score;\n"
+          "int main(void) { return volatile_score; }\n",
+          "volatile_score",
+          AG_LANGUAGE_INITIALIZER_ZERO,
+          "",
+          "volatile int volatile_score",
+          0,
+      },
+      {
+          "array object",
+          "int scores[4];\n"
+          "int main(void) { return scores[0]; }\n",
+          "scores",
+          AG_LANGUAGE_INITIALIZER_ZERO,
+          "",
+          "int scores[4]",
+          1,
+      },
+      {
+          "function pointer object",
+          "int (*callback)(int);\n"
+          "int main(void) { return callback ? callback(1) : 0; }\n",
+          "callback",
+          AG_LANGUAGE_INITIALIZER_ZERO,
+          "",
+          "int (*callback)(int)",
+          1,
+      },
+      {
+          "typedef-based object",
+          "typedef int Score;\n"
+          "Score typed_score;\n"
+          "int main(void) { return typed_score; }\n",
+          "typed_score",
+          AG_LANGUAGE_INITIALIZER_ZERO,
+          "",
+          "int typed_score",
+          1,
       },
   };
   for (size_t case_index = 0;
@@ -686,7 +792,7 @@ int main(int argc, char **argv) {
               (header_bundle_t){0}, defaults, &snapshot, &error),
           object_declaration_cases[case_index].label);
     const ag_language_symbol_t *case_hover = hover_symbol(&snapshot);
-    CHECK(same_object_hover(
+    CHECK(same_object_display(
               case_hover, hover_symbol(&case_use_snapshot)),
           "object declaration form matches use hover");
     CHECK(case_hover &&
@@ -695,8 +801,42 @@ int main(int argc, char **argv) {
               strcmp(
                   case_hover->constant_value,
                   object_declaration_cases[case_index].constant_value) == 0 &&
+              strcmp(
+                  case_hover->signature,
+                  object_declaration_cases[case_index].signature) == 0 &&
               !snapshot.partial && snapshot.diagnostic_count == 0,
           "object declaration form initializer and diagnostics");
+    if (object_declaration_cases[case_index].reparse_signature) {
+      char replay_source[256];
+      int replay_length = snprintf(
+          replay_source, sizeof(replay_source), "%s;\n",
+          case_hover->signature);
+      CHECK(replay_length > 0 &&
+                (size_t)replay_length < sizeof(replay_source),
+            "object signature replay source");
+      const char *replay_name = strstr(replay_source, case_name);
+      ag_language_analysis_snapshot_t replay_snapshot = {0};
+      CHECK(replay_name &&
+                analyze(
+                    session, replay_source,
+                    (size_t)(replay_name - replay_source) +
+                        strlen(case_name) / 2,
+                    (header_bundle_t){0}, defaults,
+                    &replay_snapshot, &error),
+            "object signature reparses as C declaration");
+      const ag_language_symbol_t *replay_hover =
+          hover_symbol(&replay_snapshot);
+      CHECK(replay_hover &&
+                replay_hover->kind == AG_LANGUAGE_SYMBOL_OBJECT &&
+                strcmp(replay_hover->name, case_name) == 0 &&
+                strcmp(
+                    replay_hover->signature,
+                    object_declaration_cases[case_index].signature) == 0 &&
+                !replay_snapshot.partial &&
+                replay_snapshot.diagnostic_count == 0,
+            "reparsed object signature preserves declaration");
+      ag_language_analysis_snapshot_dispose(&replay_snapshot);
+    }
     ag_language_analysis_snapshot_dispose(&snapshot);
     ag_language_analysis_snapshot_dispose(&case_use_snapshot);
   }
@@ -1075,6 +1215,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (31 scenarios)");
+  puts("language analysis tests passed (32 scenarios)");
   return 0;
 }

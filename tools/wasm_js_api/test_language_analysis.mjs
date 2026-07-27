@@ -344,6 +344,7 @@ const objectUseResult = compiler.analyzeSource(objectParitySource, {
 if (objectUseResult.hover?.name !== "player_x" ||
     objectUseResult.hover.kind !== "object" ||
     objectUseResult.hover.type !== "int" ||
+    objectUseResult.hover.signature !== "static int player_x" ||
     objectUseResult.hover.initializer.state !== "zero") {
   throw new Error(
     `object use hover baseline failed: ${JSON.stringify(objectUseResult)}`,
@@ -419,31 +420,104 @@ const objectDeclarationCases = [
     source: "static int explicit_value = 42;\n" +
       "int main(void) { return explicit_value; }\n",
     initializer: { state: "explicitConstant", constantValue: "42" },
+    signature: "static int explicit_value",
   },
   {
     name: "global_value",
     source: "int global_value;\n" +
       "int main(void) { return global_value; }\n",
     initializer: { state: "zero", constantValue: null },
+    signature: "int global_value",
   },
   {
     name: "local_value",
     source: "int main(void) { int local_value = 3; return local_value; }\n",
     initializer: { state: "runtime", constantValue: null },
+    signature: "int local_value",
   },
   {
     name: "first_value",
     source: "int first_value = 1, second_value = 2;\n" +
       "int main(void) { return first_value + second_value; }\n",
     initializer: { state: "explicitConstant", constantValue: "1" },
+    signature: "int first_value",
   },
   {
     name: "second_value",
     source: "int first_value = 1, second_value = 2;\n" +
       "int main(void) { return first_value + second_value; }\n",
     initializer: { state: "explicitConstant", constantValue: "2" },
+    signature: "int second_value",
+  },
+  {
+    name: "local_static",
+    source: "int main(void) { static int local_static; return local_static; }\n",
+    initializer: { state: "zero", constantValue: null },
+    signature: "static int local_static",
+  },
+  {
+    name: "local_extern",
+    source: "int main(void) { extern int local_extern; return local_extern; }\n",
+    initializer: { state: "none", constantValue: null },
+    signature: "extern int local_extern",
+  },
+  {
+    name: "local_register",
+    source: "int main(void) { register int local_register = 1; " +
+      "return local_register; }\n",
+    initializer: { state: "runtime", constantValue: null },
+    signature: "register int local_register",
+  },
+  {
+    name: "score_pointer",
+    source: "const int *score_pointer;\n" +
+      "int main(void) { return score_pointer != 0; }\n",
+    initializer: { state: "zero", constantValue: null },
+    signature: "const int *score_pointer",
+    reparseSignature: true,
+  },
+  {
+    name: "volatile_score",
+    source: "volatile int volatile_score;\n" +
+      "int main(void) { return volatile_score; }\n",
+    initializer: { state: "zero", constantValue: null },
+    signature: "volatile int volatile_score",
+  },
+  {
+    name: "scores",
+    source: "int scores[4];\n" +
+      "int main(void) { return scores[0]; }\n",
+    initializer: { state: "zero", constantValue: null },
+    signature: "int scores[4]",
+    reparseSignature: true,
+  },
+  {
+    name: "callback",
+    source: "int (*callback)(int);\n" +
+      "int main(void) { return callback ? callback(1) : 0; }\n",
+    initializer: { state: "zero", constantValue: null },
+    signature: "int (*callback)(int)",
+    reparseSignature: true,
+  },
+  {
+    name: "typed_score",
+    source: "typedef int Score;\n" +
+      "Score typed_score;\n" +
+      "int main(void) { return typed_score; }\n",
+    initializer: { state: "zero", constantValue: null },
+    signature: "int typed_score",
+    reparseSignature: true,
   },
 ];
+function objectDisplayFields(hover) {
+  return hover && {
+    name: hover.name,
+    kind: hover.kind,
+    type: hover.type,
+    signature: hover.signature,
+    initializer: hover.initializer,
+  };
+}
 for (const analysisCase of objectDeclarationCases) {
   const declarationSource = {
     name: "object-declaration.c",
@@ -467,19 +541,42 @@ for (const analysisCase of objectDeclarationCases) {
     },
   });
   assert.deepStrictEqual(
-    objectHoverFields(declarationResult.hover),
-    objectHoverFields(useResult.hover),
+    objectDisplayFields(declarationResult.hover),
+    objectDisplayFields(useResult.hover),
     `${analysisCase.name} declaration and use hover differ`,
   );
   if (declarationResult.hover?.initializer.state !==
         analysisCase.initializer.state ||
       declarationResult.hover?.initializer.constantValue !==
         analysisCase.initializer.constantValue ||
+      declarationResult.hover?.signature !== analysisCase.signature ||
       declarationResult.partial ||
       declarationResult.diagnostics.length !== 0) {
     throw new Error(
       `object declaration form failed: ${JSON.stringify(declarationResult)}`,
     );
+  }
+  if (analysisCase.reparseSignature) {
+    const replaySource = {
+      name: "object-signature-replay.c",
+      source: `${declarationResult.hover.signature};\n`,
+    };
+    const replayNameStart = replaySource.source.indexOf(analysisCase.name);
+    const replayResult = compiler.analyzeSource(replaySource, {
+      cursor: {
+        sourceName: replaySource.name,
+        byteOffset: replayNameStart + Math.floor(analysisCase.name.length / 2),
+      },
+    });
+    if (replayResult.hover?.kind !== "object" ||
+        replayResult.hover.name !== analysisCase.name ||
+        replayResult.hover.signature !== analysisCase.signature ||
+        replayResult.partial ||
+        replayResult.diagnostics.length !== 0) {
+      throw new Error(
+        `object signature did not reparse: ${JSON.stringify(replayResult)}`,
+      );
+    }
   }
 }
 
