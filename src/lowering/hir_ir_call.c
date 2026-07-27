@@ -848,14 +848,14 @@ ir_val_t hir_ir_build_call(
   psx_type_shape_t callable_semantic_type = {0};
   int has_callable_semantic_type = hir_ir_type_shape(
       context, callable_type.type_id, &callable_semantic_type);
+  int has_prototype = has_callable_semantic_type &&
+      callable_semantic_type.has_function_prototype;
   size_t parameter_count =
-      has_callable_semantic_type &&
+      has_callable_semantic_type && has_prototype &&
               callable_semantic_type.parameter_count >= 0
           ? (size_t)callable_semantic_type.parameter_count : 0;
   int is_variadic = has_callable_semantic_type &&
       callable_semantic_type.is_variadic_function;
-  int has_prototype = has_callable_semantic_type &&
-      callable_semantic_type.has_function_prototype;
   psx_qual_type_t callable_result = psx_semantic_type_table_base(
       context->options->semantic_types, callable_type.type_id);
   int is_void_result =

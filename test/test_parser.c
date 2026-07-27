@@ -8903,6 +8903,83 @@ static void test_implicit_conversion_hir_boundary(
   ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, argument).kind);
 }
 
+static void test_bitfield_integer_promotion_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_bitfield_integer_promotion_hir_boundary...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
+      "int consume(int marker, ...); "
+      "struct PromotionBits { unsigned long value : 3; }; "
+      "int promote(struct PromotionBits bits) { "
+      "  bits.value /= -2; "
+      "  switch (bits.value) { "
+      "    case 7: return consume(0, bits.value); "
+      "    default: return 0; "
+      "  } "
+      "}"));
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+
+  const psx_hir_node_t *switch_node =
+      find_test_hir_node_kind(hir, PSX_HIR_SWITCH, 0);
+  ASSERT_TRUE(switch_node != NULL);
+  const psx_hir_node_t *switch_control = NULL;
+  for (size_t i = 0; i < psx_hir_node_child_count(switch_node); i++) {
+    if (psx_hir_node_child_edge_at(switch_node, i) ==
+        PSX_HIR_EDGE_LHS) {
+      switch_control = psx_hir_module_lookup(
+          hir, psx_hir_node_child_at(switch_node, i));
+      break;
+    }
+  }
+  ASSERT_TRUE(switch_control != NULL);
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(switch_control));
+  psx_type_shape_t switch_type =
+      test_hir_type_shape(test_suite_session, switch_control);
+  ASSERT_EQ(PSX_TYPE_INTEGER, switch_type.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, switch_type.integer_kind);
+  ASSERT_EQ(0, switch_type.is_unsigned);
+
+  const psx_hir_node_t *call =
+      find_test_hir_node_kind(hir, PSX_HIR_CALL, 0);
+  ASSERT_TRUE(call != NULL);
+  const psx_hir_node_t *variadic_argument = NULL;
+  size_t argument_index = 0;
+  for (size_t i = 0; i < psx_hir_node_child_count(call); i++) {
+    if (psx_hir_node_child_edge_at(call, i) !=
+        PSX_HIR_EDGE_ARGUMENT)
+      continue;
+    if (argument_index++ == 1) {
+      variadic_argument = psx_hir_module_lookup(
+          hir, psx_hir_node_child_at(call, i));
+      break;
+    }
+  }
+  ASSERT_TRUE(variadic_argument != NULL);
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(variadic_argument));
+  psx_type_shape_t argument_type =
+      test_hir_type_shape(test_suite_session, variadic_argument);
+  ASSERT_EQ(PSX_TYPE_INTEGER, argument_type.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, argument_type.integer_kind);
+  ASSERT_EQ(0, argument_type.is_unsigned);
+
+  const psx_hir_node_t *compound_assignment =
+      find_test_hir_node_kind(
+          hir, PSX_HIR_COMPOUND_ASSIGN, 0);
+  ASSERT_TRUE(compound_assignment != NULL);
+  psx_type_shape_t compound_operand_type = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      psx_hir_node_attached_qual_type(
+          compound_assignment).type_id,
+      &compound_operand_type));
+  ASSERT_EQ(PSX_TYPE_INTEGER, compound_operand_type.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            compound_operand_type.integer_kind);
+  ASSERT_EQ(0, compound_operand_type.is_unsigned);
+}
+
 static void test_compound_assignment_typed_hir_boundary(
     ag_compilation_session_t *test_suite_session) {
   printf("test_compound_assignment_typed_hir_boundary...\n");
@@ -21142,6 +21219,7 @@ int main() {
   test_cast_typed_hir_boundary(test_suite_session);
   test_aggregate_cast_semantic_lowering_boundary(test_suite_session);
   test_implicit_conversion_hir_boundary(test_suite_session);
+  test_bitfield_integer_promotion_hir_boundary(test_suite_session);
   test_compound_assignment_typed_hir_boundary(test_suite_session);
   test_translation_unit_frontend_boundary(test_suite_session);
   test_function_definition_header_resolution_boundary(test_suite_session);

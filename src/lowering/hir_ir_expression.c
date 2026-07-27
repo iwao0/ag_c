@@ -2262,7 +2262,24 @@ static ir_val_t build_compound_assignment(
     if (target_type.type_class != IR_MIR_TYPE_INTEGER ||
         rhs_type.type_class != IR_MIR_TYPE_INTEGER)
       return hir_ir_unsupported_expr(context);
-    int operation_size = target_type.source_size;
+    ir_mir_type_info_t promoted_target_type = target_type;
+    psx_qual_type_t promoted_target_qual_type =
+        psx_hir_node_attached_qual_type(node);
+    if (promoted_target_qual_type.type_id !=
+        PSX_TYPE_ID_INVALID) {
+      promoted_target_type = ir_mir_classify_type_id(
+          &(ir_mir_type_context_t){
+              .semantic_types = context->options->semantic_types,
+              .record_layouts = context->options->record_layouts,
+              .data_layout = ag_target_info_data_layout(
+                  context->options->target),
+          },
+          promoted_target_qual_type.type_id);
+      if (promoted_target_type.type_class !=
+          IR_MIR_TYPE_INTEGER)
+        return hir_ir_unsupported_expr(context);
+    }
+    int operation_size = promoted_target_type.source_size;
     if (operation_size < 4) operation_size = 4;
     if (compound_op != PSX_HIR_COMPOUND_SHL &&
         compound_op != PSX_HIR_COMPOUND_SHR &&
@@ -2277,10 +2294,10 @@ static ir_val_t build_compound_assignment(
         compound_op == PSX_HIR_COMPOUND_SHL ||
                 compound_op == PSX_HIR_COMPOUND_SHR
             ? ir_mir_integer_promotion_is_unsigned(
-                  target_type,
+                  promoted_target_type,
                   ag_target_info_data_layout(context->options->target))
             : ir_mir_usual_arithmetic_result_is_unsigned(
-                  target_type, rhs_type,
+                  promoted_target_type, rhs_type,
                   ag_target_info_data_layout(context->options->target));
     old_value = hir_ir_coerce_direct_value(
         context, old_value, target_type, operation_type);

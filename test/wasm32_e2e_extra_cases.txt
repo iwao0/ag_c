@@ -46,6 +46,7 @@ probes_found_bugs/bool_array_element_normalize.c
 probes_found_bugs/bool_bitfield.c
 probes_found_bugs/bool_compound_assign_normalize.c
 probes_found_bugs/bitfield_conditional_promotion_boundaries.c
+probes_found_bugs/bitfield_integer_promotion_operators.c
 probes_found_bugs/bool_func_return_normalize.c
 probes_found_bugs/bool_initializer_normalization.c
 probes_found_bugs/bool_normalization.c

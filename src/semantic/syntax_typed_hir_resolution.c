@@ -2404,7 +2404,7 @@ static int resolve_direct_member_access(
   return 0;
 }
 
-static psx_qual_type_t direct_conditional_operand_qual_type(
+static psx_qual_type_t direct_promoted_bitfield_qual_type(
     direct_resolution_context_t *context,
     const node_t *syntax, psx_qual_type_t operand_type) {
   const node_t *selected =
@@ -3295,6 +3295,10 @@ static int preflight_direct_expression_impl(
         !preflight_direct_expression(
             context, syntax->lhs, &operand_type))
       return 0;
+    if (syntax->kind == ND_UNARY_PLUS ||
+        syntax->kind == ND_UNARY_NEGATE)
+      operand_type = direct_promoted_bitfield_qual_type(
+          context, syntax->lhs, operand_type);
     psx_qual_type_t result =
         psx_resolve_arithmetic_unary_result_qual_type_in(
             context->semantic_context, type_operator,
@@ -3328,6 +3332,8 @@ static int preflight_direct_expression_impl(
     if (!preflight_direct_expression(
             context, syntax->lhs, &operand_type))
       return 0;
+    operand_type = direct_promoted_bitfield_qual_type(
+        context, syntax->lhs, operand_type);
     psx_qual_type_t result =
         psx_resolve_bitwise_not_result_qual_type_in(
             context->semantic_context, operand_type);
@@ -3400,9 +3406,9 @@ static int preflight_direct_expression_impl(
         direct_integer_constant(
             context, ternary->els, &else_constant) &&
         else_constant == 0;
-    then_type = direct_conditional_operand_qual_type(
+    then_type = direct_promoted_bitfield_qual_type(
         context, syntax->rhs, then_type);
-    else_type = direct_conditional_operand_qual_type(
+    else_type = direct_promoted_bitfield_qual_type(
         context, ternary->els, else_type);
     psx_conditional_types_resolution_t resolution;
     psx_resolve_conditional_qual_types_in(
@@ -3486,6 +3492,13 @@ static int preflight_direct_expression_impl(
       direct_integer_constant(
           context, syntax->rhs, &rhs_constant) &&
       rhs_constant == 0;
+  if (type_operator != PSX_TYPE_BINARY_LOGICAL &&
+      type_operator != PSX_TYPE_BINARY_COMMA) {
+    lhs_type = direct_promoted_bitfield_qual_type(
+        context, syntax->lhs, lhs_type);
+    rhs_type = direct_promoted_bitfield_qual_type(
+        context, syntax->rhs, rhs_type);
+  }
   psx_binary_types_resolution_t resolution;
   psx_resolve_binary_qual_types_in(
       context->semantic_context, type_operator,
@@ -4148,6 +4161,33 @@ static psx_semantic_node_t *apply_direct_expression_decay(
       children, edges, 1, NULL, syntax->kind);
 }
 
+static psx_semantic_node_t *apply_direct_bitfield_promotion(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_semantic_node_t *expression) {
+  if (!context || !syntax || !expression) return NULL;
+  psx_qual_type_t source_type =
+      psx_semantic_node_expression_qual_type(expression);
+  psx_qual_type_t promoted_type =
+      direct_promoted_bitfield_qual_type(
+          context, syntax, source_type);
+  if (promoted_type.type_id == PSX_TYPE_ID_INVALID)
+    return NULL;
+  if (promoted_type.type_id == source_type.type_id &&
+      promoted_type.qualifiers == source_type.qualifiers)
+    return expression;
+  psx_semantic_node_t *children[] = {expression};
+  psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_CAST,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  return psx_semantic_node_builder_expression(
+      &context->builder, &spec, promoted_type,
+      children, edges, 1, NULL, syntax->kind);
+}
+
 static psx_semantic_node_t *build_direct_binary_node(
     direct_resolution_context_t *context,
     const node_t *syntax,
@@ -4156,6 +4196,14 @@ static psx_semantic_node_t *build_direct_binary_node(
     psx_semantic_node_t *lhs,
     psx_semantic_node_t *rhs) {
   if (!context || !syntax || !lhs || !rhs) return NULL;
+  if (type_operator != PSX_TYPE_BINARY_LOGICAL &&
+      type_operator != PSX_TYPE_BINARY_COMMA) {
+    lhs = apply_direct_bitfield_promotion(
+        context, syntax->lhs, lhs);
+    rhs = apply_direct_bitfield_promotion(
+        context, syntax->rhs, rhs);
+    if (!lhs || !rhs) return NULL;
+  }
   psx_qual_type_t result_qual_type =
       psx_resolve_binary_result_qual_type_in(
           context->semantic_context, type_operator,
@@ -4338,6 +4386,12 @@ static psx_semantic_node_t *build_direct_expression_impl(
     if (!resolve_direct_function_call(
             context, call, &binding))
       return NULL;
+    psx_type_shape_t function_shape = {0};
+    if (!direct_describe_qual_type(
+            context, binding->resolution.function_qual_type,
+            &function_shape) ||
+        function_shape.kind != PSX_TYPE_FUNCTION)
+      return NULL;
     size_t child_count = (size_t)call->argument_count +
                          (binding->direct_identifier ? 0u : 1u);
     psx_semantic_node_t **children = child_count
@@ -4368,6 +4422,14 @@ static psx_semantic_node_t *build_direct_expression_impl(
           build_direct_expression(context, call->arguments[i]);
       edges[child_index++] = PSX_HIR_EDGE_ARGUMENT;
       if (!children[child_index - 1]) return NULL;
+      if (!function_shape.has_function_prototype ||
+          i >= function_shape.parameter_count) {
+        children[child_index - 1] =
+            apply_direct_bitfield_promotion(
+                context, call->arguments[i],
+                children[child_index - 1]);
+        if (!children[child_index - 1]) return NULL;
+      }
     }
     psx_hir_node_spec_t spec = {
         .kind = PSX_HIR_CALL,
@@ -4444,12 +4506,17 @@ static psx_semantic_node_t *build_direct_expression_impl(
       .kind = syntax->kind == ND_COMPOUND_ASSIGN
                   ? PSX_HIR_COMPOUND_ASSIGN
                   : PSX_HIR_ASSIGN,
-        .attached_qual_type = {
+      .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
       .is_source_assignment = syntax->kind == ND_ASSIGN ? 1 : 0,
     };
-    if (syntax->kind == ND_COMPOUND_ASSIGN)
+    if (syntax->kind == ND_COMPOUND_ASSIGN) {
       spec.integer_value = hir_operator;
+      spec.attached_qual_type =
+          direct_promoted_bitfield_qual_type(
+              context, syntax->lhs,
+              psx_semantic_node_expression_qual_type(target));
+    }
     apply_direct_vla_runtime_view(
         context, syntax, resolution.result_qual_type, &spec);
     return psx_semantic_node_builder_expression(
@@ -4650,6 +4717,12 @@ static psx_semantic_node_t *build_direct_expression_impl(
     if (!operand || !direct_arithmetic_unary_operator(
                         syntax->kind, &type_operator))
       return NULL;
+    if (syntax->kind == ND_UNARY_PLUS ||
+        syntax->kind == ND_UNARY_NEGATE) {
+      operand = apply_direct_bitfield_promotion(
+          context, syntax->lhs, operand);
+      if (!operand) return NULL;
+    }
     psx_qual_type_t result_qual_type =
         psx_resolve_arithmetic_unary_result_qual_type_in(
             context->semantic_context, type_operator,
@@ -4708,6 +4781,9 @@ static psx_semantic_node_t *build_direct_expression_impl(
     psx_semantic_node_t *operand =
         build_direct_expression(context, syntax->lhs);
     if (!operand) return NULL;
+    operand = apply_direct_bitfield_promotion(
+        context, syntax->lhs, operand);
+    if (!operand) return NULL;
     psx_qual_type_t result_qual_type =
         psx_resolve_bitwise_not_result_qual_type_in(
             context->semantic_context,
@@ -4739,6 +4815,11 @@ static psx_semantic_node_t *build_direct_expression_impl(
     psx_semantic_node_t *else_value =
         build_direct_expression(context, ternary->els);
     if (!condition || !then_value || !else_value) return NULL;
+    then_value = apply_direct_bitfield_promotion(
+        context, syntax->rhs, then_value);
+    else_value = apply_direct_bitfield_promotion(
+        context, ternary->els, else_value);
+    if (!then_value || !else_value) return NULL;
     long long then_constant = 0;
     long long else_constant = 0;
     int then_is_null_pointer_constant =
@@ -4749,19 +4830,12 @@ static psx_semantic_node_t *build_direct_expression_impl(
         direct_integer_constant(
             context, ternary->els, &else_constant) &&
         else_constant == 0;
-    psx_qual_type_t then_type =
-        direct_conditional_operand_qual_type(
-            context, syntax->rhs,
-            psx_semantic_node_expression_qual_type(then_value));
-    psx_qual_type_t else_type =
-        direct_conditional_operand_qual_type(
-            context, ternary->els,
-            psx_semantic_node_expression_qual_type(else_value));
     psx_conditional_types_resolution_t resolution;
     psx_resolve_conditional_qual_types_in(
         context->semantic_context,
         psx_semantic_node_expression_qual_type(condition),
-        then_type, else_type,
+        psx_semantic_node_expression_qual_type(then_value),
+        psx_semantic_node_expression_qual_type(else_value),
         then_is_null_pointer_constant,
         else_is_null_pointer_constant, &resolution);
     if (resolution.status != PSX_CONDITIONAL_TYPES_OK) {
@@ -4799,6 +4873,9 @@ static int preflight_direct_control_expression(
       !preflight_direct_expression(
           context, expression, &condition_type))
     return 0;
+  if (requirement == PSX_CONTROL_EXPRESSION_REQUIRES_INTEGER)
+    condition_type = direct_promoted_bitfield_qual_type(
+        context, expression, condition_type);
   psx_control_expression_status_t status;
   psx_resolve_control_expression_qual_type_in(
       context->semantic_context, condition_type, requirement,
@@ -8399,6 +8476,9 @@ static psx_semantic_node_t *build_direct_control_statement(
   children[count] = build_direct_expression(
       context, control->base.lhs);
   edges[count++] = PSX_HIR_EDGE_LHS;
+  if (kind == PSX_HIR_SWITCH && children[0])
+    children[0] = apply_direct_bitfield_promotion(
+        context, control->base.lhs, children[0]);
   children[count] = build_direct_statement(
       context, control->base.rhs);
   edges[count++] = PSX_HIR_EDGE_RHS;
