@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-27（thread-local alignment / cross-TU fixture追加まで）
+最終更新: 2026-07-27（macro-expanded `#include` / 標準 `_Pragma` fixture追加まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -213,6 +213,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | `#if` 定数式のビット/シフト/剰余/三項 (`& | ^ << >> % ?:`) | 🔧 | pp_if_operators | 定数式パーサにレベル欠落で `#if (3&5)==1` 等が E1006。conditional/bitor/bitxor/bitand/shift と mul の % を追加 |
 | `#if` 定数式の `&&`/`||`/`?:` 短絡評価 (未選択側のゼロ除算 skip) | 🔧 | pp_if_short_circuit | `#if 0 != (0 && (0/0))` 等で右辺が評価され E1006。logand/logor/conditional で短絡 + `||` 短絡時は結果 1 に正規化。`&&` 右辺は bitor レベル (優先順位修正)。c-testsuite 00145 |
 | `#line` 指令の引数マクロ展開 | 🔧 | pp_line_macro_arg | `#line line` (`#define line 1000`) が raw TK_IDENT のまま無視され __LINE__ が更新されない。c-testsuite 00152 |
+| **`#include`引数のmacro展開** `#include HEADER` / `#include MAKE_HEADER(x)` | 🔧 | include_macro_expansion_boundaries / compile_fail: include_macro_invalid_rejected | streaming includeが指令行のraw tokenを直接filename parserへ渡し、C11 6.10.2p4で有効なobject macro、二段alias、function macroのstringize、macro生成`<stddef.h>`を空pathとしてE1001拒否していた。直接の`"..."`/`<...>`形でないpp-token形式を完全macro展開してからfilenameとして再解釈し、展開後に単一のheader形式であることも検証する。相対header・標準header・型/値利用をNative/WAT/Wasm objectで固定し、数値へ展開する不正形はE1001で両compile-fail経路から拒否する |
+| **標準 `_Pragma` 演算子とmacro展開境界** `_Pragma(P)` / `#define DO(x) _Pragma(#x)` | 🔧 | pragma_operator_macro_boundaries / compile_fail: pragma_operator_invalid_rejected | C99/C11 6.10.9 の演算子を通常識別子としてparserへ渡し、有効な標準CをE3005で拒否していた。括弧内を完全macro展開して単一文字列を要求し、`\"`/`\\`をdestringizeしたpragma token列を既存の`#pragma`処理へ接続する。直接・object macro operand・function macro replacement、encoding-prefix、`pack(push/pop)`のlayout復帰をNative/WAT/Wasm objectで固定し、不正形はE1043でNative/Wasm object双方から診断する |
 | 定義済みマクロ `__LP64__` (ARM64 LP64) | 🔧 | pp_predefined_lp64 | Apple ARM64 ターゲットなのに未定義で c-testsuite 00212 が失敗 |
 | C11実行環境・条件付き機能・Unicode macro `__STDC_HOSTED__` / `__STDC_NO_THREADS__` / `__STDC_UTF_16__` / `__STDC_UTF_32__` | 🔧 | predefined_environment_feature_macros | C11必須のhosted実装識別macro、`threads.h`を提供しない実装が示す条件付き機能macro、実装済みの`char16_t`/`char32_t`符号化を表すmacroが未定義だった。native/Wasmともhosted環境・thread未対応・UTF-16/UTF-32を`1`として公開し、UTF-16 surrogate pairとUTF-32 code pointの実値、提供済みのatomic・complex・VLAについて対応不可macroを誤定義しないことも固定する |
 | トップレベル宣言の関数プロトタイプと変数の混在 | 🔧 | mixed_decl_func_proto_and_var | `int f(int), g(int), a;` が funcdef 経路になり E2006。c-testsuite 00121 |

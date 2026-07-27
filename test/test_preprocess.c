@@ -26,6 +26,8 @@ static const success_case_t success_cases[] = {
     {42, "#include \"build/test_inc.h\"\nint main() { return inc_func(); }"},
     {42, "#include \"build/./dot_inc.h\"\nint main() { return dot_inc_func(); }"},
     {42, "#include \"build//slash_inc.h\"\nint main() { return slash_inc_func(); }"},
+    {42, "#define H1 H2\n#define H2 \"build/include_macro_object.h\"\n#define SYS <stddef.h>\n#include H1\n#include SYS\nint main(void){size_t n=INCLUDE_MACRO_OBJECT_CASE;return n==42?42:0;}"},
+    {42, "#define STR_IMPL(x) #x\n#define STR(x) STR_IMPL(x)\n#define HEADER(x) STR(x)\n#include HEADER(build/include_macro_function.h)\nint main(void){return INCLUDE_MACRO_FUNCTION_CASE;}"},
     {42, "#define FOO 42\nint main() { return FOO; }"},
     {10, "#define A 5\n#define B A\nint main() { return A + B; }"},
     {15, "#define PLUS_FIVE + 5\nint main() { return 10 PLUS_FIVE; }"},
@@ -62,6 +64,9 @@ static const success_case_t success_cases[] = {
     {42, "#include \"build/pragma_once.h\"\n#include \"build/pragma_once.h\"\nint main() { return once_func(); }"},
     {42, "#include \"build/pragma_once_rel.h\"\n#include \"./build/pragma_once_rel.h\"\nint main() { return once_rel_func(); }"},
     {42, "#include \"build/guard_a.h\"\nint main() { return guard_func(); }"},
+    {42, "#include <errno.h>\n#include <errno.h>\nint main(void){return 42;}"},
+    // C99/C11 _Pragma: operandのマクロ展開と、macro replacement内のstringize。
+    {42, "#define P \"pack(push, 1)\"\n#define DO(x) _Pragma(#x)\n_Pragma(P)\nstruct A{char c;int x;};\nDO(pack(pop))\n_Pragma(L\"STDC FP_CONTRACT OFF\")\nint main(void){return sizeof(struct A)==5?42:1;}"},
     // #line ディレクティブ
     {99, "#line 99\nint main() { return __LINE__; }"},
     {42, "#line 41\nint x = 0;\nint main() { return __LINE__; }"},
@@ -147,6 +152,8 @@ static const char *fail_cases[] = {
     "#define FOO(1) 1\nint main() { return FOO(1); }\n",
     "#define FOO(a, 1) 1\nint main() { return FOO(1); }\n",
     "#include <stdio.h\nint main() { return 0; }\n",
+    "#include \"build/test_inc.h\" trailing\nint main() { return 0; }\n",
+    "#define INVALID_HEADER 123\n#include INVALID_HEADER\nint main() { return 0; }\n",
     "#include \"build/not_found.h\"\nint main() { return 0; }\n",
     "#include \"build/escape_symlink.h\"\nint main() { return 0; }\n",
     "#include \"build/nofollow_link.h\"\nint main() { return 0; }\n",
@@ -185,6 +192,7 @@ static const char *fail_cases[] = {
     "#define BAD7(a,b) a##b\nint main() { return BAD7(&,&); }\n",
     "#if 1 /* unterminated\nint main() { return 0; }\n#endif\n",
     "#error \"forced\"\nint main() { return 0; }\n",
+    "_Pragma()\nint main(void) { return 0; }\n",
     // 可変長マクロ: 空 __VA_ARGS__ (`F(a,...)` を `F(1)`、`F(...)` を `F()`) は
     // clang/gcc が受理する有効ケースなので「エラーになるべき」リストから除外
     // (preprocess.c の variadic 引数チェックで対応)。
@@ -820,6 +828,12 @@ int main(void) {
   FILE *h = fopen("build/test_inc.h", "w");
   fprintf(h, "int inc_func() { return 42; }\n");
   fclose(h);
+  FILE *hmacro_object = fopen("build/include_macro_object.h", "w");
+  fprintf(hmacro_object, "#define INCLUDE_MACRO_OBJECT_CASE 42\n");
+  fclose(hmacro_object);
+  FILE *hmacro_function = fopen("build/include_macro_function.h", "w");
+  fprintf(hmacro_function, "#define INCLUDE_MACRO_FUNCTION_CASE 42\n");
+  fclose(hmacro_function);
   FILE *hdot = fopen("build/dot_inc.h", "w");
   fprintf(hdot, "int dot_inc_func() { return 42; }\n");
   fclose(hdot);
@@ -955,6 +969,8 @@ int main(void) {
   fclose(huge);
   expect_preprocess_fail_with_stderr_substr("#include \"build/huge_include.h\"\nint main() { return 0; }\n", "E1032");
   expect_preprocess_fail_with_stderr_substr("#error \"forced\"\nint main() { return 0; }\n", "E1033");
+  expect_preprocess_fail_with_stderr_substr("_Pragma 1\nint main(void) { return 0; }\n", "E1043");
+  expect_preprocess_fail_with_stderr_substr("#define BAD 1\n_Pragma(BAD)\nint main(void) { return 0; }\n", "E1043");
   expect_preprocess_fail_with_stderr_sanitized(
       "#error \"attack\x1f\xe2\x80\xaetext\"\nint main() { return 0; }\n",
       "E1033", "\\x1F", "\\u202E", "\x1f", "\xe2\x80\xae");

@@ -2233,7 +2233,8 @@ static token_t *handle_line(
 // `#pragma pack(...)` の中身を解釈し、出力チェーンに pragma_pack マーカーを追加する。
 // tok は '(' の次を指す状態で呼ばれ、終了時には ')' を消費した後 (もしくは行末) を指す。
 static token_t *handle_pragma_pack_body(
-    ag_preprocessor_context_t *context, token_t *tok, token_t **pcur) {
+    ag_preprocessor_context_t *context, token_t *tok, token_t **pcur,
+    const token_t *source_ref) {
   if (ident_is(tok, "push")) {
     tok = tok->next;
     if (tok->kind == TK_COMMA) {
@@ -2241,6 +2242,7 @@ static token_t *handle_pragma_pack_body(
       if (tok->kind == TK_NUM) {
         token_t *marker = make_int_token(
             context, ((token_num_int_t *)tok)->val, tok);
+        if (source_ref) copy_source_location(marker, source_ref);
         marker->kind = TK_PRAGMA_PACK_PUSH;
         (*pcur)->next = marker;
         *pcur = (*pcur)->next;
@@ -2252,11 +2254,13 @@ static token_t *handle_pragma_pack_body(
     token_t *marker = tk_allocator_calloc_in(
         pp_token_allocator(context), 1, sizeof(token_t));
     marker->kind = TK_PRAGMA_PACK_POP;
+    if (source_ref) copy_source_location(marker, source_ref);
     (*pcur)->next = marker;
     *pcur = (*pcur)->next;
   } else if (tok->kind == TK_NUM) {
     token_t *marker = make_int_token(
         context, ((token_num_int_t *)tok)->val, tok);
+    if (source_ref) copy_source_location(marker, source_ref);
     marker->kind = TK_PRAGMA_PACK_SET;
     (*pcur)->next = marker;
     *pcur = (*pcur)->next;
@@ -2265,6 +2269,7 @@ static token_t *handle_pragma_pack_body(
     token_t *marker = tk_allocator_calloc_in(
         pp_token_allocator(context), 1, sizeof(token_t));
     marker->kind = TK_PRAGMA_PACK_RESET;
+    if (source_ref) copy_source_location(marker, source_ref);
     (*pcur)->next = marker;
     *pcur = (*pcur)->next;
   }
@@ -2288,9 +2293,9 @@ static void diagnose_unsupported_gnu_extension_token(
           : "pop_macro");
 }
 
-static token_t *handle_pragma(
-    ag_preprocessor_context_t *context, token_t *tok, token_t **pcur) {
-  tok = tok->next;
+static token_t *handle_pragma_tokens(
+    ag_preprocessor_context_t *context, token_t *tok, token_t **pcur,
+    const token_t *source_ref) {
   if (ident_is(tok, "once")) {
     tok = tok->next;
     if (include_stack) {
@@ -2300,12 +2305,124 @@ static token_t *handle_pragma(
     tok = tok->next;
     if (tok->kind == TK_LPAREN) {
       tok = tok->next;
-      tok = handle_pragma_pack_body(context, tok, pcur);
+      tok = handle_pragma_pack_body(
+          context, tok, pcur, source_ref);
     }
   } else if (ident_is(tok, "push_macro") || ident_is(tok, "pop_macro")) {
     diagnose_unsupported_gnu_extension_token(context, tok);
   }
+  return tok;
+}
+
+static token_t *handle_pragma(
+    ag_preprocessor_context_t *context, token_t *tok, token_t **pcur) {
+  const token_t *source_ref = tok;
+  tok = handle_pragma_tokens(context, tok->next, pcur, source_ref);
   return skip_to_next_line(tok);
+}
+
+static _Noreturn void diagnose_invalid_pragma_operator(
+    ag_preprocessor_context_t *context, const token_t *tok) {
+  diag_emit_tokf_in(
+      context->diagnostic_context,
+      DIAG_ERR_PREPROCESS_PRAGMA_OPERATOR_INVALID, tok, "%s",
+      diag_message_for_in(
+          context->diagnostic_context,
+          DIAG_ERR_PREPROCESS_PRAGMA_OPERATOR_INVALID));
+}
+
+/* `_Pragma(...)` の括弧内を切り出して完全マクロ展開する。C11 6.10.9 により、
+ * 直接の文字列だけでなく `_Pragma(PRAGMA_TEXT)` も有効。 */
+static token_string_t *expand_pragma_operator_operand(
+    ag_preprocessor_context_t *context, token_t *tok,
+    token_t **out_rparen, const token_t *operator_tok) {
+  token_t head;
+  head.next = NULL;
+  token_t *cur = &head;
+  int nest = 0;
+
+  while (tok && tok->kind != TK_EOF) {
+    if (tok->kind == TK_RPAREN && nest == 0) break;
+    if (tok->kind == TK_LPAREN) {
+      nest++;
+    } else if (tok->kind == TK_RPAREN) {
+      nest--;
+    }
+    cur->next = copy_token(context, tok);
+    cur = cur->next;
+    tok = tok->next;
+  }
+  cur->next = NULL;
+  if (!tok || tok->kind != TK_RPAREN) {
+    diagnose_invalid_pragma_operator(context, operator_tok);
+  }
+  *out_rparen = tok;
+
+  token_t *expanded = pp_expand_arg(context, head.next);
+  if (!expanded || expanded->kind != TK_STRING ||
+      !expanded->next || expanded->next->kind != TK_EOF) {
+    diagnose_invalid_pragma_operator(context, operator_tok);
+  }
+  return as_string(expanded);
+}
+
+/* C11 6.10.9 の destringize: encoding prefix と外側の引用符は tokenizer が
+ * 既に分離している。内部では `\"` と `\\` だけを1文字へ戻し、それ以外の
+ * escape spelling はそのままpragma本文へ渡す。 */
+static char *destringize_pragma_text(
+    ag_preprocessor_context_t *context, const token_string_t *string_tok) {
+  size_t len = string_tok->len >= 0 ? (size_t)string_tok->len : 0;
+  char *text = calloc(len + 1, 1);
+  if (!text) {
+    pp_error(context, DIAG_ERR_INTERNAL_OOM, NULL);
+  }
+  size_t out = 0;
+  for (size_t i = 0; i < len; i++) {
+    if (string_tok->str[i] == '\\' && i + 1 < len &&
+        (string_tok->str[i + 1] == '\\' ||
+         string_tok->str[i + 1] == '"')) {
+      text[out++] = string_tok->str[++i];
+    } else {
+      text[out++] = string_tok->str[i];
+    }
+  }
+  text[out] = '\0';
+  return text;
+}
+
+static void apply_pragma_operator_text(
+    ag_preprocessor_context_t *context, const token_string_t *string_tok,
+    const token_t *operator_tok, token_t **pcur) {
+  char *text = destringize_pragma_text(context, string_tok);
+  const char *saved_input = tk_get_user_input_ctx(preprocess_tokenizer);
+  const char *saved_filename = tk_get_filename_ctx(preprocess_tokenizer);
+  token_t *saved_token = tk_get_current_token_ctx(preprocess_tokenizer);
+
+  tk_set_filename_ctx(preprocess_tokenizer, "<_Pragma>");
+  token_t *body = tk_tokenize_ctx(preprocess_tokenizer, text);
+  tk_set_filename_ctx(preprocess_tokenizer, saved_filename);
+  tk_set_user_input_ctx(preprocess_tokenizer, saved_input);
+  tk_set_current_token_ctx(preprocess_tokenizer, saved_token);
+
+  for (token_t *t = body; t && t->kind != TK_EOF; t = t->next) {
+    copy_source_location(t, operator_tok);
+  }
+  handle_pragma_tokens(context, body, pcur, operator_tok);
+  free(text);
+}
+
+/* tok は `_Pragma`。処理後は対応する ')' の次を返す。 */
+static token_t *handle_pragma_operator(
+    ag_preprocessor_context_t *context, token_t *tok, token_t **pcur) {
+  token_t *lparen = tok->next;
+  if (!lparen || lparen->kind != TK_LPAREN) {
+    diagnose_invalid_pragma_operator(context, tok);
+  }
+  token_t *rparen = NULL;
+  token_string_t *string_tok = expand_pragma_operator_operand(
+      context, lparen->next, &rparen, tok);
+  apply_pragma_operator_text(context, string_tok, tok, pcur);
+  return rparen->next;
 }
 
 /* オブジェクト形式マクロ本体を展開して返す (本体コピー + ## paste + hideset 付与 +
@@ -2552,6 +2669,10 @@ static token_t *preprocess_tokens(
     }
 
     if (tok->kind == TK_IDENT) {
+      if (ident_is(tok, "_Pragma")) {
+        tok = handle_pragma_operator(context, tok, &cur);
+        continue;
+      }
       token_ident_t *id = as_ident(tok);
       char *name = my_strndup(id->str, id->len);
 
@@ -3072,8 +3193,20 @@ static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
  * 呼ばれる前提。 */
 static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
-  token_t *tok = after_hash->next;  // skip "include"
+  token_t *raw = after_hash->next;
+  /* C11 6.10.2p2-p4: 最初から `"..."` / `<...>` の形なら内部識別子を
+   * macro展開せず、そのどちらにも一致しないpp-token形だけをreplacementへ通す。
+   * これにより`#include <errno.h>`内の既定macro `errno`は展開せず、
+   * `#include HEADER`やmacroが生成する`<stddef.h>`は展開後に再解釈できる。 */
+  token_t *tok =
+      raw && (raw->kind == TK_STRING || raw->kind == TK_LT)
+          ? raw
+          : pp_expand_directive_line(context, raw);
   char *filename = consume_include_filename(context, &tok);
+  if (!filename[0] || !tok || tok->kind != TK_EOF) {
+    free(filename);
+    pp_error(context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+  }
   const char *current_file = tk_get_filename_ctx(preprocess_tokenizer);
   char *loaded_path = NULL;
   char *buf = NULL;
@@ -3215,6 +3348,32 @@ static int pps_step(pp_stream_t *s) {
 
   if (tok->kind == TK_IDENT) {
     token_ident_t *id = as_ident(tok);
+    if (id->len == 7 && memcmp(id->str, "_Pragma", 7) == 0) {
+      token_t *lparen = pps_pull_raw(s);
+      if (!lparen || lparen->kind != TK_LPAREN) {
+        diagnose_invalid_pragma_operator(context, tok);
+      }
+      token_t *operand = pps_materialize_balanced(s, lparen);
+      tok->next = lparen;
+      lparen->next = operand;
+
+      token_t marker_head;
+      marker_head.next = NULL;
+      token_t *marker_cur = &marker_head;
+      pps_cursor_hook_binding_t saved_hook = pps_suspend_cursor_hook(s);
+      handle_pragma_operator(context, tok, &marker_cur);
+      pps_restore_cursor_hook(s, saved_hook);
+
+      int appended = 0;
+      for (token_t *marker = marker_head.next; marker; ) {
+        token_t *next = marker->next;
+        marker->next = NULL;
+        pps_append(s, marker);
+        appended++;
+        marker = next;
+      }
+      return appended;
+    }
     /* __LINE__ / __FILE__ は preprocess_ctx と同じくマクロ表より先に inline 処理。 */
     if (id->len == 8 && memcmp(id->str, "__LINE__", 8) == 0) {
       pps_append(s, make_int_token(context, tok->line_no, tok));

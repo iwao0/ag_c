@@ -57,6 +57,7 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_FILE_SIZE_LIMIT_EXCEEDED, "E1040", "preprocess.virtual_header_file_size_limit_exceeded"},
     {DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_TOTAL_SIZE_LIMIT_EXCEEDED, "E1041", "preprocess.virtual_header_total_size_limit_exceeded"},
     {DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_DUPLICATE_PATH, "E1042", "preprocess.virtual_header_duplicate_path"},
+    {DIAG_ERR_PREPROCESS_PRAGMA_OPERATOR_INVALID, "E1043", "preprocess.pragma_operator_invalid"},
     {DIAG_ERR_TOKENIZER_GENERIC, "E2000", "tokenizer.generic"},
     {DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR, "E2001", "tokenizer.unexpected_char"},
     {DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG, "E2002", "tokenizer.token_too_long"},

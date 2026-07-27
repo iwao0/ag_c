@@ -1276,6 +1276,8 @@ static const test_case_t test_cases[] = {
     {"probes", "pp_if_operators", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_if_operators.c", 0, 0},
     {"probes", "pp_if_short_circuit", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_if_short_circuit.c", 0, 0},
     {"probes", "pp_line_macro_arg", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_line_macro_arg.c", 0, 0},
+    {"probes", "include_macro_expansion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/include_macro_expansion_boundaries.c", 0, 0},
+    {"probes", "pragma_operator_macro_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pragma_operator_macro_boundaries.c", 0, 0},
     {"probes", "pp_predefined_lp64", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_predefined_lp64.c", 0, 0},
     {"probes", "mixed_decl_func_proto_and_var", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mixed_decl_func_proto_and_var.c", 0, 0},
     {"probes", "func_returning_funcptr_call", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_returning_funcptr_call.c", 0, 0},
@@ -2948,6 +2950,16 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"c11_block_implicit_int_rejected",
      "int block_scope(void) { static local; return 0; }",
      "E3088"},
+    {"include_macro_invalid_rejected",
+     "#define INVALID_HEADER 123\n"
+     "#include INVALID_HEADER\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"pragma_operator_invalid_rejected",
+     "#define INVALID_PRAGMA_OPERAND 1\n"
+     "_Pragma(INVALID_PRAGMA_OPERAND)\n"
+     "int main(void) { return 0; }\n",
+     "E1043"},
     {"gnu_statement_expression_rejected",
      "int main(void) { return ({ int value = 1; value; }); }",
      "E3096"},

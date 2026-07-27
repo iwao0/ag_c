@@ -300,6 +300,8 @@ probes_found_bugs/pointer_integer_compare.c
 probes_found_bugs/pointer_to_vla.c
 probes_found_bugs/pointer_typedef_param_subscript.c
 probes_found_bugs/pp_if_operators.c
+probes_found_bugs/include_macro_expansion_boundaries.c
+probes_found_bugs/pragma_operator_macro_boundaries.c
 probes_found_bugs/pp_if_short_circuit.c
 probes_found_bugs/pp_line_macro_arg.c
 probes_found_bugs/ptr_array_arith_subscript_deref.c
