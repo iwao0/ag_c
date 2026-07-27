@@ -1327,6 +1327,8 @@ static const test_case_t test_cases[] = {
     {"probes", "macro_parameter_list_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_parameter_list_boundaries.c", 0, 0},
     {"probes", "macro_replacement_operator_definition_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_replacement_operator_definition_boundaries.c", 0, 0},
     {"probes", "macro_undef_directive_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_undef_directive_boundaries.c", 0, 0},
+    {"probes", "conditional_directive_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/conditional_directive_boundaries.c", 0, 0},
+    {"probes", "line_directive_syntax_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/line_directive_syntax_boundaries.c", 0, 0},
     {"probes", "char_2d_array_string_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/char_2d_array_string_init.c", 0, 0},
     {"probes", "empty_macro_argument", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/empty_macro_argument.c", 0, 0},
     {"probes", "generic_struct_vs_scalar", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_struct_vs_scalar.c", 0, 0},
@@ -2974,6 +2976,32 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#include INVALID_HEADER\n"
      "int main(void) { return 0; }\n",
      "E1001"},
+    {"include_wide_string_filename_rejected",
+     "#include L\"stddef.h\"\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_utf16_string_filename_rejected",
+     "#include u\"stddef.h\"\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_utf32_string_filename_rejected",
+     "#include U\"stddef.h\"\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_utf8_string_filename_rejected",
+     "#include u8\"stddef.h\"\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_macro_wide_string_filename_rejected",
+     "#define HEADER L\"stddef.h\"\n"
+     "#include HEADER\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_macro_utf8_string_filename_rejected",
+     "#define HEADER u8\"stddef.h\"\n"
+     "#include HEADER\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
     {"pragma_operator_invalid_rejected",
      "#define INVALID_PRAGMA_OPERAND 1\n"
      "_Pragma(INVALID_PRAGMA_OPERAND)\n"
@@ -3089,6 +3117,121 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#undef VALUE()\n"
      "int main(void) { return 0; }\n",
      "E1050"},
+    {"preprocess_ifdef_extra_tokens_rejected",
+     "#define FLAG 1\n"
+     "#ifdef FLAG extra\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1051"},
+    {"preprocess_ifndef_extra_tokens_rejected",
+     "#ifndef MISSING extra\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1051"},
+    {"preprocess_else_extra_tokens_rejected",
+     "#if 0\n"
+     "int value;\n"
+     "#else extra\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1051"},
+    {"preprocess_endif_extra_tokens_rejected",
+     "#if 1\n"
+     "int value;\n"
+     "#endif extra\n"
+     "int main(void) { return 0; }\n",
+     "E1051"},
+    {"preprocess_unknown_directive_rejected",
+     "#unknown tokens\n"
+     "int main(void) { return 0; }\n",
+     "E1052"},
+    {"preprocess_nonidentifier_directive_rejected",
+     "# 123\n"
+     "int main(void) { return 0; }\n",
+     "E1052"},
+    {"preprocess_unterminated_true_conditional_rejected",
+     "#if 1\n"
+     "int main(void) { return 0; }\n",
+     "E1053"},
+    {"preprocess_unterminated_false_conditional_rejected",
+     "#if 0\n"
+     "int hidden;\n",
+     "E1053"},
+    {"preprocess_header_unterminated_conditional_rejected",
+     "#include \"test/fixtures/should_reject/preprocess_conditional_open.h\"\n"
+     "int main(void) { return 0; }\n",
+     "E1053"},
+    {"preprocess_header_cross_file_endif_rejected",
+     "#if 1\n"
+     "#include \"test/fixtures/should_reject/preprocess_conditional_close.h\"\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1023"},
+    {"preprocess_header_cross_file_else_rejected",
+     "#if 1\n"
+     "#include \"test/fixtures/should_reject/preprocess_conditional_else.h\"\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1019"},
+    {"preprocess_header_cross_file_elif_rejected",
+     "#if 1\n"
+     "#include \"test/fixtures/should_reject/preprocess_conditional_elif.h\"\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1021"},
+    {"line_directive_missing_number_rejected",
+     "#line\n"
+     "int main(void) { return 0; }\n",
+     "E1027"},
+    {"line_directive_identifier_number_rejected",
+     "#line NOT_DEFINED\n"
+     "int main(void) { return 0; }\n",
+     "E1027"},
+    {"line_directive_hex_number_rejected",
+     "#line 0x10\n"
+     "int main(void) { return 0; }\n",
+     "E1027"},
+    {"line_directive_suffixed_number_rejected",
+     "#line 10U\n"
+     "int main(void) { return 0; }\n",
+     "E1027"},
+    {"line_directive_signed_number_rejected",
+     "#line +10\n"
+     "int main(void) { return 0; }\n",
+     "E1027"},
+    {"line_directive_character_number_rejected",
+     "#line 'A'\n"
+     "int main(void) { return 0; }\n",
+     "E1027"},
+    {"line_directive_floating_number_rejected",
+     "#line 10.0\n"
+     "int main(void) { return 0; }\n",
+     "E1027"},
+    {"line_directive_identifier_filename_rejected",
+     "#line 10 filename\n"
+     "int main(void) { return 0; }\n",
+     "E1028"},
+    {"line_directive_wide_filename_rejected",
+     "#line 10 L\"mapped.c\"\n"
+     "int main(void) { return 0; }\n",
+     "E1028"},
+    {"line_directive_u8_filename_rejected",
+     "#line 10 u8\"mapped.c\"\n"
+     "int main(void) { return 0; }\n",
+     "E1028"},
+    {"line_directive_extra_tokens_rejected",
+     "#line 10 \"mapped.c\" extra\n"
+     "int main(void) { return 0; }\n",
+     "E1054"},
+    {"line_directive_concatenated_filename_rejected",
+     "#line 10 \"mapped\" \".c\"\n"
+     "int main(void) { return 0; }\n",
+     "E1054"},
+    {"line_directive_macro_extra_tokens_rejected",
+     "#define LOCATION 10 \"mapped.c\" extra\n"
+     "#line LOCATION\n"
+     "int main(void) { return 0; }\n",
+     "E1054"},
     {"different_encoded_string_prefixes_rejected",
      "int main(void) { return u\"a\" U\"b\"[0]; }\n",
      "E3058"},

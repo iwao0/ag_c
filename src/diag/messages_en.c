@@ -66,6 +66,10 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_MACRO_STRINGIZE_PARAMETER_REQUIRED: return "'#' in a function-like macro must be followed by a macro parameter";
     case DIAG_ERR_PREPROCESS_PREDEFINED_MACRO_MODIFICATION_FORBIDDEN: return "Predefined macro cannot be defined or undefined: %s";
     case DIAG_ERR_PREPROCESS_UNDEF_EXTRA_TOKENS: return "Extra tokens at end of #undef directive";
+    case DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS: return "Extra tokens at end of conditional preprocessing directive";
+    case DIAG_ERR_PREPROCESS_UNKNOWN_DIRECTIVE: return "Invalid preprocessing directive";
+    case DIAG_ERR_PREPROCESS_UNTERMINATED_CONDITIONAL: return "Unterminated conditional preprocessing directive";
+    case DIAG_ERR_PREPROCESS_LINE_EXTRA_TOKENS: return "Extra tokens at end of #line directive";
     case DIAG_ERR_TOKENIZER_GENERIC: return "Tokenizer error";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "Unexpected character";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "Token is too long";

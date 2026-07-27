@@ -66,6 +66,10 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_MACRO_STRINGIZE_PARAMETER_REQUIRED: return "function-like macro内の'#'の直後にはmacro parameterが必要です";
     case DIAG_ERR_PREPROCESS_PREDEFINED_MACRO_MODIFICATION_FORBIDDEN: return "predefined macroは定義または解除できません: %s";
     case DIAG_ERR_PREPROCESS_UNDEF_EXTRA_TOKENS: return "#undef directiveの末尾に余分なtokenがあります";
+    case DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS: return "条件付きpreprocessing directiveの末尾に余分なtokenがあります";
+    case DIAG_ERR_PREPROCESS_UNKNOWN_DIRECTIVE: return "不正なpreprocessing directiveです";
+    case DIAG_ERR_PREPROCESS_UNTERMINATED_CONDITIONAL: return "条件付きpreprocessing directiveが閉じられていません";
+    case DIAG_ERR_PREPROCESS_LINE_EXTRA_TOKENS: return "#line directiveの末尾に余分なtokenがあります";
     case DIAG_ERR_TOKENIZER_GENERIC: return "トークナイズエラーです";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "不正な文字です";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "トークン長が上限を超えています";

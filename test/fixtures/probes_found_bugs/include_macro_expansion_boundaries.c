@@ -5,6 +5,8 @@
   "test/fixtures/probes_found_bugs/include_macro_object.h"
 #define OBJECT_HEADER_ALIAS OBJECT_HEADER
 #include OBJECT_HEADER_ALIAS
+#include /* leading comment */ \
+    "test/fixtures/probes_found_bugs/include_macro_object.h" /* trailing comment */
 
 #define STRINGIZE_IMPL(tokens) #tokens
 #define STRINGIZE(tokens) STRINGIZE_IMPL(tokens)
@@ -15,6 +17,7 @@
 #define STANDARD_HEADER <stddef.h>
 #define STANDARD_HEADER_ALIAS STANDARD_HEADER
 #include STANDARD_HEADER_ALIAS
+#include /* leading comment */ <stddef.h> /* trailing comment */
 
 _Static_assert(INCLUDE_MACRO_OBJECT_VALUE == 17, "object macro include");
 _Static_assert(offsetof(struct include_macro_object_payload, value) == 4,

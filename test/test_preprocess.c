@@ -36,6 +36,7 @@ static const success_case_t success_cases[] = {
     {10, "#define FOO\n#ifdef FOO\nint main() { return 10; }\n#else\nint main() { return 20; }\n#endif"},
     {20, "#undef FOO\n#ifdef FOO\nint main() { return 10; }\n#else\nint main() { return 20; }\n#endif"},
     {10, "#ifndef FOO\nint main() { return 10; }\n#endif"},
+    {42, "#\n# /* null directive */\n#define FLAG 1\n#if 1\n#define A 40\n#elif 1 +\n#define A 0\n#endif\n#ifdef FLAG /* comment */\n#define B 2\n#else /* comment */\n#define B 0\n#endif /* comment */\n#if 0\n#unknown skipped\n#endif\nint main(void) { return A + B; }"},
     {5, "#if 1\nint main() { return 5; }\n#endif"},
     {5, "#if 0\nint main() { return 10; }\n#else\nint main() { return 5; }\n#endif"},
     {5, "#define FOO 1\n#if FOO\nint main() { return 5; }\n#endif"},
@@ -80,6 +81,7 @@ static const success_case_t success_cases[] = {
     {42, "#line 41\nint x = 0;\nint main() { return __LINE__; }"},
     {1,  "#line 1 \"myfile.c\"\nint main() { char *f = __FILE__; return f[0] == 'm' ? 1 : 0; }"},
     {200, "#undef line\n#define line 200\n#line line\nint main() { return __LINE__; }"},
+    {42, "#define LOCATION 0010 \"mapped.c\"\n#line LOCATION\nint first = __LINE__;\n#line 20 /* comment */\nint second = __LINE__;\nint main(void) { return first + second + 12; }"},
     {42, "#if defined(__LP64__) && !defined(__wasm32__)\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     // 標準ヘッダ
     {42, "#include <stdint.h>\nint main() { int32_t x = 42; return x; }"},
@@ -978,10 +980,58 @@ int main(void) {
   }
   expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
   expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\x1fname.c\"\nint main() { return 0; }\n", "E1028");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line\nint main(void) { return 0; }\n", "E1027");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line NOT_DEFINED\nint main(void) { return 0; }\n", "E1027");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 0x10\nint main(void) { return 0; }\n", "E1027");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 10U\nint main(void) { return 0; }\n", "E1027");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line +10\nint main(void) { return 0; }\n", "E1027");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 'A'\nint main(void) { return 0; }\n", "E1027");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 10.0\nint main(void) { return 0; }\n", "E1027");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 10 filename\nint main(void) { return 0; }\n", "E1028");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 10 L\"mapped.c\"\nint main(void) { return 0; }\n", "E1028");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 10 u8\"mapped.c\"\nint main(void) { return 0; }\n", "E1028");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 10 \"mapped.c\" extra\nint main(void) { return 0; }\n", "E1054");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 10 \"mapped\" \".c\"\nint main(void) { return 0; }\n", "E1054");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define LOCATION 10 \"mapped.c\" extra\n"
+      "#line LOCATION\nint main(void) { return 0; }\n",
+      "E1054");
   expect_line_filename_invalid_utf8_fail();
   expect_preprocess_fail_with_stderr_substr("#include \"build/realpath_loop_a.h\"\nint main() { return 0; }\n", "E1036");
   expect_preprocess_fail_with_stderr_substr("#include \"build/depth_00.h\"\nint main() { return 0; }\n", "E1004");
   expect_preprocess_fail_with_stderr_substr("#include \"build/not_found.h\"\nint main() { return 0; }\n", "E1034");
+  expect_preprocess_fail_with_stderr_substr(
+      "#include L\"stddef.h\"\nint main(void) { return 0; }\n",
+      "E1001");
+  expect_preprocess_fail_with_stderr_substr(
+      "#include u\"stddef.h\"\nint main(void) { return 0; }\n",
+      "E1001");
+  expect_preprocess_fail_with_stderr_substr(
+      "#include U\"stddef.h\"\nint main(void) { return 0; }\n",
+      "E1001");
+  expect_preprocess_fail_with_stderr_substr(
+      "#include u8\"stddef.h\"\nint main(void) { return 0; }\n",
+      "E1001");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define HEADER L\"stddef.h\"\n"
+      "#include HEADER\nint main(void) { return 0; }\n",
+      "E1001");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define HEADER u8\"stddef.h\"\n"
+      "#include HEADER\nint main(void) { return 0; }\n",
+      "E1001");
   char cwd[PATH_MAX];
   if (!getcwd(cwd, sizeof(cwd))) {
     fprintf(stderr, "  FAIL: cannot get cwd for leak check\n");
@@ -1054,6 +1104,53 @@ int main(void) {
       "#define VALUE 42\n#undef VALUE extra\n"
       "int main(void) { return 0; }\n",
       "E1050");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define FLAG 1\n#ifdef FLAG extra\n"
+      "int main(void) { return 0; }\n#endif\n",
+      "E1051");
+  expect_preprocess_fail_with_stderr_substr(
+      "#ifndef MISSING extra\n"
+      "int main(void) { return 0; }\n#endif\n",
+      "E1051");
+  expect_preprocess_fail_with_stderr_substr(
+      "#if 0\nint value;\n#else extra\n"
+      "int main(void) { return 0; }\n#endif\n",
+      "E1051");
+  expect_preprocess_fail_with_stderr_substr(
+      "#if 1\nint value;\n#endif extra\n"
+      "int main(void) { return 0; }\n",
+      "E1051");
+  expect_preprocess_fail_with_stderr_substr(
+      "#unknown tokens\nint main(void) { return 0; }\n",
+      "E1052");
+  expect_preprocess_fail_with_stderr_substr(
+      "# 123\nint main(void) { return 0; }\n",
+      "E1052");
+  expect_preprocess_fail_with_stderr_substr(
+      "#if 1\nint main(void) { return 0; }\n",
+      "E1053");
+  expect_preprocess_fail_with_stderr_substr(
+      "#if 0\nint hidden;\n",
+      "E1053");
+  expect_preprocess_fail_with_stderr_substr(
+      "#include \"test/fixtures/should_reject/preprocess_conditional_open.h\"\n"
+      "int main(void) { return 0; }\n",
+      "E1053");
+  expect_preprocess_fail_with_stderr_substr(
+      "#if 1\n"
+      "#include \"test/fixtures/should_reject/preprocess_conditional_close.h\"\n"
+      "int main(void) { return 0; }\n#endif\n",
+      "E1023");
+  expect_preprocess_fail_with_stderr_substr(
+      "#if 1\n"
+      "#include \"test/fixtures/should_reject/preprocess_conditional_else.h\"\n"
+      "int main(void) { return 0; }\n#endif\n",
+      "E1019");
+  expect_preprocess_fail_with_stderr_substr(
+      "#if 1\n"
+      "#include \"test/fixtures/should_reject/preprocess_conditional_elif.h\"\n"
+      "int main(void) { return 0; }\n#endif\n",
+      "E1021");
   expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
   expect_macro_arg_nesting_limit_fail();

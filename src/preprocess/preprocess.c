@@ -2034,6 +2034,14 @@ static token_t *skip_to_next_line(token_t *tok) {
   return tok;
 }
 
+static void require_conditional_directive_line_end(
+    ag_preprocessor_context_t *context, token_t *tok) {
+  if (tok->kind != TK_EOF && !tok->at_bol) {
+    pp_error(
+        context, DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS, NULL);
+  }
+}
+
 // 識別子トークンを必須として取り出し、my_strndup したコピーを返す。
 // 失敗時は pp_error で中断。
 static char *consume_required_macro_name(
@@ -2060,6 +2068,11 @@ static token_t *handle_ifdef_or_ifndef(
     ag_preprocessor_context_t *context, token_t *tok, bool negated) {
   tok = tok->next; // skip directive name
   char *name = consume_required_macro_name(context, &tok);
+  if (tok->kind != TK_EOF && !tok->at_bol) {
+    free(name);
+    pp_error(
+        context, DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS, NULL);
+  }
   bool defined = find_macro(context, name) != NULL;
   free(name);
   bool is_true = negated ? !defined : defined;
@@ -2073,6 +2086,7 @@ static token_t *handle_else(
     ag_preprocessor_context_t *context, token_t *tok) {
   if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
   if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
+  require_conditional_directive_line_end(context, tok->next);
   cond_incl->ctx = IN_ELSE;
   tok = skip_to_next_line(tok->next);
   if (cond_incl->included) {
@@ -2111,6 +2125,7 @@ static token_t *handle_if(
 static token_t *handle_endif(
     ag_preprocessor_context_t *context, token_t *tok) {
   if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF, NULL);
+  require_conditional_directive_line_end(context, tok->next);
   cond_incl_t *ci = cond_incl;
   cond_incl = cond_incl->next;
   free(ci);
@@ -2130,6 +2145,11 @@ static char *consume_include_filename(
   }
   if (tok->kind == TK_STRING) {
     token_string_t *st = as_string(tok);
+    if (st->str_prefix_kind != TK_STR_PREFIX_NONE) {
+      free(filename);
+      pp_error(
+          context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+    }
     size_t need = (size_t)st->len + 1;
     if (st->len < 0 || need == 0) {
       pp_error(context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
@@ -2477,28 +2497,56 @@ static token_t *pp_expand_directive_line(
   return expanded;
 }
 
-/* マクロ展開済み #line 引数を解釈する。行番号が無効なら診断で中断。 */
-static bool pp_parse_line_directive_args(ag_preprocessor_context_t *context, token_t *tok,
-                                         long long *out_line, char **out_file) {
-  if (!(tok && tok->kind == TK_NUM && tk_as_num(tok)->num_kind == TK_NUM_KIND_INT)) {
-    return false;
-  }
-  long long new_line = tk_as_num_int(tok)->val;
-  if (new_line <= 0 || new_line > INT_MAX) {
+/* C11 6.10.4: macro replacement後の行番号はC整数定数ではなく10進digit sequence。
+ * したがって`010`も8ではなく10であり、base prefix・sign・suffixは許可しない。 */
+static long long pp_parse_line_decimal_sequence(
+    ag_preprocessor_context_t *context, token_t *tok) {
+  if (!tok || tok->kind != TK_NUM ||
+      tk_as_num(tok)->num_kind != TK_NUM_KIND_INT) {
     pp_error(context, DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
   }
-  *out_line = new_line;
+  token_num_t *number = tk_as_num(tok);
+  if (!number->str || number->len <= 0) {
+    pp_error(context, DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
+  }
+  unsigned long long value = 0;
+  for (int i = 0; i < number->len; i++) {
+    unsigned char c = (unsigned char)number->str[i];
+    if (c < '0' || c > '9') {
+      pp_error(context, DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
+    }
+    unsigned int digit = (unsigned int)(c - '0');
+    if (value > ((unsigned long long)INT_MAX - digit) / 10ULL) {
+      pp_error(context, DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
+    }
+    value = value * 10ULL + digit;
+  }
+  if (value == 0) {
+    pp_error(context, DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
+  }
+  return (long long)value;
+}
+
+/* マクロ展開済み #line 引数を解釈する。不正形は診断で中断する。 */
+static void pp_parse_line_directive_args(
+    ag_preprocessor_context_t *context, token_t *tok,
+    long long *out_line, char **out_file) {
+  *out_line = pp_parse_line_decimal_sequence(context, tok);
   tok = tok->next;
   *out_file = NULL;
   if (tok && tok->kind != TK_EOF && !tok->at_bol) {
-    if (tok->kind != TK_STRING) {
-      return false;
+    if (tok->kind != TK_STRING ||
+        as_string(tok)->str_prefix_kind != TK_STR_PREFIX_NONE) {
+      pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
     }
     token_string_t *st = as_string(tok);
     validate_line_filename_or_die(context, st->str, st->len);
+    tok = tok->next;
+    if (tok && tok->kind != TK_EOF && !tok->at_bol) {
+      pp_error(context, DIAG_ERR_PREPROCESS_LINE_EXTRA_TOKENS, NULL);
+    }
     *out_file = my_strndup(st->str, st->len);
   }
-  return true;
 }
 
 // #line N ["filename"]: 以降のトークンの line_no / file_name_id を書き換える。
@@ -2508,9 +2556,7 @@ static token_t *handle_line(
   token_t *expanded = pp_expand_directive_line(context, args);
   long long new_line;
   char *new_file = NULL;
-  if (!pp_parse_line_directive_args(context, expanded, &new_line, &new_file)) {
-    return skip_to_next_line(args);
-  }
+  pp_parse_line_directive_args(context, expanded, &new_line, &new_file);
   tok = skip_to_next_line(args);
   if (tok->kind != TK_EOF) {
     long long offset = new_line - (long long)tok->line_no;
@@ -2966,9 +3012,8 @@ static token_t *preprocess_tokens(
       if (is_dir(tok, "line"))   { tok = handle_line(context, tok);   continue; }
       if (is_dir(tok, "pragma")) { tok = handle_pragma(context, tok, &cur); continue; }
 
-      // ひとまず改行（次の行頭）またはEOFまでトークンを読み飛ばす
-      while (tok->kind != TK_EOF && !tok->at_bol) {
-        tok = tok->next;
+      if (tok->kind != TK_EOF && !tok->at_bol) {
+        pp_error(context, DIAG_ERR_PREPROCESS_UNKNOWN_DIRECTIVE, NULL);
       }
       continue;
     }
@@ -3084,6 +3129,7 @@ struct pp_include_frame {
   int         saved_line_delta;     // 親の #line 状態 (Stage 4)
   int         saved_file_override_set;
   uint16_t    saved_file_override;
+  cond_incl_t *saved_cond_incl;     // include開始時の条件stack境界
 };
 
 struct pp_stream {
@@ -3111,6 +3157,18 @@ struct pp_stream {
   uint16_t file_override;  // 有効時、lex 由来トークンの file_name_id をこれで上書き
   pp_include_frame_t *frames;  // 被 include フレームスタック (NULL = 最外ファイル)
 };
+
+static cond_incl_t *pps_conditional_boundary(const pp_stream_t *s) {
+  return s->frames ? s->frames->saved_cond_incl : NULL;
+}
+
+static void pps_require_conditional_balance(pp_stream_t *s) {
+  ag_preprocessor_context_t *context = s->context;
+  if (cond_incl != pps_conditional_boundary(s)) {
+    pp_error(
+        context, DIAG_ERR_PREPROCESS_UNTERMINATED_CONDITIONAL, NULL);
+  }
+}
 
 static token_t *pps_pull_raw(pp_stream_t *s);
 static void pps_pushback_one(pp_stream_t *s, token_t *t);
@@ -3432,6 +3490,11 @@ static void pps_handle_ifdef(pp_stream_t *s, token_t *after_hash, bool negated) 
   ag_preprocessor_context_t *context = s->context;
   token_t *tok = after_hash->next;
   char *name = consume_required_macro_name(context, &tok);
+  if (tok->kind != TK_EOF && !tok->at_bol) {
+    free(name);
+    pp_error(
+        context, DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS, NULL);
+  }
   bool defined = find_macro(context, name) != NULL;
   free(name);
   bool is_true = negated ? !defined : defined;
@@ -3440,7 +3503,8 @@ static void pps_handle_ifdef(pp_stream_t *s, token_t *after_hash, bool negated) 
 }
 static void pps_handle_elif(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
-  if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
+  if (cond_incl == pps_conditional_boundary(s))
+    pp_error(context, DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
   if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
   cond_incl->ctx = IN_ELIF;
   token_t *tok = after_hash->next;
@@ -3451,12 +3515,22 @@ static void pps_handle_elif(pp_stream_t *s, token_t *after_hash) {
 }
 static void pps_handle_else(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
-  (void)after_hash;
-  if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
+  if (cond_incl == pps_conditional_boundary(s))
+    pp_error(context, DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
   if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
+  require_conditional_directive_line_end(context, after_hash->next);
   cond_incl->ctx = IN_ELSE;
   if (cond_incl->included) pps_skip_cond_incl(s);
   else cond_incl->included = true;
+}
+
+static void pps_handle_endif(pp_stream_t *s, token_t *after_hash) {
+  ag_preprocessor_context_t *context = s->context;
+  if (cond_incl == pps_conditional_boundary(s)) {
+    pp_error(
+        context, DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF, NULL);
+  }
+  handle_endif(context, after_hash);
 }
 
 /* ストリーミング版 #line。バッチ handle_line は「次の物理行以降の全トークン」を書き換えるが、
@@ -3464,15 +3538,14 @@ static void pps_handle_else(pp_stream_t *s, token_t *after_hash) {
  * デルタは「次の物理トークンの素 (デルタ適用前) の line_no」基準で絶対計算する:
  *   line_delta = N - raw_next_line。バッチは既調整 line に offset を足すが、累積分は相殺され
  *   結果は常に N - raw_next_line に一致する (HANDOFF Stage 4 参照)。
- * after_hash は指令名 "line" トークン。バッチ同様、N が無効なら何もしない (デルタ不変)。 */
+ * after_hash は指令名 "line" トークン。 */
 static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
   token_t *expanded = pp_expand_directive_line(
       s->context, after_hash->next);
   long long new_line;
   char *new_file = NULL;
-  if (!pp_parse_line_directive_args(s->context, expanded, &new_line, &new_file)) {
-    return;  // バッチ: skip_to_next_line で無視 (デルタ変更なし)
-  }
+  pp_parse_line_directive_args(
+      s->context, expanded, &new_line, &new_file);
   /* 次の物理トークンを 1 つ覗いて素の line_no を得る (pull で旧デルタ適用済みなので差し引く)。
    * バッチは次トークンが EOF なら何もしない (offset 計算も適用も行わない) ので同じく分岐する。 */
   token_t *nx = pps_pull_raw(s);
@@ -3569,6 +3642,7 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   f->saved_line_delta        = s->line_delta;
   f->saved_file_override_set = s->file_override_set;
   f->saved_file_override     = s->file_override;
+  f->saved_cond_incl         = cond_incl;
 
   /* 被 include 内の #pragma once が include_stack->path に被 include 名を記録できるよう、
    * tokenize 前に push する。深さ/循環制限もここで発火しうる (バッチ同様)。 */
@@ -3608,7 +3682,7 @@ static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
   if (is_dir(tok, "if"))     { pps_handle_if(s, tok); return; }
   if (is_dir(tok, "elif"))   { pps_handle_elif(s, tok); return; }
   if (is_dir(tok, "else"))   { pps_handle_else(s, tok); return; }
-  if (is_dir(tok, "endif"))  { handle_endif(context, tok); return; }
+  if (is_dir(tok, "endif"))  { pps_handle_endif(s, tok); return; }
   if (is_dir(tok, "include")) { pps_handle_include(s, tok); return; }
   if (is_dir(tok, "define")) {
     tk_allocator_set_recyclable_in(
@@ -3626,7 +3700,7 @@ static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
     for (token_t *t = lc.next; t; ) { token_t *nx = t->next; pps_append(s, t); t = nx; }
     return;
   }
-  /* 未知指令はバッチ同様に無視 (行は破棄)。 */
+  pp_error(context, DIAG_ERR_PREPROCESS_UNKNOWN_DIRECTIVE, NULL);
 }
 
 /* 入力 1 論理ステップを処理し、出力へ append したトークン数を返す (指令やマクロ展開の
@@ -3636,6 +3710,7 @@ static int pps_step(pp_stream_t *s) {
   token_t *tok = pps_pull_raw(s);
   if (!tok) { s->eof_done = 1; return 0; }
   if (tok->kind == TK_EOF) {
+    pps_require_conditional_balance(s);
     if (s->frames) { pps_pop_frame(s); return 0; }  // 被 include 終端: pop して親から続ける (出力しない)
     pps_append(s, tok); s->eof_done = 1; return 1;
   }
