@@ -242,6 +242,42 @@ static double _Complex csqrt(double _Complex z) {
 static double _Complex cpow(double _Complex z, double _Complex w) {
   return cexp(w * clog(z));
 }
+static double _Complex casin(double _Complex z) {
+  double re = __real__ z, im = __imag__ z;
+  double _Complex iz = CMPLX(-im, re);
+  double _Complex logged =
+      clog(iz + csqrt(CMPLX(1.0, 0.0) - z * z));
+  return CMPLX(__imag__ logged, -__real__ logged);
+}
+static double _Complex cacos(double _Complex z) {
+  double _Complex result = casin(z);
+  return CMPLX(
+      1.5707963267948966 - __real__ result,
+      -__imag__ result);
+}
+static double _Complex catan(double _Complex z) {
+  double re = __real__ z, im = __imag__ z;
+  double _Complex iz = CMPLX(-im, re);
+  double _Complex difference =
+      clog(CMPLX(1.0, 0.0) + iz) -
+      clog(CMPLX(1.0, 0.0) - iz);
+  return CMPLX(
+      0.5 * __imag__ difference,
+      -0.5 * __real__ difference);
+}
+static double _Complex casinh(double _Complex z) {
+  return clog(z + csqrt(z * z + CMPLX(1.0, 0.0)));
+}
+static double _Complex cacosh(double _Complex z) {
+  return clog(
+      z + csqrt(z + CMPLX(1.0, 0.0)) *
+              csqrt(z - CMPLX(1.0, 0.0)));
+}
+static double _Complex catanh(double _Complex z) {
+  return 0.5 * (
+      clog(CMPLX(1.0, 0.0) + z) -
+      clog(CMPLX(1.0, 0.0) - z));
+}
 static double _Complex csin(double _Complex z) {
   double re = __real__ z, im = __imag__ z;
   return (double _Complex){ __ag_complex_sin(re) * __ag_complex_cosh(im),
@@ -273,6 +309,12 @@ static float _Complex csqrtf(float _Complex z) { return csqrt(z); }
 static float _Complex cpowf(float _Complex z, float _Complex w) {
   return cpow(z, w);
 }
+static float _Complex casinf(float _Complex z) { return casin(z); }
+static float _Complex cacosf(float _Complex z) { return cacos(z); }
+static float _Complex catanf(float _Complex z) { return catan(z); }
+static float _Complex casinhf(float _Complex z) { return casinh(z); }
+static float _Complex cacoshf(float _Complex z) { return cacosh(z); }
+static float _Complex catanhf(float _Complex z) { return catanh(z); }
 static float _Complex csinf(float _Complex z)  { return csin(z); }
 static float _Complex ccosf(float _Complex z)  { return ccos(z); }
 static float _Complex csinhf(float _Complex z) { return csinh(z); }
@@ -292,6 +334,24 @@ static long double _Complex csqrtl(long double _Complex z) {
 static long double _Complex cpowl(
     long double _Complex z, long double _Complex w) {
   return cpow(z, w);
+}
+static long double _Complex casinl(long double _Complex z) {
+  return casin(z);
+}
+static long double _Complex cacosl(long double _Complex z) {
+  return cacos(z);
+}
+static long double _Complex catanl(long double _Complex z) {
+  return catan(z);
+}
+static long double _Complex casinhl(long double _Complex z) {
+  return casinh(z);
+}
+static long double _Complex cacoshl(long double _Complex z) {
+  return cacosh(z);
+}
+static long double _Complex catanhl(long double _Complex z) {
+  return catanh(z);
 }
 static long double _Complex csinl(long double _Complex z) {
   return csin(z);

@@ -1,11 +1,12 @@
 #ifndef _TGMATH_H
 #define _TGMATH_H
 #include <math.h>
+#include <complex.h>
 /* C11 7.25: 型総称マクロ。実数の総称引数を共通の実数型へまとめて
  * f/無印/l 版へ _Generic ディスパッチする。整数引数は double として扱う。
  * Apple ARM64 では long double==double (同一 ABI) なので l 版呼び出しも安全。
- * complex 版は対象外 (実数のみ)。下で必要な f/l 版を宣言する
- * (math.h は double 中心で f/l を網羅しないため)。 */
+ * complex 対応関数は引数のdomainもまとめ、c/無印/l 版へ振り分ける。
+ * 下で必要な f/l 版を宣言する (math.h は double 中心で f/l を網羅しないため)。 */
 float       sqrtf(float);       long double sqrtl(long double);
 float       cbrtf(float);       long double cbrtl(long double);
 float       sinf(float);        long double sinl(long double);
@@ -63,11 +64,46 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
  * 区別できず `f##f` が `sqrtsqrt` のように壊れる (引数名 == 貼り付け先トークンの衝突)。 */
 #define __tg_real_type(x) \
   _Generic((x), float: (float)0, long double: (long double)0, default: (double)0)
+#define __tg_math_type(x) \
+  _Generic((x), \
+           float: (float)0, \
+           long double: (long double)0, \
+           float _Complex: (float _Complex)0, \
+           double _Complex: (double _Complex)0, \
+           long double _Complex: (long double _Complex)0, \
+           default: (double)0)
 #define __tg_un(fn, x) \
   _Generic((x), float: fn##f, long double: fn##l, default: fn)(x)
+#define __tg_un_real_or_complex(real_fn, complex_fn, x) \
+  _Generic((x), \
+           float: real_fn##f, \
+           long double: real_fn##l, \
+           float _Complex: complex_fn##f, \
+           double _Complex: complex_fn, \
+           long double _Complex: complex_fn##l, \
+           default: real_fn)(x)
+#define __tg_un_complex(fn, x) \
+  _Generic((x), \
+           float: fn##f((float _Complex)(x)), \
+           long double: fn##l((long double _Complex)(x)), \
+           float _Complex: fn##f((float _Complex)(x)), \
+           double _Complex: fn((double _Complex)(x)), \
+           long double _Complex: fn##l((long double _Complex)(x)), \
+           default: fn((double _Complex)(x)))
 #define __tg_bin(fn, x, y) \
   _Generic((__tg_real_type(x) + __tg_real_type(y)), \
            float: fn##f, long double: fn##l, default: fn)((x), (y))
+#define __tg_bin_real_or_complex(real_fn, complex_fn, x, y) \
+  _Generic((__tg_math_type(x) + __tg_math_type(y)), \
+           float: real_fn##f((float)(x), (float)(y)), \
+           long double: real_fn##l((long double)(x), (long double)(y)), \
+           float _Complex: complex_fn##f( \
+               (float _Complex)(x), (float _Complex)(y)), \
+           double _Complex: complex_fn( \
+               (double _Complex)(x), (double _Complex)(y)), \
+           long double _Complex: complex_fn##l( \
+               (long double _Complex)(x), (long double _Complex)(y)), \
+           default: real_fn((double)(x), (double)(y)))
 #define __tg_tri(fn, x, y, z) \
   _Generic((__tg_real_type(x) + __tg_real_type(y) + __tg_real_type(z)), \
            float: fn##f, long double: fn##l, default: fn)((x), (y), (z))
@@ -77,26 +113,26 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
   _Generic((__tg_real_type(x) + __tg_real_type(y)), \
            float: fn##f, long double: fn##l, default: fn)((x), (y), (z))
 
-#define sqrt(x)  __tg_un(sqrt, x)
+#define sqrt(x)  __tg_un_real_or_complex(sqrt, csqrt, x)
 #define cbrt(x)  __tg_un(cbrt, x)
-#define sin(x)   __tg_un(sin, x)
-#define cos(x)   __tg_un(cos, x)
-#define tan(x)   __tg_un(tan, x)
-#define sinh(x)  __tg_un(sinh, x)
-#define cosh(x)  __tg_un(cosh, x)
-#define tanh(x)  __tg_un(tanh, x)
-#define asinh(x) __tg_un(asinh, x)
-#define acosh(x) __tg_un(acosh, x)
-#define atanh(x) __tg_un(atanh, x)
-#define asin(x)  __tg_un(asin, x)
-#define acos(x)  __tg_un(acos, x)
-#define atan(x)  __tg_un(atan, x)
-#define exp(x)   __tg_un(exp, x)
+#define sin(x)   __tg_un_real_or_complex(sin, csin, x)
+#define cos(x)   __tg_un_real_or_complex(cos, ccos, x)
+#define tan(x)   __tg_un_real_or_complex(tan, ctan, x)
+#define sinh(x)  __tg_un_real_or_complex(sinh, csinh, x)
+#define cosh(x)  __tg_un_real_or_complex(cosh, ccosh, x)
+#define tanh(x)  __tg_un_real_or_complex(tanh, ctanh, x)
+#define asinh(x) __tg_un_real_or_complex(asinh, casinh, x)
+#define acosh(x) __tg_un_real_or_complex(acosh, cacosh, x)
+#define atanh(x) __tg_un_real_or_complex(atanh, catanh, x)
+#define asin(x)  __tg_un_real_or_complex(asin, casin, x)
+#define acos(x)  __tg_un_real_or_complex(acos, cacos, x)
+#define atan(x)  __tg_un_real_or_complex(atan, catan, x)
+#define exp(x)   __tg_un_real_or_complex(exp, cexp, x)
 #define exp2(x)  __tg_un(exp2, x)
 #define expm1(x) __tg_un(expm1, x)
 #define erf(x)   __tg_un(erf, x)
 #define erfc(x)  __tg_un(erfc, x)
-#define log(x)   __tg_un(log, x)
+#define log(x)   __tg_un_real_or_complex(log, clog, x)
 #define log1p(x) __tg_un(log1p, x)
 #define log10(x) __tg_un(log10, x)
 #define log2(x)  __tg_un(log2, x)
@@ -110,8 +146,8 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
 #define llrint(x) __tg_un(llrint, x)
 #define lround(x) __tg_un(lround, x)
 #define llround(x) __tg_un(llround, x)
-#define fabs(x)  __tg_un(fabs, x)
-#define pow(x, y)   __tg_bin(pow, x, y)
+#define fabs(x)  __tg_un_real_or_complex(fabs, cabs, x)
+#define pow(x, y)   __tg_bin_real_or_complex(pow, cpow, x, y)
 #define fmod(x, y)  __tg_bin(fmod, x, y)
 #define remainder(x, y) __tg_bin(remainder, x, y)
 #define remquo(x, y, z) __tg_bin_out(remquo, x, y, z)
@@ -129,4 +165,9 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
 #define hypot(x, y) __tg_bin(hypot, x, y)
 #define fmin(x, y)  __tg_bin(fmin, x, y)
 #define fmax(x, y)  __tg_bin(fmax, x, y)
+#define carg(x)  __tg_un_complex(carg, x)
+#define cimag(x) __tg_un_complex(cimag, x)
+#define conj(x)  __tg_un_complex(conj, x)
+#define cproj(x) __tg_un_complex(cproj, x)
+#define creal(x) __tg_un_complex(creal, x)
 #endif

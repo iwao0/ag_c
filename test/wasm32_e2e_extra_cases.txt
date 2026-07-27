@@ -837,6 +837,8 @@ wasm32/math_classify_compare_ops.c
 wasm32/math_fdim_fma_frexp_ops.c
 wasm32/math_nan_ops.c
 probes_found_bugs/tgmath_mixed_dispatch_boundaries.c
+probes_found_bugs/tgmath_complex_dispatch_boundaries.c
+probes_found_bugs/complex_inverse_function_boundaries.c
 wasm32/signal_ign_ops.c
 wasm32/setjmp_stub_ops.c
 wasm32/string_coll_xfrm_ops.c
