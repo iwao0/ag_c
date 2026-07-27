@@ -11295,7 +11295,10 @@ if (!/direct_type_query_binding_t/.test(
     !/resolve_direct_sizeof_vla_derived_expression\s*\([^]*?base->kind\s*==\s*ND_SUBSCRIPT[^]*?base->kind\s*==\s*ND_UNARY_DEREF[^]*?base->kind\s*==\s*ND_ADD\s*\|\|\s*base->kind\s*==\s*ND_SUB/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/direct_vla_runtime_view\s*\(\s*context,\s*query->operand->lhs\s*\)/.test(
+    !/resolve_direct_subscript_syntax_operands\s*\([^]*?resolution\.swapped\s*\?\s*syntax->rhs\s*:\s*syntax->lhs[^]*?resolution\.swapped\s*\?\s*syntax->lhs\s*:\s*syntax->rhs/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/direct_vla_runtime_view\s*\(\s*context,\s*runtime_base\s*\)/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/psx_resolve_alignof_qual_type_plan_in\s*\(/.test(

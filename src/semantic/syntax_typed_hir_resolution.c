@@ -1804,6 +1804,33 @@ static int resolve_direct_sizeof_type_name(
       &binding->plan);
 }
 
+static int resolve_direct_subscript_syntax_operands(
+    direct_resolution_context_t *context, const node_t *syntax,
+    const node_t **base, const node_t **index) {
+  if (base) *base = NULL;
+  if (index) *index = NULL;
+  if (!context || !syntax || syntax->kind != ND_SUBSCRIPT)
+    return 0;
+  psx_qual_type_t left_type;
+  psx_qual_type_t right_type;
+  if (!preflight_direct_unevaluated_expression(
+          context, syntax->lhs, &left_type) ||
+      !preflight_direct_unevaluated_expression(
+          context, syntax->rhs, &right_type))
+    return 0;
+  psx_subscript_qual_types_resolution_t resolution;
+  psx_resolve_subscript_qual_types_in(
+      context->semantic_context, left_type, right_type,
+      &resolution);
+  if (resolution.status != PSX_SUBSCRIPT_OPERANDS_OK)
+    return 0;
+  if (base)
+    *base = resolution.swapped ? syntax->rhs : syntax->lhs;
+  if (index)
+    *index = resolution.swapped ? syntax->lhs : syntax->rhs;
+  return 1;
+}
+
 static int resolve_direct_sizeof_vla_derived_expression(
     direct_resolution_context_t *context,
     const node_sizeof_query_t *query,
@@ -1814,16 +1841,23 @@ static int resolve_direct_sizeof_vla_derived_expression(
        operand->kind != ND_UNARY_DEREF))
     return 0;
   const node_t *base = operand;
+  const node_t *runtime_base = NULL;
   int derived_operation_count = 0;
   int evaluated_prefix_count = 0;
   while (base) {
     if (base->kind == ND_SUBSCRIPT) {
+      const node_t *subscript_base = NULL;
+      if (!resolve_direct_subscript_syntax_operands(
+              context, base, &subscript_base, NULL))
+        return 0;
+      if (!runtime_base) runtime_base = subscript_base;
       evaluated_prefix_count++;
       derived_operation_count++;
-      base = base->lhs;
+      base = subscript_base;
       continue;
     }
     if (base->kind == ND_UNARY_DEREF) {
+      if (!runtime_base) runtime_base = base->lhs;
       derived_operation_count++;
       base = base->lhs;
       continue;
@@ -1873,8 +1907,13 @@ static int resolve_direct_sizeof_vla_derived_expression(
   const node_t *derived = operand;
   while (derived) {
     if (derived->kind == ND_SUBSCRIPT) {
-      binding->evaluated_prefixes[--prefix_index] = derived->rhs;
-      derived = derived->lhs;
+      const node_t *subscript_base = NULL;
+      const node_t *index = NULL;
+      if (!resolve_direct_subscript_syntax_operands(
+              context, derived, &subscript_base, &index))
+        return 0;
+      binding->evaluated_prefixes[--prefix_index] = index;
+      derived = subscript_base;
       continue;
     }
     if (derived->kind == ND_UNARY_DEREF) {
@@ -1927,7 +1966,7 @@ static int resolve_direct_sizeof_vla_derived_expression(
   if (queried_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
 
   direct_vla_runtime_view_t runtime_view =
-      direct_vla_runtime_view(context, query->operand->lhs);
+      direct_vla_runtime_view(context, runtime_base);
   if (runtime_view.stride_frame_offset == 0 ||
       runtime_view.pointer_indirections > 0 ||
       !psx_semantic_type_table_contains_vla_array(
