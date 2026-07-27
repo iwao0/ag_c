@@ -791,16 +791,43 @@ static void test_tokenize_char_literal(tokenizer_context_t *test_ctx) {
   ASSERT_EQ(TK_NUM, tk_get_current_token_ctx(test_ctx)->kind);
   ASSERT_EQ('A', as_num_i(tk_get_current_token_ctx(test_ctx))->val);
   ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num_i(tk_get_current_token_ctx(test_ctx))->char_width);
+  ASSERT_EQ(TK_CHAR_PREFIX_L, as_num_i(tk_get_current_token_ctx(test_ctx))->char_prefix_kind);
   tk_set_current_token_ctx(test_ctx, tk_get_current_token_ctx(test_ctx)->next);
   ASSERT_EQ(TK_NUM, tk_get_current_token_ctx(test_ctx)->kind);
   ASSERT_EQ('B', as_num_i(tk_get_current_token_ctx(test_ctx))->val);
   ASSERT_EQ(TK_CHAR_WIDTH_CHAR16, as_num_i(tk_get_current_token_ctx(test_ctx))->char_width);
+  ASSERT_EQ(TK_CHAR_PREFIX_u, as_num_i(tk_get_current_token_ctx(test_ctx))->char_prefix_kind);
   tk_set_current_token_ctx(test_ctx, tk_get_current_token_ctx(test_ctx)->next);
   ASSERT_EQ(TK_NUM, tk_get_current_token_ctx(test_ctx)->kind);
   ASSERT_EQ(0xA9, as_num_i(tk_get_current_token_ctx(test_ctx))->val);
   ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num_i(tk_get_current_token_ctx(test_ctx))->char_width);
+  ASSERT_EQ(TK_CHAR_PREFIX_U, as_num_i(tk_get_current_token_ctx(test_ctx))->char_prefix_kind);
   tk_set_current_token_ctx(test_ctx, tk_get_current_token_ctx(test_ctx)->next);
   ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_ctx)->kind);
+
+  // 接頭辞付き文字定数はUCN・数値escape・raw UTF-8を幅どおり保持する。
+  tk_set_current_token_ctx(
+      test_ctx, tk_tokenize_ctx(
+                    test_ctx,
+                    "u'\\u3042' U'\\U0001F600' L'\\x3042' u'あ' U'😀'"));
+  const long long encoded_values[] = {
+      0x3042, 0x1F600, 0x3042, 0x3042, 0x1F600};
+  const tk_char_prefix_kind_t encoded_prefixes[] = {
+      TK_CHAR_PREFIX_u, TK_CHAR_PREFIX_U, TK_CHAR_PREFIX_L,
+      TK_CHAR_PREFIX_u, TK_CHAR_PREFIX_U};
+  for (size_t i = 0;
+       i < sizeof(encoded_values) / sizeof(encoded_values[0]); i++) {
+    ASSERT_EQ(TK_NUM, tk_get_current_token_ctx(test_ctx)->kind);
+    ASSERT_EQ(encoded_values[i],
+              as_num_i(tk_get_current_token_ctx(test_ctx))->val);
+    ASSERT_EQ(encoded_prefixes[i],
+              as_num_i(tk_get_current_token_ctx(test_ctx))->char_prefix_kind);
+    tk_set_current_token_ctx(
+        test_ctx, tk_get_current_token_ctx(test_ctx)->next);
+  }
+  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_ctx)->kind);
+  expect_tokenize_fail(test_ctx, "u'\\U0001F600'");
+  expect_tokenize_fail(test_ctx, "u'\\x10000'");
 
   // 接頭辞付きマルチ文字定数（実装定義として受理）
   tk_set_current_token_ctx(test_ctx, tk_tokenize_ctx(test_ctx, "L'AB' u'CD' U'EF'"));

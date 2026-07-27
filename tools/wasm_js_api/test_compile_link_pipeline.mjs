@@ -706,6 +706,30 @@ if (virtualHeaderProgram.instance.exports.main() !== 42) {
   throw new Error("virtual project header did not survive compile/link/instantiate");
 }
 
+const includeOnlyTranslationUnitProgram = await toolchain.instantiateLinkedWasm([
+  {
+    name: "main.c",
+    source: "#include <game.h>\n" +
+      "int main(void) { return GAME_SCREEN_WIDTH; }\n",
+  },
+  {
+    name: "aab/a.c",
+    source: "#include <game.h>\n\n",
+  },
+], {
+  headers: {
+    "game.h": "#define GAME_SCREEN_WIDTH 640\n" +
+      "int game_running(void);\n",
+  },
+  exports: ["main"],
+  useStdlib: false,
+});
+if (includeOnlyTranslationUnitProgram.instance.exports.main() !== 640) {
+  throw new Error(
+    "include-only translation unit did not survive object compile and link",
+  );
+}
+
 const mainObjPath = path.join(outDir, "main_from_compiler_api.o");
 const otherObjPath = path.join(outDir, "other_from_compiler_api.o");
 await writeFile(mainObjPath, mainObj);
@@ -2632,7 +2656,7 @@ int main(void) {
   char c[1];
   int n = sprintf(a, "%d-%s", 12, "ok");
   int m = snprintf(b, sizeof(b), "%05d", 42);
-  int z = snprintf(c, 0, "%s", "longer");
+  int z = snprintf(c, 0, "%06d", 42);
   if (n != 5) return 1;
   if (a[0] != '1' || a[1] != '2' || a[2] != '-' || a[3] != 'o' || a[4] != 'k' || a[5] != 0) return 2;
   if (m != 5) return 3;
@@ -2819,7 +2843,7 @@ int main(void) {
   if (nz != 9 || hb[0] != '-' || hb[1] != '0' || hb[2] != 'X' || hb[3] != '1' ||
       hb[4] != '.' || hb[5] != '0' || hb[6] != 'P' || hb[7] != '-' ||
       hb[8] != '1' || hb[9] != 0) return 13;
-  if (naa != 8 || hc[0] != '0' || hc[1] != '0' || hc[2] != '0' || hc[3] != 'x' ||
+  if (naa != 8 || hc[0] != '0' || hc[1] != 'x' || hc[2] != '0' || hc[3] != '0' ||
       hc[4] != '1' || hc[5] != 'p' || hc[6] != '+' || hc[7] != '0' ||
       hc[8] != 0) return 14;
   if (nab != 2 || hd[0] != '3' || hd[1] != '.' || hd[2] != 0) return 15;

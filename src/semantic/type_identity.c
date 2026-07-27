@@ -1061,3 +1061,14 @@ psx_qual_type_t psx_semantic_type_table_record_member(
     return invalid_qual_type();
   return related_type(table, record->members[member_index].decl_qual_type);
 }
+
+const psx_record_decl_t *psx_semantic_type_table_record_decl(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
+  psx_type_shape_t type = {0};
+  if (!psx_semantic_type_table_describe(table, type_id, &type) ||
+      (type.kind != PSX_TYPE_STRUCT && type.kind != PSX_TYPE_UNION) ||
+      type.record_id == PSX_RECORD_ID_INVALID)
+    return NULL;
+  return psx_record_decl_table_lookup(
+      table->record_decls, type.record_id);
+}

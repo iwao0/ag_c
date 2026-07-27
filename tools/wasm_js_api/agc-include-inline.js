@@ -92,7 +92,7 @@ void clearerr(FILE *stream);
 };
 
 function defaultAllowedInclude(name) {
-  return /^[A-Za-z0-9_]+\.h$/.test(name);
+  return /^[A-Za-z0-9_]+(?:\/[A-Za-z0-9_]+)*\.h$/.test(name);
 }
 
 async function defaultLoadInclude(name, baseUrl) {

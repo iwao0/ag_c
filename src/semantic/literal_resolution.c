@@ -68,17 +68,30 @@ int psx_resolve_number_literal_semantics_in_contexts(
     int is_unsigned = 0;
     if (tok && tok->kind == TK_NUM &&
         tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
-      int_size = tk_as_num_int(tok)->int_size;
-      is_unsigned = tk_as_num_int(tok)->is_unsigned ? 1 : 0;
+      const token_num_int_t *integer = tk_as_num_int(tok);
+      int_size = integer->int_size;
+      is_unsigned = integer->is_unsigned ? 1 : 0;
+      if (integer->char_prefix_kind == TK_CHAR_PREFIX_u) {
+        qual_type = ps_ctx_intern_integer_qual_type_in(
+            semantic_context, PSX_INTEGER_KIND_SHORT, 1, 0);
+      } else if (integer->char_prefix_kind == TK_CHAR_PREFIX_U) {
+        qual_type = ps_ctx_intern_integer_qual_type_in(
+            semantic_context, PSX_INTEGER_KIND_INT, 1, 0);
+      } else if (integer->char_prefix_kind == TK_CHAR_PREFIX_L) {
+        qual_type = ps_ctx_intern_integer_qual_type_in(
+            semantic_context, PSX_INTEGER_KIND_INT, 0, 0);
+      }
     }
-    psx_integer_kind_t integer_kind =
-        int_size == TK_INT_SIZE_LONG_LONG
-            ? PSX_INTEGER_KIND_LONG_LONG
-        : int_size == TK_INT_SIZE_LONG
-            ? PSX_INTEGER_KIND_LONG
-            : PSX_INTEGER_KIND_INT;
-    qual_type = ps_ctx_intern_integer_qual_type_in(
-        semantic_context, integer_kind, is_unsigned, 0);
+    if (qual_type.type_id == PSX_TYPE_ID_INVALID) {
+      psx_integer_kind_t integer_kind =
+          int_size == TK_INT_SIZE_LONG_LONG
+              ? PSX_INTEGER_KIND_LONG_LONG
+          : int_size == TK_INT_SIZE_LONG
+              ? PSX_INTEGER_KIND_LONG
+              : PSX_INTEGER_KIND_INT;
+      qual_type = ps_ctx_intern_integer_qual_type_in(
+          semantic_context, integer_kind, is_unsigned, 0);
+    }
   }
   return finish_literal_resolution(
       semantic_context, qual_type, resolution);

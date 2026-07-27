@@ -68,6 +68,7 @@
 #include "../src/semantic/local_declaration_resolution.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
 #include "../src/semantic/prototype_parameter.h"
+#include "../src/semantic/record_decl_table.h"
 #include "../src/semantic/scope_graph.h"
 #include "../src/semantic/semantic_node_builder.h"
 #include "../src/semantic/semantic_tree_resolution.h"
@@ -1500,6 +1501,16 @@ static void test_syntax_literal_type_boundary(
   node_t *floating =
       parse_expr_input_with_existing_locals(test_suite_session, "1.0f");
   ASSERT_EQ(ND_NUM, floating->kind);
+
+  assert_test_integer_expression_hir(
+      test_suite_session, "u'\\u3042'", PSX_HIR_NUMBER,
+      PSX_INTEGER_KIND_SHORT, 1, 2);
+  assert_test_integer_expression_hir(
+      test_suite_session, "U'\\U0001F600'", PSX_HIR_NUMBER,
+      PSX_INTEGER_KIND_INT, 1, 4);
+  assert_test_integer_expression_hir(
+      test_suite_session, "L'\\u3042'", PSX_HIR_NUMBER,
+      PSX_INTEGER_KIND_INT, 0, 4);
 
   node_t *string =
       parse_expr_input_with_existing_locals(test_suite_session, "\"syntax\"");
@@ -19648,6 +19659,80 @@ static void test_arena_checkpoint_rollback(
   ASSERT_EQ(1, retained_cleanup_count);
 }
 
+static void test_anonymous_canonical_signature_stability(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_anonymous_canonical_signature_stability...\n");
+  char record_signatures[2][256];
+  char enum_signatures[2][64];
+  const char *anonymous_tags[] = {
+      "__anon_tag_3",
+      "__anon_tag_97",
+  };
+  for (int i = 0; i < 2; i++) {
+    psx_semantic_type_table_t *types =
+        psx_semantic_type_table_create();
+    psx_record_decl_table_t *records =
+        psx_record_decl_table_create();
+    ASSERT_TRUE(types != NULL);
+    ASSERT_TRUE(records != NULL);
+    psx_semantic_type_table_bind_record_decls(types, records);
+
+    psx_qual_type_t int_type =
+        psx_semantic_type_table_intern_integer(
+            types, PSX_INTEGER_KIND_INT, 0, 0);
+    psx_record_member_decl_t member = {
+        .name = "value",
+        .len = 5,
+        .decl_qual_type = int_type,
+    };
+    psx_record_decl_t record = {
+        .record_id = (psx_record_id_t)(i + 1),
+        .record_kind = PSX_TYPE_STRUCT,
+        .tag_name = (char *)anonymous_tags[i],
+        .tag_len = (int)strlen(anonymous_tags[i]),
+        .is_anonymous = 1,
+        .is_complete = 1,
+        .member_count = 1,
+        .members = &member,
+    };
+    ASSERT_TRUE(psx_record_decl_table_define(records, &record));
+    psx_qual_type_t record_type =
+        psx_semantic_type_table_intern_record(
+            types, record.record_id);
+    psx_qual_type_t record_pointer =
+        psx_semantic_type_table_intern_pointer_to(
+            types, record_type);
+    psx_qual_type_t record_function =
+        psx_semantic_type_table_intern_function(
+            types, int_type, &record_pointer, 1, 1, 0);
+    ASSERT_TRUE(psx_format_canonical_type_signature(
+        types, record_function,
+        ag_target_info_data_layout(
+            ag_compilation_session_target(test_suite_session)),
+        record_signatures[i], sizeof(record_signatures[i])) > 0);
+
+    psx_qual_type_t enum_type =
+        psx_semantic_type_table_intern_enum(
+            types, (psx_decl_id_t)(i + 1),
+            anonymous_tags[i], (int)strlen(anonymous_tags[i]), 0);
+    psx_qual_type_t enum_function =
+        psx_semantic_type_table_intern_function(
+            types, int_type, &enum_type, 1, 1, 0);
+    ASSERT_TRUE(psx_format_canonical_type_signature(
+        types, enum_function,
+        ag_target_info_data_layout(
+            ag_compilation_session_target(test_suite_session)),
+        enum_signatures[i], sizeof(enum_signatures[i])) > 0);
+
+    psx_semantic_type_table_destroy(types);
+    psx_record_decl_table_destroy(records);
+  }
+  ASSERT_TRUE(strcmp(record_signatures[0], record_signatures[1]) == 0);
+  ASSERT_TRUE(strcmp(enum_signatures[0], enum_signatures[1]) == 0);
+  ASSERT_TRUE(strstr(record_signatures[0], "__anon_tag_") == NULL);
+  ASSERT_TRUE(strstr(enum_signatures[0], "__anon_tag_") == NULL);
+}
+
 static void test_semantic_type_identity(
     ag_compilation_session_t *test_suite_session) {
   printf("test_semantic_type_identity...\n");
@@ -21231,6 +21316,7 @@ int main() {
   test_typed_hir_bitfield_lowering_without_ast(test_suite_session);
   test_typed_hir_conditional_expr_lowering_without_ast(test_suite_session);
   test_typed_hir_control_flow_lowering_without_ast(test_suite_session);
+  test_anonymous_canonical_signature_stability(test_suite_session);
   test_semantic_type_identity(test_suite_session);
   test_semantic_context_isolation(test_suite_session);
 #if defined(DIAG_LANG_ALL)

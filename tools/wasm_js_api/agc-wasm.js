@@ -904,6 +904,22 @@ export async function createCompiler(wasmSource, options = {}) {
     );
   }
 
+  function analysisTrapError(cause) {
+    let diagnostics = Object.freeze([]);
+    try {
+      diagnostics = readStructuredDiagnostics();
+    } catch (_) {
+      /* Keep the original analysis failure structured even if diagnostics
+       * cannot be read after a trapped compiler call. */
+    }
+    const error = new Error("ag_c language analysis failed");
+    error.name = "AgcLanguageAnalysisError";
+    error.code = "AGC_LANGUAGE_ANALYSIS_FAILED";
+    error.diagnostics = diagnostics;
+    error.cause = cause;
+    return error;
+  }
+
   function analyzeSource(input, analysisOptions = {}) {
     if (typeof analyzeSourceExport !== "function") {
       throw new Error("ag_c wasm module does not support language analysis");
@@ -973,18 +989,23 @@ export async function createCompiler(wasmSource, options = {}) {
         if (!outputAlloc) throw new Error("ag_c wasm malloc failed for analysis output");
         ensureMemoryRange(memory, outputAlloc, capacity, "analysis output");
         resetDiagnostics();
-        const rc = callNumberFunc(analyzeSourceExport, [
-          requireAdapterHandle(), sourceAlloc, sourceNameAlloc, cursor.byteOffset,
-          headerAlloc, virtualHeaders?.bytes.length ?? 0,
-          headerLimits.maxFiles, headerLimits.maxFileBytes,
-          headerLimits.maxTotalBytes, headerLimits.maxIncludeDepth,
-          resourceLimits.maxSources, resourceLimits.maxSourceBytes,
-          resourceLimits.maxTotalSourceBytes,
-          resourceLimits.maxAnalysisSymbols, resourceLimits.maxCompletionItems,
-          resourceLimits.maxAnalysisStringBytes,
-          resourceLimits.maxAnalysisSnapshotBytes,
-          outputAlloc, capacity,
-        ]);
+        let rc;
+        try {
+          rc = callNumberFunc(analyzeSourceExport, [
+            requireAdapterHandle(), sourceAlloc, sourceNameAlloc, cursor.byteOffset,
+            headerAlloc, virtualHeaders?.bytes.length ?? 0,
+            headerLimits.maxFiles, headerLimits.maxFileBytes,
+            headerLimits.maxTotalBytes, headerLimits.maxIncludeDepth,
+            resourceLimits.maxSources, resourceLimits.maxSourceBytes,
+            resourceLimits.maxTotalSourceBytes,
+            resourceLimits.maxAnalysisSymbols, resourceLimits.maxCompletionItems,
+            resourceLimits.maxAnalysisStringBytes,
+            resourceLimits.maxAnalysisSnapshotBytes,
+            outputAlloc, capacity,
+          ]);
+        } catch (cause) {
+          throw analysisTrapError(cause);
+        }
         if (rc === -2) {
           callVoidPtrFunc(free, outputAlloc);
           outputAlloc = 0;

@@ -696,6 +696,7 @@ static const test_case_t test_cases[] = {
     {"tokenizer", "charlit_u", CASE_ASSERT_FILE, "test/fixtures/tokenizer/charlit_u.c", 0, 0},
     {"tokenizer", "string_concat_prefix", CASE_ASSERT_FILE, "test/fixtures/tokenizer/string_concat_prefix.c", 0, 0},
     {"probes", "adjacent_encoded_string_literal_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/adjacent_encoded_string_literal_boundaries.c", 0, 0},
+    {"probes", "encoded_character_constant_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_character_constant_boundaries.c", 0, 0},
     {"tokenizer", "ucn_string", CASE_ASSERT_FILE, "test/fixtures/tokenizer/ucn_string.c", 0, 0},
     {"tokenizer", "ucn_string_3byte", CASE_ASSERT_FILE, "test/fixtures/tokenizer/ucn_string_3byte.c", 0, 0},
     {"tokenizer", "ucn_string_u16_surrogate", CASE_ASSERT_FILE, "test/fixtures/tokenizer/ucn_string_u16_surrogate.c", 0, 0},
@@ -2971,6 +2972,14 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"predefined_function_name_mutable_pointer_rejected",
      "int main(void) { char *name = __func__; return name[0]; }\n",
      "E3078"},
+    {"char16_supplementary_character_rejected",
+     "unsigned short value = u'\\U0001F600'; "
+     "int main(void) { return value != 0; }\n",
+     "E2025"},
+    {"char16_hex_escape_out_of_range_rejected",
+     "unsigned short value = u'\\x10000'; "
+     "int main(void) { return value != 0; }\n",
+     "E2025"},
     {"gnu_statement_expression_rejected",
      "int main(void) { return ({ int value = 1; value; }); }",
      "E3096"},

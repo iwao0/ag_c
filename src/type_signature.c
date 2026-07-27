@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <string.h>
 
+#include "semantic/record_decl.h"
 #include "target_info.h"
 #include "type_system/integer_conversion.h"
 
@@ -19,12 +20,14 @@ struct signature_path_t {
   const signature_path_t *parent;
 };
 
-static int path_contains(
+static int path_distance(
     const signature_path_t *path, psx_type_id_t type_id) {
+  int distance = 0;
   for (; path; path = path->parent) {
-    if (path->type_id == type_id) return 1;
+    if (path->type_id == type_id) return distance;
+    distance++;
   }
-  return 0;
+  return -1;
 }
 
 static void write_bytes(
@@ -59,6 +62,28 @@ static void write_unsigned(
   while (count > 0) write_bytes(writer, &digits[--count], 1);
 }
 
+static void write_signed(signature_writer_t *writer, int value) {
+  if (value < 0) {
+    write_literal(writer, "-");
+    write_unsigned(writer, (unsigned int)(-(value + 1)) + 1u);
+    return;
+  }
+  write_unsigned(writer, (unsigned int)value);
+}
+
+static int is_generated_anonymous_tag(
+    const char *name, int length) {
+  static const char prefix[] = "__anon_tag_";
+  size_t prefix_length = sizeof(prefix) - 1;
+  if (!name || length <= (int)prefix_length ||
+      memcmp(name, prefix, prefix_length) != 0)
+    return 0;
+  for (int i = (int)prefix_length; i < length; i++) {
+    if (name[i] < '0' || name[i] > '9') return 0;
+  }
+  return 1;
+}
+
 static ag_target_scalar_kind_t floating_target_kind(
     psx_floating_kind_t kind, int is_complex) {
   if (kind == PSX_FLOATING_KIND_LONG_DOUBLE)
@@ -77,12 +102,10 @@ static void write_type(signature_writer_t *writer,
                        const ag_data_layout_t *data_layout) {
   psx_type_shape_t shape = {0};
   if (type.type_id == PSX_TYPE_ID_INVALID ||
-      path_contains(path, type.type_id) ||
       !psx_semantic_type_table_describe(types, type.type_id, &shape)) {
     writer->failed = 1;
     return;
   }
-  signature_path_t current = {type.type_id, path};
   if (type.qualifiers & PSX_TYPE_QUALIFIER_CONST)
     write_literal(writer, "k");
   if (type.qualifiers & PSX_TYPE_QUALIFIER_VOLATILE)
@@ -91,6 +114,13 @@ static void write_type(signature_writer_t *writer,
     write_literal(writer, "A");
   if (type.qualifiers & PSX_TYPE_QUALIFIER_RESTRICT)
     write_literal(writer, "R");
+  int recursive_distance = path_distance(path, type.type_id);
+  if (recursive_distance >= 0) {
+    write_literal(writer, "r");
+    write_unsigned(writer, (unsigned int)recursive_distance);
+    return;
+  }
+  signature_path_t current = {type.type_id, path};
 
   switch (shape.kind) {
     case PSX_TYPE_VOID:
@@ -107,14 +137,21 @@ static void write_type(signature_writer_t *writer,
           psx_integer_conversion_size_for_data_layout(
               conversion, data_layout) * 8);
       if (shape.integer_kind == PSX_INTEGER_KIND_ENUM) {
-        write_literal(writer, "e{");
-        write_unsigned(writer, (unsigned int)(
-            shape.enum_tag_length > 0 ? shape.enum_tag_length : 0));
-        write_literal(writer, ":");
-        if (shape.enum_tag_length > 0)
-          write_bytes(writer, shape.enum_tag_name,
-                      (size_t)shape.enum_tag_length);
-        write_literal(writer, "}");
+        if (is_generated_anonymous_tag(
+                shape.enum_tag_name, shape.enum_tag_length)) {
+          write_literal(writer, shape.is_unsigned ? "e<u" : "e<i");
+          write_unsigned(writer, bits);
+          write_literal(writer, ">");
+        } else {
+          write_literal(writer, "e{");
+          write_unsigned(writer, (unsigned int)(
+              shape.enum_tag_length > 0 ? shape.enum_tag_length : 0));
+          write_literal(writer, ":");
+          if (shape.enum_tag_length > 0)
+            write_bytes(writer, shape.enum_tag_name,
+                        (size_t)shape.enum_tag_length);
+          write_literal(writer, "}");
+        }
       } else if (shape.is_plain_char) {
         write_literal(writer, "c");
         write_unsigned(writer, bits);
@@ -180,7 +217,50 @@ static void write_type(signature_writer_t *writer,
       return;
     }
     case PSX_TYPE_STRUCT:
-    case PSX_TYPE_UNION:
+    case PSX_TYPE_UNION: {
+      const psx_record_decl_t *record =
+          psx_semantic_type_table_record_decl(types, type.type_id);
+      if (record && record->is_anonymous) {
+        if (record->member_count < 0 ||
+            (record->member_count > 0 && !record->members)) {
+          writer->failed = 1;
+          return;
+        }
+        write_literal(
+            writer, shape.kind == PSX_TYPE_STRUCT ? "s[" : "u[");
+        write_unsigned(writer, record->is_complete ? 1u : 0u);
+        write_literal(writer, ":");
+        write_unsigned(
+            writer,
+            (unsigned int)(
+                record->member_count > 0 ? record->member_count : 0));
+        for (int i = 0; i < record->member_count; i++) {
+          const psx_record_member_decl_t *member = &record->members[i];
+          if (member->len < 0 ||
+              (member->len > 0 && !member->name)) {
+            writer->failed = 1;
+            return;
+          }
+          write_literal(writer, "|");
+          write_unsigned(
+              writer,
+              (unsigned int)(member->len > 0 ? member->len : 0));
+          write_literal(writer, ":");
+          if (member->len > 0)
+            write_bytes(
+                writer, member->name, (size_t)member->len);
+          write_literal(writer, ":");
+          write_signed(writer, member->bit_width);
+          write_literal(writer, member->bit_is_signed ? "s:" : "u:");
+          write_type(
+              writer, types,
+              psx_semantic_type_table_record_member(
+                  types, type.type_id, i),
+              &current, data_layout);
+        }
+        write_literal(writer, "]");
+        return;
+      }
       write_literal(writer, shape.kind == PSX_TYPE_STRUCT ? "s{" : "u{");
       write_unsigned(writer, (unsigned int)(
           shape.record_tag_length > 0 ? shape.record_tag_length : 0));
@@ -190,6 +270,7 @@ static void write_type(signature_writer_t *writer,
                     (size_t)shape.record_tag_length);
       write_literal(writer, "}");
       return;
+    }
     default:
       writer->failed = 1;
       return;

@@ -1116,6 +1116,22 @@ static void add_string_macro(
             tok, NULL);
 }
 
+static double pp_positive_infinity(void) {
+#if defined(AGC_TARGET_WASM32) || defined(__wasm32__)
+  return 1.0 / 0.0;
+#else
+  return __builtin_huge_val();
+#endif
+}
+
+static double pp_quiet_nan(void) {
+#if defined(AGC_TARGET_WASM32) || defined(__wasm32__)
+  return 0.0 / 0.0;
+#else
+  return (double)__builtin_nanf("");
+#endif
+}
+
 static void pp_init_predefined_macros(
     ag_preprocessor_context_t *context, const ag_target_info_t *target) {
   int pointer_size =
@@ -1127,16 +1143,16 @@ static void pp_init_predefined_macros(
   add_int_macro(context, "__STDC_UTF_16__", 1);
   add_int_macro(context, "__STDC_UTF_32__", 1);
   add_float_macro(
-      context, "__AGC_HUGE_VAL__", __builtin_huge_val(),
+      context, "__AGC_HUGE_VAL__", pp_positive_infinity(),
       TK_FLOAT_KIND_DOUBLE, TK_FLOAT_SUFFIX_NONE);
   add_float_macro(
-      context, "__AGC_HUGE_VALF__", (double)__builtin_huge_valf(),
+      context, "__AGC_HUGE_VALF__", pp_positive_infinity(),
       TK_FLOAT_KIND_FLOAT, TK_FLOAT_SUFFIX_F);
   add_float_macro(
-      context, "__AGC_HUGE_VALL__", (double)__builtin_huge_vall(),
+      context, "__AGC_HUGE_VALL__", pp_positive_infinity(),
       TK_FLOAT_KIND_LONG_DOUBLE, TK_FLOAT_SUFFIX_L);
   add_float_macro(
-      context, "__AGC_NANF__", (double)__builtin_nanf(""),
+      context, "__AGC_NANF__", pp_quiet_nan(),
       TK_FLOAT_KIND_FLOAT, TK_FLOAT_SUFFIX_F);
   if (pointer_size == 8) {
     add_int_macro(context, "__LP64__", 1);

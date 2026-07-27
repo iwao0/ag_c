@@ -8,7 +8,8 @@ import {
 
 const wasmPath = process.argv[2] || "build/wasm_selfhost_api/ag_c_wasm_api.wasm";
 const nativeAnalysisPath = process.argv[3] || "build/test_language_analysis";
-const compiler = await createCompiler(await readFile(wasmPath));
+const wasmModule = await WebAssembly.compile(await readFile(wasmPath));
+const compiler = await createCompiler(wasmModule);
 
 const paritySource = {
   name: "main.c",
@@ -129,6 +130,306 @@ for (const [name, kind] of [
       hoverResult.hover.declaration.sourceName !== "symbols.h") {
     throw new Error(`virtual header ${kind} hover failed: ${JSON.stringify(hoverResult)}`);
   }
+}
+
+const starterSource = {
+  name: "starter.c",
+  source: "#include <game.h>\n" +
+    "enum { PLAYER_SIZE = 12 };\n" +
+    "static int player_x;\n" +
+    "static int player_y;\n" +
+    "static void update(void) {\n" +
+    "  if (player_x > GAME_SCREEN_WIDTH - PLAYER_SIZE) {\n" +
+    "    player_x = GAME_SCREEN_WIDTH - PLAYER_SIZE;\n" +
+    "  }\n" +
+    "  if (player_y > GAME_SCREEN_HEIGHT - PLAYER_SIZE) {\n" +
+    "    player_y = GAME_SCREEN_HEIGHT - PLAYER_SIZE;\n" +
+    "  }\n" +
+    "}\n",
+};
+const starterHeaders = {
+  "game.h": "#define GAME_SCREEN_WIDTH 640\n" +
+    "#define GAME_SCREEN_HEIGHT 360\n",
+};
+const starterHoverCases = [
+  ["GAME_SCREEN_WIDTH", "640"],
+  ["GAME_SCREEN_HEIGHT", "360"],
+].flatMap(([name, replacement]) => {
+  const start = starterSource.source.indexOf(name);
+  return [0, Math.floor(name.length / 2), Buffer.byteLength(name)].map(
+    (delta) => ({ name, replacement, byteOffset: start + delta }),
+  );
+});
+
+function assertStarterMacroHover(toolchain, hoverCase, lifecycle) {
+  const hoverResult = toolchain.analyzeSource(starterSource, {
+    headers: starterHeaders,
+    cursor: {
+      sourceName: starterSource.name,
+      byteOffset: hoverCase.byteOffset,
+    },
+  });
+  const completion = symbol(hoverResult, hoverCase.name, "macro");
+  if (hoverResult.hover?.name !== hoverCase.name ||
+      hoverResult.hover.kind !== "macro" ||
+      hoverResult.hover.macro?.replacement !== hoverCase.replacement ||
+      hoverResult.hover.declaration.sourceName !== "game.h" ||
+      completion?.macro?.replacement !== hoverCase.replacement) {
+    throw new Error(
+      `${lifecycle} starter macro hover failed: ${JSON.stringify(hoverResult)}`,
+    );
+  }
+}
+
+for (const hoverCase of starterHoverCases) {
+  assertStarterMacroHover(compiler, hoverCase, "reused instance");
+}
+for (const hoverCase of starterHoverCases) {
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    assertStarterMacroHover(freshCompiler, hoverCase, "fresh instance");
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
+const enumParitySource = {
+  name: "main.c",
+  source: "enum {\n" +
+    "  PLAYER_SIZE = 12,\n" +
+    "  PLAYER_SPEED = 2\n" +
+    "};\n" +
+    "int main(void) { return PLAYER_SIZE + PLAYER_SPEED; }\n",
+};
+const enumParityNameStart = enumParitySource.source.indexOf("PLAYER_SIZE");
+const wasmEnumParity = compiler.analyzeSource(enumParitySource, {
+  cursor: {
+    sourceName: enumParitySource.name,
+    byteOffset: enumParityNameStart + 4,
+  },
+});
+const nativeEnumParity = JSON.parse(execFileSync(
+  nativeAnalysisPath, ["--enum-parity-json"], { encoding: "utf8" },
+));
+assert.deepStrictEqual(
+  wasmEnumParity,
+  nativeEnumParity,
+  "native and Wasm enum declaration hover snapshots differ",
+);
+
+const enumSource = {
+  name: "enum-hover.c",
+  source: "enum {\n" +
+    "  PLAYER_ZERO,\n" +
+    "  PLAYER_SIZE = 12,\n" +
+    "  PLAYER_SPEED = 2,\n" +
+    "  PLAYER_NEXT,\n" +
+    "  PLAYER_EXPR = PLAYER_SIZE + 5\n" +
+    "};\n" +
+    "int main(void) {\n" +
+    "  return PLAYER_ZERO + PLAYER_SIZE + PLAYER_SPEED + " +
+    "PLAYER_NEXT + PLAYER_EXPR;\n" +
+    "}\n",
+};
+const enumUseRegion = enumSource.source.indexOf("return ");
+const enumCases = [
+  ["PLAYER_ZERO", "0", false],
+  ["PLAYER_SIZE", "12", true],
+  ["PLAYER_SPEED", "2", true],
+  ["PLAYER_NEXT", "3", false],
+  ["PLAYER_EXPR", "17", false],
+];
+for (const [name, constantValue, checkAllPositions] of enumCases) {
+  const declarationStart = enumSource.source.indexOf(name);
+  const useStart = enumSource.source.indexOf(name, enumUseRegion);
+  const useResult = compiler.analyzeSource(enumSource, {
+    cursor: {
+      sourceName: enumSource.name,
+      byteOffset: useStart + Buffer.byteLength(name),
+    },
+  });
+  const useHover = useResult.hover;
+  if (useHover?.name !== name || useHover.kind !== "enumConstant" ||
+      useHover.initializer.state !== "explicitConstant" ||
+      useHover.initializer.constantValue !== constantValue) {
+    throw new Error(`enum use hover failed: ${JSON.stringify(useResult)}`);
+  }
+  const cursorDeltas = checkAllPositions
+    ? [0, Math.floor(name.length / 2), Buffer.byteLength(name)]
+    : [Math.floor(name.length / 2)];
+  for (const cursorDelta of cursorDeltas) {
+    const declarationResult = compiler.analyzeSource(enumSource, {
+      cursor: {
+        sourceName: enumSource.name,
+        byteOffset: declarationStart + cursorDelta,
+      },
+    });
+    const declarationHover = declarationResult.hover;
+    if (declarationHover) {
+      assert.deepStrictEqual(
+        declarationHover.declaration,
+        useHover.declaration,
+        `enum declaration range differs for ${name}`,
+      );
+    }
+    if (declarationHover?.name !== name ||
+        declarationHover.kind !== "enumConstant" ||
+        declarationHover.initializer.state !== "explicitConstant" ||
+        declarationHover.initializer.constantValue !== constantValue ||
+        declarationHover.signature !== useHover.signature ||
+        declarationHover.type !== useHover.type ||
+        declarationResult.partial ||
+        declarationResult.diagnostics.length !== 0) {
+      throw new Error(
+        `enum declaration hover failed: ${JSON.stringify(declarationResult)}`,
+      );
+    }
+  }
+}
+
+const declarationFreeHeaders = {
+  "game.h": "#define GAME_SCREEN_WIDTH 640\n" +
+    "int game_running(void);\n",
+};
+const declarationFreeCases = [
+  { name: "empty", source: "" },
+  { name: "normal", source: "int value;\n" },
+  { name: "incomplete", source: "int" },
+  { name: "include", source: "#include <game.h>\n" },
+  { name: "comment", source: "/* comment only */\n" },
+  { name: "whitespace", source: "\n" },
+  { name: "define", source: "#define LOCAL_VALUE 1\n" },
+  {
+    name: "include-and-declaration",
+    source: "#include <game.h>\n\nint value;\n",
+  },
+];
+for (const analysisCase of declarationFreeCases) {
+  const declarationFreeSource = {
+    name: "aab/a.c",
+    source: analysisCase.source,
+  };
+  const declarationFreeResult = compiler.analyzeSource(declarationFreeSource, {
+    headers: declarationFreeHeaders,
+    diagnosticLocale: "ja",
+    cursor: {
+      sourceName: declarationFreeSource.name,
+      byteOffset: Buffer.byteLength(declarationFreeSource.source),
+    },
+  });
+  if (analysisCase.name === "incomplete") {
+    const partialIdentifier = declarationFreeResult.diagnostics.find(
+      (diagnostic) => diagnostic.code === "AGC_PARTIAL_IDENTIFIER",
+    );
+    if (!declarationFreeResult.partial ||
+        !partialIdentifier ||
+        partialIdentifier.start.offset !== 0 ||
+        partialIdentifier.end.offset !== 3) {
+      throw new Error(
+        `incomplete declaration lost diagnostics: ${JSON.stringify(declarationFreeResult)}`,
+      );
+    }
+    continue;
+  }
+  if (declarationFreeResult.partial ||
+      declarationFreeResult.diagnostics.length !== 0) {
+    throw new Error(
+      `declaration-free source was diagnosed: ${JSON.stringify({
+        name: analysisCase.name,
+        result: declarationFreeResult,
+      })}`,
+    );
+  }
+  if (analysisCase.name === "define" &&
+      !symbol(declarationFreeResult, "LOCAL_VALUE", "macro")) {
+    throw new Error("define-only analysis lost its macro completion");
+  }
+  if (analysisCase.name === "include" &&
+      (symbol(
+        declarationFreeResult,
+        "GAME_SCREEN_WIDTH",
+        "macro",
+      )?.macro?.replacement !== "640" ||
+       !symbol(declarationFreeResult, "game_running", "function") ||
+       JSON.stringify(declarationFreeResult.dependencies) !==
+         JSON.stringify(["game.h"]))) {
+    throw new Error(
+      `include-only analysis lost virtual header state: ${JSON.stringify(declarationFreeResult)}`,
+    );
+  }
+}
+
+const implicitIntSource = { name: "aab/a.c", source: "value;" };
+const implicitIntResult = compiler.analyzeSource(implicitIntSource, {
+  headers: declarationFreeHeaders,
+  diagnosticLocale: "ja",
+  cursor: {
+    sourceName: implicitIntSource.name,
+    byteOffset: Buffer.byteLength(implicitIntSource.source),
+  },
+});
+const implicitIntDiagnostic = implicitIntResult.diagnostics.find(
+  (diagnostic) => diagnostic.code === "E3088",
+);
+if (!implicitIntResult.partial || !implicitIntDiagnostic ||
+    implicitIntDiagnostic.start.offset !== 0 ||
+    implicitIntDiagnostic.end.offset !== 5) {
+  throw new Error(
+    `real implicit-int declaration lost E3088: ${JSON.stringify(implicitIntResult)}`,
+  );
+}
+
+const includeOnlyParitySource = {
+  name: "aab/a.c",
+  source: "#include <game.h>\n\n",
+};
+const wasmIncludeOnlyParity = compiler.analyzeSource(includeOnlyParitySource, {
+  headers: declarationFreeHeaders,
+  diagnosticLocale: "ja",
+  cursor: {
+    sourceName: includeOnlyParitySource.name,
+    byteOffset: Buffer.byteLength(includeOnlyParitySource.source),
+  },
+});
+const nativeIncludeOnlyParity = JSON.parse(execFileSync(
+  nativeAnalysisPath, ["--include-only-parity-json"], { encoding: "utf8" },
+));
+assert.deepStrictEqual(
+  wasmIncludeOnlyParity,
+  nativeIncludeOnlyParity,
+  "native and Wasm include-only analysis snapshots differ",
+);
+
+const failingAnalysisCompiler = await createCompiler(wasmModule);
+try {
+  const failingSource = {
+    name: "failing-analysis.c",
+    source: "#include <game.h>\n" +
+      "int main(void) { int = ; GAME_SCREEN_WIDTH",
+  };
+  try {
+    const failureSnapshot = failingAnalysisCompiler.analyzeSource(failingSource, {
+      headers: starterHeaders,
+      cursor: {
+        sourceName: failingSource.name,
+        byteOffset: Buffer.byteLength(failingSource.source),
+      },
+    });
+    if (!failureSnapshot.partial || !Array.isArray(failureSnapshot.diagnostics)) {
+      throw new Error(
+        `invalid analysis source was not partial: ${JSON.stringify(failureSnapshot)}`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof WebAssembly.RuntimeError ||
+        error.name !== "AgcLanguageAnalysisError" ||
+        error.code !== "AGC_LANGUAGE_ANALYSIS_FAILED" ||
+        !Array.isArray(error.diagnostics)) {
+      throw error;
+    }
+  }
+} finally {
+  failingAnalysisCompiler.dispose();
 }
 
 const memberSource = {

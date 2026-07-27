@@ -341,18 +341,35 @@ static bool tokenize_char_literal(
                    TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
   }
   while (*p && *p != '\'') {
-    int one = 0;
+    uint32_t one = 0;
     if (*p == '\\') {
       p++;
-      one = tk_read_escape_char_ctx(ctx, &p);
+      one = (uint32_t)tk_read_escape_char_ctx(ctx, &p);
     } else if (*p == '\n') {
       TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s",
                      TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
+    } else if (chr_prefix_kind != TK_CHAR_PREFIX_NONE &&
+               (unsigned char)*p >= 0x80) {
+      int remaining = 0;
+      while (p[remaining] && p[remaining] != '\'' &&
+             p[remaining] != '\n')
+        remaining++;
+      int pos = 0;
+      one = tk_decode_utf8(p, remaining, &pos);
+      p += pos;
     } else {
       one = (unsigned char)*p;
       p++;
     }
-    ch = ((ch << 8) | (unsigned)(one & 0xFF)) & 0xFFFFFFFFULL;
+    if (chr_prefix_kind == TK_CHAR_PREFIX_u && one > 0xFFFFu) {
+      TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, start, "%s",
+                     TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
+    }
+    unsigned long long encoded =
+        chr_prefix_kind == TK_CHAR_PREFIX_NONE
+            ? (unsigned long long)(one & 0xFFu)
+            : (unsigned long long)one;
+    ch = ((ch << 8) | encoded) & 0xFFFFFFFFULL;
     nchar++;
   }
   if (nchar == 0 || *p != '\'') {

@@ -163,8 +163,319 @@ static void identifier_at(const char *source, size_t length, size_t cursor,
   *name_length = end - start;
 }
 
-static char *build_recovery_source(const char *source, size_t cursor,
+static size_t skip_analysis_space_and_comments(
+    const char *source, size_t length, size_t cursor) {
+  while (cursor < length) {
+    if (isspace((unsigned char)source[cursor])) {
+      cursor++;
+      continue;
+    }
+    if (cursor + 1 < length && source[cursor] == '/' &&
+        source[cursor + 1] == '*') {
+      cursor += 2;
+      while (cursor + 1 < length &&
+             !(source[cursor] == '*' && source[cursor + 1] == '/'))
+        cursor++;
+      if (cursor + 1 < length) cursor += 2;
+      continue;
+    }
+    if (cursor + 1 < length && source[cursor] == '/' &&
+        source[cursor + 1] == '/') {
+      cursor += 2;
+      while (cursor < length && source[cursor] != '\n') cursor++;
+      continue;
+    }
+    break;
+  }
+  return cursor;
+}
+
+static int word_before(
+    const char *source, size_t cursor, const char *word) {
+  while (cursor > 0 && isspace((unsigned char)source[cursor - 1])) cursor--;
+  size_t end = cursor;
+  while (cursor > 0 &&
+         is_identifier_byte((unsigned char)source[cursor - 1]))
+    cursor--;
+  size_t length = end - cursor;
+  return length == strlen(word) && memcmp(source + cursor, word, length) == 0;
+}
+
+static int enum_body_open_at(
+    const char *source, size_t limit, size_t *enum_open,
+    size_t *outer_brace_count) {
+  size_t *braces = NULL;
+  size_t brace_count = 0;
+  size_t brace_capacity = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = 1;
+  int preprocessor_line = 0;
+  for (size_t i = 0; i < limit; i++) {
+    char c = source[i];
+    char next = i + 1 < limit ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      at_line_start = 1;
+      preprocessor_line = 0;
+      continue;
+    }
+    if (at_line_start && (c == ' ' || c == '\t' || c == '\r')) continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    at_line_start = 0;
+    if (preprocessor_line) continue;
+    if (c == '{') {
+      if (brace_count == brace_capacity) {
+        size_t next_capacity = brace_capacity ? brace_capacity * 2 : 8;
+        if (next_capacity < brace_capacity ||
+            next_capacity > SIZE_MAX / sizeof(*braces)) {
+          free(braces);
+          return 0;
+        }
+        size_t *next_braces = realloc(
+            braces, next_capacity * sizeof(*braces));
+        if (!next_braces) {
+          free(braces);
+          return 0;
+        }
+        braces = next_braces;
+        brace_capacity = next_capacity;
+      }
+      braces[brace_count++] = i;
+    } else if (c == '}' && brace_count > 0) {
+      brace_count--;
+    }
+  }
+  if (brace_count == 0) {
+    free(braces);
+    return 0;
+  }
+  size_t open = braces[brace_count - 1];
+  size_t outer_count = brace_count - 1;
+  free(braces);
+  size_t cursor = open;
+  while (cursor > 0 && isspace((unsigned char)source[cursor - 1])) cursor--;
+  size_t word_end = cursor;
+  while (cursor > 0 &&
+         is_identifier_byte((unsigned char)source[cursor - 1]))
+    cursor--;
+  if (word_end - cursor == strlen("enum") &&
+      memcmp(source + cursor, "enum", strlen("enum")) == 0) {
+    *enum_open = open;
+    *outer_brace_count = outer_count;
+    return 1;
+  }
+  if (cursor == word_end) return 0;
+  while (cursor > 0 && isspace((unsigned char)source[cursor - 1])) cursor--;
+  if (!word_before(source, cursor, "enum")) return 0;
+  *enum_open = open;
+  *outer_brace_count = outer_count;
+  return 1;
+}
+
+static int enum_enumerator_bounds(
+    const char *source, size_t length, size_t enum_open,
+    size_t name_start, size_t name_end, size_t *item_end) {
+  size_t segment_start = enum_open + 1;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  for (size_t i = segment_start; i < name_start; i++) {
+    char c = source[i];
+    char next = i + 1 < name_start ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') line_comment = 0;
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      continue;
+    }
+    if (c == '(') paren_depth++;
+    else if (c == ')' && paren_depth > 0) paren_depth--;
+    else if (c == '[') bracket_depth++;
+    else if (c == ']' && bracket_depth > 0) bracket_depth--;
+    else if (c == '{') brace_depth++;
+    else if (c == '}' && brace_depth > 0) brace_depth--;
+    else if (c == ',' && paren_depth == 0 && bracket_depth == 0 &&
+             brace_depth == 0)
+      segment_start = i + 1;
+  }
+  if (skip_analysis_space_and_comments(
+          source, name_start, segment_start) != name_start)
+    return 0;
+
+  paren_depth = 0;
+  bracket_depth = 0;
+  brace_depth = 0;
+  line_comment = 0;
+  block_comment = 0;
+  quote = 0;
+  escaped = 0;
+  for (size_t i = name_end; i < length; i++) {
+    char c = source[i];
+    char next = i + 1 < length ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') line_comment = 0;
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      continue;
+    }
+    if (c == '(') paren_depth++;
+    else if (c == ')' && paren_depth > 0) paren_depth--;
+    else if (c == '[') bracket_depth++;
+    else if (c == ']' && bracket_depth > 0) bracket_depth--;
+    else if (c == '{') brace_depth++;
+    else if (c == '}' && brace_depth > 0) brace_depth--;
+    else if ((c == ',' || c == '}') && paren_depth == 0 &&
+             bracket_depth == 0 && brace_depth == 0) {
+      *item_end = i;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static char *build_enum_declaration_recovery_source(
+    const char *source, size_t length, size_t cursor, int *changed) {
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(source, length, cursor, &name, &name_length);
+  if (!name || name_length == 0) return NULL;
+  size_t name_start = (size_t)(name - source);
+  size_t name_end = name_start + name_length;
+  size_t enum_open = 0;
+  size_t outer_brace_count = 0;
+  size_t item_end = 0;
+  if (!enum_body_open_at(
+          source, name_start, &enum_open, &outer_brace_count) ||
+      !enum_enumerator_bounds(
+          source, length, enum_open, name_start, name_end, &item_end))
+    return NULL;
+  static const char suffix[] =
+      "} __agc_language_enum_holder;\n"
+      "int " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  size_t item_length = item_end - name_start;
+  if (name_start > SIZE_MAX - item_length ||
+      outer_brace_count > SIZE_MAX / 2 ||
+      name_start + item_length > SIZE_MAX - sizeof(suffix) ||
+      name_start + item_length + sizeof(suffix) >
+          SIZE_MAX - outer_brace_count * 2)
+    return NULL;
+  size_t result_length =
+      name_start + item_length + sizeof(suffix) - 1 +
+      outer_brace_count * 2;
+  char *result = malloc(result_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, name_start);
+  memcpy(result + name_start, source + name_start, item_length);
+  size_t output = name_start + item_length;
+  memcpy(result + output, suffix, sizeof(suffix) - 1);
+  output += sizeof(suffix) - 1;
+  for (size_t i = 0; i < outer_brace_count; i++) {
+    result[output++] = '}';
+    result[output++] = '\n';
+  }
+  result[output] = '\0';
+  if (changed) *changed = 1;
+  return result;
+}
+
+static char *build_recovery_source(const char *source, size_t source_length,
+                                   size_t cursor,
                                    int *changed) {
+  char *enum_recovery = build_enum_declaration_recovery_source(
+      source, source_length, cursor, changed);
+  if (enum_recovery) return enum_recovery;
   size_t capacity = cursor * 2 + 8192;
   if (capacity < cursor || capacity > (size_t)INT_MAX) return NULL;
   char *result = calloc(capacity, 1);
@@ -281,13 +592,15 @@ static char *build_recovery_source(const char *source, size_t cursor,
       last_significant == '%' || last_significant == '&' ||
       last_significant == '|' || last_significant == '^' ||
       last_significant == '!' || last_significant == '~' ||
+      last_significant == '<' || last_significant == '>' ||
       last_significant == '?' || last_significant == ':')
     APPEND_LITERAL(" 0");
   for (size_t i = stack_count; i > 0; i--) {
     if (stack[i - 1] == '(') APPEND_LITERAL(")");
     else if (stack[i - 1] == '[') APPEND_LITERAL("]");
   }
-  if (last_significant != ';' && last_significant != '}')
+  if (last_significant != 0 &&
+      last_significant != ';' && last_significant != '}')
     APPEND_LITERAL(";");
   APPEND_LITERAL("\nint " AG_LANGUAGE_CURSOR_MARKER ";\n");
   for (size_t i = stack_count; i > 0; i--)
@@ -1059,6 +1372,24 @@ static void select_hover(ag_language_analysis_snapshot_t *snapshot,
   }
 }
 
+static int copy_dependencies(
+    snapshot_builder_t *builder, const ag_compilation_session_t *session) {
+  int count =
+      ag_compilation_session_virtual_header_dependency_count(session);
+  if (count <= 0) return 1;
+  builder->snapshot->dependencies = snapshot_alloc(
+      builder, (size_t)count * sizeof(*builder->snapshot->dependencies));
+  if (!builder->snapshot->dependencies) return 0;
+  builder->snapshot->dependency_count = count;
+  for (int i = 0; i < count; i++) {
+    builder->snapshot->dependencies[i] = snapshot_copy(
+        builder,
+        ag_compilation_session_virtual_header_dependency_name_at(session, i));
+    if (builder->failed) return 0;
+  }
+  return 1;
+}
+
 static int copy_diagnostics(snapshot_builder_t *builder,
                             const ag_diagnostic_context_t *diagnostics,
                             size_t cursor_offset) {
@@ -1442,7 +1773,8 @@ int ag_language_analyze_source(
       request->max_include_depth > 0 ? request->max_include_depth : 32);
   int recovery_changed = 0;
   char *recovery_source = build_recovery_source(
-      request->source, request->cursor_byte_offset, &recovery_changed);
+      request->source, request->source_length,
+      request->cursor_byte_offset, &recovery_changed);
   if (!recovery_source) {
     set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
               "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
@@ -1547,6 +1879,8 @@ int ag_language_analyze_source(
     add_macro_symbols(&builder, request,
                       ag_compilation_session_preprocessor_context(session),
                       &symbol_capacity);
+  if (!builder.failed)
+    copy_dependencies(&builder, session);
   const ag_diagnostic_context_t *diagnostics =
       ag_compilation_session_diagnostic_context(session);
   if (!builder.failed)
@@ -1618,6 +1952,9 @@ void ag_language_analysis_snapshot_dispose(
     free(symbol->macro_parameters);
   }
   free(snapshot->completion_items);
+  for (int i = 0; i < snapshot->dependency_count; i++)
+    free(snapshot->dependencies[i]);
+  free(snapshot->dependencies);
   for (int i = 0; i < snapshot->diagnostic_count; i++) {
     free(snapshot->diagnostics[i].code);
     free(snapshot->diagnostics[i].message);
@@ -1796,6 +2133,12 @@ int ag_language_analysis_snapshot_write_json(
       snapshot->hover_index < snapshot->completion_item_count)
     json_symbol(&writer, &snapshot->completion_items[snapshot->hover_index]);
   else json_literal(&writer, "null");
+  json_literal(&writer, ",\"dependencies\":[");
+  for (int i = 0; i < snapshot->dependency_count; i++) {
+    if (i) json_literal(&writer, ",");
+    json_string(&writer, snapshot->dependencies[i]);
+  }
+  json_literal(&writer, "]");
   json_literal(&writer, ",\"partial\":");
   json_literal(&writer, snapshot->partial ? "true" : "false");
   json_literal(&writer, "}");

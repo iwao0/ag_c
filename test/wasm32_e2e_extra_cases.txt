@@ -22,6 +22,7 @@ pointer/array_decay_diff.c
 wasm32/fenv_dfl_env_ops.c
 probes_found_bugs/addr_of_array_compound_literal.c
 probes_found_bugs/adjacent_encoded_string_literal_boundaries.c
+probes_found_bugs/encoded_character_constant_boundaries.c
 probes_found_bugs/predefined_function_name_const_boundaries.c
 probes_found_bugs/alignas_overaligned_local.c
 probes_found_bugs/alignof_aggregate.c

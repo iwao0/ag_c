@@ -5,6 +5,7 @@
 #include "../type_system/type_shape.h"
 
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
+typedef struct psx_record_decl_t psx_record_decl_t;
 typedef struct psx_record_decl_table_t psx_record_decl_table_t;
 
 psx_semantic_type_table_t *psx_semantic_type_table_create(void);
@@ -89,5 +90,7 @@ psx_qual_type_t psx_semantic_type_table_parameter(
 psx_qual_type_t psx_semantic_type_table_record_member(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id,
     int member_index);
+const psx_record_decl_t *psx_semantic_type_table_record_decl(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id);
 
 #endif

@@ -40,18 +40,19 @@ static header_bundle_t make_bundle(const char **paths, const char **sources,
   return (header_bundle_t){bytes, length};
 }
 
-static int analyze(ag_compilation_session_t *session, const char *source,
-                   size_t cursor, header_bundle_t bundle,
-                   ag_language_analysis_limits_t limits,
-                   ag_language_analysis_snapshot_t *snapshot,
-                   ag_language_analysis_error_t *error) {
+static int analyze_named(
+    ag_compilation_session_t *session, const char *source_name,
+    const char *source, size_t cursor, header_bundle_t bundle,
+    ag_language_analysis_limits_t limits,
+    ag_language_analysis_snapshot_t *snapshot,
+    ag_language_analysis_error_t *error) {
   return ag_language_analyze_source(
       session,
       &(ag_language_analysis_request_t){
-          .source_name = "main.c",
+          .source_name = source_name,
           .source = source,
           .source_length = strlen(source),
-          .cursor_source_name = "main.c",
+          .cursor_source_name = source_name,
           .cursor_byte_offset = cursor,
           .virtual_header_bundle = bundle.bytes,
           .virtual_header_bundle_length = bundle.length,
@@ -62,6 +63,15 @@ static int analyze(ag_compilation_session_t *session, const char *source,
           .limits = limits,
       },
       snapshot, error);
+}
+
+static int analyze(ag_compilation_session_t *session, const char *source,
+                   size_t cursor, header_bundle_t bundle,
+                   ag_language_analysis_limits_t limits,
+                   ag_language_analysis_snapshot_t *snapshot,
+                   ag_language_analysis_error_t *error) {
+  return analyze_named(
+      session, "main.c", source, cursor, bundle, limits, snapshot, error);
 }
 
 static const ag_language_symbol_t *find_symbol(
@@ -80,6 +90,26 @@ static const ag_language_symbol_t *hover_symbol(
                  snapshot->hover_index < snapshot->completion_item_count
              ? &snapshot->completion_items[snapshot->hover_index]
              : NULL;
+}
+
+static const ag_language_diagnostic_t *find_diagnostic(
+    const ag_language_analysis_snapshot_t *snapshot, const char *code) {
+  for (int i = 0; i < snapshot->diagnostic_count; i++)
+    if (strcmp(snapshot->diagnostics[i].code, code) == 0)
+      return &snapshot->diagnostics[i];
+  return NULL;
+}
+
+static int same_range(
+    const ag_language_source_range_t *left,
+    const ag_language_source_range_t *right) {
+  return strcmp(left->source_name, right->source_name) == 0 &&
+         left->start.line == right->start.line &&
+         left->start.column == right->start.column &&
+         left->start.offset == right->start.offset &&
+         left->end.line == right->end.line &&
+         left->end.column == right->end.column &&
+         left->end.offset == right->end.offset;
 }
 
 #define CHECK(condition, label)                                                  \
@@ -128,9 +158,86 @@ static int print_parity_snapshot(void) {
   return 0;
 }
 
+static int print_enum_parity_snapshot(void) {
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  if (!session) return 1;
+  const char *source =
+      "enum {\n"
+      "  PLAYER_SIZE = 12,\n"
+      "  PLAYER_SPEED = 2\n"
+      "};\n"
+      "int main(void) { return PLAYER_SIZE + PLAYER_SPEED; }\n";
+  const char *name = strstr(source, "PLAYER_SIZE");
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = analyze(
+      session, source, (size_t)(name - source) + 4,
+      (header_bundle_t){0}, ag_language_analysis_default_limits(),
+      &snapshot, &error);
+  if (!ok) {
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  int length = ag_language_analysis_snapshot_write_json(&snapshot, NULL, 0);
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  if (!json || ag_language_analysis_snapshot_write_json(
+                   &snapshot, json, (size_t)length + 1) != length) {
+    free(json);
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  puts(json);
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
+static int print_include_only_parity_snapshot(void) {
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  if (!session) return 1;
+  const char *paths[] = {"game.h"};
+  const char *headers[] = {
+      "#define GAME_SCREEN_WIDTH 640\n"
+      "int game_running(void);\n"};
+  header_bundle_t bundle = make_bundle(paths, headers, 1);
+  const char *source = "#include <game.h>\n\n";
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = analyze_named(
+      session, "aab/a.c", source, strlen(source), bundle,
+      ag_language_analysis_default_limits(), &snapshot, &error);
+  free(bundle.bytes);
+  if (!ok) {
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  int length = ag_language_analysis_snapshot_write_json(&snapshot, NULL, 0);
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  if (!json || ag_language_analysis_snapshot_write_json(
+                   &snapshot, json, (size_t)length + 1) != length) {
+    free(json);
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  puts(json);
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--parity-json") == 0)
     return print_parity_snapshot();
+  if (argc == 2 && strcmp(argv[1], "--enum-parity-json") == 0)
+    return print_enum_parity_snapshot();
+  if (argc == 2 && strcmp(argv[1], "--include-only-parity-json") == 0)
+    return print_include_only_parity_snapshot();
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "session");
@@ -208,6 +315,246 @@ int main(int argc, char **argv) {
     ag_language_analysis_snapshot_dispose(&snapshot);
   }
   free(hover_bundle.bytes);
+
+  const char *starter_paths[] = {"game.h"};
+  const char *starter_headers[] = {
+      "#define GAME_SCREEN_WIDTH 640\n"
+      "#define GAME_SCREEN_HEIGHT 360\n"};
+  header_bundle_t starter_bundle = make_bundle(
+      starter_paths, starter_headers, 1);
+  const char *starter_source =
+      "#include <game.h>\n"
+      "enum { PLAYER_SIZE = 12 };\n"
+      "static int player_x;\n"
+      "static int player_y;\n"
+      "static void update(void) {\n"
+      "  if (player_x > GAME_SCREEN_WIDTH - PLAYER_SIZE) {\n"
+      "    player_x = GAME_SCREEN_WIDTH - PLAYER_SIZE;\n"
+      "  }\n"
+      "  if (player_y > GAME_SCREEN_HEIGHT - PLAYER_SIZE) {\n"
+      "    player_y = GAME_SCREEN_HEIGHT - PLAYER_SIZE;\n"
+      "  }\n"
+      "}\n";
+  struct {
+    const char *name;
+    const char *replacement;
+  } starter_macros[] = {
+      {"GAME_SCREEN_WIDTH", "640"},
+      {"GAME_SCREEN_HEIGHT", "360"},
+  };
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t macro_index = 0;
+         macro_index < sizeof(starter_macros) / sizeof(starter_macros[0]);
+         macro_index++) {
+      const char *use = strstr(starter_source, starter_macros[macro_index].name);
+      size_t name_len = strlen(starter_macros[macro_index].name);
+      size_t cursor_deltas[] = {0, name_len / 2, name_len};
+      for (size_t cursor_index = 0;
+           cursor_index <
+               sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+           cursor_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh starter macro hover session");
+        }
+        size_t cursor =
+            (size_t)(use - starter_source) + cursor_deltas[cursor_index];
+        CHECK(analyze(
+                  analysis_session, starter_source, cursor,
+                  starter_bundle, defaults, &snapshot, &error),
+              "starter condition macro hover");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, starter_macros[macro_index].name,
+            AG_LANGUAGE_SYMBOL_MACRO);
+        CHECK(hover && completion &&
+                  hover->kind == AG_LANGUAGE_SYMBOL_MACRO &&
+                  strcmp(hover->name, starter_macros[macro_index].name) == 0 &&
+                  strcmp(hover->macro_replacement,
+                         starter_macros[macro_index].replacement) == 0 &&
+                  strcmp(completion->macro_replacement,
+                         starter_macros[macro_index].replacement) == 0 &&
+                  strcmp(hover->declaration.source_name, "game.h") == 0,
+              "starter condition macro hover fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  free(starter_bundle.bytes);
+
+  const char *enum_source =
+      "enum {\n"
+      "  PLAYER_ZERO,\n"
+      "  PLAYER_SIZE = 12,\n"
+      "  PLAYER_SPEED = 2,\n"
+      "  PLAYER_NEXT,\n"
+      "  PLAYER_EXPR = PLAYER_SIZE + 5\n"
+      "};\n"
+      "int main(void) {\n"
+      "  return PLAYER_ZERO + PLAYER_SIZE + PLAYER_SPEED + "
+      "PLAYER_NEXT + PLAYER_EXPR;\n"
+      "}\n";
+  struct {
+    const char *name;
+    const char *value;
+    int check_all_positions;
+  } enum_cases[] = {
+      {"PLAYER_ZERO", "0", 0},
+      {"PLAYER_SIZE", "12", 1},
+      {"PLAYER_SPEED", "2", 1},
+      {"PLAYER_NEXT", "3", 0},
+      {"PLAYER_EXPR", "17", 0},
+  };
+  const char *enum_use_region = strstr(enum_source, "return ");
+  for (size_t case_index = 0;
+       case_index < sizeof(enum_cases) / sizeof(enum_cases[0]); case_index++) {
+    const char *declaration = strstr(enum_source, enum_cases[case_index].name);
+    const char *use = strstr(enum_use_region, enum_cases[case_index].name);
+    size_t name_length = strlen(enum_cases[case_index].name);
+    ag_language_analysis_snapshot_t use_snapshot = {0};
+    CHECK(analyze(
+              session, enum_source, (size_t)(use - enum_source) + name_length,
+              (header_bundle_t){0}, defaults, &use_snapshot, &error),
+          "enum use hover");
+    const ag_language_symbol_t *use_hover = hover_symbol(&use_snapshot);
+    CHECK(use_hover &&
+              use_hover->kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT &&
+              use_hover->initializer_state ==
+                  AG_LANGUAGE_INITIALIZER_EXPLICIT_CONSTANT &&
+              strcmp(use_hover->constant_value,
+                     enum_cases[case_index].value) == 0,
+          "enum use hover fields");
+    size_t cursor_deltas[] = {
+        0, name_length / 2, name_length,
+    };
+    size_t cursor_count = enum_cases[case_index].check_all_positions ? 3 : 1;
+    for (size_t cursor_index = 0; cursor_index < cursor_count; cursor_index++) {
+      size_t cursor = (size_t)(declaration - enum_source) +
+                      cursor_deltas[cursor_index];
+      CHECK(analyze(
+                session, enum_source, cursor, (header_bundle_t){0},
+                defaults, &snapshot, &error),
+            "enum declaration hover");
+      const ag_language_symbol_t *declaration_hover = hover_symbol(&snapshot);
+      CHECK(declaration_hover &&
+                declaration_hover->kind ==
+                    AG_LANGUAGE_SYMBOL_ENUM_CONSTANT &&
+                strcmp(declaration_hover->name,
+                       enum_cases[case_index].name) == 0 &&
+                declaration_hover->initializer_state ==
+                    AG_LANGUAGE_INITIALIZER_EXPLICIT_CONSTANT &&
+                strcmp(declaration_hover->constant_value,
+                       enum_cases[case_index].value) == 0 &&
+                strcmp(declaration_hover->signature,
+                       use_hover->signature) == 0 &&
+                strcmp(declaration_hover->type, use_hover->type) == 0 &&
+                same_range(
+                    &declaration_hover->declaration,
+                    &use_hover->declaration),
+            "enum declaration and use hover parity");
+      CHECK(!snapshot.partial && snapshot.diagnostic_count == 0,
+            "complete enum declaration hover is not partial");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+    ag_language_analysis_snapshot_dispose(&use_snapshot);
+  }
+  source =
+      "int local_enum_value(void) {\n"
+      "  enum { LOCAL_ENUM_VALUE = 9 };\n"
+      "  return LOCAL_ENUM_VALUE;\n"
+      "}\n";
+  const char *local_enum_declaration = strstr(source, "LOCAL_ENUM_VALUE");
+  CHECK(analyze(
+            session, source,
+            (size_t)(local_enum_declaration - source) + 5,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "block-scope enum declaration hover");
+  const ag_language_symbol_t *local_enum_hover = hover_symbol(&snapshot);
+  CHECK(local_enum_hover &&
+            local_enum_hover->kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT &&
+            strcmp(local_enum_hover->name, "LOCAL_ENUM_VALUE") == 0 &&
+            strcmp(local_enum_hover->constant_value, "9") == 0 &&
+            !snapshot.partial,
+        "block-scope enum recovery closes outer scope");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *analysis_game_paths[] = {"game.h"};
+  const char *analysis_game_headers[] = {
+      "#define GAME_SCREEN_WIDTH 640\n"
+      "int game_running(void);\n"};
+  header_bundle_t analysis_game = make_bundle(
+      analysis_game_paths, analysis_game_headers, 1);
+  struct {
+    const char *label;
+    const char *source;
+  } empty_source_cases[] = {
+      {"empty", ""},
+      {"whitespace", "\n"},
+      {"comment", "/* comment only */\n"},
+      {"define", "#define LOCAL_VALUE 1\n"},
+      {"include", "#include <game.h>\n"},
+      {"include-and-declaration",
+       "#include <game.h>\n\nint value;\n"},
+  };
+  for (size_t case_index = 0;
+       case_index <
+           sizeof(empty_source_cases) / sizeof(empty_source_cases[0]);
+       case_index++) {
+    const char *empty_source = empty_source_cases[case_index].source;
+    CHECK(analyze_named(
+              session, "aab/a.c", empty_source, strlen(empty_source),
+              analysis_game, defaults, &snapshot, &error),
+          empty_source_cases[case_index].label);
+    CHECK(snapshot.diagnostic_count == 0 && !snapshot.partial,
+          "declaration-free source is complete");
+    if (strcmp(empty_source_cases[case_index].label, "define") == 0)
+      CHECK(find_symbol(
+                &snapshot, "LOCAL_VALUE", AG_LANGUAGE_SYMBOL_MACRO),
+            "define-only source completion");
+    if (strcmp(empty_source_cases[case_index].label, "include") == 0) {
+      const ag_language_symbol_t *screen_width = find_symbol(
+          &snapshot, "GAME_SCREEN_WIDTH", AG_LANGUAGE_SYMBOL_MACRO);
+      CHECK(screen_width &&
+                strcmp(screen_width->macro_replacement, "640") == 0 &&
+                find_symbol(
+                    &snapshot, "game_running",
+                    AG_LANGUAGE_SYMBOL_FUNCTION),
+            "include-only virtual header completion");
+      CHECK(snapshot.dependency_count == 1 &&
+                strcmp(snapshot.dependencies[0], "game.h") == 0,
+            "include-only analysis dependencies");
+    }
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  source = "value;";
+  CHECK(analyze_named(
+            session, "aab/a.c", source, strlen(source), analysis_game,
+            defaults, &snapshot, &error),
+        "real implicit-int declaration");
+  const ag_language_diagnostic_t *implicit_int =
+      find_diagnostic(&snapshot, "E3088");
+  CHECK(implicit_int && snapshot.partial &&
+            implicit_int->range.start.offset == 0 &&
+            implicit_int->range.end.offset == 5,
+        "real implicit-int token retains E3088");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  source = "int";
+  CHECK(analyze_named(
+            session, "aab/a.c", source, strlen(source), analysis_game,
+            defaults, &snapshot, &error),
+        "incomplete declaration keyword");
+  const ag_language_diagnostic_t *partial_identifier =
+      find_diagnostic(&snapshot, "AGC_PARTIAL_IDENTIFIER");
+  CHECK(snapshot.partial && partial_identifier &&
+            partial_identifier->range.start.offset == 0 &&
+            partial_identifier->range.end.offset == 3,
+        "incomplete declaration remains structured and partial");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  free(analysis_game.bytes);
 
   const char *stdio_paths[] = {"stdio.h"};
   const char *stdio_sources[] = {"int printf(const char *format, ...);\n"};
@@ -509,6 +856,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (28 scenarios)");
+  puts("language analysis tests passed (30 scenarios)");
   return 0;
 }

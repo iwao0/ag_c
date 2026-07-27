@@ -87,6 +87,8 @@ typedef struct {
   int diagnostic_count;
   ag_language_symbol_t *completion_items;
   int completion_item_count;
+  char **dependencies;
+  int dependency_count;
   int hover_index;
   int partial;
   size_t allocated_bytes;
