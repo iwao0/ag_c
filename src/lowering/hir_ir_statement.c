@@ -232,7 +232,8 @@ int hir_ir_build_statement(
         ir_val_t result = hir_ir_materialize_complex_operand(
             context, value, context->return_info);
         if (context->status != IR_HIR_BUILD_OK ||
-            !hir_ir_is_complex_type(value_type) ||
+            (!hir_ir_is_complex_type(value_type) &&
+             !hir_ir_is_scalar_value_type(value_type)) ||
             result.type != IR_TY_PTR)
           return 0;
         ir_inst_t *ret = ir_inst_new(IR_RET);

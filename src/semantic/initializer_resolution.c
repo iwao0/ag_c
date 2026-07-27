@@ -708,7 +708,8 @@ static int flat_initializer_string_span(
 static int flat_initializer_aggregate_value_span(
     psx_flat_initializer_context_t *context,
     const psx_initializer_object_span_t *object, int cursor,
-    const node_t *value, psx_initializer_object_span_t *target) {
+    const node_t *value, int allow_complex_conversion,
+    psx_initializer_object_span_t *target) {
   if (!context || !object || !value || !target ||
       !context->resolve_value_type)
     return 0;
@@ -716,16 +717,32 @@ static int flat_initializer_aggregate_value_span(
   if (!context->resolve_value_type(
           context->resolver_context, value, &value_type))
     return 0;
+  psx_type_shape_t value_shape = {0};
+  int value_is_arithmetic =
+      psx_semantic_type_table_describe(
+          context->semantic_types, value_type.type_id, &value_shape) &&
+      (value_shape.kind == PSX_TYPE_BOOL ||
+       value_shape.kind == PSX_TYPE_INTEGER ||
+       value_shape.kind == PSX_TYPE_FLOAT ||
+       value_shape.kind == PSX_TYPE_COMPLEX);
   psx_initializer_object_span_t candidate = *object;
   for (;;) {
     psx_type_shape_t candidate_shape = {0};
-    if (psx_semantic_type_table_describe(
+    int has_candidate_shape =
+        psx_semantic_type_table_describe(
             context->semantic_types, candidate.qual_type.type_id,
-            &candidate_shape) &&
+            &candidate_shape);
+    int same_whole_object_type =
+        has_candidate_shape &&
         (psx_type_kind_is_aggregate(candidate_shape.kind) ||
          candidate_shape.kind == PSX_TYPE_ARRAY ||
          candidate_shape.kind == PSX_TYPE_COMPLEX) &&
-        candidate.qual_type.type_id == value_type.type_id) {
+        candidate.qual_type.type_id == value_type.type_id;
+    int converts_to_complex_object =
+        allow_complex_conversion && has_candidate_shape &&
+        candidate_shape.kind == PSX_TYPE_COMPLEX &&
+        value_is_arithmetic;
+    if (same_whole_object_type || converts_to_complex_object) {
       *target = candidate;
       return 1;
     }
@@ -1021,7 +1038,9 @@ static int flat_initializer_apply_list(
       } else if (entry->value->kind != ND_INIT_LIST &&
                  flat_initializer_aggregate_value_span(
                      context, cursor_object, cursor,
-                     entry->value, &target)) {
+                     entry->value,
+                     object_shape.kind != PSX_TYPE_COMPLEX,
+                     &target)) {
         /* A compatible aggregate expression initializes one subobject. */
       } else if (positional_union_active &&
                  entry->value->kind == ND_INIT_LIST) {
