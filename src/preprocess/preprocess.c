@@ -869,20 +869,66 @@ static char *my_strndup(const char *s, size_t n) {
   return p;
 }
 
+static bool macro_token_spelling_equal(
+    const token_t *left, const token_t *right) {
+  if (!left || !right || left->kind != right->kind ||
+      left->byte_length != right->byte_length) {
+    return false;
+  }
+  if (left->source_input && right->source_input &&
+      left->byte_offset >= 0 && right->byte_offset >= 0) {
+    return memcmp(
+               left->source_input + left->byte_offset,
+               right->source_input + right->byte_offset,
+               (size_t)left->byte_length) == 0;
+  }
+
+  int left_len = 0;
+  int right_len = 0;
+  const char *left_text = token_text((token_t *)left, &left_len);
+  const char *right_text = token_text((token_t *)right, &right_len);
+  return left_text && right_text && left_len == right_len &&
+         memcmp(left_text, right_text, (size_t)left_len) == 0;
+}
+
+/*
+ * C11 6.10.3p1-p2: a macro may be defined again without #undef only when
+ * its form, function parameters, replacement preprocessing tokens, and the
+ * whitespace separation between replacement tokens are identical.  Leading
+ * and trailing replacement-list whitespace is not part of the comparison.
+ */
+static bool macro_definitions_identical(
+    const macro_t *left, const macro_t *right) {
+  if (left->is_funclike != right->is_funclike) return false;
+  if (left->is_funclike) {
+    if (left->is_variadic != right->is_variadic ||
+        left->num_params != right->num_params) {
+      return false;
+    }
+    for (int i = 0; i < left->num_params; i++) {
+      if (strcmp(left->params[i], right->params[i]) != 0) return false;
+    }
+  }
+
+  const token_t *left_token = left->body;
+  const token_t *right_token = right->body;
+  bool first = true;
+  while (left_token && right_token) {
+    if (!first && left_token->has_space != right_token->has_space) {
+      return false;
+    }
+    if (!macro_token_spelling_equal(left_token, right_token)) return false;
+    first = false;
+    left_token = left_token->next;
+    right_token = right_token->next;
+  }
+  return left_token == NULL && right_token == NULL;
+}
+
 static void add_macro(ag_preprocessor_context_t *context, char *name,
                       bool is_funclike, bool is_variadic, char **params,
                       int num_params, token_t *body,
                       token_t *definition_token) {
-  macro_t **link = &macros;
-  while (*link) {
-    macro_t *existing = *link;
-    if (strcmp(existing->name, name) == 0) {
-      *link = existing->next;
-      free_macro(existing);
-      break;
-    }
-    link = &existing->next;
-  }
   macro_t *m = calloc(1, sizeof(macro_t));
   m->name = name;
   m->body = body;
@@ -896,6 +942,34 @@ static void add_macro(ag_preprocessor_context_t *context, char *name,
   } else {
     m->params = params;
   }
+
+  macro_t **link = &macros;
+  while (*link) {
+    macro_t *existing = *link;
+    if (strcmp(existing->name, name) != 0) {
+      link = &existing->next;
+      continue;
+    }
+    /*
+     * Predefined macros are rebuilt between batched translation units and
+     * have no source definition token.  That internal refresh is not a user
+     * #define redefinition and retains the prior replace-in-place behavior.
+     */
+    if (!existing->definition_token && !definition_token) {
+      *link = existing->next;
+      free_macro(existing);
+      break;
+    }
+    if (!existing->definition_token || !definition_token ||
+        !macro_definitions_identical(existing, m)) {
+      pp_error(
+          context, DIAG_ERR_PREPROCESS_MACRO_REDEFINITION_INCOMPATIBLE,
+          name);
+    }
+    free_macro(m);
+    return;
+  }
+
   m->next = macros;
   macros = m;
 }
@@ -1341,18 +1415,48 @@ static token_t *skip_cond_incl(token_t *tok) {
   return tok;
 }
 
-static long const_expr(
+typedef struct pp_integer {
+  uint64_t bits;
+  bool is_unsigned;
+} pp_integer_t;
+
+static pp_integer_t pp_signed_integer(int64_t value) {
+  return (pp_integer_t){.bits = (uint64_t)value, .is_unsigned = false};
+}
+
+static pp_integer_t pp_unsigned_integer(uint64_t value) {
+  return (pp_integer_t){.bits = value, .is_unsigned = true};
+}
+
+static pp_integer_t pp_integer_with_type(uint64_t bits, bool is_unsigned) {
+  return (pp_integer_t){.bits = bits, .is_unsigned = is_unsigned};
+}
+
+static bool pp_integer_truth(pp_integer_t value) {
+  return value.bits != 0;
+}
+
+static bool pp_integer_common_unsigned(
+    pp_integer_t left, pp_integer_t right) {
+  return left.is_unsigned || right.is_unsigned;
+}
+
+static pp_integer_t const_expr(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok);
-static void skip_const_expr(
+static pp_integer_t conditional(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok);
-static long add(
+static pp_integer_t logand(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok);
+static pp_integer_t bitor(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok);
+static pp_integer_t add(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok);
 
-static long primary(
+static pp_integer_t primary(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
   if (tok->kind == TK_LPAREN) {
-    long val = const_expr(context, &tok, tok->next);
+    pp_integer_t val = const_expr(context, &tok, tok->next);
     if (!(tok->kind == TK_RPAREN)) {
       pp_error(context, DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
     }
@@ -1363,56 +1467,96 @@ static long primary(
     if (tk_as_num(tok)->num_kind != TK_NUM_KIND_INT) {
       pp_error(context, DIAG_ERR_PREPROCESS_IF_INT_LITERAL_REQUIRED, NULL);
     }
-    long val = tk_as_num_int(tok)->val;
+    token_num_int_t *number = tk_as_num_int(tok);
+    pp_integer_t val = number->is_unsigned
+                           ? pp_unsigned_integer(number->uval)
+                           : pp_signed_integer(number->val);
     *rest = tok->next;
     return val;
   }
   if (tok->kind == TK_IDENT) {
     *rest = tok->next;
-    return 0; // undefined macro to 0
+    return pp_signed_integer(0); // undefined macro to 0
   }
   pp_error(context, DIAG_ERR_PREPROCESS_CONST_EXPR_UNEXPECTED_TOKEN, NULL);
 }
 
-static long unary(
+static pp_integer_t unary(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
   if (tok->kind == TK_PLUS) {
     return unary(context, rest, tok->next);
   }
   if (tok->kind == TK_MINUS) {
-    return -unary(context, rest, tok->next);
+    pp_integer_t value = unary(context, rest, tok->next);
+    value.bits = 0 - value.bits;
+    return value;
   }
   if (tok->kind == TK_BANG) {
-    return !unary(context, rest, tok->next);
+    return pp_signed_integer(
+        !pp_integer_truth(unary(context, rest, tok->next)));
   }
   if (tok->kind == TK_TILDE) {
-    return ~unary(context, rest, tok->next);
+    pp_integer_t value = unary(context, rest, tok->next);
+    value.bits = ~value.bits;
+    return value;
   }
   return primary(context, rest, tok);
 }
 
-static long mul(
+static pp_integer_t mul(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long val = unary(context, &tok, tok);
+  pp_integer_t val = unary(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_MUL) {
       if_expr_step_or_die(context);
-      val *= unary(context, &tok, tok->next);
+      pp_integer_t rhs = unary(context, &tok, tok->next);
+      val = pp_integer_with_type(
+          val.bits * rhs.bits, pp_integer_common_unsigned(val, rhs));
     } else if (tok->kind == TK_DIV) {
       if_expr_step_or_die(context);
-      long rhs = unary(context, &tok, tok->next);
+      pp_integer_t rhs = unary(context, &tok, tok->next);
+      bool is_unsigned = pp_integer_common_unsigned(val, rhs);
       if (g_if_expr_eval) {
-        if (rhs == 0) pp_error(context, DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
-        val /= rhs;
+        if (rhs.bits == 0) {
+          pp_error(context, DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
+        }
+        if (is_unsigned) {
+          val = pp_unsigned_integer(val.bits / rhs.bits);
+        } else {
+          int64_t left_value = (int64_t)val.bits;
+          int64_t right_value = (int64_t)rhs.bits;
+          if (left_value == INT64_MIN && right_value == -1) {
+            val = pp_signed_integer(INT64_MIN);
+          } else {
+            val = pp_signed_integer(left_value / right_value);
+          }
+        }
+      } else {
+        val = pp_integer_with_type(0, is_unsigned);
       }
     } else if (tok->kind == TK_MOD) {
       if_expr_step_or_die(context);
-      long rhs = unary(context, &tok, tok->next);
+      pp_integer_t rhs = unary(context, &tok, tok->next);
+      bool is_unsigned = pp_integer_common_unsigned(val, rhs);
       if (g_if_expr_eval) {
-        if (rhs == 0) pp_error(context, DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
-        val %= rhs;
+        if (rhs.bits == 0) {
+          pp_error(context, DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
+        }
+        if (is_unsigned) {
+          val = pp_unsigned_integer(val.bits % rhs.bits);
+        } else {
+          int64_t left_value = (int64_t)val.bits;
+          int64_t right_value = (int64_t)rhs.bits;
+          if (left_value == INT64_MIN && right_value == -1) {
+            val = pp_signed_integer(0);
+          } else {
+            val = pp_signed_integer(left_value % right_value);
+          }
+        }
+      } else {
+        val = pp_integer_with_type(0, is_unsigned);
       }
     } else {
       *rest = tok;
@@ -1422,17 +1566,25 @@ static long mul(
 }
 
 /* シフト `<<` `>>` (加減算より低く、関係演算より高い)。 */
-static long shift(
+static pp_integer_t shift(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long val = add(context, &tok, tok);
+  pp_integer_t val = add(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_SHL) {
       if_expr_step_or_die(context);
-      val = val << add(context, &tok, tok->next);
+      pp_integer_t rhs = add(context, &tok, tok->next);
+      val.bits = rhs.bits < 64 ? val.bits << rhs.bits : 0;
     } else if (tok->kind == TK_SHR) {
       if_expr_step_or_die(context);
-      val = val >> add(context, &tok, tok->next);
+      pp_integer_t rhs = add(context, &tok, tok->next);
+      if (rhs.bits >= 64) {
+        val.bits = 0;
+      } else if (val.is_unsigned) {
+        val.bits >>= rhs.bits;
+      } else {
+        val.bits = (uint64_t)((int64_t)val.bits >> rhs.bits);
+      }
     } else {
       *rest = tok;
       return val;
@@ -1440,17 +1592,21 @@ static long shift(
   }
 }
 
-static long add(
+static pp_integer_t add(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long val = mul(context, &tok, tok);
+  pp_integer_t val = mul(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_PLUS) {
       if_expr_step_or_die(context);
-      val += mul(context, &tok, tok->next);
+      pp_integer_t rhs = mul(context, &tok, tok->next);
+      val = pp_integer_with_type(
+          val.bits + rhs.bits, pp_integer_common_unsigned(val, rhs));
     } else if (tok->kind == TK_MINUS) {
       if_expr_step_or_die(context);
-      val -= mul(context, &tok, tok->next);
+      pp_integer_t rhs = mul(context, &tok, tok->next);
+      val = pp_integer_with_type(
+          val.bits - rhs.bits, pp_integer_common_unsigned(val, rhs));
     } else {
       *rest = tok;
       return val;
@@ -1458,41 +1614,50 @@ static long add(
   }
 }
 
-static long relational(
+static pp_integer_t relational(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long val = shift(context, &tok, tok);
+  pp_integer_t val = shift(context, &tok, tok);
   for (;;) {
-    if (tok->kind == TK_LT) {
-      if_expr_step_or_die(context);
-      val = val < shift(context, &tok, tok->next);
-    } else if (tok->kind == TK_LE) {
-      if_expr_step_or_die(context);
-      val = val <= shift(context, &tok, tok->next);
-    } else if (tok->kind == TK_GT) {
-      if_expr_step_or_die(context);
-      val = val > shift(context, &tok, tok->next);
-    } else if (tok->kind == TK_GE) {
-      if_expr_step_or_die(context);
-      val = val >= shift(context, &tok, tok->next);
-    } else {
+    token_kind_t operation = (token_kind_t)tok->kind;
+    if (operation != TK_LT && operation != TK_LE &&
+        operation != TK_GT && operation != TK_GE) {
       *rest = tok;
       return val;
     }
+    if_expr_step_or_die(context);
+    pp_integer_t rhs = shift(context, &tok, tok->next);
+    bool result;
+    if (pp_integer_common_unsigned(val, rhs)) {
+      if (operation == TK_LT) result = val.bits < rhs.bits;
+      else if (operation == TK_LE) result = val.bits <= rhs.bits;
+      else if (operation == TK_GT) result = val.bits > rhs.bits;
+      else result = val.bits >= rhs.bits;
+    } else {
+      int64_t left_value = (int64_t)val.bits;
+      int64_t right_value = (int64_t)rhs.bits;
+      if (operation == TK_LT) result = left_value < right_value;
+      else if (operation == TK_LE) result = left_value <= right_value;
+      else if (operation == TK_GT) result = left_value > right_value;
+      else result = left_value >= right_value;
+    }
+    val = pp_signed_integer(result);
   }
 }
 
-static long equality(
+static pp_integer_t equality(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long val = relational(context, &tok, tok);
+  pp_integer_t val = relational(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_EQEQ) {
       if_expr_step_or_die(context);
-      val = val == relational(context, &tok, tok->next);
+      pp_integer_t rhs = relational(context, &tok, tok->next);
+      val = pp_signed_integer(val.bits == rhs.bits);
     } else if (tok->kind == TK_NEQ) {
       if_expr_step_or_die(context);
-      val = val != relational(context, &tok, tok->next);
+      pp_integer_t rhs = relational(context, &tok, tok->next);
+      val = pp_signed_integer(val.bits != rhs.bits);
     } else {
       *rest = tok;
       return val;
@@ -1501,14 +1666,16 @@ static long equality(
 }
 
 /* ビット AND `&` (等価演算より低く、ビット XOR より高い)。 */
-static long bitand(
+static pp_integer_t bitand(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long val = equality(context, &tok, tok);
+  pp_integer_t val = equality(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_AMP) {
       if_expr_step_or_die(context);
-      val = val & equality(context, &tok, tok->next);
+      pp_integer_t rhs = equality(context, &tok, tok->next);
+      val = pp_integer_with_type(
+          val.bits & rhs.bits, pp_integer_common_unsigned(val, rhs));
     } else {
       *rest = tok;
       return val;
@@ -1517,14 +1684,16 @@ static long bitand(
 }
 
 /* ビット XOR `^`。 */
-static long bitxor(
+static pp_integer_t bitxor(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long val = bitand(context, &tok, tok);
+  pp_integer_t val = bitand(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_CARET) {
       if_expr_step_or_die(context);
-      val = val ^ bitand(context, &tok, tok->next);
+      pp_integer_t rhs = bitand(context, &tok, tok->next);
+      val = pp_integer_with_type(
+          val.bits ^ rhs.bits, pp_integer_common_unsigned(val, rhs));
     } else {
       *rest = tok;
       return val;
@@ -1533,14 +1702,16 @@ static long bitxor(
 }
 
 /* ビット OR `|`。 */
-static long bitor(
+static pp_integer_t bitor(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long val = bitxor(context, &tok, tok);
+  pp_integer_t val = bitxor(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_PIPE) {
       if_expr_step_or_die(context);
-      val = val | bitxor(context, &tok, tok->next);
+      pp_integer_t rhs = bitxor(context, &tok, tok->next);
+      val = pp_integer_with_type(
+          val.bits | rhs.bits, pp_integer_common_unsigned(val, rhs));
     } else {
       *rest = tok;
       return val;
@@ -1548,19 +1719,19 @@ static long bitor(
   }
 }
 
-static long logand(
+static pp_integer_t logand(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long val = bitor(context, &tok, tok);
+  pp_integer_t val = bitor(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_ANDAND) {
       if_expr_step_or_die(context);
-      if (val) {
-        long rhs = bitor(context, &tok, tok->next);
-        val = val && rhs;
-      } else {
-        skip_const_expr(context, &tok, tok->next);
-      }
+      bool saved_evaluation = g_if_expr_eval;
+      g_if_expr_eval = saved_evaluation && pp_integer_truth(val);
+      pp_integer_t rhs = bitor(context, &tok, tok->next);
+      g_if_expr_eval = saved_evaluation;
+      val = pp_signed_integer(
+          pp_integer_truth(val) && pp_integer_truth(rhs));
     } else {
       *rest = tok;
       return val;
@@ -1568,20 +1739,19 @@ static long logand(
   }
 }
 
-static long logor(
+static pp_integer_t logor(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long val = logand(context, &tok, tok);
+  pp_integer_t val = logand(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_OROR) {
       if_expr_step_or_die(context);
-      if (val) {
-        skip_const_expr(context, &tok, tok->next);
-        val = 1;
-      } else {
-        long rhs = logand(context, &tok, tok->next);
-        val = val || rhs;
-      }
+      bool saved_evaluation = g_if_expr_eval;
+      g_if_expr_eval = saved_evaluation && !pp_integer_truth(val);
+      pp_integer_t rhs = logand(context, &tok, tok->next);
+      g_if_expr_eval = saved_evaluation;
+      val = pp_signed_integer(
+          pp_integer_truth(val) || pp_integer_truth(rhs));
     } else {
       *rest = tok;
       return val;
@@ -1591,44 +1761,38 @@ static long logor(
 
 /* 条件演算子 `?:` (C11 6.10.1 が #if 定数式で要求)。最も低い優先順位。
  * ゼロ除算等を避けるため C と同様に選択側のみ評価する。 */
-static long conditional(
+static pp_integer_t conditional(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   if_expr_step_or_die(context);
-  long cond = logor(context, &tok, tok);
+  pp_integer_t cond = logor(context, &tok, tok);
   if (tok->kind != TK_QUESTION) {
     *rest = tok;
     return cond;
   }
   if_expr_step_or_die(context);
-  if (cond) {
-    long then_val = const_expr(context, &tok, tok->next);
-    if (tok->kind != TK_COLON) {
-      pp_error(context, DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
-    }
-    skip_const_expr(context, &tok, tok->next);
-    *rest = tok;
-    return then_val;
-  }
-  skip_const_expr(context, &tok, tok->next);
+
+  bool saved_evaluation = g_if_expr_eval;
+  bool choose_then = pp_integer_truth(cond);
+  g_if_expr_eval = saved_evaluation && choose_then;
+  pp_integer_t then_value = const_expr(context, &tok, tok->next);
+  g_if_expr_eval = saved_evaluation;
   if (tok->kind != TK_COLON) {
     pp_error(context, DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
   }
-  long else_val = conditional(context, &tok, tok->next);
+
+  g_if_expr_eval = saved_evaluation && !choose_then;
+  pp_integer_t else_value = conditional(context, &tok, tok->next);
+  g_if_expr_eval = saved_evaluation;
   *rest = tok;
-  return else_val;
+
+  pp_integer_t result = choose_then ? then_value : else_value;
+  result.is_unsigned = pp_integer_common_unsigned(then_value, else_value);
+  return result;
 }
 
-static long const_expr(
+static pp_integer_t const_expr(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   return conditional(context, rest, tok);
-}
-
-static void skip_const_expr(
-    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  bool saved = g_if_expr_eval;
-  g_if_expr_eval = false;
-  (void)const_expr(context, rest, tok);
-  g_if_expr_eval = saved;
 }
 
 /* 関数マクロの実引数を、代入前に独立して完全マクロ展開する (C11 6.10.3.1)。
@@ -1731,11 +1895,11 @@ static bool evaluate_constexpr(
    if (expanded->kind == TK_EOF) return false;
    if_expr_eval_steps = 0;
    token_t *rest;
-  long val = const_expr(context, &rest, expanded);
+  pp_integer_t val = const_expr(context, &rest, expanded);
   if (rest->kind != TK_EOF) {
     pp_error(context, DIAG_ERR_PREPROCESS_CONST_EXPR_EXTRA_TOKEN, NULL);
   }
-   return val != 0;
+   return pp_integer_truth(val);
 }
 
 static token_t *stringify_tokens(

@@ -59,6 +59,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_TOTAL_SIZE_LIMIT_EXCEEDED: return "virtual headerの合計サイズが上限を超えました";
     case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_DUPLICATE_PATH: return "virtual header pathが重複しています: %s";
     case DIAG_ERR_PREPROCESS_PRAGMA_OPERATOR_INVALID: return "不正な _Pragma 演算子です。_Pragma(文字列リテラル) が必要です";
+    case DIAG_ERR_PREPROCESS_MACRO_REDEFINITION_INCOMPATIBLE: return "互換性のないマクロ再定義です: %s";
     case DIAG_ERR_TOKENIZER_GENERIC: return "トークナイズエラーです";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "不正な文字です";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "トークン長が上限を超えています";

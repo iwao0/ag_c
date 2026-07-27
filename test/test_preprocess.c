@@ -49,6 +49,11 @@ static const success_case_t success_cases[] = {
     {0, "#if 0\n#error \"This should not be evaluated\"\n#endif\nint main() { return 0; }"},
     {0, "#define STR(x) #x\nint main() { char *s = STR(hello world); if (s[0] == 'h') if (s[6] == 'w') return 0; return 1; }"},
     {42, "#define STR(x) #x\nint main(void){char*s=STR();return s[0]=='\\0'?42:0;}"},
+    {42, "#define VALUE (40 + 2)\n#define VALUE (40 /* same separator */ + 2)\nint main(void){return VALUE;}"},
+    {42, "#define ADD(left,right) ((left)+(right))\n#define ADD( left , right ) ((left)+(right))\nint main(void){return ADD(19,23);}"},
+    {42, "#define EMPTY\n#define EMPTY /* trailing whitespace */\n#define VALUE 42\nint main(void){return EMPTY VALUE;}"},
+    {42, "#if (-1 < 1U) || ((~0U >> 63) != 1) || !((1U - 2) > 0) || ((1U / -1) != 0)\nint main(void){return 0;}\n#else\nint main(void){return 42;}\n#endif"},
+    {42, "#if (0 && (0 / 0)) || 1\nint main(void){return 42;}\n#else\nint main(void){return 0;}\n#endif"},
     {42, "#define PASTE(a, b) a ## b\nint main() { int var123 = 42; return PASTE(var, 123); }"},
     // 定義済みマクロ
     {1,  "int main() { return __STDC__; }"},
@@ -191,6 +196,10 @@ static const char *fail_cases[] = {
     "#define BAD5(a,b) a##b\nint main() { return BAD5(1,+2); }\n",
     "#define BAD6(a,b) a##b\nint main() { return BAD6(1,foo); }\n",
     "#define BAD7(a,b) a##b\nint main() { return BAD7(&,&); }\n",
+    "#define VALUE 1\n#define VALUE 2\nint main(void) { return VALUE; }\n",
+    "#define VALUE 1\n#define VALUE() 1\nint main(void) { return VALUE(); }\n",
+    "#define PICK(left) (left)\n#define PICK(right) (right)\nint main(void) { return PICK(1); }\n",
+    "#define SUM (1 + 2)\n#define SUM (1+ 2)\nint main(void) { return SUM; }\n",
     "#if 1 /* unterminated\nint main() { return 0; }\n#endif\n",
     "#error \"forced\"\nint main() { return 0; }\n",
     "_Pragma()\nint main(void) { return 0; }\n",
@@ -978,6 +987,13 @@ int main(void) {
   expect_preprocess_fail_with_stderr_substr("#define BAD1(a) ##a\nint main() { return BAD1(42); }\n", "E1031");
   expect_preprocess_fail_with_stderr_substr("#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n", "E1031");
   expect_preprocess_fail_with_stderr_substr("#define BAD5(a,b) a##b\nint main() { return BAD5(1,+2); }\n", "E1030");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define VALUE 1\n#define VALUE 2\nint main(void) { return VALUE; }\n",
+      "E1044");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define PICK(left) (left)\n#define PICK(right) (right)\n"
+      "int main(void) { return PICK(1); }\n",
+      "E1044");
   expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
   expect_macro_arg_nesting_limit_fail();

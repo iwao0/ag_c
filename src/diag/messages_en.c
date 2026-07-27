@@ -59,6 +59,7 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_TOTAL_SIZE_LIMIT_EXCEEDED: return "Virtual header total size limit exceeded";
     case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_DUPLICATE_PATH: return "Duplicate virtual header path: %s";
     case DIAG_ERR_PREPROCESS_PRAGMA_OPERATOR_INVALID: return "Invalid _Pragma operator; expected _Pragma(string-literal)";
+    case DIAG_ERR_PREPROCESS_MACRO_REDEFINITION_INCOMPATIBLE: return "Incompatible redefinition of macro: %s";
     case DIAG_ERR_TOKENIZER_GENERIC: return "Tokenizer error";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "Unexpected character";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "Token is too long";

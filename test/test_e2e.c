@@ -1280,6 +1280,7 @@ static const test_case_t test_cases[] = {
     {"probes", "negative_fp_global_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/negative_fp_global_init.c", 0, 0},
     {"probes", "pp_if_operators", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_if_operators.c", 0, 0},
     {"probes", "pp_if_short_circuit", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_if_short_circuit.c", 0, 0},
+    {"probes", "pp_if_integer_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_if_integer_type_boundaries.c", 0, 0},
     {"probes", "pp_line_macro_arg", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_line_macro_arg.c", 0, 0},
     {"probes", "include_macro_expansion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/include_macro_expansion_boundaries.c", 0, 0},
     {"probes", "pragma_operator_macro_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pragma_operator_macro_boundaries.c", 0, 0},
@@ -1322,6 +1323,7 @@ static const test_case_t test_cases[] = {
     {"probes", "stringize_string_literal", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stringize_string_literal.c", 0, 0},
     {"probes", "macro_stringize_whitespace_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_stringize_whitespace_boundaries.c", 0, 0},
     {"probes", "line_splicing_translation_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/line_splicing_translation_boundaries.c", 0, 0},
+    {"probes", "macro_redefinition_identity_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_redefinition_identity_boundaries.c", 0, 0},
     {"probes", "char_2d_array_string_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/char_2d_array_string_init.c", 0, 0},
     {"probes", "empty_macro_argument", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/empty_macro_argument.c", 0, 0},
     {"probes", "generic_struct_vs_scalar", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_struct_vs_scalar.c", 0, 0},
@@ -2974,6 +2976,26 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "_Pragma(INVALID_PRAGMA_OPERAND)\n"
      "int main(void) { return 0; }\n",
      "E1043"},
+    {"macro_redefinition_replacement_rejected",
+     "#define VALUE 1\n"
+     "#define VALUE 2\n"
+     "int main(void) { return VALUE; }\n",
+     "E1044"},
+    {"macro_redefinition_form_rejected",
+     "#define VALUE 1\n"
+     "#define VALUE() 1\n"
+     "int main(void) { return VALUE(); }\n",
+     "E1044"},
+    {"macro_redefinition_parameter_rejected",
+     "#define PICK(left) (left)\n"
+     "#define PICK(right) (right)\n"
+     "int main(void) { return PICK(1); }\n",
+     "E1044"},
+    {"macro_redefinition_whitespace_rejected",
+     "#define SUM (1 + 2)\n"
+     "#define SUM (1+ 2)\n"
+     "int main(void) { return SUM; }\n",
+     "E1044"},
     {"different_encoded_string_prefixes_rejected",
      "int main(void) { return u\"a\" U\"b\"[0]; }\n",
      "E3058"},

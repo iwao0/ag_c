@@ -306,6 +306,7 @@ probes_found_bugs/pp_if_operators.c
 probes_found_bugs/include_macro_expansion_boundaries.c
 probes_found_bugs/pragma_operator_macro_boundaries.c
 probes_found_bugs/pp_if_short_circuit.c
+probes_found_bugs/pp_if_integer_type_boundaries.c
 probes_found_bugs/pp_line_macro_arg.c
 probes_found_bugs/ptr_array_arith_subscript_deref.c
 probes_found_bugs/ptr_to_array_deref.c
@@ -355,6 +356,7 @@ probes_found_bugs/string_escape_in_init.c
 probes_found_bugs/stringize_string_literal.c
 probes_found_bugs/macro_stringize_whitespace_boundaries.c
 probes_found_bugs/line_splicing_translation_boundaries.c
+probes_found_bugs/macro_redefinition_identity_boundaries.c
 probes_found_bugs/struct_2d_array_nested_brace.c
 probes_found_bugs/struct_array_brace_elision.c
 probes_found_bugs/struct_array_of_ptr_to_array_member.c

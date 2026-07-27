@@ -24,6 +24,18 @@ int main(void) {
     ok |= 4;
 #endif
 
-    assert(ok == 7);
+#if (0 && (0 / 0)) || 1
+    ok |= 8;
+#else
+#error short-circuited && must not consume the following ||
+#endif
+
+#if (1 || (0 / 0)) && 1
+    ok |= 16;
+#else
+#error short-circuited || must stop before the following &&
+#endif
+
+    assert(ok == 31);
     return 0;
 }
