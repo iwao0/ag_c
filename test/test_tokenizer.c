@@ -880,6 +880,77 @@ static void test_tokenize_ucn_ident_and_trigraph(tokenizer_context_t *test_ctx) 
   tk_ctx_set_enable_trigraphs(test_ctx, true);
 }
 
+static void test_translation_phase_two_line_splicing(
+    tokenizer_context_t *test_ctx) {
+  printf("test_translation_phase_two_line_splicing...\n");
+
+  token_t *tok = tk_tokenize_ctx(
+      test_ctx,
+      "join\\" "\n" "ed 12\\" "\n" "34 \"ab\\" "\n" "cd\" next");
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_EQ(6, as_ident(tok)->len);
+  ASSERT_TRUE(strncmp(as_ident(tok)->str, "joined", 6) == 0);
+  ASSERT_EQ(1, tok->line_no);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(1234, as_num_i(tok)->val);
+  ASSERT_EQ(2, tok->line_no);
+  tok = tok->next;
+  ASSERT_EQ(TK_STRING, tok->kind);
+  ASSERT_EQ(4, as_string(tok)->len);
+  ASSERT_TRUE(strncmp(as_string(tok)->str, "abcd", 4) == 0);
+  ASSERT_EQ(3, tok->line_no);
+  tok = tok->next;
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_EQ(4, as_ident(tok)->len);
+  ASSERT_TRUE(strncmp(as_ident(tok)->str, "next", 4) == 0);
+  ASSERT_EQ(4, tok->line_no);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+
+  tok = tk_tokenize_ctx(
+      test_ctx,
+      "left // continued comment \\" "\n"
+      "hidden_identifier\n"
+      "right");
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_TRUE(strncmp(as_ident(tok)->str, "left", 4) == 0);
+  ASSERT_EQ(1, tok->line_no);
+  tok = tok->next;
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_TRUE(strncmp(as_ident(tok)->str, "right", 5) == 0);
+  ASSERT_EQ(3, tok->line_no);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+
+  tk_ctx_set_enable_trigraphs(test_ctx, true);
+  tok = tk_tokenize_ctx(
+      test_ctx, "ab?" "?/" "\n" "cd after");
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_EQ(4, as_ident(tok)->len);
+  ASSERT_TRUE(strncmp(as_ident(tok)->str, "abcd", 4) == 0);
+  ASSERT_EQ(1, tok->line_no);
+  tok = tok->next;
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_TRUE(strncmp(as_ident(tok)->str, "after", 5) == 0);
+  ASSERT_EQ(2, tok->line_no);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+
+  tok = tk_tokenize_ctx(
+      test_ctx, "cr\\" "\r\n" "lf after");
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_EQ(4, as_ident(tok)->len);
+  ASSERT_TRUE(strncmp(as_ident(tok)->str, "crlf", 4) == 0);
+  ASSERT_EQ(1, tok->line_no);
+  tok = tok->next;
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_TRUE(strncmp(as_ident(tok)->str, "after", 5) == 0);
+  ASSERT_EQ(2, tok->line_no);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+}
+
 // 意地悪テスト: トークン分割の境界ケース
 static void test_tokenize_evil_edge_cases(tokenizer_context_t *test_ctx) {
   printf("test_tokenize_evil_edge_cases...\n");
@@ -1510,6 +1581,7 @@ int main() {
   test_tokenize_char_literal(test_ctx);
   test_tokenize_string_prefixes_and_ucn(test_ctx);
   test_tokenize_ucn_ident_and_trigraph(test_ctx);
+  test_translation_phase_two_line_splicing(test_ctx);
   test_tokenize_evil_edge_cases(test_ctx);
   test_strict_c11_mode(test_ctx);
   test_c11_audit_mode_flag(test_ctx);

@@ -48,6 +48,7 @@ static const success_case_t success_cases[] = {
     {12, "#define ADD(x, y) (x+y)\n#define SUB(x, y) (x-y)\nint main() { return ADD(SUB(10, 2), 4); }"},
     {0, "#if 0\n#error \"This should not be evaluated\"\n#endif\nint main() { return 0; }"},
     {0, "#define STR(x) #x\nint main() { char *s = STR(hello world); if (s[0] == 'h') if (s[6] == 'w') return 0; return 1; }"},
+    {42, "#define STR(x) #x\nint main(void){char*s=STR();return s[0]=='\\0'?42:0;}"},
     {42, "#define PASTE(a, b) a ## b\nint main() { int var123 = 42; return PASTE(var, 123); }"},
     // 定義済みマクロ
     {1,  "int main() { return __STDC__; }"},

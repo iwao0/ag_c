@@ -2472,7 +2472,16 @@ static token_t **pp_collect_args(
   int parsed_args = 0;
   bool has_empty_arg = false;
   int num_named = m->is_variadic ? m->num_params - 1 : m->num_params;
-  if (!(tok->kind == TK_RPAREN)) {
+  if (tok->kind == TK_RPAREN && m->num_params > 0) {
+    /*
+     * `F()` supplies one argument containing no preprocessing tokens when F
+     * has parameters.  It supplies no arguments only to a zero-parameter
+     * macro.  args[] is calloc'ed, so the empty argument is already
+     * represented by NULL for substitution, paste, and stringize.
+     */
+    parsed_args = 1;
+    has_empty_arg = true;
+  } else if (tok->kind != TK_RPAREN) {
     while (tok->kind != TK_EOF) {
       token_t head_arg; head_arg.next = NULL;
       token_t *cur_arg = &head_arg;

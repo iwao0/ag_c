@@ -617,12 +617,70 @@ static bool tokenize_number_literal(
   return true;
 }
 
-/** @brief 入力文字列をトークナイズし、先頭トークンを返す。 */
+static size_t line_splice_byte_count(const char *p) {
+  if (p[0] != '\\') return 0;
+  if (p[1] == '\n') return 2;
+  if (p[1] == '\r' && p[2] == '\n') return 3;
+  return 0;
+}
+
+/*
+ * 翻訳フェーズ2 (C11 5.1.1.2): phase 1でtrigraphを置換した後、すべての
+ * backslash-newlineをtokenization・comment除去より前に削除する。削除位置は
+ * normalized input上のoffsetとして保持し、streamが後続tokenの物理行番号へ
+ * 反映する。これによりidentifier・pp-number・literal・directiveを跨ぐspliceも
+ * 通常の連続byteとしてtokenizeできる。
+ */
+static char *remove_line_splices(
+    tokenizer_context_t *ctx, const char *in,
+    size_t **out_offsets, size_t *out_count) {
+  size_t input_length = strlen(in);
+  size_t splice_count = 0;
+  for (size_t index = 0; index < input_length;) {
+    size_t splice_bytes = line_splice_byte_count(in + index);
+    if (splice_bytes) {
+      splice_count++;
+      index += splice_bytes;
+    } else {
+      index++;
+    }
+  }
+
+  *out_offsets = NULL;
+  *out_count = 0;
+  if (splice_count == 0) return (char *)in;
+
+  char *normalized = tk_allocator_calloc_in(
+      tk_context_allocator(ctx), input_length + 1, 1);
+  size_t *offsets = tk_allocator_calloc_in(
+      tk_context_allocator(ctx), splice_count, sizeof(*offsets));
+  size_t input_index = 0;
+  size_t output_index = 0;
+  size_t splice_index = 0;
+  while (input_index < input_length) {
+    size_t splice_bytes = line_splice_byte_count(in + input_index);
+    if (splice_bytes) {
+      offsets[splice_index++] = output_index;
+      input_index += splice_bytes;
+      continue;
+    }
+    normalized[output_index++] = in[input_index++];
+  }
+  normalized[output_index] = '\0';
+  *out_offsets = offsets;
+  *out_count = splice_count;
+  return normalized;
+}
+
 /** @brief 入力文字列を正規化し、診断用入力参照をコンテキストへ設定する。 */
-static char *tokenize_prepare_input(tokenizer_context_t *ctx, const char *in) {
+static char *tokenize_prepare_input(
+    tokenizer_context_t *ctx, const char *in,
+    size_t **splice_offsets, size_t *splice_count) {
   tk_allocator_set_expected_size_in(
       tk_context_allocator(ctx), strlen(in));
-  char *normalized = tk_replace_trigraphs(ctx, in);
+  char *phase_one = tk_replace_trigraphs(ctx, in);
+  char *normalized = remove_line_splices(
+      ctx, phase_one, splice_offsets, splice_count);
   tk_set_user_input_ctx(ctx, normalized);
   return normalized;
 }
@@ -633,7 +691,11 @@ static char *tokenize_prepare_input(tokenizer_context_t *ctx, const char *in) {
  * 現状は tk_tokenize_ctx がこの上で全トークンを生成し、挙動はバッチ版と同一。 */
 struct tk_token_stream {
   tokenize_session_t session;
+  char *input_start; // phase 1/2正規化済み入力の先頭
   char *p;          // 正規化済み入力へのカーソル
+  size_t *splice_offsets;
+  size_t splice_count;
+  size_t next_splice;
   bool at_bol;
   bool has_space;
   int line_no;
@@ -642,11 +704,23 @@ struct tk_token_stream {
 
 void tk_stream_open(tk_token_stream_t *s, tokenizer_context_t *ctx, const char *in) {
   s->session = begin_tokenize_session(ctx);
-  s->p = tokenize_prepare_input(s->session.ctx, in);
+  s->p = tokenize_prepare_input(
+      s->session.ctx, in, &s->splice_offsets, &s->splice_count);
+  s->input_start = s->p;
+  s->next_splice = 0;
   s->at_bol = true;
   s->has_space = false;
   s->line_no = 1;
   s->done = false;
+}
+
+static void account_removed_newlines(tk_token_stream_t *s) {
+  size_t current_offset = (size_t)(s->p - s->input_start);
+  while (s->next_splice < s->splice_count &&
+         s->splice_offsets[s->next_splice] <= current_offset) {
+    s->line_no++;
+    s->next_splice++;
+  }
 }
 
 /* `#if 0` 偽分岐の読み飛ばし中は、トークナイズ不能な文字 (` @ $) ・未終端リテラル
@@ -916,6 +990,7 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
     tokenizer_context_t *ctx = s->session.ctx;
     s->p = tk_skip_ignored_ctx(
         ctx, s->p, &s->at_bol, &s->has_space, &s->line_no);
+    account_removed_newlines(s);
     if (!*s->p) {
       new_token_simple(
           ctx, TK_EOF, cur, s->line_no, false, false, s->p, 0);
