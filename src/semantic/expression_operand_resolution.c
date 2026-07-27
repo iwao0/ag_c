@@ -400,9 +400,12 @@ void psx_resolve_binary_qual_types_in(
           kind_is_arithmetic(rhs.kind)) {
         compatible = 1;
       } else if (lhs_pointer && rhs_pointer) {
-        compatible = pointer_types_are_compatible(
-            semantic_context, effective_lhs, effective_rhs,
-            1, 1, 0, 1);
+        compatible =
+            lhs_is_null_pointer_constant ||
+            rhs_is_null_pointer_constant ||
+            pointer_types_are_compatible(
+                semantic_context, effective_lhs, effective_rhs,
+                1, 1, 0, 1);
       } else if (lhs_pointer && kind_is_integer(rhs.kind)) {
         compatible = rhs_is_null_pointer_constant;
       } else if (rhs_pointer && kind_is_integer(lhs.kind)) {
@@ -506,6 +509,12 @@ psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
 
   int then_pointer = then_shape.kind == PSX_TYPE_POINTER;
   int else_pointer = else_shape.kind == PSX_TYPE_POINTER;
+  if (then_pointer && else_pointer &&
+      then_is_null_pointer_constant)
+    return unqualified(else_type);
+  if (then_pointer && else_pointer &&
+      else_is_null_pointer_constant)
+    return unqualified(then_type);
   if (then_pointer && kind_is_integer(else_shape.kind))
     return else_is_null_pointer_constant
                ? unqualified(then_type)

@@ -369,6 +369,10 @@ static int preflight_direct_expression_impl(
 static int direct_integer_constant(
     direct_resolution_context_t *context,
     const node_t *syntax, long long *value);
+static int direct_null_pointer_constant(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_qual_type_t type);
 static int preflight_direct_statement(
     direct_resolution_context_t *context,
     const node_t *syntax);
@@ -700,11 +704,9 @@ static int resolve_direct_function_call(
     if (!preflight_direct_expression(
             context, call->arguments[i], &argument_type))
       return 0;
-    long long argument_constant = 0;
     int argument_is_null_pointer_constant =
-        direct_integer_constant(
-            context, call->arguments[i], &argument_constant) &&
-        argument_constant == 0;
+        direct_null_pointer_constant(
+            context, call->arguments[i], argument_type);
     if (psx_builtin_call_is_atomic(builtin_kind)) {
       if (i >= (int)(sizeof(atomic_argument_types) /
                      sizeof(atomic_argument_types[0])))
@@ -2638,10 +2640,33 @@ static int direct_null_pointer_constant(
     direct_resolution_context_t *context,
     const node_t *syntax,
     psx_qual_type_t type) {
-  if (!context || !syntax || syntax->kind != ND_NUM ||
-      ((const node_num_t *)syntax)->val != 0)
+  long long value = 1;
+  if (!context || !syntax) return 0;
+  if (direct_qual_type_is_integer(context, type))
+    return direct_integer_constant(
+               context, syntax, &value) &&
+           value == 0;
+
+  const node_t *selected =
+      direct_selected_expression(context, syntax);
+  if (!selected) return 0;
+  if (selected != syntax)
+    return direct_null_pointer_constant(
+        context, selected, type);
+  if (selected->kind != ND_SOURCE_CAST ||
+      !direct_qual_type_has_kind(
+          context, type, PSX_TYPE_POINTER))
     return 0;
-  return direct_qual_type_is_integer(context, type);
+
+  psx_qual_type_t pointee =
+      psx_semantic_type_table_base(
+          direct_semantic_types(context), type.type_id);
+  return direct_qual_type_has_kind(
+             context, pointee, PSX_TYPE_VOID) &&
+         pointee.qualifiers == PSX_TYPE_QUALIFIER_NONE &&
+         direct_integer_constant(
+             context, selected->lhs, &value) &&
+         value == 0;
 }
 
 static int mark_direct_assignment_target(
@@ -3467,16 +3492,12 @@ static int preflight_direct_expression_impl(
     else
       merge_direct_initialization_snapshots(
           context, &then_exit, &else_exit);
-    long long then_constant = 0;
-    long long else_constant = 0;
     int then_is_null_pointer_constant =
-        direct_integer_constant(
-            context, syntax->rhs, &then_constant) &&
-        then_constant == 0;
+        direct_null_pointer_constant(
+            context, syntax->rhs, then_type);
     int else_is_null_pointer_constant =
-        direct_integer_constant(
-            context, ternary->els, &else_constant) &&
-        else_constant == 0;
+        direct_null_pointer_constant(
+            context, ternary->els, else_type);
     then_type = direct_promoted_bitfield_qual_type(
         context, syntax->rhs, then_type);
     else_type = direct_promoted_bitfield_qual_type(
@@ -3553,16 +3574,12 @@ static int preflight_direct_expression_impl(
                  context, syntax->rhs, &rhs_type)) {
     return 0;
   }
-  long long lhs_constant = 0;
-  long long rhs_constant = 0;
   int lhs_is_null_pointer_constant =
-      direct_integer_constant(
-          context, syntax->lhs, &lhs_constant) &&
-      lhs_constant == 0;
+      direct_null_pointer_constant(
+          context, syntax->lhs, lhs_type);
   int rhs_is_null_pointer_constant =
-      direct_integer_constant(
-          context, syntax->rhs, &rhs_constant) &&
-      rhs_constant == 0;
+      direct_null_pointer_constant(
+          context, syntax->rhs, rhs_type);
   if (type_operator != PSX_TYPE_BINARY_LOGICAL &&
       type_operator != PSX_TYPE_BINARY_COMMA) {
     lhs_type = direct_promoted_bitfield_qual_type(
@@ -4891,16 +4908,14 @@ static psx_semantic_node_t *build_direct_expression_impl(
     else_value = apply_direct_bitfield_promotion(
         context, ternary->els, else_value);
     if (!then_value || !else_value) return NULL;
-    long long then_constant = 0;
-    long long else_constant = 0;
     int then_is_null_pointer_constant =
-        direct_integer_constant(
-            context, syntax->rhs, &then_constant) &&
-        then_constant == 0;
+        direct_null_pointer_constant(
+            context, syntax->rhs,
+            psx_semantic_node_expression_qual_type(then_value));
     int else_is_null_pointer_constant =
-        direct_integer_constant(
-            context, ternary->els, &else_constant) &&
-        else_constant == 0;
+        direct_null_pointer_constant(
+            context, ternary->els,
+            psx_semantic_node_expression_qual_type(else_value));
     psx_conditional_types_resolution_t resolution;
     psx_resolve_conditional_qual_types_in(
         context->semantic_context,
@@ -6251,11 +6266,9 @@ static int preflight_direct_flat_initializer(
                    context, item->value, &value_type)) {
       return 0;
     }
-    long long constant_value = 1;
     int is_null_pointer_constant =
-        direct_integer_constant(
-            context, item->value, &constant_value) &&
-        constant_value == 0;
+        direct_null_pointer_constant(
+            context, item->value, value_type);
     psx_assignment_types_resolution_t assignment;
     psx_resolve_assignment_conversion_qual_types_in(
         context->semantic_context,
@@ -7113,11 +7126,9 @@ static int preflight_direct_local_declaration(
             !preflight_direct_expression(
                 context, initializer->value, &value_type))
           return 0;
-        long long constant_value = 1;
         int is_null_pointer_constant =
-            direct_integer_constant(
-                context, initializer->value, &constant_value) &&
-            constant_value == 0;
+            direct_null_pointer_constant(
+                context, initializer->value, value_type);
         psx_assignment_types_resolution_t assignment;
         psx_resolve_assignment_conversion_qual_types_in(
             context->semantic_context,
@@ -7271,11 +7282,9 @@ static int preflight_direct_statement_impl(
       if (!preflight_direct_expression(
               context, syntax->lhs, &value_type))
         return 0;
-      long long constant_value = 1;
       int is_null_pointer_constant =
-          direct_integer_constant(
-              context, syntax->lhs, &constant_value) &&
-          constant_value == 0;
+          direct_null_pointer_constant(
+              context, syntax->lhs, value_type);
       psx_return_types_status_t return_status;
       psx_resolve_return_qual_types_in(
           context->semantic_context,
@@ -8004,11 +8013,10 @@ static psx_semantic_node_t *build_direct_flat_initializer(
     psx_semantic_node_t *value = build_direct_expression(
         context, value_syntax);
     if (!target || !value) return NULL;
-    long long constant_value = 1;
     int is_null_pointer_constant =
-        direct_integer_constant(
-            context, value_syntax, &constant_value) &&
-        constant_value == 0;
+        direct_null_pointer_constant(
+            context, value_syntax,
+            psx_semantic_node_expression_qual_type(value));
     psx_assignment_types_resolution_t assignment;
     psx_qual_type_t initialization_target_type =
         psx_semantic_node_expression_qual_type(target);
@@ -8066,10 +8074,11 @@ static psx_semantic_node_t *build_direct_flat_initializer(
             0, 0, 0, 0, source_node_kind);
       } else if (item->value) {
         value = build_direct_expression(context, item->value);
-        long long constant_value = 1;
-        is_null_pointer_constant = direct_integer_constant(
-            context, item->value, &constant_value) &&
-            constant_value == 0;
+        if (value)
+          is_null_pointer_constant =
+              direct_null_pointer_constant(
+                  context, item->value,
+                  psx_semantic_node_expression_qual_type(value));
       } else {
         psx_qual_type_t value_qual_type = item->has_integer_value
             ? (psx_qual_type_t){
@@ -8776,10 +8785,13 @@ resolve_syntax_expression_direct_to_typed_hir(
     const node_t *syntax_expression,
     const psx_typed_hir_tree_t **typed_hir,
     psx_syntax_integer_constant_result_t *constant_result,
+    int *null_pointer_constant_result,
     psx_resolved_hir_build_failure_t *failure) {
   if (typed_hir) *typed_hir = NULL;
   if (constant_result)
     *constant_result = (psx_syntax_integer_constant_result_t){0};
+  if (null_pointer_constant_result)
+    *null_pointer_constant_result = 0;
   psx_resolved_hir_build_failure_init(failure);
   if (!semantic_context || !global_registry || !local_registry ||
       !syntax_expression || !typed_hir) {
@@ -8892,6 +8904,10 @@ resolve_syntax_expression_direct_to_typed_hir(
         constant_result->is_constant = 1;
       }
     }
+    if (null_pointer_constant_result)
+      *null_pointer_constant_result =
+          direct_null_pointer_constant(
+              &context, syntax_expression, preflight_type);
     root = build_direct_expression(&context, syntax_expression);
   }
 
@@ -8929,7 +8945,8 @@ psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
     psx_resolved_hir_build_failure_t *failure) {
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
-      NULL, NULL, NULL, 0, syntax_expression, typed_hir, NULL, failure);
+      NULL, NULL, NULL, 0, syntax_expression, typed_hir, NULL, NULL,
+      failure);
 }
 
 psx_syntax_typed_hir_resolution_status_t
@@ -8952,7 +8969,30 @@ psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
       NULL, NULL, lookup_point, 0, syntax_expression, typed_hir,
-      constant_result, failure);
+      constant_result, NULL, failure);
+}
+
+psx_syntax_typed_hir_resolution_status_t
+psx_resolve_syntax_null_pointer_constant_direct_to_typed_hir_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const psx_scope_lookup_point_t *lookup_point,
+    const node_t *syntax_expression,
+    const psx_typed_hir_tree_t **typed_hir,
+    int *is_null_pointer_constant,
+    psx_resolved_hir_build_failure_t *failure) {
+  if (!is_null_pointer_constant) {
+    if (typed_hir) *typed_hir = NULL;
+    set_failure(
+        failure, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
+        syntax_expression);
+    return PSX_SYNTAX_TYPED_HIR_FAILED;
+  }
+  return resolve_syntax_expression_direct_to_typed_hir(
+      semantic_context, global_registry, local_registry,
+      NULL, NULL, lookup_point, 0, syntax_expression, typed_hir,
+      NULL, is_null_pointer_constant, failure);
 }
 
 psx_syntax_typed_hir_resolution_status_t
@@ -8968,7 +9008,7 @@ psx_resolve_syntax_expression_direct_to_typed_hir_with_lowering_in_contexts(
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
       lowering_context, options, NULL, 0, syntax_expression, typed_hir,
-      NULL, failure);
+      NULL, NULL, failure);
 }
 
 psx_syntax_typed_hir_resolution_status_t
@@ -8984,7 +9024,7 @@ psx_resolve_syntax_static_initializer_expression_direct_to_typed_hir_in_contexts
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
       lowering_context, options, NULL, 1, syntax_expression, typed_hir,
-      NULL, failure);
+      NULL, NULL, failure);
 }
 
 static psx_syntax_typed_hir_resolution_status_t

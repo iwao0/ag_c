@@ -401,14 +401,15 @@ static int static_initializer_is_null_pointer_constant(
     psx_local_registry_t *local_registry,
     const node_t *initializer) {
   const psx_typed_hir_tree_t *typed_hir = NULL;
-  psx_syntax_integer_constant_result_t constant = {0};
+  int is_null_pointer_constant = 0;
   psx_resolved_hir_build_failure_t failure = {0};
   return initializer &&
-         psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
+         psx_resolve_syntax_null_pointer_constant_direct_to_typed_hir_in_contexts(
              semantic_context, global_registry, local_registry,
              NULL, initializer, &typed_hir,
-             &constant, &failure) == PSX_SYNTAX_TYPED_HIR_RESOLVED &&
-         typed_hir && constant.is_constant && constant.value == 0;
+             &is_null_pointer_constant,
+             &failure) == PSX_SYNTAX_TYPED_HIR_RESOLVED &&
+         typed_hir && is_null_pointer_constant;
 }
 
 static int validate_static_scalar_initializer_assignment(
@@ -461,10 +462,25 @@ static int validate_static_scalar_initializer_assignment(
         diag_message_for_in(diagnostics, diagnostic));
     return 0;
   }
+  int may_be_null_pointer_constant =
+      value_shape.kind == PSX_TYPE_BOOL ||
+      value_shape.kind == PSX_TYPE_INTEGER;
+  if (value_shape.kind == PSX_TYPE_POINTER) {
+    psx_qual_type_t pointee =
+        psx_semantic_type_table_base(
+            semantic_types,
+            psx_hir_node_qual_type(root).type_id);
+    psx_type_shape_t pointee_shape = {0};
+    may_be_null_pointer_constant =
+        psx_semantic_type_table_describe(
+            semantic_types, pointee.type_id,
+            &pointee_shape) &&
+        pointee_shape.kind == PSX_TYPE_VOID &&
+        pointee.qualifiers == PSX_TYPE_QUALIFIER_NONE;
+  }
   int is_null_pointer_constant =
       object_shape.kind == PSX_TYPE_POINTER &&
-      (value_shape.kind == PSX_TYPE_BOOL ||
-       value_shape.kind == PSX_TYPE_INTEGER) &&
+      may_be_null_pointer_constant &&
       static_initializer_is_null_pointer_constant(
           semantic_context, global_registry, local_registry,
           initializer);

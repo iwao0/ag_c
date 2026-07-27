@@ -32,7 +32,7 @@ ag_c が将来診断を追加してエラーにするようになると、その
 
 | カテゴリ | fixture |
 |---|---|
-| 型不整合 (init/assign) | `assign_string_to_int`, `assign_int_to_ptr_implicit`, `assign_struct_to_int`, `assign_void_func_to_int` |
+| 型不整合 (init/assign) | `assign_string_to_int`, `assign_int_to_ptr_implicit`, `assign_struct_to_int`, `assign_void_func_to_int`, `function_pointer_from_nonzero_void_pointer`, `function_pointer_from_object_pointer_cast` |
 | 戻り値型 | `return_wrong_type_ptr`, `func_redef_different_ret` |
 | 関数呼び出し引数数 | `too_many_args`, `too_few_args` |
 | 重複定義 | `dup_local_var`, `dup_typedef_conflict`, `dup_enum_name` |

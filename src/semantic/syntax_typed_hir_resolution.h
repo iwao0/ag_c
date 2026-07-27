@@ -45,6 +45,16 @@ psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
     psx_syntax_integer_constant_result_t *constant_result,
     psx_resolved_hir_build_failure_t *failure);
 psx_syntax_typed_hir_resolution_status_t
+psx_resolve_syntax_null_pointer_constant_direct_to_typed_hir_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const psx_scope_lookup_point_t *lookup_point,
+    const node_t *syntax_expression,
+    const psx_typed_hir_tree_t **typed_hir,
+    int *is_null_pointer_constant,
+    psx_resolved_hir_build_failure_t *failure);
+psx_syntax_typed_hir_resolution_status_t
 psx_resolve_syntax_expression_direct_to_typed_hir_with_lowering_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

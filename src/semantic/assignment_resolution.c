@@ -175,6 +175,9 @@ static void resolve_assignment_qual_types_in(
              kind_is_arithmetic(value.kind)) {
     compatible = 1;
   } else if (target.kind == PSX_TYPE_POINTER &&
+             value_is_null_pointer_constant) {
+    compatible = 1;
+  } else if (target.kind == PSX_TYPE_POINTER &&
              value.kind == PSX_TYPE_POINTER) {
     compatible = pointer_targets_are_compatible(
         types, target_type, value_type);
@@ -206,10 +209,6 @@ static void resolve_assignment_qual_types_in(
         return;
       }
     }
-  } else if (target.kind == PSX_TYPE_POINTER &&
-             kind_is_arithmetic(value.kind) &&
-             value_is_null_pointer_constant) {
-    compatible = 1;
   } else if (kind_is_aggregate(target.kind) &&
              kind_is_aggregate(value.kind)) {
     compatible = psx_semantic_type_table_unqualified_types_match(
