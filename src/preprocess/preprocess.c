@@ -533,7 +533,7 @@ static void validate_include_path_or_die(
 static void validate_line_filename_or_die(
     ag_preprocessor_context_t *context,
     const char *name, int len) {
-  if (!name || len <= 0 || len > PP_MAX_LINE_FILENAME_LEN) {
+  if (!name || len < 0 || len > PP_MAX_LINE_FILENAME_LEN) {
     pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
   }
   for (int i = 0; i < len; ) {
@@ -1892,7 +1892,10 @@ static bool evaluate_constexpr(
 
    token_t *expanded = preprocess_tokens(context, head2.next);
 
-   if (expanded->kind == TK_EOF) return false;
+   if (expanded->kind == TK_EOF) {
+     pp_error(
+         context, DIAG_ERR_PREPROCESS_CONST_EXPR_UNEXPECTED_TOKEN, NULL);
+   }
    if_expr_eval_steps = 0;
    token_t *rest;
   pp_integer_t val = const_expr(context, &rest, expanded);

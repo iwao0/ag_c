@@ -1329,6 +1329,9 @@ static const test_case_t test_cases[] = {
     {"probes", "macro_undef_directive_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_undef_directive_boundaries.c", 0, 0},
     {"probes", "conditional_directive_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/conditional_directive_boundaries.c", 0, 0},
     {"probes", "line_directive_syntax_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/line_directive_syntax_boundaries.c", 0, 0},
+    {"probes", "line_directive_maximum_value", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/line_directive_maximum_value.c", 0, 0},
+    {"probes", "predefined_date_time_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/predefined_date_time_boundaries.c", 0, 0},
+    {"probes", "macro_invocation_argument_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_invocation_argument_boundaries.c", 0, 0},
     {"probes", "char_2d_array_string_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/char_2d_array_string_init.c", 0, 0},
     {"probes", "empty_macro_argument", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/empty_macro_argument.c", 0, 0},
     {"probes", "generic_struct_vs_scalar", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_struct_vs_scalar.c", 0, 0},
@@ -3091,12 +3094,28 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#define __FILE__ \"overridden.c\"\n"
      "int main(void) { return 0; }\n",
      "E1049"},
+    {"predefined_macro_define_date_rejected",
+     "#define __DATE__ \"Jan  1 1970\"\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_define_time_rejected",
+     "#define __TIME__ \"00:00:00\"\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
     {"predefined_macro_undef_stdc_rejected",
      "#undef __STDC__\n"
      "int main(void) { return 0; }\n",
      "E1049"},
     {"predefined_macro_undef_line_rejected",
      "#undef __LINE__\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_undef_date_rejected",
+     "#undef __DATE__\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_undef_time_rejected",
+     "#undef __TIME__\n"
      "int main(void) { return 0; }\n",
      "E1049"},
     {"predefined_macro_undef_conditional_feature_rejected",
@@ -3157,6 +3176,220 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#if 0\n"
      "int hidden;\n",
      "E1053"},
+    {"preprocess_if_empty_expression_rejected",
+     "#if\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1008"},
+    {"preprocess_if_comment_only_expression_rejected",
+     "#if /* only a comment */\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1008"},
+    {"preprocess_if_macro_empty_expression_rejected",
+     "#define EMPTY\n"
+     "#if EMPTY\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1008"},
+    {"preprocess_elif_empty_expression_rejected",
+     "#if 0\n"
+     "int hidden;\n"
+     "#elif\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1008"},
+    {"preprocess_if_floating_literal_rejected",
+     "#if 1.0\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1007"},
+    {"preprocess_if_string_literal_rejected",
+     "#if \"text\"\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1008"},
+    {"preprocess_if_cast_rejected",
+     "#if (int)1\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1008"},
+    {"preprocess_if_comma_expression_rejected",
+     "#if 1, 0\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1012"},
+    {"preprocess_if_sizeof_rejected",
+     "#if sizeof(int)\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1008"},
+    {"preprocess_if_incomplete_logical_and_rejected",
+     "#if 0 &&\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1008"},
+    {"preprocess_if_incomplete_logical_or_rejected",
+     "#if 1 ||\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1008"},
+    {"preprocess_if_incomplete_conditional_rejected",
+     "#if 1 ? 1 :\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1008"},
+    {"preprocess_defined_missing_operand_rejected",
+     "#if defined\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1010"},
+    {"preprocess_defined_empty_operand_rejected",
+     "#if defined()\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1010"},
+    {"preprocess_defined_numeric_operand_rejected",
+     "#if defined(123)\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1010"},
+    {"preprocess_defined_nested_parentheses_rejected",
+     "#define FLAG 1\n"
+     "#if defined((FLAG))\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1010"},
+    {"preprocess_defined_missing_rparen_rejected",
+     "#define FLAG 1\n"
+     "#if defined(FLAG\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1011"},
+    {"preprocess_defined_extra_tokens_rejected",
+     "#define FLAG 1\n"
+     "#if defined FLAG extra\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1012"},
+    {"preprocess_stray_else_rejected",
+     "#else\n"
+     "int main(void) { return 0; }\n",
+     "E1019"},
+    {"preprocess_stray_elif_rejected",
+     "#elif 1\n"
+     "int main(void) { return 0; }\n",
+     "E1021"},
+    {"preprocess_stray_endif_rejected",
+     "#endif\n"
+     "int main(void) { return 0; }\n",
+     "E1023"},
+    {"preprocess_duplicate_else_rejected",
+     "#if 1\n"
+     "int selected;\n"
+     "#else\n"
+     "int not_selected;\n"
+     "#else\n"
+     "int also_not_selected;\n"
+     "#endif\n"
+     "int main(void) { return 0; }\n",
+     "E1020"},
+    {"preprocess_elif_after_else_rejected",
+     "#if 0\n"
+     "int not_selected;\n"
+     "#else\n"
+     "int selected;\n"
+     "#elif 1\n"
+     "int also_selected;\n"
+     "#endif\n"
+     "int main(void) { return 0; }\n",
+     "E1022"},
+    {"preprocess_ifdef_missing_name_rejected",
+     "#ifdef\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1018"},
+    {"preprocess_ifdef_nonidentifier_name_rejected",
+     "#ifdef 123\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1018"},
+    {"preprocess_ifndef_missing_name_rejected",
+     "#ifndef\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1018"},
+    {"preprocess_ifndef_nonidentifier_name_rejected",
+     "#ifndef 123\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     "E1018"},
+    {"include_missing_filename_rejected",
+     "#include\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_empty_quoted_filename_rejected",
+     "#include \"\"\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_empty_angle_filename_rejected",
+     "#include <>\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_angle_missing_gt_rejected",
+     "#include <stddef.h\n"
+     "int main(void) { return 0; }\n",
+     "E1017"},
+    {"include_extra_tokens_rejected",
+     "#include <stddef.h> extra\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_concatenated_filename_rejected",
+     "#include \"stddef.h\" \"extra\"\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_macro_extra_tokens_rejected",
+     "#define HEADER <stddef.h> extra\n"
+     "#include HEADER\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"include_macro_concatenated_filename_rejected",
+     "#define HEADER \"stddef.h\" \"extra\"\n"
+     "#include HEADER\n"
+     "int main(void) { return 0; }\n",
+     "E1001"},
+    {"macro_invocation_zero_parameter_extra_argument_rejected",
+     "#define ZERO() 0\n"
+     "int main(void) { return ZERO(1); }\n",
+     "E1024"},
+    {"macro_invocation_zero_parameter_comma_argument_rejected",
+     "#define ZERO() 0\n"
+     "int main(void) { return ZERO(,); }\n",
+     "E1024"},
+    {"macro_invocation_single_parameter_extra_argument_rejected",
+     "#define ONE(value) (value)\n"
+     "int main(void) { return ONE(1, 2); }\n",
+     "E1024"},
+    {"macro_invocation_two_parameter_missing_argument_rejected",
+     "#define TWO(left, right) ((left) + (right))\n"
+     "int main(void) { return TWO(1); }\n",
+     "E1024"},
+    {"macro_invocation_two_parameter_empty_call_rejected",
+     "#define TWO(left, right) ((left) + (right))\n"
+     "int main(void) { return TWO(); }\n",
+     "E1024"},
+    {"macro_invocation_missing_rparen_rejected",
+     "#define ONE(value) (value)\n"
+     "int main(void) { return ONE(1; }\n",
+     "E1026"},
+    {"macro_invocation_nested_missing_rparen_rejected",
+     "#define TWO(left, right) ((left) + (right))\n"
+     "int main(void) { return TWO((1 + 2), (3 + 4); }\n",
+     "E1026"},
+    {"macro_invocation_variadic_named_argument_missing_rejected",
+     "#define VARIADIC(first, second, ...) ((first) + (second))\n"
+     "int main(void) { return VARIADIC(1); }\n",
+     "E1024"},
     {"preprocess_header_unterminated_conditional_rejected",
      "#include \"test/fixtures/should_reject/preprocess_conditional_open.h\"\n"
      "int main(void) { return 0; }\n",
@@ -3181,6 +3414,14 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "E1021"},
     {"line_directive_missing_number_rejected",
      "#line\n"
+     "int main(void) { return 0; }\n",
+     "E1027"},
+    {"line_directive_zero_number_rejected",
+     "#line 0\n"
+     "int main(void) { return 0; }\n",
+     "E1027"},
+    {"line_directive_above_maximum_number_rejected",
+     "#line 2147483648\n"
      "int main(void) { return 0; }\n",
      "E1027"},
     {"line_directive_identifier_number_rejected",
