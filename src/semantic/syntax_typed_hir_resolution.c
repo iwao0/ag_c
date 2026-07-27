@@ -299,6 +299,7 @@ typedef struct {
   unsigned int initialization_flow_changed;
   char *function_name;
   int function_name_len;
+  char *predefined_function_name_label;
   psx_qual_type_t function_return_qual_type;
   int enforce_function_return_type;
   int preflight_failed;
@@ -1304,6 +1305,20 @@ static int direct_is_predefined_function_name(
              sizeof(name) - 1) == 0;
 }
 
+static psx_qual_type_t direct_pointer_with_pointee_qualifiers(
+    direct_resolution_context_t *context,
+    psx_qual_type_t pointer_type, unsigned int qualifiers) {
+  if (!context || pointer_type.type_id == PSX_TYPE_ID_INVALID)
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  psx_qual_type_t pointee = psx_semantic_type_table_base(
+      direct_semantic_types(context), pointer_type.type_id);
+  if (pointee.type_id == PSX_TYPE_ID_INVALID) return pointee;
+  pointee.qualifiers |= qualifiers;
+  return ps_ctx_intern_pointer_to_qual_type_in(
+      context->semantic_context, pointee);
+}
+
 static int resolve_direct_predefined_function_name_type(
     direct_resolution_context_t *context,
     psx_qual_type_t *qual_type) {
@@ -1321,6 +1336,10 @@ static int resolve_direct_predefined_function_name_type(
               .prefix_kind = TK_STR_PREFIX_NONE,
           },
           &resolution))
+    return 0;
+  resolution.qual_type = direct_pointer_with_pointee_qualifiers(
+      context, resolution.qual_type, PSX_TYPE_QUALIFIER_CONST);
+  if (resolution.qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
   if (qual_type) *qual_type = resolution.qual_type;
   return 1;
@@ -2567,6 +2586,21 @@ static int preflight_direct_lvalue(
                            context, selected, qual_type);
   }
   if (syntax->kind == ND_IDENTIFIER) {
+    if (direct_is_predefined_function_name(
+            context, (const node_identifier_t *)syntax)) {
+      psx_qual_type_t pointer_type;
+      if (!resolve_direct_predefined_function_name_type(
+              context, &pointer_type))
+        return 0;
+      psx_qual_type_t array_type =
+          direct_string_array_qual_type(
+              context, pointer_type,
+              context->function_name_len);
+      if (array_type.type_id == PSX_TYPE_ID_INVALID)
+        return 0;
+      if (qual_type) *qual_type = array_type;
+      return 1;
+    }
     psx_identifier_expression_resolution_t resolution;
     if (!resolve_direct_identifier(
             context, (const node_identifier_t *)syntax,
@@ -3607,24 +3641,46 @@ static psx_semantic_node_t *build_direct_string_value(
     const node_t *syntax,
     const psx_string_literal_value_t *value,
     int code_unit_count,
-    int preserve_array_type) {
+    int preserve_array_type,
+    unsigned int element_qualifiers,
+    char **shared_label) {
   if (!context || !syntax || !value || code_unit_count < 0)
     return NULL;
   psx_literal_semantic_resolution_t resolution;
+  psx_global_registry_t *registration_registry =
+      shared_label && *shared_label
+          ? NULL : context->global_registry;
   if (!psx_resolve_string_literal_value_in_contexts(
-          context->semantic_context, context->global_registry,
+          context->semantic_context, registration_registry,
           value, &resolution)) {
     set_failure(
         context->failure,
         PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
     return NULL;
   }
+  if (shared_label) {
+    if (*shared_label) {
+      resolution.string_label = *shared_label;
+    } else {
+      *shared_label = resolution.string_label;
+    }
+  }
   int character_width = value->character_width;
   if (character_width <= 0) character_width = 1;
   psx_qual_type_t expression_type = resolution.qual_type;
+  if (element_qualifiers != PSX_TYPE_QUALIFIER_NONE) {
+    expression_type = direct_pointer_with_pointee_qualifiers(
+        context, expression_type, element_qualifiers);
+    if (expression_type.type_id == PSX_TYPE_ID_INVALID) {
+      set_failure(
+          context->failure,
+          PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
+      return NULL;
+    }
+  }
   if (preserve_array_type) {
     expression_type = direct_string_array_qual_type(
-        context, resolution.qual_type, code_unit_count);
+        context, expression_type, code_unit_count);
     if (expression_type.type_id == PSX_TYPE_ID_INVALID) {
       set_failure(
           context->failure,
@@ -3667,7 +3723,7 @@ static psx_semantic_node_t *build_direct_literal(
             .character_width = string->char_width,
             .prefix_kind = string->str_prefix_kind,
         },
-        string->byte_len, 0);
+        string->byte_len, 0, PSX_TYPE_QUALIFIER_NONE, NULL);
   }
 
   psx_literal_semantic_resolution_t resolution;
@@ -3819,7 +3875,9 @@ static psx_semantic_node_t *build_direct_identifier(
             .character_width = TK_CHAR_WIDTH_CHAR,
             .prefix_kind = TK_STR_PREFIX_NONE,
         },
-        context->function_name_len, 0);
+        context->function_name_len, suppress_array_decay,
+        PSX_TYPE_QUALIFIER_CONST,
+        &context->predefined_function_name_label);
   psx_identifier_expression_resolution_t resolution;
   if (!resolve_direct_identifier(context, identifier, &resolution))
     return NULL;
@@ -4127,7 +4185,7 @@ static psx_semantic_node_t *build_direct_lvalue(
             .character_width = string->char_width,
             .prefix_kind = string->str_prefix_kind,
         },
-        string->byte_len, 1);
+        string->byte_len, 1, PSX_TYPE_QUALIFIER_NONE, NULL);
   }
   if (syntax->kind == ND_COMPOUND_LITERAL) {
     direct_compound_literal_binding_t *binding = NULL;

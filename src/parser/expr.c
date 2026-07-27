@@ -900,6 +900,7 @@ static node_string_t *make_string_lit_node(
 static node_t *parse_string_literal_sequence(expr_parse_ctx_t *ctx) {
   tk_char_width_t merged_width = TK_CHAR_WIDTH_CHAR;
   tk_string_prefix_kind_t merged_prefix_kind = TK_STR_PREFIX_NONE;
+  bool saw_literal = false;
   size_t total_len = 0;
   token_t *t = curtok(ctx);
   while (t && t->kind == TK_STRING) {
@@ -909,12 +910,23 @@ static node_t *parse_string_literal_sequence(expr_parse_ctx_t *ctx) {
      * 来ると CHAR(1) と不一致になり E3002 で誤って弾かれていた (先頭に来る `S(a) "b"`
      * は下の正規化で通っていた)。比較側も 0→CHAR に正規化する。 */
     tk_char_width_t tw = st->char_width ? st->char_width : TK_CHAR_WIDTH_CHAR;
-    if (total_len == 0) {
+    tk_string_prefix_kind_t prefix_kind =
+        (tk_string_prefix_kind_t)st->str_prefix_kind;
+    if (!saw_literal) {
       merged_width = tw;
-      merged_prefix_kind = st->str_prefix_kind;
-    } else if (merged_width != tw) {
+      merged_prefix_kind = prefix_kind;
+      saw_literal = true;
+    } else if (prefix_kind != TK_STR_PREFIX_NONE &&
+               merged_prefix_kind == TK_STR_PREFIX_NONE) {
+      /* C11 6.4.5p5: 無接頭辞tokenは、同じsequence内の接頭辞付きtokenと
+       * 同じ接頭辞として扱う。接頭辞付きtokenが後から現れる場合も、最終的な
+       * 文字幅とprefix metadataをそちらへ昇格させる。 */
+      merged_width = tw;
+      merged_prefix_kind = prefix_kind;
+    } else if (prefix_kind != TK_STR_PREFIX_NONE &&
+               merged_prefix_kind != prefix_kind) {
       diag_emit_tokf_in(
-          diagnostics(ctx), DIAG_ERR_PARSER_UNEXPECTED_TOKEN, t, "%s",
+          diagnostics(ctx), DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH, t, "%s",
           diag_message_for_in(
               diagnostics(ctx),
               DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH));

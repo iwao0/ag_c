@@ -6310,8 +6310,21 @@ static void test_predefined_function_name_typed_hir_boundary(
           node, &literal_length);
       if (contents && literal_length == 16 &&
           memcmp(contents, "direct_func_name", 16) == 0 &&
-          psx_hir_node_object_size(node) == 17)
+          psx_hir_node_object_size(node) == 17) {
+        psx_qual_type_t string_type =
+            psx_hir_node_qual_type(node);
+        ASSERT_EQ(
+            PSX_TYPE_POINTER,
+            test_qual_type_shape(
+                test_suite_session, string_type).kind);
+        psx_qual_type_t element_type =
+            test_qual_type_base(
+                test_suite_session, string_type);
+        ASSERT_TRUE(
+            (element_type.qualifiers &
+             PSX_TYPE_QUALIFIER_CONST) != 0);
         found_function_name = 1;
+      }
     }
     if (psx_hir_node_kind(node) == PSX_HIR_NUMBER &&
         psx_hir_node_integer_value(node) == 17)
@@ -17290,6 +17303,36 @@ static void test_expr_concat_string(
   ASSERT_TRUE(literal != NULL);
   ASSERT_TRUE(strncmp(literal, "hello", 5) == 0);
   psx_frontend_expression_hir_dispose(&expression);
+
+  const struct {
+    const char *input;
+    tk_char_width_t width;
+    tk_string_prefix_kind_t prefix;
+    const char *literal;
+  } encoded_cases[] = {
+      {"\"a\" u\"b\"", TK_CHAR_WIDTH_CHAR16, TK_STR_PREFIX_u, "ab"},
+      {"u\"\" \"b\"", TK_CHAR_WIDTH_CHAR16, TK_STR_PREFIX_u, "b"},
+      {"\"a\" U\"b\"", TK_CHAR_WIDTH_CHAR32, TK_STR_PREFIX_U, "ab"},
+      {"L\"a\" \"b\"", TK_CHAR_WIDTH_CHAR32, TK_STR_PREFIX_L, "ab"},
+      {"\"a\" u8\"b\"", TK_CHAR_WIDTH_CHAR, TK_STR_PREFIX_u8, "ab"},
+  };
+  for (size_t i = 0; i < sizeof(encoded_cases) / sizeof(encoded_cases[0]);
+       i++) {
+    syntax = NULL;
+    expression = resolve_test_expression_input_hir(
+        test_suite_session, encoded_cases[i].input, &syntax);
+    ASSERT_TRUE(syntax != NULL);
+    ASSERT_EQ(ND_STRING, syntax->kind);
+    const node_string_t *encoded = (const node_string_t *)syntax;
+    ASSERT_EQ(encoded_cases[i].width, encoded->char_width);
+    ASSERT_EQ(encoded_cases[i].prefix, encoded->str_prefix_kind);
+    ASSERT_EQ((int)strlen(encoded_cases[i].literal),
+              encoded->literal_length);
+    ASSERT_TRUE(strncmp(
+        encoded->literal_contents, encoded_cases[i].literal,
+        (size_t)encoded->literal_length) == 0);
+    psx_frontend_expression_hir_dispose(&expression);
+  }
 }
 
 static void test_type_decl(
