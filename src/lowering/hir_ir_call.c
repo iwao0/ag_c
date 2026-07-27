@@ -979,8 +979,7 @@ ir_val_t hir_ir_build_call(
     }
     if (i < parameter_count &&
         hir_ir_is_complex_type(parameter_type)) {
-      if (!hir_ir_is_complex_type(argument_type) ||
-          emitted_count >= argument_count) {
+      if (emitted_count >= argument_count) {
         free(arguments);
         return hir_ir_unsupported_expr(context);
       }

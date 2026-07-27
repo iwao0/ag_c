@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-27（tgmath complex dispatch・逆複素関数対応まで）
+最終更新: 2026-07-27（浮動小数と整数の双方向・全幅変換fixture追加まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -328,6 +328,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | ワイド文字/文字列リテラル `L'A'` `L"hi"[i]` | ✅ | literal_vla_boundaries, wide_string_literal_init | wide characterとwide string subscript・終端、UTF-16/32配列初期化を正式fixture化 |
 | stddef.h の wchar_t / max_align_t（C11 7.19） | 🔧 | stddef_wchar_t, stddef_max_align_t | wchar_t=int(4B), max_align_t=long double(8/8) |
 | 戻り値の暗黙変換（int↔double, char/short/unsigned 切り詰め） | 🔧 | call_conversion_qualifier_boundaries, narrow_integer_return_boundaries, function_argument_return_constraints | double→intの0方向変換、int→double、`char`/signed・unsigned char、signed・unsigned short、`_Bool`の戻り値変換をdirect/関数ポインタ経由で固定。狭い整数戻り値の上位bitが呼出側へ漏れるARM64/Wasm不具合を、HIR→IRでのABI用I32正規化とtarget固有のzero/sign extensionで修正 |
+| 整数から浮動小数への全幅・全変換文脈境界 | 🔧 | integer_to_floating_conversion_boundaries | ARM64の`IR_I2F`が32-bit以下のIR値にも64-bit `scvtf`/`ucvtf` operandを使い、直前の32-bit書込みで上位bitがzeroになった負値を巨大な正値として変換していた。IR source幅に応じてAArch64のW/X operandを選び、`_Bool`、signed/unsigned char・short・int・long long、runtime縮小castからfloat/doubleへの初期化・代入・aggregate、算術・compound/conditional/comma、return、direct/間接call、bit-field・enum、単一評価をClang strict C11およびnative/WAT/objectで固定する |
+| 浮動小数から整数への全幅・全変換文脈境界 | 🧪 | floating_to_integer_conversion_boundaries | 表現可能範囲内のfloat/double/long doubleから`_Bool`、signed/unsigned char・short・int・long longへの変換を0方向切捨てとして横断固定する。明示castと代表的な暗黙初期化・代入・aggregate、算術・compound/conditional/comma、return、direct/間接call、bit-field、単一評価をClang strict C11およびnative/WAT/objectで照合し、F2Iのtarget幅・符号性とABI経路を一つのfixtureで検証する |
 | formatted inputのfield width・代入抑制・length modifier | 🔧 | formatted_scan_boundaries, wasm32/stdio_sscanf_ops | `sscanf`/`vsscanf`の整数・狭/wide文字列・複数文字`%c`へfield widthを適用し、`*`変換は入力だけを消費してva_list・後続出力・assignment countを進めない。`%ld/%llu`の64-bit格納、`%u`での任意符号と符号を含む幅制限、`%ls/%lc`のwide出力をnative/WAT/objectで固定 |
 | formatted inputのinput failure・matching failure | 🔧 | formatted_scan_boundaries, wide_format_scan_boundaries | `sscanf`/`vsscanf`/`swscanf`は最初の代入前に空入力へ到達したinput failureで`EOF`を返し、非数字など入力はあるが変換できないmatching failureでは0を返す。`*`抑制変換だけが成功した後に入力終端へ達した場合も代入数0のinput failureとして`EOF`を返し、出力先を変更しないことを3経路で固定 |
 | formatted inputの基数・pointer変換・消費文字数 | 🔧 | formatted_scan_boundaries, wide_format_scan_boundaries | narrow/wideの`%i/%x/%X/%o`で10/8/16進を選択し、`%i`の`0`/`0x`自動判定、任意符号、prefixを含むfield width、`%li`の64-bit格納を固定。`%p`は`0x`/`0X` prefixとfield widthを含む16進pointer入力をWAT/object runtimeへ格納する。`%n/%ln`はnarrowではbyte数、wideではwide character数を格納し、入力もassignment countも増やさず、代入抑制後の位置も正しく記録する |
@@ -391,6 +393,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | complex静的初期化のscalar変換・比較境界 | 🔧 | complex_static_scalar_conversion_boundaries | 複素定数から実数への明示・暗黙変換と`==`/`!=`がstatic HIR evaluatorで実部・虚部を扱わずE3116になっていた。実数・整数変換は実部、`_Bool`と論理演算は両成分のnonzero、等値比較は両成分の一致として評価する。3幅、complex対scalar、file/block static、aggregate memberをnative/WAT/objectで固定する |
 | complex実行時値のscalar変換・mixed比較境界 | 🔧 | complex_runtime_scalar_conversion_boundaries | complex→scalarのlocal初期化・関数引数経路が複素値の一時領域pointerを通常scalarへcoerceしてE4007になり、complexと実数scalarの`==`/`!=`も両operandを共通complex型へmaterializeせずE4007になっていた。実数・整数変換は実部、`_Bool`は両成分、mixed比較はscalarの虚部をzeroとして扱う。local/関数戻り、struct member、配列要素、引数変換とmixed比較をnative/WAT/objectで固定する |
 | complex実行時値のscalar変換文脈境界 | 🧪 | complex_scalar_conversion_context_boundaries | complex→scalarの共通coercionがlocal初期化・関数引数以外にも適用されることを固定する。scalar関数return、通常代入とその式の値、bit-field・volatile・atomicへの代入、commaとmixed conditionalの結果変換をClang strict C11と照合し、実部の変換と虚部を含む`_Bool`真偽をnative/WAT/objectで検証する |
+| scalar実引数からcomplex仮引数への暗黙変換境界 | 🔧 | scalar_to_complex_call_conversion_boundaries | prototyped関数のcomplex仮引数はassignment conversionにより全実数算術型の実引数を受け取れるが、call loweringが実引数もcomplexであることを先に要求して`E4007`になっていた。既存のscalar→complex materializationへ接続し、`_Bool`・各種整数・float/double/long doubleから3幅complexへの変換、虚部zero、direct/関数pointer/struct callback、複数complex仮引数、整数引数とのABI混在、単一評価をnative/WAT/objectで固定する |
 | complexのIEEE特殊値scalar変換・比較境界 | 🧪 | complex_special_scalar_boundaries | NaN・正負infinity・符号付きzeroを実部と虚部へ配置し、complex→`_Bool`がNaN/無限を真、両成分zeroを偽とすること、complex→実数が実部のNaN・infinity・zero符号を保持すること、NaNを含む`==`/`!=`とsigned zero比較をstatic初期化とruntimeの両方でClang strict C11に照合する。native/WAT/objectで同じ結果を固定する |
 | `stdio.h` 固定引数APIの関数pointer・stream状態境界 | ✅ | stdio_function_pointer_state_boundaries | 文字・file・binary I/O、position、error状態を扱う全固定引数APIの`const`・`size_t`・`fpos_t`を含む標準signatureを関数pointer代入で固定する。native/objectではtemporary streamへNUL・高bit byteを間接出力し、`fgetpos`/`fsetpos`、pushback、EOF/clear、zero-size I/Oを間接入力で検証する。ファイルstoreを持たないstandalone WATでは同じ関数pointer経路から明示的なunavailable-file stub契約を検証する |
 | `stdio.h` のtarget別`fpos_t`型・書込み幅境界 | 🔧 | stdio_position_type_abi_boundaries | Apple SDKの`fpos_t`は`__darwin_off_t`由来の`long long`だが、同梱headerはWasm runtime用の`long`をnativeにも公開していた。両者が同じ8-byteでも別のC型であることを`_Generic`でtarget別に固定し、`fgetpos`/`fsetpos`の標準signature、position値、前後canaryをnative/WAT/objectで検証する |

@@ -609,9 +609,17 @@ static void gen_inst_f2i(gen_ctx_t *ctx, ir_inst_t *inst) {
 static void gen_inst_i2f(gen_ctx_t *ctx, ir_inst_t *inst) {
       char b1[8];
       const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+      char w1[8];
+      const char *integer_source = s1;
+      if (ir_type_fixed_size(inst->src1.type) <= 4) {
+        to_w_name(s1, w1, sizeof(w1));
+        integer_source = w1;
+      }
       int is_double = (inst->dst.type == IR_TY_F64);
       const char *suf = is_double ? "d" : "s";
-  arm64_cg_emitf(ctx, "  %s %s0, %s\n", inst->is_unsigned ? "ucvtf" : "scvtf", suf, s1);
+  arm64_cg_emitf(ctx, "  %s %s0, %s\n",
+                 inst->is_unsigned ? "ucvtf" : "scvtf",
+                 suf, integer_source);
   char r0[4];
   snprintf(r0, sizeof(r0), "%s0", suf);
   emit_frame_store(ctx, r0, ctx->vreg_off[inst->dst.id]);
