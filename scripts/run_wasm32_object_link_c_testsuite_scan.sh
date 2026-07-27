@@ -6,6 +6,7 @@ agc_wasm=${AG_C_WASM:-"$root/build/ag_c_wasm"}
 ag_wasm_link=${AG_WASM_LINK:-"$root/build/ag_wasm_link"}
 suite=${C_TESTSUITE_DIR:-"$root/test/external/c-testsuite/tests/single-exec"}
 out_dir=${WASM32_OBJECT_LINK_C_TESTSUITE_SCAN_DIR:-"$root/build/wasm32_obj_link_cts_scan"}
+. "$root/scripts/c_testsuite_unsupported_cases.sh"
 list_fail=0
 verbose=0
 
@@ -44,14 +45,6 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-
-unsupported_reason() {
-  case "$1" in
-    00206) echo "GNU #pragma push_macro/pop_macro" ;;
-    00216) echo "GNU empty struct / range designator" ;;
-    *) return 1 ;;
-  esac
-}
 
 if [ ! -x "$agc_wasm" ]; then
   echo "missing executable: $agc_wasm" >&2

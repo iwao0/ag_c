@@ -1020,7 +1020,8 @@ static ir_val_t emit_bitfield_load(
 
 static ir_val_t emit_bitfield_store(
     hir_ir_context_t *context, ir_val_t pointer, ir_val_t value,
-    int bit_width, int bit_offset, ir_type_t memory_type) {
+    int bit_width, int bit_offset, int is_signed,
+    ir_type_t memory_type) {
   if (!valid_bitfield_storage(memory_type, bit_width, bit_offset) ||
       !hir_ir_is_integer_type(value.type))
     return hir_ir_unsupported_expr(context);
@@ -1049,10 +1050,28 @@ static ir_val_t emit_bitfield_store(
   ir_val_t cleared = hir_ir_emit_integer_binary(
       context, IR_AND, loaded_value,
       bitfield_constant(context, unit_type, ~shifted_mask), unit_type);
-  ir_val_t field = hir_ir_emit_integer_binary(
+  ir_val_t field_value = hir_ir_emit_integer_binary(
       context, IR_AND, stored_value,
       bitfield_constant(context, unit_type, mask), unit_type);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  // Assignment and prefix-update expressions yield the value after the
+  // bit-field width conversion, without performing another volatile load.
+  ir_val_t normalized_value = field_value;
+  if (is_signed && bit_width < (unit_type == IR_TY_I64 ? 64 : 32)) {
+    uint64_t sign_bit = UINT64_C(1) << (bit_width - 1);
+    normalized_value = hir_ir_emit_integer_binary(
+        context, IR_XOR, normalized_value,
+        bitfield_constant(context, unit_type, sign_bit), unit_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    normalized_value = hir_ir_emit_integer_binary(
+        context, IR_SUB, normalized_value,
+        bitfield_constant(context, unit_type, sign_bit), unit_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  }
+  normalized_value = hir_ir_emit_integer_width_conversion(
+      context, normalized_value, value.type, is_signed);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  ir_val_t field = field_value;
   if (bit_offset > 0) {
     field = hir_ir_emit_integer_binary(
         context, IR_SHL, field,
@@ -1075,7 +1094,7 @@ static ir_val_t emit_bitfield_store(
     return ir_val_none();
   }
   if (!hir_ir_append_instruction(context, store)) return ir_val_none();
-  return value;
+  return normalized_value;
 }
 
 int hir_ir_allocate_scalar_temp(
@@ -1337,8 +1356,11 @@ static ir_val_t build_inc_dec(
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   }
   if (is_bitfield) {
-    (void)emit_bitfield_store(
-        context, pointer, new_value, bit_width, bit_offset, value_type);
+    ir_val_t stored_value = emit_bitfield_store(
+        context, pointer, new_value, bit_width, bit_offset,
+        bit_is_signed, value_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    new_value = stored_value;
   } else {
     ir_inst_t *store = ir_inst_new(IR_STORE);
     if (!store) {
@@ -1564,7 +1586,7 @@ static ir_val_t build_complex_compound_assignment(
   }
   if (is_bitfield)
     return emit_bitfield_store(
-        context, pointer, result, bit_width, bit_offset,
+        context, pointer, result, bit_width, bit_offset, bit_is_signed,
         hir_ir_scalar_storage_type(target_type));
   if (!hir_ir_store_direct_value(context, pointer, result))
     return ir_val_none();
@@ -2349,7 +2371,7 @@ static ir_val_t build_compound_assignment(
   }
   if (is_bitfield)
     return emit_bitfield_store(
-        context, pointer, result, bit_width, bit_offset,
+        context, pointer, result, bit_width, bit_offset, bit_is_signed,
         target_storage_type);
   if (!hir_ir_store_direct_value(context, pointer, result))
     return ir_val_none();
@@ -2918,9 +2940,8 @@ ir_val_t hir_ir_build_expr(
     int bit_is_signed = 0;
     if (psx_hir_node_bitfield_info(
             target, &bit_width, &bit_offset, &bit_is_signed)) {
-      (void)bit_is_signed;
       return emit_bitfield_store(
-          context, pointer, value, bit_width, bit_offset,
+          context, pointer, value, bit_width, bit_offset, bit_is_signed,
           hir_ir_scalar_storage_type(target_type));
     }
     if (node_has_atomic_qualifier(target)) {

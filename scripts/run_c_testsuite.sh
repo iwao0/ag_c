@@ -14,6 +14,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 AGC="$ROOT/build/ag_c"
 SUITE="$ROOT/test/external/c-testsuite/tests/single-exec"
+. "$ROOT/scripts/c_testsuite_unsupported_cases.sh"
 
 VERBOSE=0
 LIST_FAIL=0
@@ -56,19 +57,6 @@ fail_runtime_list=()
 fail_stdout_list=()
 fail_timeout_list=()
 skip_unsupported_list=()
-
-unsupported_reason() {
-  case "$1" in
-    00095) echo "function pointer to object pointer conversion" ;;
-    00144) echo "discarding const qualifier in pointer assignment" ;;
-    00206) echo "GNU #pragma push_macro/pop_macro" ;;
-    00210) echo "GNU __attribute__ syntax and placement" ;;
-    00213) echo "GNU statement expressions" ;;
-    00214) echo "GNU statement expressions" ;;
-    00216) echo "GNU empty struct / range designator" ;;
-    *) return 1 ;;
-  esac
-}
 
 # tests/single-exec/*.c (NNNNN.c.expected がペア) を列挙
 for cfile in "$SUITE"/[0-9]*.c; do
