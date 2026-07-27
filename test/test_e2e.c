@@ -1324,6 +1324,9 @@ static const test_case_t test_cases[] = {
     {"probes", "macro_stringize_whitespace_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_stringize_whitespace_boundaries.c", 0, 0},
     {"probes", "line_splicing_translation_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/line_splicing_translation_boundaries.c", 0, 0},
     {"probes", "macro_redefinition_identity_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_redefinition_identity_boundaries.c", 0, 0},
+    {"probes", "macro_parameter_list_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_parameter_list_boundaries.c", 0, 0},
+    {"probes", "macro_replacement_operator_definition_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_replacement_operator_definition_boundaries.c", 0, 0},
+    {"probes", "macro_undef_directive_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_undef_directive_boundaries.c", 0, 0},
     {"probes", "char_2d_array_string_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/char_2d_array_string_init.c", 0, 0},
     {"probes", "empty_macro_argument", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/empty_macro_argument.c", 0, 0},
     {"probes", "generic_struct_vs_scalar", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_struct_vs_scalar.c", 0, 0},
@@ -2996,6 +2999,96 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#define SUM (1+ 2)\n"
      "int main(void) { return SUM; }\n",
      "E1044"},
+    {"macro_duplicate_parameter_rejected",
+     "#define PICK(value, value) (value)\n"
+     "int main(void) { return PICK(1, 2); }\n",
+     "E1045"},
+    {"macro_parameter_missing_comma_rejected",
+     "#define ADD(left right) ((left) + (right))\n"
+     "int main(void) { return ADD(20, 22); }\n",
+     "E1046"},
+    {"macro_parameter_trailing_comma_rejected",
+     "#define ID(value,) (value)\n"
+     "int main(void) { return ID(42); }\n",
+     "E1046"},
+    {"macro_parameter_list_unclosed_rejected",
+     "#define ID(value\n"
+     "int main(void) { return 0; }\n",
+     "E1046"},
+    {"macro_va_args_parameter_rejected",
+     "#define ID(__VA_ARGS__) (__VA_ARGS__)\n"
+     "int main(void) { return ID(42); }\n",
+     "E1047"},
+    {"macro_va_args_nonvariadic_body_rejected",
+     "#define ID(value) (__VA_ARGS__)\n"
+     "int main(void) { return ID(42); }\n",
+     "E1047"},
+    {"macro_va_args_name_rejected",
+     "#define __VA_ARGS__ 42\n"
+     "int main(void) { return __VA_ARGS__; }\n",
+     "E1047"},
+    {"macro_stringize_nonparameter_unused_rejected",
+     "#define BAD(value) # 1\n"
+     "int main(void) { return 0; }\n",
+     "E1048"},
+    {"macro_stringize_missing_parameter_unused_rejected",
+     "#define BAD(value) #\n"
+     "int main(void) { return 0; }\n",
+     "E1048"},
+    {"macro_function_paste_leading_unused_rejected",
+     "#define BAD(value) ## value\n"
+     "int main(void) { return 0; }\n",
+     "E1031"},
+    {"macro_function_paste_trailing_unused_rejected",
+     "#define BAD(value) value ##\n"
+     "int main(void) { return 0; }\n",
+     "E1031"},
+    {"macro_object_paste_leading_unused_rejected",
+     "#define BAD ## value\n"
+     "int main(void) { return 0; }\n",
+     "E1031"},
+    {"macro_object_paste_trailing_unused_rejected",
+     "#define BAD value ##\n"
+     "int main(void) { return 0; }\n",
+     "E1031"},
+    {"predefined_macro_define_stdc_rejected",
+     "#define __STDC__ 1\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_define_line_rejected",
+     "#define __LINE__ 42\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_define_file_rejected",
+     "#define __FILE__ \"overridden.c\"\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_undef_stdc_rejected",
+     "#undef __STDC__\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_undef_line_rejected",
+     "#undef __LINE__\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_undef_conditional_feature_rejected",
+     "#undef __STDC_NO_THREADS__\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"macro_undef_va_args_rejected",
+     "#undef __VA_ARGS__\n"
+     "int main(void) { return 0; }\n",
+     "E1047"},
+    {"macro_undef_extra_identifier_rejected",
+     "#define VALUE 42\n"
+     "#undef VALUE extra\n"
+     "int main(void) { return 0; }\n",
+     "E1050"},
+    {"macro_undef_extra_parens_rejected",
+     "#define VALUE 42\n"
+     "#undef VALUE()\n"
+     "int main(void) { return 0; }\n",
+     "E1050"},
     {"different_encoded_string_prefixes_rejected",
      "int main(void) { return u\"a\" U\"b\"[0]; }\n",
      "E3058"},

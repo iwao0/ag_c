@@ -52,6 +52,8 @@ static const success_case_t success_cases[] = {
     {42, "#define VALUE (40 + 2)\n#define VALUE (40 /* same separator */ + 2)\nint main(void){return VALUE;}"},
     {42, "#define ADD(left,right) ((left)+(right))\n#define ADD( left , right ) ((left)+(right))\nint main(void){return ADD(19,23);}"},
     {42, "#define EMPTY\n#define EMPTY /* trailing whitespace */\n#define VALUE 42\nint main(void){return EMPTY VALUE;}"},
+    {42, "#define NINE(a,b,c,d,e,f,g,h,i) ((a)+(b)+(c)+(d)+(e)+(f)+(g)+(h)+(i))\nint main(void){return NINE(1,2,3,4,5,6,7,8,6);}"},
+    {42, "#define SUM(base,...) ((base)+__VA_ARGS__)\nint main(void){return SUM(40,2);}"},
     {42, "#if (-1 < 1U) || ((~0U >> 63) != 1) || !((1U - 2) > 0) || ((1U / -1) != 0)\nint main(void){return 0;}\n#else\nint main(void){return 42;}\n#endif"},
     {42, "#if (0 && (0 / 0)) || 1\nint main(void){return 42;}\n#else\nint main(void){return 0;}\n#endif"},
     {42, "#define PASTE(a, b) a ## b\nint main() { int var123 = 42; return PASTE(var, 123); }"},
@@ -200,6 +202,28 @@ static const char *fail_cases[] = {
     "#define VALUE 1\n#define VALUE() 1\nint main(void) { return VALUE(); }\n",
     "#define PICK(left) (left)\n#define PICK(right) (right)\nint main(void) { return PICK(1); }\n",
     "#define SUM (1 + 2)\n#define SUM (1+ 2)\nint main(void) { return SUM; }\n",
+    "#define PICK(value, value) (value)\nint main(void) { return PICK(1, 2); }\n",
+    "#define ADD(left right) ((left) + (right))\nint main(void) { return ADD(20, 22); }\n",
+    "#define ID(value,) (value)\nint main(void) { return ID(42); }\n",
+    "#define ID(value\nint main(void) { return 0; }\n",
+    "#define ID(__VA_ARGS__) (__VA_ARGS__)\nint main(void) { return ID(42); }\n",
+    "#define ID(value) (__VA_ARGS__)\nint main(void) { return ID(42); }\n",
+    "#define __VA_ARGS__ 42\nint main(void) { return __VA_ARGS__; }\n",
+    "#define BAD(value) # 1\nint main(void) { return 0; }\n",
+    "#define BAD(value) #\nint main(void) { return 0; }\n",
+    "#define BAD(value) ## value\nint main(void) { return 0; }\n",
+    "#define BAD(value) value ##\nint main(void) { return 0; }\n",
+    "#define BAD ## value\nint main(void) { return 0; }\n",
+    "#define BAD value ##\nint main(void) { return 0; }\n",
+    "#define __STDC__ 1\nint main(void) { return 0; }\n",
+    "#define __LINE__ 42\nint main(void) { return 0; }\n",
+    "#define __FILE__ \"overridden.c\"\nint main(void) { return 0; }\n",
+    "#undef __STDC__\nint main(void) { return 0; }\n",
+    "#undef __LINE__\nint main(void) { return 0; }\n",
+    "#undef __STDC_NO_THREADS__\nint main(void) { return 0; }\n",
+    "#undef __VA_ARGS__\nint main(void) { return 0; }\n",
+    "#define VALUE 42\n#undef VALUE extra\nint main(void) { return 0; }\n",
+    "#define VALUE 42\n#undef VALUE()\nint main(void) { return 0; }\n",
     "#if 1 /* unterminated\nint main() { return 0; }\n#endif\n",
     "#error \"forced\"\nint main() { return 0; }\n",
     "_Pragma()\nint main(void) { return 0; }\n",
@@ -994,6 +1018,42 @@ int main(void) {
       "#define PICK(left) (left)\n#define PICK(right) (right)\n"
       "int main(void) { return PICK(1); }\n",
       "E1044");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define PICK(value, value) (value)\n"
+      "int main(void) { return PICK(1, 2); }\n",
+      "E1045");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define ADD(left right) ((left) + (right))\n"
+      "int main(void) { return ADD(20, 22); }\n",
+      "E1046");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define ID(value) (__VA_ARGS__)\n"
+      "int main(void) { return ID(42); }\n",
+      "E1047");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define BAD(value) # 1\n"
+      "int main(void) { return 0; }\n",
+      "E1048");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define BAD value ##\n"
+      "int main(void) { return 0; }\n",
+      "E1031");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define __LINE__ 42\n"
+      "int main(void) { return 0; }\n",
+      "E1049");
+  expect_preprocess_fail_with_stderr_substr(
+      "#undef __STDC__\n"
+      "int main(void) { return 0; }\n",
+      "E1049");
+  expect_preprocess_fail_with_stderr_substr(
+      "#undef __VA_ARGS__\n"
+      "int main(void) { return 0; }\n",
+      "E1047");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define VALUE 42\n#undef VALUE extra\n"
+      "int main(void) { return 0; }\n",
+      "E1050");
   expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
   expect_macro_arg_nesting_limit_fail();

@@ -2185,6 +2185,61 @@ static diag_error_id_t include_read_failure_diag_id(
   return DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED;
 }
 
+static bool token_is_macro_parameter(
+    token_t *tok, char **params, int num_params) {
+  if (!tok || tok->kind != TK_IDENT) return false;
+  token_ident_t *ident = as_ident(tok);
+  for (int i = 0; i < num_params; i++) {
+    if (strlen(params[i]) == (size_t)ident->len &&
+        strncmp(params[i], ident->str, (size_t)ident->len) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static void validate_macro_replacement_list(
+    ag_preprocessor_context_t *context, bool is_funclike,
+    char **params, int num_params, token_t *body) {
+  if (body && body->kind == TK_HASHHASH) {
+    pp_error(
+        context, DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION,
+        NULL);
+  }
+  for (token_t *tok = body; tok; tok = tok->next) {
+    if (tok->kind == TK_HASHHASH && !tok->next) {
+      pp_error(
+          context, DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION,
+          NULL);
+    }
+    if (is_funclike && tok->kind == TK_HASH &&
+        !token_is_macro_parameter(tok->next, params, num_params)) {
+      pp_error(
+          context, DIAG_ERR_PREPROCESS_MACRO_STRINGIZE_PARAMETER_REQUIRED,
+          NULL);
+    }
+  }
+}
+
+static bool macro_name_is_immutable_predefined(const char *name) {
+  static const char *const names[] = {
+      "__DATE__",
+      "__FILE__",
+      "__LINE__",
+      "__STDC__",
+      "__STDC_HOSTED__",
+      "__STDC_NO_THREADS__",
+      "__STDC_UTF_16__",
+      "__STDC_UTF_32__",
+      "__STDC_VERSION__",
+      "__TIME__",
+  };
+  for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+    if (strcmp(name, names[i]) == 0) return true;
+  }
+  return false;
+}
+
 // #define MACRO_NAME [( params )] body...
 static token_t *handle_define(
     ag_preprocessor_context_t *context, token_t *tok) {
@@ -2195,6 +2250,16 @@ static token_t *handle_define(
   token_ident_t *id = as_ident(tok);
   token_t *definition_token = tok;
   char *name = my_strndup(id->str, id->len);
+  if (macro_name_is_immutable_predefined(name)) {
+    pp_error(
+        context,
+        DIAG_ERR_PREPROCESS_PREDEFINED_MACRO_MODIFICATION_FORBIDDEN,
+        name);
+  }
+  if (strcmp(name, "__VA_ARGS__") == 0) {
+    pp_error(
+        context, DIAG_ERR_PREPROCESS_VA_ARGS_OUTSIDE_VARIADIC_MACRO, NULL);
+  }
   tok = tok->next;
 
   bool is_funclike = false;
@@ -2208,7 +2273,8 @@ static token_t *handle_define(
     tok = tok->next;
     int cap = MACRO_INLINE_PARAMS;
     params = inline_params_buf;
-    while (tok->kind != TK_EOF && tok->kind != TK_RPAREN) {
+    while (tok->kind != TK_EOF && !tok->at_bol &&
+           tok->kind != TK_RPAREN) {
       // 容量拡張は ident / `...` のどちらの追記より前に行う。
       if (num_params >= cap) {
         if (params == inline_params_buf) {
@@ -2222,32 +2288,69 @@ static token_t *handle_define(
       if (tok->kind == TK_ELLIPSIS) {
         // C99 6.10.3: `...` は最後のパラメータでなければならない。
         if (tok->next->kind != TK_RPAREN) {
-          pp_error(context, DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+          pp_error(
+              context, DIAG_ERR_PREPROCESS_MACRO_PARAMETER_LIST_INVALID,
+              NULL);
         }
         params[num_params++] = my_strndup("__VA_ARGS__", 11);
         is_variadic = true;
         tok = tok->next; // `)` へ
         break;
       }
-      if (tok->kind != TK_IDENT) pp_error(context, DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+      if (tok->kind != TK_IDENT) {
+        pp_error(
+            context, DIAG_ERR_PREPROCESS_MACRO_PARAMETER_LIST_INVALID, NULL);
+      }
       token_ident_t *pid = as_ident(tok);
-      params[num_params++] = my_strndup(pid->str, pid->len);
+      char *parameter = my_strndup(pid->str, pid->len);
+      if (strcmp(parameter, "__VA_ARGS__") == 0) {
+        pp_error(
+            context, DIAG_ERR_PREPROCESS_VA_ARGS_OUTSIDE_VARIADIC_MACRO,
+            NULL);
+      }
+      for (int i = 0; i < num_params; i++) {
+        if (strcmp(params[i], parameter) == 0) {
+          pp_error(
+              context, DIAG_ERR_PREPROCESS_MACRO_PARAMETER_DUPLICATE,
+              parameter);
+        }
+      }
+      params[num_params++] = parameter;
       tok = tok->next;
-      if (tok->kind == TK_COMMA) tok = tok->next;
+      if (tok->kind == TK_RPAREN) break;
+      if (tok->kind != TK_COMMA) {
+        pp_error(
+            context, DIAG_ERR_PREPROCESS_MACRO_PARAMETER_LIST_INVALID, NULL);
+      }
+      tok = tok->next;
+      if (tok->kind == TK_RPAREN) {
+        pp_error(
+            context, DIAG_ERR_PREPROCESS_MACRO_PARAMETER_LIST_INVALID, NULL);
+      }
     }
-    if (tok->kind == TK_RPAREN) tok = tok->next;
+    if (tok->kind != TK_RPAREN) {
+      pp_error(
+          context, DIAG_ERR_PREPROCESS_MACRO_PARAMETER_LIST_INVALID, NULL);
+    }
+    tok = tok->next;
   }
 
   token_t head;
   head.next = NULL;
   token_t *cur_body = &head;
   while (tok->kind != TK_EOF && !tok->at_bol) {
+    if (!is_variadic && ident_is(tok, "__VA_ARGS__")) {
+      pp_error(
+          context, DIAG_ERR_PREPROCESS_VA_ARGS_OUTSIDE_VARIADIC_MACRO, NULL);
+    }
     cur_body->next = copy_token(context, tok);
     cur_body = cur_body->next;
     tok = tok->next;
   }
   cur_body->next = NULL;
 
+  validate_macro_replacement_list(
+      context, is_funclike, params, num_params, head.next);
   add_macro(context, name, is_funclike, is_variadic, params, num_params,
             head.next, definition_token);
   return tok;
@@ -2270,6 +2373,19 @@ static token_t *handle_undef(
     ag_preprocessor_context_t *context, token_t *tok) {
   tok = tok->next;
   char *name = consume_required_macro_name(context, &tok);
+  if (strcmp(name, "__VA_ARGS__") == 0) {
+    pp_error(
+        context, DIAG_ERR_PREPROCESS_VA_ARGS_OUTSIDE_VARIADIC_MACRO, NULL);
+  }
+  if (macro_name_is_immutable_predefined(name)) {
+    pp_error(
+        context,
+        DIAG_ERR_PREPROCESS_PREDEFINED_MACRO_MODIFICATION_FORBIDDEN,
+        name);
+  }
+  if (tok->kind != TK_EOF && !tok->at_bol) {
+    pp_error(context, DIAG_ERR_PREPROCESS_UNDEF_EXTRA_TOKENS, NULL);
+  }
   remove_macro_by_name(context, name);
   free(name);
   return skip_to_next_line(tok);

@@ -60,6 +60,12 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_DUPLICATE_PATH: return "virtual header pathが重複しています: %s";
     case DIAG_ERR_PREPROCESS_PRAGMA_OPERATOR_INVALID: return "不正な _Pragma 演算子です。_Pragma(文字列リテラル) が必要です";
     case DIAG_ERR_PREPROCESS_MACRO_REDEFINITION_INCOMPATIBLE: return "互換性のないマクロ再定義です: %s";
+    case DIAG_ERR_PREPROCESS_MACRO_PARAMETER_DUPLICATE: return "マクロparameterが重複しています: %s";
+    case DIAG_ERR_PREPROCESS_MACRO_PARAMETER_LIST_INVALID: return "マクロparameter listが不正です。identifier、','、')'のいずれかが必要です";
+    case DIAG_ERR_PREPROCESS_VA_ARGS_OUTSIDE_VARIADIC_MACRO: return "__VA_ARGS__は可変長マクロのreplacement listでのみ使用できます";
+    case DIAG_ERR_PREPROCESS_MACRO_STRINGIZE_PARAMETER_REQUIRED: return "function-like macro内の'#'の直後にはmacro parameterが必要です";
+    case DIAG_ERR_PREPROCESS_PREDEFINED_MACRO_MODIFICATION_FORBIDDEN: return "predefined macroは定義または解除できません: %s";
+    case DIAG_ERR_PREPROCESS_UNDEF_EXTRA_TOKENS: return "#undef directiveの末尾に余分なtokenがあります";
     case DIAG_ERR_TOKENIZER_GENERIC: return "トークナイズエラーです";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "不正な文字です";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "トークン長が上限を超えています";

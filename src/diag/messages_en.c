@@ -60,6 +60,12 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_DUPLICATE_PATH: return "Duplicate virtual header path: %s";
     case DIAG_ERR_PREPROCESS_PRAGMA_OPERATOR_INVALID: return "Invalid _Pragma operator; expected _Pragma(string-literal)";
     case DIAG_ERR_PREPROCESS_MACRO_REDEFINITION_INCOMPATIBLE: return "Incompatible redefinition of macro: %s";
+    case DIAG_ERR_PREPROCESS_MACRO_PARAMETER_DUPLICATE: return "Duplicate macro parameter: %s";
+    case DIAG_ERR_PREPROCESS_MACRO_PARAMETER_LIST_INVALID: return "Invalid macro parameter list; expected an identifier, ',' or ')'";
+    case DIAG_ERR_PREPROCESS_VA_ARGS_OUTSIDE_VARIADIC_MACRO: return "__VA_ARGS__ is only valid in a variadic macro replacement list";
+    case DIAG_ERR_PREPROCESS_MACRO_STRINGIZE_PARAMETER_REQUIRED: return "'#' in a function-like macro must be followed by a macro parameter";
+    case DIAG_ERR_PREPROCESS_PREDEFINED_MACRO_MODIFICATION_FORBIDDEN: return "Predefined macro cannot be defined or undefined: %s";
+    case DIAG_ERR_PREPROCESS_UNDEF_EXTRA_TOKENS: return "Extra tokens at end of #undef directive";
     case DIAG_ERR_TOKENIZER_GENERIC: return "Tokenizer error";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "Unexpected character";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "Token is too long";
