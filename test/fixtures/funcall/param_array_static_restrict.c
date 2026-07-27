@@ -3,6 +3,8 @@
 #include <assert.h>
 int f(int a[static 3], int b[restrict static 2]) { return 7; }
 int main(void) {
-    assert(f(0, 0) == 7);
+    int a[3] = {0, 0, 0};
+    int b[2] = {0, 0};
+    assert(f(a, b) == 7);
     return 0;
 }
