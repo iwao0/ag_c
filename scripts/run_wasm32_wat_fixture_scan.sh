@@ -58,6 +58,8 @@ skip_reason() {
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c|\
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c|\
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c|\
+    test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_main.c|\
+    test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_main.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_other.c)
       echo "multi-TU link fixture; WAT mode is single-module standalone"

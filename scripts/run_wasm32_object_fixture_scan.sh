@@ -12,12 +12,26 @@ usage() {
   cat <<'EOF'
 usage: scripts/run_wasm32_object_fixture_scan.sh [--list-fail] [--verbose] [--no-validate] [--e2e-fixtures]
 
-Compiles test/fixtures/**/*.c in Wasm object mode, excluding should_reject.
+Compiles test/fixtures/**/*.c in Wasm object mode, excluding should_reject
+and fixtures that intentionally exercise unsupported strict-C extensions.
 With --e2e-fixtures, compiles the fixture paths registered in test/test_e2e.c.
 If wasm-validate is available, validates each generated object too.
 Set AG_C_WASM to override the compiler path.
 Set WASM32_OBJECT_SCAN_DIR to override the output directory.
 EOF
+}
+
+skip_reason() {
+  case "$1" in
+    test/fixtures/probes_found_bugs/gnu_attribute_parse.c|\
+    test/fixtures/probes_found_bugs/gnu_statement_expression.c|\
+    test/fixtures/probes_found_bugs/unsupported_gnu_extensions_warn_skip.c)
+      echo "intentional strict-C rejection covered by wasm32 E2E reject cases"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 while [ $# -gt 0 ]; do
@@ -82,6 +96,14 @@ while IFS= read -r src; do
       continue
       ;;
   esac
+
+  if reason=$(skip_reason "$src"); then
+    skipped=$((skipped + 1))
+    if [ "$verbose" -ne 0 ]; then
+      printf 'SKIP %s\t%s\n' "$src" "$reason"
+    fi
+    continue
+  fi
 
   scanned=$((scanned + 1))
   rel=${src#test/fixtures/}

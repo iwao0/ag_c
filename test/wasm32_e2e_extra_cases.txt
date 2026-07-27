@@ -555,6 +555,7 @@ type_decl/tag_decl_ref_ptr.c
 type_decl/thread_local_arith.c
 type_decl/thread_local_aggregate_init.c
 type_decl/thread_local_init.c
+probes_found_bugs/thread_local_alignment_initializer_boundaries.c
 type_decl/thread_local_store.c
 type_decl/tl_addr_of.c
 type_decl/tl_cross_func.c

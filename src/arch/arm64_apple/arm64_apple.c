@@ -166,15 +166,19 @@ static void emit_global_object(
   if (object->is_thread_local) {
     /* _Thread_local: TLV descriptor + thread data/bss */
     if (object->has_explicit_initializer) {
-      cg_emitf_in(emit_context, ".section __DATA,__thread_data\n");
+      cg_emitf_in(
+          emit_context,
+          ".section __DATA,__thread_data,thread_local_regular\n");
+      cg_emitf_in(emit_context, ".align %d\n",
+                  log2_alignment(object->alignment));
       cg_emitf_in(emit_context, "_%.*s$tlv$init:\n",
                   object->name_len, object->name);
       emit_global_initializer(emit_context, module, object);
     } else {
-      cg_emitf_in(emit_context, ".section __DATA,__thread_bss\n");
-      cg_emitf_in(emit_context, "_%.*s$tlv$init:\n",
-                  object->name_len, object->name);
-      cg_emitf_in(emit_context, "  .space %d\n", object->byte_size);
+      cg_emitf_in(
+          emit_context, ".tbss _%.*s$tlv$init,%d,%d\n",
+          object->name_len, object->name, object->byte_size,
+          log2_alignment(object->alignment));
     }
     cg_emitf_in(
         emit_context, ".section __DATA,__thread_vars,thread_local_variables\n");

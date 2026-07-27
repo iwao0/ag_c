@@ -486,6 +486,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "atomic_load_store", CASE_ASSERT_FILE, "test/fixtures/type_decl/atomic_load_store.c", 0, 0},
     {"type_decl", "thread_local_init", CASE_ASSERT_FILE, "test/fixtures/type_decl/thread_local_init.c", 0, 0},
     {"type_decl", "thread_local_aggregate_init", CASE_ASSERT_FILE, "test/fixtures/type_decl/thread_local_aggregate_init.c", 0, 0},
+    {"probes", "thread_local_alignment_initializer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/thread_local_alignment_initializer_boundaries.c", 0, 0},
     {"type_decl", "thread_local_store", CASE_ASSERT_FILE, "test/fixtures/type_decl/thread_local_store.c", 0, 0},
     {"type_decl", "thread_local_arith", CASE_ASSERT_FILE, "test/fixtures/type_decl/thread_local_arith.c", 0, 0},
     {"type_decl", "tl_multi_var_expr", CASE_ASSERT_FILE, "test/fixtures/type_decl/tl_multi_var_expr.c", 0, 0},
@@ -1601,6 +1602,9 @@ static const link2_case_t link2_cases[] = {
     {"probes", "atomic_aggregate_callback_xtu",
      "test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c",
      "test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c", 42},
+    {"probes", "thread_local_xtu_boundaries",
+     "test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_main.c",
+     "test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c", 42},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
