@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-27（enum宣言hoverと宣言なしlanguage analysis境界fixture追加まで）
+最終更新: 2026-07-28（object宣言位置hoverのnative/Wasm回帰fixture追加まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -448,6 +448,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | **HIR-to-IR builderの固定容量境界** 513 locals / 33 loops / 17 switches / 129 labels | 🔧 | hir_ir_dynamic_capacity_boundaries | 正当なCプログラムを内部配列の固定上限でE4007拒否していた。local storage、loop target、switch target、label targetをoverflow検査付きの動的領域へ移し、nested switchでは再確保後も外側targetのaddressが安定する個別所有にした。旧上限を1件ずつ超える単一fixtureをnative/WAT/objectで固定し、設計invariantで固定長配列の再導入を拒否する |
 | **virtual header macroの条件式内hover** `player_x > GAME_SCREEN_WIDTH - PLAYER_SIZE` | 🔧 | test_language_analysis (native/Wasm JS API) | cursor位置で識別子を除いたrecovery sourceが比較演算子`<`/`>`の直後を補完せず`if (player_x > )`となり、nativeはfatal recovery、selfhost Wasmは`unreachable`へ進んでいた。比較演算子にも仮operand `0`を補い、実starter構造の`GAME_SCREEN_WIDTH`/`GAME_SCREEN_HEIGHT`それぞれで識別子の先頭・途中・末尾、同一instance連続実行・fresh instance、hover/completionのmacro replacementとvirtual header宣言元をnative/Wasmで固定する。Wasm fatalはJS境界で`AgcLanguageAnalysisError`と構造化diagnosticsへ変換しraw trapを公開しない |
 | **enum定数の宣言位置hover** `enum { PLAYER_SIZE = 12 }` | 🔧 | test_language_analysis (native/Wasm JS API) | cursorで切ったrecovery sourceが列挙子名とinitializerを失い、不完全なenum bodyとしてselfhost Wasm trapへ進んでいた。宣言位置では選択中の列挙子名と整数定数式までを保持してenum宣言を完結し、先頭・途中・末尾から使用位置と同じkind/type/signature/declaration/valueを返す。暗黙値、直前値からの増加、先行enum定数を使う整数定数式、宣言位置と使用位置の交互解析、native/Wasm snapshot parityを固定する |
+| **objectの宣言位置hover** `static int player_x;` | 🔧 | test_language_analysis (native/Wasm JS API) | cursorで切ったrecovery sourceが宣言子名を空白へ置換してE3016となり、selfhost Wasmでは構造化結果の代わりにtrapしていた。宣言位置では選択中のobject宣言子と、その宣言子に属する初期化子をtop-levelの`,`/`;`まで保持して宣言を完結する。file-scope static/非static、明示initializer、block-scope local、複数宣言子について、宣言名の先頭・先頭+1・途中・末尾、使用位置とのhover parity、同一instance交互解析、fresh instance、native/Wasm snapshot parityを固定する |
 | **宣言のないprimary sourceのEOF解析** 空/空白/comment/directive/include-only | 🔧 | test_language_analysis, wasm JS compile+link pipeline | 実tokenのないrecovery sourceにも先頭`;`を合成し、EOF位置へE3088を誤生成していた。非preprocessor tokenが一つもない場合は不要な`;`を追加せずmarker宣言だけを置き、diagnostics空・`partial:false`で完了する。virtual headerのcompletion/macro replacement/dependenciesをsnapshotに保持し、実在する`value;`のE3088と書きかけ`int`のpartial diagnosticは維持する。include-only TUを有効なmain TUとobject compile/linkする経路も固定する |
 
 ### リンケージ / 複数 TU（extern / static）

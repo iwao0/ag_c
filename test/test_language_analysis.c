@@ -112,6 +112,25 @@ static int same_range(
          left->end.offset == right->end.offset;
 }
 
+static int same_object_hover(
+    const ag_language_symbol_t *left,
+    const ag_language_symbol_t *right) {
+  if (!left || !right ||
+      left->kind != AG_LANGUAGE_SYMBOL_OBJECT ||
+      right->kind != AG_LANGUAGE_SYMBOL_OBJECT ||
+      strcmp(left->name, right->name) != 0 ||
+      strcmp(left->type, right->type) != 0 ||
+      strcmp(left->signature, right->signature) != 0 ||
+      !same_range(&left->declaration, &right->declaration) ||
+      left->initializer_state != right->initializer_state ||
+      strcmp(left->constant_value, right->constant_value) != 0 ||
+      left->has_initializer_range != right->has_initializer_range)
+    return 0;
+  return !left->has_initializer_range ||
+         same_range(
+             &left->initializer_range, &right->initializer_range);
+}
+
 #define CHECK(condition, label)                                                  \
   do {                                                                           \
     if (!(condition)) {                                                           \
@@ -231,6 +250,50 @@ static int print_include_only_parity_snapshot(void) {
   return 0;
 }
 
+static int print_object_parity_snapshot(void) {
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  if (!session) return 1;
+  const char *paths[] = {"game.h"};
+  const char *headers[] = {"int game_running(void);\n"};
+  header_bundle_t bundle = make_bundle(paths, headers, 1);
+  const char *source =
+      "#include <game.h>\n"
+      "static int player_x;\n"
+      "\n"
+      "int main(void) {\n"
+      "  while (game_running()) {\n"
+      "    player_x++;\n"
+      "  }\n"
+      "  return 0;\n"
+      "}\n";
+  const char *name = strstr(source, "player_x");
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = analyze(
+      session, source, (size_t)(name - source) + 4, bundle,
+      ag_language_analysis_default_limits(), &snapshot, &error);
+  free(bundle.bytes);
+  if (!ok) {
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  int length = ag_language_analysis_snapshot_write_json(&snapshot, NULL, 0);
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  if (!json || ag_language_analysis_snapshot_write_json(
+                   &snapshot, json, (size_t)length + 1) != length) {
+    free(json);
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  puts(json);
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--parity-json") == 0)
     return print_parity_snapshot();
@@ -238,6 +301,8 @@ int main(int argc, char **argv) {
     return print_enum_parity_snapshot();
   if (argc == 2 && strcmp(argv[1], "--include-only-parity-json") == 0)
     return print_include_only_parity_snapshot();
+  if (argc == 2 && strcmp(argv[1], "--object-parity-json") == 0)
+    return print_object_parity_snapshot();
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "session");
@@ -481,6 +546,160 @@ int main(int argc, char **argv) {
             !snapshot.partial,
         "block-scope enum recovery closes outer scope");
   ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *object_paths[] = {"game.h"};
+  const char *object_headers[] = {"int game_running(void);\n"};
+  header_bundle_t object_bundle = make_bundle(
+      object_paths, object_headers, 1);
+  const char *object_source =
+      "#include <game.h>\n"
+      "static int player_x;\n"
+      "\n"
+      "int main(void) {\n"
+      "  while (game_running()) {\n"
+      "    player_x++;\n"
+      "  }\n"
+      "  return 0;\n"
+      "}\n";
+  const char *object_declaration = strstr(object_source, "player_x");
+  const char *object_use = strstr(
+      object_declaration + strlen("player_x"), "player_x");
+  size_t object_name_length = strlen("player_x");
+  size_t object_cursor_deltas[] = {
+      0, 1, object_name_length / 2, object_name_length,
+  };
+  ag_language_analysis_snapshot_t object_use_snapshot = {0};
+  CHECK(analyze(
+            session, object_source,
+            (size_t)(object_use - object_source) + object_name_length,
+            object_bundle, defaults, &object_use_snapshot, &error),
+        "object use hover baseline");
+  const ag_language_symbol_t *object_use_hover =
+      hover_symbol(&object_use_snapshot);
+  CHECK(object_use_hover &&
+            object_use_hover->kind == AG_LANGUAGE_SYMBOL_OBJECT &&
+            strcmp(object_use_hover->name, "player_x") == 0 &&
+            strcmp(object_use_hover->type, "int") == 0 &&
+            object_use_hover->initializer_state ==
+                AG_LANGUAGE_INITIALIZER_ZERO,
+        "object use hover baseline fields");
+  for (size_t cursor_index = 0;
+       cursor_index <
+           sizeof(object_cursor_deltas) / sizeof(object_cursor_deltas[0]);
+       cursor_index++) {
+    size_t declaration_cursor =
+        (size_t)(object_declaration - object_source) +
+        object_cursor_deltas[cursor_index];
+    CHECK(analyze(
+              session, object_source, declaration_cursor, object_bundle,
+              defaults, &snapshot, &error),
+          "object declaration hover");
+    CHECK(same_object_hover(
+              hover_symbol(&snapshot), object_use_hover),
+          "object declaration and use hover parity");
+    CHECK(!snapshot.partial && snapshot.diagnostic_count == 0,
+          "complete object declaration hover is not partial");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+
+    size_t use_cursor =
+        (size_t)(object_use - object_source) +
+        object_cursor_deltas[cursor_index];
+    CHECK(analyze(
+              session, object_source, use_cursor, object_bundle, defaults,
+              &snapshot, &error),
+          "object use hover after declaration hover");
+    CHECK(same_object_hover(
+              hover_symbol(&snapshot), object_use_hover),
+          "object declaration/use alternating analysis");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  ag_language_analysis_snapshot_dispose(&object_use_snapshot);
+  free(object_bundle.bytes);
+
+  struct {
+    const char *label;
+    const char *source;
+    const char *name;
+    ag_language_initializer_state_t initializer_state;
+    const char *constant_value;
+  } object_declaration_cases[] = {
+      {
+          "explicit file-scope object",
+          "static int explicit_value = 42;\n"
+          "int main(void) { return explicit_value; }\n",
+          "explicit_value",
+          AG_LANGUAGE_INITIALIZER_EXPLICIT_CONSTANT,
+          "42",
+      },
+      {
+          "non-static file-scope object",
+          "int global_value;\n"
+          "int main(void) { return global_value; }\n",
+          "global_value",
+          AG_LANGUAGE_INITIALIZER_ZERO,
+          "",
+      },
+      {
+          "block-scope local object",
+          "int main(void) { int local_value = 3; return local_value; }\n",
+          "local_value",
+          AG_LANGUAGE_INITIALIZER_RUNTIME,
+          "",
+      },
+      {
+          "first object in multi-declarator declaration",
+          "int first_value = 1, second_value = 2;\n"
+          "int main(void) { return first_value + second_value; }\n",
+          "first_value",
+          AG_LANGUAGE_INITIALIZER_EXPLICIT_CONSTANT,
+          "1",
+      },
+      {
+          "second object in multi-declarator declaration",
+          "int first_value = 1, second_value = 2;\n"
+          "int main(void) { return first_value + second_value; }\n",
+          "second_value",
+          AG_LANGUAGE_INITIALIZER_EXPLICIT_CONSTANT,
+          "2",
+      },
+  };
+  for (size_t case_index = 0;
+       case_index <
+           sizeof(object_declaration_cases) /
+               sizeof(object_declaration_cases[0]);
+       case_index++) {
+    const char *case_source = object_declaration_cases[case_index].source;
+    const char *case_name = object_declaration_cases[case_index].name;
+    const char *case_declaration = strstr(case_source, case_name);
+    const char *case_use = strstr(
+        case_declaration + strlen(case_name), case_name);
+    ag_language_analysis_snapshot_t case_use_snapshot = {0};
+    CHECK(analyze(
+              session, case_source,
+              (size_t)(case_use - case_source) + strlen(case_name),
+              (header_bundle_t){0}, defaults, &case_use_snapshot, &error),
+          object_declaration_cases[case_index].label);
+    CHECK(analyze(
+              session, case_source,
+              (size_t)(case_declaration - case_source) +
+                  strlen(case_name) / 2,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          object_declaration_cases[case_index].label);
+    const ag_language_symbol_t *case_hover = hover_symbol(&snapshot);
+    CHECK(same_object_hover(
+              case_hover, hover_symbol(&case_use_snapshot)),
+          "object declaration form matches use hover");
+    CHECK(case_hover &&
+              case_hover->initializer_state ==
+                  object_declaration_cases[case_index].initializer_state &&
+              strcmp(
+                  case_hover->constant_value,
+                  object_declaration_cases[case_index].constant_value) == 0 &&
+              !snapshot.partial && snapshot.diagnostic_count == 0,
+          "object declaration form initializer and diagnostics");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    ag_language_analysis_snapshot_dispose(&case_use_snapshot);
+  }
 
   const char *analysis_game_paths[] = {"game.h"};
   const char *analysis_game_headers[] = {
@@ -856,6 +1075,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (30 scenarios)");
+  puts("language analysis tests passed (31 scenarios)");
   return 0;
 }

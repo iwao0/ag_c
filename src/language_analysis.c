@@ -470,12 +470,316 @@ static char *build_enum_declaration_recovery_source(
   return result;
 }
 
+static int analysis_word_is(const char *source, size_t start, size_t length,
+                            const char *word) {
+  size_t word_length = strlen(word);
+  return length == word_length &&
+         memcmp(source + start, word, word_length) == 0;
+}
+
+static int analysis_declaration_type_word(const char *source, size_t start,
+                                          size_t length) {
+  static const char *const words[] = {
+      "void", "char", "short", "int", "long", "float", "double",
+      "signed", "unsigned", "_Bool", "struct", "union", "enum",
+      "_Atomic",
+  };
+  for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++)
+    if (analysis_word_is(source, start, length, words[i])) return 1;
+  return 0;
+}
+
+static int analysis_non_declaration_word(const char *source, size_t start,
+                                         size_t length) {
+  static const char *const words[] = {
+      "return", "if", "else", "while", "do", "for", "switch",
+      "case", "default", "goto", "break", "continue",
+  };
+  for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++)
+    if (analysis_word_is(source, start, length, words[i])) return 1;
+  return 0;
+}
+
+static int object_declaration_prefix(
+    const char *source, size_t name_start, size_t *outer_brace_count,
+    int *paren_depth, int *bracket_depth, int *brace_depth) {
+  size_t start = 0;
+  size_t open_braces = 0;
+  int parens = 0;
+  int brackets = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = 1;
+  int preprocessor_line = 0;
+  for (size_t i = 0; i < name_start; i++) {
+    char c = source[i];
+    char next = i + 1 < name_start ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      if (preprocessor_line) start = i + 1;
+      at_line_start = 1;
+      preprocessor_line = 0;
+      continue;
+    }
+    if (at_line_start && (c == ' ' || c == '\t' || c == '\r')) continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    at_line_start = 0;
+    if (preprocessor_line) continue;
+    if (c == '(') {
+      parens++;
+    } else if (c == ')' && parens > 0) {
+      parens--;
+    } else if (c == '[') {
+      brackets++;
+    } else if (c == ']' && brackets > 0) {
+      brackets--;
+    } else if (c == '{' && parens == 0 && brackets == 0) {
+      open_braces++;
+      start = i + 1;
+    } else if (c == '}' && parens == 0 && brackets == 0) {
+      if (open_braces > 0) open_braces--;
+      start = i + 1;
+    } else if (c == ';' && parens == 0 && brackets == 0) {
+      start = i + 1;
+    }
+  }
+
+  int has_type = 0;
+  int has_non_declaration = 0;
+  int assignment_after_comma = 0;
+  int local_parens = 0;
+  int local_brackets = 0;
+  int local_braces = 0;
+  line_comment = 0;
+  block_comment = 0;
+  quote = 0;
+  escaped = 0;
+  for (size_t i = start; i < name_start; i++) {
+    char c = source[i];
+    char next = i + 1 < name_start ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') line_comment = 0;
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      continue;
+    }
+    if (is_identifier_byte((unsigned char)c)) {
+      size_t word_start = i;
+      while (i + 1 < name_start &&
+             is_identifier_byte((unsigned char)source[i + 1]))
+        i++;
+      size_t word_length = i + 1 - word_start;
+      if (analysis_declaration_type_word(
+              source, word_start, word_length))
+        has_type = 1;
+      if (analysis_non_declaration_word(
+              source, word_start, word_length))
+        has_non_declaration = 1;
+      continue;
+    }
+    if (c == '(') local_parens++;
+    else if (c == ')' && local_parens > 0) local_parens--;
+    else if (c == '[') local_brackets++;
+    else if (c == ']' && local_brackets > 0) local_brackets--;
+    else if (c == '{') local_braces++;
+    else if (c == '}' && local_braces > 0) local_braces--;
+    else if (c == ',' && local_parens == 0 && local_brackets == 0 &&
+             local_braces == 0)
+      assignment_after_comma = 0;
+    else if (c == '=' && local_parens == 0 && local_brackets == 0 &&
+             local_braces == 0)
+      assignment_after_comma = 1;
+  }
+  if (!has_type || has_non_declaration || assignment_after_comma) return 0;
+  *outer_brace_count = open_braces;
+  *paren_depth = local_parens;
+  *bracket_depth = local_brackets;
+  *brace_depth = local_braces;
+  return 1;
+}
+
+static int object_declarator_end(
+    const char *source, size_t length, size_t name_end, int paren_depth,
+    int bracket_depth, int brace_depth, size_t *declarator_end) {
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  for (size_t i = name_end; i < length; i++) {
+    char c = source[i];
+    char next = i + 1 < length ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') line_comment = 0;
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      continue;
+    }
+    if ((c == ',' || c == ';') && paren_depth == 0 &&
+        bracket_depth == 0 && brace_depth == 0) {
+      *declarator_end = i;
+      return 1;
+    }
+    if (c == '(') paren_depth++;
+    else if (c == ')' && paren_depth > 0) paren_depth--;
+    else if (c == '[') bracket_depth++;
+    else if (c == ']' && bracket_depth > 0) bracket_depth--;
+    else if (c == '{') brace_depth++;
+    else if (c == '}' && brace_depth > 0) brace_depth--;
+  }
+  return 0;
+}
+
+static char *build_object_declaration_recovery_source(
+    const char *source, size_t length, size_t cursor, int *changed) {
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(source, length, cursor, &name, &name_length);
+  if (!name || name_length == 0) return NULL;
+  size_t name_start = (size_t)(name - source);
+  size_t name_end = name_start + name_length;
+  size_t outer_brace_count = 0;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  if (!object_declaration_prefix(
+          source, name_start, &outer_brace_count, &paren_depth,
+          &bracket_depth, &brace_depth))
+    return NULL;
+  size_t after_name = skip_analysis_space_and_comments(
+      source, length, name_end);
+  if (after_name < length && source[after_name] == '(' &&
+      paren_depth == 0 && bracket_depth == 0 && brace_depth == 0)
+    return NULL;
+  size_t declarator_end = 0;
+  if (!object_declarator_end(
+          source, length, name_end, paren_depth, bracket_depth,
+          brace_depth, &declarator_end))
+    return NULL;
+  static const char suffix[] =
+      ";\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  size_t declarator_length = declarator_end - name_start;
+  if (name_start > SIZE_MAX - declarator_length ||
+      outer_brace_count > SIZE_MAX / 2 ||
+      name_start + declarator_length > SIZE_MAX - sizeof(suffix) ||
+      name_start + declarator_length + sizeof(suffix) >
+          SIZE_MAX - outer_brace_count * 2)
+    return NULL;
+  size_t result_length =
+      name_start + declarator_length + sizeof(suffix) - 1 +
+      outer_brace_count * 2;
+  char *result = malloc(result_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, name_start);
+  memcpy(
+      result + name_start, source + name_start, declarator_length);
+  size_t output = name_start + declarator_length;
+  memcpy(result + output, suffix, sizeof(suffix) - 1);
+  output += sizeof(suffix) - 1;
+  for (size_t i = 0; i < outer_brace_count; i++) {
+    result[output++] = '}';
+    result[output++] = '\n';
+  }
+  result[output] = '\0';
+  if (changed) *changed = 1;
+  return result;
+}
+
 static char *build_recovery_source(const char *source, size_t source_length,
                                    size_t cursor,
                                    int *changed) {
   char *enum_recovery = build_enum_declaration_recovery_source(
       source, source_length, cursor, changed);
   if (enum_recovery) return enum_recovery;
+  char *object_recovery = build_object_declaration_recovery_source(
+      source, source_length, cursor, changed);
+  if (object_recovery) return object_recovery;
   size_t capacity = cursor * 2 + 8192;
   if (capacity < cursor || capacity > (size_t)INT_MAX) return NULL;
   char *result = calloc(capacity, 1);

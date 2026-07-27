@@ -287,6 +287,202 @@ for (const [name, constantValue, checkAllPositions] of enumCases) {
   }
 }
 
+const objectParitySource = {
+  name: "main.c",
+  source: "#include <game.h>\n" +
+    "static int player_x;\n" +
+    "\n" +
+    "int main(void) {\n" +
+    "  while (game_running()) {\n" +
+    "    player_x++;\n" +
+    "  }\n" +
+    "  return 0;\n" +
+    "}\n",
+};
+const objectParityHeaders = {
+  "game.h": "int game_running(void);\n",
+};
+const objectDeclarationStart = objectParitySource.source.indexOf("player_x");
+const objectUseStart = objectParitySource.source.indexOf(
+  "player_x",
+  objectDeclarationStart + "player_x".length,
+);
+const wasmObjectParity = compiler.analyzeSource(objectParitySource, {
+  headers: objectParityHeaders,
+  cursor: {
+    sourceName: objectParitySource.name,
+    byteOffset: objectDeclarationStart + 4,
+  },
+});
+const nativeObjectParity = JSON.parse(execFileSync(
+  nativeAnalysisPath, ["--object-parity-json"], { encoding: "utf8" },
+));
+assert.deepStrictEqual(
+  wasmObjectParity,
+  nativeObjectParity,
+  "native and Wasm object declaration hover snapshots differ",
+);
+
+function objectHoverFields(hover) {
+  return hover && {
+    name: hover.name,
+    kind: hover.kind,
+    type: hover.type,
+    signature: hover.signature,
+    declaration: hover.declaration,
+    initializer: hover.initializer,
+  };
+}
+
+const objectUseResult = compiler.analyzeSource(objectParitySource, {
+  headers: objectParityHeaders,
+  cursor: {
+    sourceName: objectParitySource.name,
+    byteOffset: objectUseStart + "player_x".length,
+  },
+});
+if (objectUseResult.hover?.name !== "player_x" ||
+    objectUseResult.hover.kind !== "object" ||
+    objectUseResult.hover.type !== "int" ||
+    objectUseResult.hover.initializer.state !== "zero") {
+  throw new Error(
+    `object use hover baseline failed: ${JSON.stringify(objectUseResult)}`,
+  );
+}
+const objectCursorDeltas = [
+  0,
+  1,
+  Math.floor("player_x".length / 2),
+  Buffer.byteLength("player_x"),
+];
+for (const cursorDelta of objectCursorDeltas) {
+  const declarationResult = compiler.analyzeSource(objectParitySource, {
+    headers: objectParityHeaders,
+    cursor: {
+      sourceName: objectParitySource.name,
+      byteOffset: objectDeclarationStart + cursorDelta,
+    },
+  });
+  assert.deepStrictEqual(
+    objectHoverFields(declarationResult.hover),
+    objectHoverFields(objectUseResult.hover),
+    `object declaration hover differs at byte ${cursorDelta}`,
+  );
+  if (declarationResult.partial ||
+      declarationResult.diagnostics.length !== 0) {
+    throw new Error(
+      `complete object declaration was partial: ${JSON.stringify(declarationResult)}`,
+    );
+  }
+
+  const alternatingUseResult = compiler.analyzeSource(objectParitySource, {
+    headers: objectParityHeaders,
+    cursor: {
+      sourceName: objectParitySource.name,
+      byteOffset: objectUseStart + cursorDelta,
+    },
+  });
+  assert.deepStrictEqual(
+    objectHoverFields(alternatingUseResult.hover),
+    objectHoverFields(objectUseResult.hover),
+    `object use hover leaked state at byte ${cursorDelta}`,
+  );
+}
+for (const cursorDelta of objectCursorDeltas) {
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(objectParitySource, {
+      headers: objectParityHeaders,
+      cursor: {
+        sourceName: objectParitySource.name,
+        byteOffset: objectDeclarationStart + cursorDelta,
+      },
+    });
+    assert.deepStrictEqual(
+      objectHoverFields(freshResult.hover),
+      objectHoverFields(objectUseResult.hover),
+      `fresh object declaration hover differs at byte ${cursorDelta}`,
+    );
+    if (freshResult.partial || freshResult.diagnostics.length !== 0) {
+      throw new Error(
+        `fresh object declaration was partial: ${JSON.stringify(freshResult)}`,
+      );
+    }
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
+const objectDeclarationCases = [
+  {
+    name: "explicit_value",
+    source: "static int explicit_value = 42;\n" +
+      "int main(void) { return explicit_value; }\n",
+    initializer: { state: "explicitConstant", constantValue: "42" },
+  },
+  {
+    name: "global_value",
+    source: "int global_value;\n" +
+      "int main(void) { return global_value; }\n",
+    initializer: { state: "zero", constantValue: null },
+  },
+  {
+    name: "local_value",
+    source: "int main(void) { int local_value = 3; return local_value; }\n",
+    initializer: { state: "runtime", constantValue: null },
+  },
+  {
+    name: "first_value",
+    source: "int first_value = 1, second_value = 2;\n" +
+      "int main(void) { return first_value + second_value; }\n",
+    initializer: { state: "explicitConstant", constantValue: "1" },
+  },
+  {
+    name: "second_value",
+    source: "int first_value = 1, second_value = 2;\n" +
+      "int main(void) { return first_value + second_value; }\n",
+    initializer: { state: "explicitConstant", constantValue: "2" },
+  },
+];
+for (const analysisCase of objectDeclarationCases) {
+  const declarationSource = {
+    name: "object-declaration.c",
+    source: analysisCase.source,
+  };
+  const declarationStart = declarationSource.source.indexOf(analysisCase.name);
+  const useStart = declarationSource.source.indexOf(
+    analysisCase.name,
+    declarationStart + analysisCase.name.length,
+  );
+  const useResult = compiler.analyzeSource(declarationSource, {
+    cursor: {
+      sourceName: declarationSource.name,
+      byteOffset: useStart + Buffer.byteLength(analysisCase.name),
+    },
+  });
+  const declarationResult = compiler.analyzeSource(declarationSource, {
+    cursor: {
+      sourceName: declarationSource.name,
+      byteOffset: declarationStart + Math.floor(analysisCase.name.length / 2),
+    },
+  });
+  assert.deepStrictEqual(
+    objectHoverFields(declarationResult.hover),
+    objectHoverFields(useResult.hover),
+    `${analysisCase.name} declaration and use hover differ`,
+  );
+  if (declarationResult.hover?.initializer.state !==
+        analysisCase.initializer.state ||
+      declarationResult.hover?.initializer.constantValue !==
+        analysisCase.initializer.constantValue ||
+      declarationResult.partial ||
+      declarationResult.diagnostics.length !== 0) {
+    throw new Error(
+      `object declaration form failed: ${JSON.stringify(declarationResult)}`,
+    );
+  }
+}
+
 const declarationFreeHeaders = {
   "game.h": "#define GAME_SCREEN_WIDTH 640\n" +
     "int game_running(void);\n",
