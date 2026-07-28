@@ -777,6 +777,7 @@ static const test_case_t test_cases[] = {
     {"probes", "mbstate_target_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mbstate_target_abi_boundaries.c", 0, 0},
     {"probes", "standard_header_shared_definition_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/standard_header_shared_definition_boundaries.c", 0, 0},
     {"probes", "inttypes_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_function_pointer_abi_boundaries.c", 0, 0},
+    {"probes", "inttypes_wide_conversion_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_wide_conversion_function_pointer_boundaries.c", 0, 0},
     {"probes", "aggregate_return_register_width_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_return_register_width_boundaries.c", 0, 0},
     {"probes", "fenv_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fenv_function_pointer_boundaries.c", 0, 0},
     {"probes", "signal_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/signal_function_pointer_boundaries.c", 0, 0},
@@ -1426,6 +1427,7 @@ static const test_case_t test_cases[] = {
     {"probes", "float_long_double_macro_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_long_double_macro_boundaries.c", 0, 0},
     {"probes", "stdint_limit_constant_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdint_limit_constant_type_boundaries.c", 0, 0},
     {"probes", "inttypes_max_format_macro_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_max_format_macro_boundaries.c", 0, 0},
+    {"probes", "inttypes_least_fast_format_macro_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_least_fast_format_macro_boundaries.c", 0, 0},
     {"probes", "limits_integer_macro_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/limits_integer_macro_boundaries.c", 0, 0},
     {"probes", "stdlib_macro_runtime_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_macro_runtime_boundaries.c", 0, 0},
     {"probes", "stdio_macro_constant_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdio_macro_constant_boundaries.c", 0, 0},
@@ -4674,6 +4676,7 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_setlocale") == 0 || strcmp(sym, "_localeconv") == 0 ||
             strcmp(sym, "_imaxabs") == 0 || strcmp(sym, "_imaxdiv") == 0 ||
             strcmp(sym, "_strtoimax") == 0 || strcmp(sym, "_strtoumax") == 0 ||
+            strcmp(sym, "_wcstoimax") == 0 || strcmp(sym, "_wcstoumax") == 0 ||
             strcmp(sym, "_powf") == 0 ||
             strcmp(sym, "_powl") == 0 || strcmp(sym, "_sqrtl") == 0 ||
             strcmp(sym, "_fabsl") == 0 || strcmp(sym, "_fmodf") == 0) {

@@ -2603,9 +2603,11 @@ static void emit_wasm_vsscanf_stubs(wasm32_ir_context_t *context) {
   }
   if (has_undefined_function("sscanf", 6)) {
     wasm_emitf(2, "(func $sscanf (param $s i32) (param $fmt i32) (param $a i32) (param $b i32) (result i32)\n");
+    wasm_emitf(4, "(local $args i64)\n");
     wasm_emitf(4, "(i64.store (i32.const %d) (i64.extend_i32_u (local.get $a)))\n", slots_addr);
     wasm_emitf(4, "(i64.store (i32.const %d) (i64.extend_i32_u (local.get $b)))\n", slots_addr + 8);
-    wasm_emitf(4, "(call $__ag_vsscanf_impl (local.get $s) (local.get $fmt) (i64.const %d))\n", slots_addr);
+    wasm_emitf(4, "(local.set $args (if (result i64) (i32.ne (global.get $__ag_va_arg_area) (i32.const 0)) (then (i64.extend_i32_u (global.get $__ag_va_arg_area))) (else (i64.const %d))))\n", slots_addr);
+    wasm_emitf(4, "(call $__ag_vsscanf_impl (local.get $s) (local.get $fmt) (local.get $args))\n");
     wasm_emitf(2, ")\n");
   }
 }
@@ -3232,9 +3234,11 @@ static void emit_wasm_swscanf_stub(wasm32_ir_context_t *context) {
   }
   if (has_undefined_function("swscanf", 7)) {
     wasm_emitf(2, "(func $swscanf (param $s i32) (param $fmt i32) (param $a i32) (param $b i32) (result i32)\n");
+    wasm_emitf(4, "(local $args i64)\n");
     wasm_emitf(4, "(i64.store (i32.const %d) (i64.extend_i32_u (local.get $a)))\n", slots_addr);
     wasm_emitf(4, "(i64.store (i32.const %d) (i64.extend_i32_u (local.get $b)))\n", slots_addr + 8);
-    wasm_emitf(4, "(call $__ag_vswscanf_impl (local.get $s) (local.get $fmt) (i64.const %d))\n", slots_addr);
+    wasm_emitf(4, "(local.set $args (if (result i64) (i32.ne (global.get $__ag_va_arg_area) (i32.const 0)) (then (i64.extend_i32_u (global.get $__ag_va_arg_area))) (else (i64.const %d))))\n", slots_addr);
+    wasm_emitf(4, "(call $__ag_vswscanf_impl (local.get $s) (local.get $fmt) (local.get $args))\n");
     wasm_emitf(2, ")\n");
   }
 }
@@ -5277,18 +5281,25 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(4, "(call $__ag_strtod (local.get $s) (i32.const 0))\n");
     wasm_emitf(2, ")\n");
   }
-  int need_wcsto64_stub = has_undefined_function("wcstol", 6) ||
+  int need_wcsto64_stub = has_undefined_function("wcstoimax", 9) ||
+                          has_undefined_function("wcstol", 6) ||
                           has_undefined_function("wcstoul", 7) ||
                           has_undefined_function("wcstoll", 7) ||
-                          has_undefined_function("wcstoull", 8);
+                          has_undefined_function("wcstoull", 8) ||
+                          has_undefined_function("wcstoumax", 9);
   if (need_wcsto64_stub) {
-    wasm_emitf(2, "(func $__ag_wcsto64 (param $s i32) (param $endptr i32) (param $base i64) (result i64)\n");
+    int wcsto64_errno_addr = intern_data_symbol("__ag_stub_errno", 15, 4, 4)->addr;
+    wasm_emitf(2, "(func $__ag_wcsto64 (param $s i32) (param $endptr i32) (param $base i64) (param $unsigned i32) (result i64)\n");
     wasm_emitf(4, "(local $p i32)\n");
     wasm_emitf(4, "(local $ch i32)\n");
     wasm_emitf(4, "(local $digit i64)\n");
     wasm_emitf(4, "(local $n i64)\n");
+    wasm_emitf(4, "(local $limit i64)\n");
+    wasm_emitf(4, "(local $cutoff i64)\n");
+    wasm_emitf(4, "(local $cutlim i64)\n");
     wasm_emitf(4, "(local $neg i32)\n");
     wasm_emitf(4, "(local $any_digit i32)\n");
+    wasm_emitf(4, "(local $overflow i32)\n");
     wasm_emitf(4, "(local $prefix i32)\n");
     wasm_emitf(4, "(local $prefix_digit i32)\n");
     wasm_emitf(4, "(local $valid_prefix i32)\n");
@@ -5330,6 +5341,13 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(8, "))\n");
     wasm_emitf(6, ")\n");
     wasm_emitf(4, ")\n");
+    wasm_emitf(4, "(if (local.get $unsigned)\n");
+    wasm_emitf(6, "(then (local.set $limit (i64.const -1)))\n");
+    wasm_emitf(6, "(else (if (local.get $neg)\n");
+    wasm_emitf(8, "(then (local.set $limit (i64.const -9223372036854775808)))\n");
+    wasm_emitf(8, "(else (local.set $limit (i64.const 9223372036854775807))))))\n");
+    wasm_emitf(4, "(local.set $cutoff (i64.div_u (local.get $limit) (local.get $base)))\n");
+    wasm_emitf(4, "(local.set $cutlim (i64.rem_u (local.get $limit) (local.get $base)))\n");
     wasm_emitf(4, "(block $done (loop $loop\n");
     wasm_emitf(6, "(local.set $ch (i32.load (local.get $p)))\n");
     wasm_emitf(6, "(local.set $digit (i64.const -1))\n");
@@ -5343,7 +5361,11 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(6, "(if (i64.lt_s (local.get $digit) (i64.const 0)) (then (br $done)))\n");
     wasm_emitf(6, "(if (i64.ge_s (local.get $digit) (local.get $base)) (then (br $done)))\n");
     wasm_emitf(6, "(local.set $any_digit (i32.const 1))\n");
-    wasm_emitf(6, "(local.set $n (i64.add (i64.mul (local.get $n) (local.get $base)) (local.get $digit)))\n");
+    wasm_emitf(6, "(if (i32.or\n");
+    wasm_emitf(8, "(i64.gt_u (local.get $n) (local.get $cutoff))\n");
+    wasm_emitf(8, "(i32.and (i64.eq (local.get $n) (local.get $cutoff)) (i64.gt_u (local.get $digit) (local.get $cutlim))))\n");
+    wasm_emitf(6, "(then (local.set $overflow (i32.const 1)))\n");
+    wasm_emitf(6, "(else (local.set $n (i64.add (i64.mul (local.get $n) (local.get $base)) (local.get $digit)))))\n");
     wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
     wasm_emitf(6, "(br $loop)\n");
     wasm_emitf(4, "))\n");
@@ -5352,31 +5374,49 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(6, "(return (i64.const 0))\n");
     wasm_emitf(4, "))\n");
     wasm_emitf(4, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $p)))))\n");
+    wasm_emitf(4, "(if (local.get $overflow) (then\n");
+    wasm_emitf(6, "(i32.store (i32.const %d) (i32.const 34))\n", wcsto64_errno_addr);
+    wasm_emitf(6, "(if (local.get $unsigned) (then (return (i64.const -1))))\n");
+    wasm_emitf(6, "(if (local.get $neg) (then (return (i64.const -9223372036854775808))))\n");
+    wasm_emitf(6, "(return (i64.const 9223372036854775807))\n");
+    wasm_emitf(4, "))\n");
     wasm_emitf(4, "(if (result i64) (local.get $neg) (then (i64.sub (i64.const 0) (local.get $n))) (else (local.get $n)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("wcstoimax", 9)) {
+    wasm_emitf(2, "(func $wcstoimax (param $s i32) (param $endptr i32) (param $base %s) (result i64)\n",
+               wasm_stub_param_type("wcstoimax", 9, 2, IR_TY_I32));
+    wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)) (i32.const 0))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wcstol", 6)) {
     wasm_emitf(2, "(func $wcstol (param $s i32) (param $endptr i32) (param $base %s) (result i64)\n",
                wasm_stub_param_type("wcstol", 6, 2, IR_TY_I32));
-    wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)))\n");
+    wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)) (i32.const 0))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wcstoul", 7)) {
     wasm_emitf(2, "(func $wcstoul (param $s i32) (param $endptr i32) (param $base %s) (result i64)\n",
                wasm_stub_param_type("wcstoul", 7, 2, IR_TY_I32));
-    wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)))\n");
+    wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)) (i32.const 1))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wcstoll", 7)) {
     wasm_emitf(2, "(func $wcstoll (param $s i32) (param $endptr i32) (param $base %s) (result i64)\n",
                wasm_stub_param_type("wcstoll", 7, 2, IR_TY_I32));
-    wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)))\n");
+    wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)) (i32.const 0))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wcstoull", 8)) {
     wasm_emitf(2, "(func $wcstoull (param $s i32) (param $endptr i32) (param $base %s) (result i64)\n",
                wasm_stub_param_type("wcstoull", 8, 2, IR_TY_I32));
-    wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)))\n");
+    wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)) (i32.const 1))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("wcstoumax", 9)) {
+    wasm_emitf(2, "(func $wcstoumax (param $s i32) (param $endptr i32) (param $base %s) (result i64)\n",
+               wasm_stub_param_type("wcstoumax", 9, 2, IR_TY_I32));
+    wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)) (i32.const 1))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wcstod", 6) || has_undefined_function("wcstof", 6) ||

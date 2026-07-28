@@ -428,6 +428,15 @@ unsigned long long __agc_runtime_wcstoull(long nptr_addr, long endptr_addr, int 
   return value;
 }
 
+long long __agc_runtime_wcstoimax(long nptr_addr, long endptr_addr, int base) {
+  return __agc_runtime_wcstoll(nptr_addr, endptr_addr, base);
+}
+
+unsigned long long __agc_runtime_wcstoumax(long nptr_addr, long endptr_addr,
+                                           int base) {
+  return __agc_runtime_wcstoull(nptr_addr, endptr_addr, base);
+}
+
 float __agc_runtime_wcstof(long nptr_addr, long endptr_addr) {
   int *orig = (int *)ag_rt_ptr(nptr_addr);
   ag_rt_wide_copy_ascii(orig);

@@ -15,6 +15,15 @@ int main(void) {
     if (swscanf(L"byte Q", L"%s %c", narrow_word, &narrow_ch) != 2) return 3;
     if (strcmp(narrow_word, "byte") != 0 || narrow_ch != 'Q') return 4;
 
+    int many_a = 0;
+    int many_b = 0;
+    int many_c = 0;
+    int many_d = 0;
+    if (swscanf(L"11 22 33 44", L"%d %d %d %d",
+                &many_a, &many_b, &many_c, &many_d) != 4) return 110;
+    if (many_a != 11 || many_b != 22 || many_c != 33 || many_d != 44)
+        return 111;
+
     char limited_word[4] = {'x', 'x', 'x', 'x'};
     char following_ch = 0;
     if (swscanf(L"abcdef", L"%3s%c", limited_word, &following_ch) != 2) return 24;

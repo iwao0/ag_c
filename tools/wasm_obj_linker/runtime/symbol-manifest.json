@@ -6974,6 +6974,20 @@
       "bridge": "runtime"
     },
     {
+      "cSymbol": "wcstoimax",
+      "runtimeSymbol": "__agc_runtime_wcstoimax",
+      "importNamespace": "env",
+      "signature": "i64,i64,i32->i64",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
+    },
+    {
       "cSymbol": "wcstok",
       "runtimeSymbol": "__agc_runtime_wcstok",
       "importNamespace": "env",
@@ -7060,6 +7074,20 @@
     {
       "cSymbol": "wcstoull",
       "runtimeSymbol": "__agc_runtime_wcstoull",
+      "importNamespace": "env",
+      "signature": "i64,i64,i32->i64",
+      "memory": {
+        "read": true,
+        "write": true
+      },
+      "availability": [
+        "wasm32-object-runtime"
+      ],
+      "bridge": "runtime"
+    },
+    {
+      "cSymbol": "wcstoumax",
+      "runtimeSymbol": "__agc_runtime_wcstoumax",
       "importNamespace": "env",
       "signature": "i64,i64,i32->i64",
       "memory": {

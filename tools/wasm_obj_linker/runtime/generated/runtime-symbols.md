@@ -451,6 +451,7 @@ Do not edit it directly.
 | `wcsstr` | `__agc_runtime_wcsstr` | `env.wcsstr` | `i64,i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `wcstod` | `__agc_runtime_wcstod` | `env.wcstod` | `i64,i64->f64` | read/write | wasm32-object-runtime | runtime |
 | `wcstof` | `__agc_runtime_wcstof` | `env.wcstof` | `i64,i64->f32` | read/write | wasm32-object-runtime | runtime |
+| `wcstoimax` | `__agc_runtime_wcstoimax` | `env.wcstoimax` | `i64,i64,i32->i64` | read/write | wasm32-object-runtime | runtime |
 | `wcstok` | `__agc_runtime_wcstok` | `env.wcstok` | `i64,i64,i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `wcstol` | `__agc_runtime_wcstol` | `env.wcstol` | `i64,i64,i32->i64` | read/write | wasm32-object-runtime | runtime |
 | `wcstold` | `__agc_runtime_wcstold` | `env.wcstold` | `i64,i64->f64` | read/write | wasm32-object-runtime | runtime |
@@ -458,6 +459,7 @@ Do not edit it directly.
 | `wcstombs` | `__agc_runtime_wcstombs` | `env.wcstombs` | `i64,i64,i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `wcstoul` | `__agc_runtime_wcstoul` | `env.wcstoul` | `i64,i64,i32->i64` | read/write | wasm32-object-runtime | runtime |
 | `wcstoull` | `__agc_runtime_wcstoull` | `env.wcstoull` | `i64,i64,i32->i64` | read/write | wasm32-object-runtime | runtime |
+| `wcstoumax` | `__agc_runtime_wcstoumax` | `env.wcstoumax` | `i64,i64,i32->i64` | read/write | wasm32-object-runtime | runtime |
 | `wcsxfrm` | `__agc_runtime_wcsxfrm` | `env.wcsxfrm` | `i64,i64,i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `wctob` | `__agc_runtime_wctob` | `env.wctob` | `i32->i32` | read/write | wasm32-object-runtime | runtime |
 | `wctomb` | `__agc_runtime_wctomb` | `env.wctomb` | `i64,i32->i32` | read/write | wasm32-object-runtime | runtime |
