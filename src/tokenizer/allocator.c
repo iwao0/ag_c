@@ -155,6 +155,11 @@ void tk_allocator_set_recyclable_in(
   if (ctx) ctx->recyc_mode = on ? 1 : 0;
 }
 
+int tk_allocator_recyclable_is_enabled_in(
+    const tk_allocator_context_t *ctx) {
+  return ctx ? ctx->recyc_mode : 0;
+}
+
 /** @brief _Generic バックトラック等で、この位置より古いトークンの解放を一時的に禁じる。 */
 void tk_allocator_recyc_pin_in(
     tk_allocator_context_t *ctx, const void *p) {

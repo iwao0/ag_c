@@ -219,10 +219,13 @@ $(WASM_SELFHOST_API): FORCE $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 wasm-selfhost-api: $(WASM_SELFHOST_API)
 
 test-wasm-selfhost-source: $(WASM_TARGET)
-	@mkdir -p build/wasm_selfhost_regression/semantic
+	@mkdir -p build/wasm_selfhost_regression/semantic build/wasm_selfhost_regression/arch/wasm32
 	@AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c \
 		-o build/wasm_selfhost_regression/semantic/syntax_typed_hir_resolution.o \
 		src/semantic/syntax_typed_hir_resolution.c
+	@AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c \
+		-o build/wasm_selfhost_regression/arch/wasm32/wasm32_ir.o \
+		src/arch/wasm32/wasm32_ir.c
 
 test-wasm-js-api: check-runtime-symbol-manifest $(WASM_SELFHOST_API) $(TEST_LANGUAGE_ANALYSIS)
 	@node tools/wasm_js_api/test_smoke.mjs $(WASM_SELFHOST_API)

@@ -414,6 +414,156 @@ for (const cursorDelta of objectCursorDeltas) {
   }
 }
 
+const functionDefinitionSource = {
+  name: "main.c",
+  source: "#include <game.h>\n" +
+    "static void move_and_draw(void) {}\n" +
+    "int main(void) { move_and_draw(); return 0; }\n",
+};
+const functionDefinitionHeaders = { "game.h": "" };
+const moveName = "move_and_draw";
+const moveDefinitionStart =
+  functionDefinitionSource.source.indexOf(moveName);
+const moveUseStart = functionDefinitionSource.source.indexOf(
+  moveName,
+  moveDefinitionStart + moveName.length,
+);
+const functionCursorDeltas = [
+  0,
+  1,
+  Math.floor(moveName.length / 2),
+  Buffer.byteLength(moveName),
+];
+const wasmFunctionDefinitionParity = compiler.analyzeSource(
+  functionDefinitionSource,
+  {
+    headers: functionDefinitionHeaders,
+    cursor: {
+      sourceName: functionDefinitionSource.name,
+      byteOffset:
+        moveDefinitionStart + Math.floor(moveName.length / 2),
+    },
+  },
+);
+const nativeFunctionDefinitionParity = JSON.parse(execFileSync(
+  nativeAnalysisPath,
+  ["--function-definition-parity-json"],
+  { encoding: "utf8" },
+));
+assert.deepStrictEqual(
+  wasmFunctionDefinitionParity,
+  nativeFunctionDefinitionParity,
+  "native and Wasm function definition hover snapshots differ",
+);
+
+function functionHoverFields(hover) {
+  return hover && {
+    name: hover.name,
+    kind: hover.kind,
+    type: hover.type,
+    signature: hover.signature,
+    declaration: hover.declaration,
+    function: hover.function,
+  };
+}
+
+const functionUseResult = compiler.analyzeSource(
+  functionDefinitionSource,
+  {
+    headers: functionDefinitionHeaders,
+    cursor: {
+      sourceName: functionDefinitionSource.name,
+      byteOffset: moveUseStart + moveName.length,
+    },
+  },
+);
+if (functionUseResult.hover?.name !== moveName ||
+    functionUseResult.hover.kind !== "function" ||
+    functionUseResult.hover.function?.returnType !== "void" ||
+    functionUseResult.hover.function?.hasPrototype !== true ||
+    functionUseResult.hover.function?.variadic !== false ||
+    functionUseResult.hover.function?.parameters.length !== 0 ||
+    functionUseResult.hover.declaration.start.offset !==
+      moveDefinitionStart ||
+    functionUseResult.partial ||
+    functionUseResult.diagnostics.length !== 0) {
+  throw new Error(
+    `function use hover baseline failed: ${JSON.stringify(functionUseResult)}`,
+  );
+}
+for (const cursorDelta of functionCursorDeltas) {
+  const definitionResult = compiler.analyzeSource(
+    functionDefinitionSource,
+    {
+      headers: functionDefinitionHeaders,
+      cursor: {
+        sourceName: functionDefinitionSource.name,
+        byteOffset: moveDefinitionStart + cursorDelta,
+      },
+    },
+  );
+  assert.deepStrictEqual(
+    functionHoverFields(definitionResult.hover),
+    functionHoverFields(functionUseResult.hover),
+    `function definition hover differs at byte ${cursorDelta}`,
+  );
+  if (definitionResult.partial ||
+      definitionResult.diagnostics.length !== 0) {
+    throw new Error(
+      `complete function definition was partial: ${JSON.stringify(definitionResult)}`,
+    );
+  }
+
+  const alternatingUseResult = compiler.analyzeSource(
+    functionDefinitionSource,
+    {
+      headers: functionDefinitionHeaders,
+      cursor: {
+        sourceName: functionDefinitionSource.name,
+        byteOffset: moveUseStart + cursorDelta,
+      },
+    },
+  );
+  assert.deepStrictEqual(
+    functionHoverFields(alternatingUseResult.hover),
+    functionHoverFields(functionUseResult.hover),
+    `function use hover leaked state at byte ${cursorDelta}`,
+  );
+  if (alternatingUseResult.partial ||
+      alternatingUseResult.diagnostics.length !== 0) {
+    throw new Error(
+      `complete function use was partial: ${JSON.stringify(alternatingUseResult)}`,
+    );
+  }
+}
+for (const cursorDelta of functionCursorDeltas) {
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(
+      functionDefinitionSource,
+      {
+        headers: functionDefinitionHeaders,
+        cursor: {
+          sourceName: functionDefinitionSource.name,
+          byteOffset: moveDefinitionStart + cursorDelta,
+        },
+      },
+    );
+    assert.deepStrictEqual(
+      functionHoverFields(freshResult.hover),
+      functionHoverFields(functionUseResult.hover),
+      `fresh function definition hover differs at byte ${cursorDelta}`,
+    );
+    if (freshResult.partial || freshResult.diagnostics.length !== 0) {
+      throw new Error(
+        `fresh function definition was partial: ${JSON.stringify(freshResult)}`,
+      );
+    }
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
 const objectDeclarationCases = [
   {
     name: "explicit_value",

@@ -736,6 +736,148 @@ static int object_declarator_end(
   return 0;
 }
 
+static int function_declaration_recovery_end(
+    const char *source, size_t length, size_t name_end,
+    size_t *declaration_end, int *is_definition) {
+  size_t cursor = skip_analysis_space_and_comments(
+      source, length, name_end);
+  if (cursor >= length || source[cursor] != '(') return 0;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int body_depth = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = 0;
+  int preprocessor_line = 0;
+  for (size_t i = cursor; i < length; i++) {
+    char c = source[i];
+    char next = i + 1 < length ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      if (!preprocessor_line ||
+          i == 0 || source[i - 1] != '\\')
+        preprocessor_line = 0;
+      at_line_start = 1;
+      continue;
+    }
+    if (at_line_start &&
+        (c == ' ' || c == '\t' || c == '\r'))
+      continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    at_line_start = 0;
+    if (preprocessor_line) continue;
+    if (body_depth > 0) {
+      if (c == '{') body_depth++;
+      else if (c == '}' && --body_depth == 0) {
+        *declaration_end = i + 1;
+        *is_definition = 1;
+        return 1;
+      }
+      continue;
+    }
+    if (c == '(') paren_depth++;
+    else if (c == ')' && paren_depth > 0) paren_depth--;
+    else if (c == '[') bracket_depth++;
+    else if (c == ']' && bracket_depth > 0) bracket_depth--;
+    else if (paren_depth == 0 && bracket_depth == 0 && c == ';') {
+      *declaration_end = i + 1;
+      *is_definition = 0;
+      return 1;
+    } else if (paren_depth == 0 && bracket_depth == 0 && c == '{') {
+      body_depth = 1;
+    } else if (paren_depth == 0 && bracket_depth == 0 && c == ',') {
+      return 0;
+    }
+  }
+  return 0;
+}
+
+static char *build_function_declaration_recovery_source(
+    const char *source, size_t length, size_t cursor, int *changed) {
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(source, length, cursor, &name, &name_length);
+  if (!name || name_length == 0) return NULL;
+  size_t name_start = (size_t)(name - source);
+  size_t name_end = name_start + name_length;
+  size_t outer_brace_count = 0;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  if (!object_declaration_prefix(
+          source, name_start, &outer_brace_count, &paren_depth,
+          &bracket_depth, &brace_depth) ||
+      paren_depth != 0 || bracket_depth != 0 || brace_depth != 0)
+    return NULL;
+  size_t declaration_end = 0;
+  int is_definition = 0;
+  if (!function_declaration_recovery_end(
+          source, length, name_end,
+          &declaration_end, &is_definition) ||
+      (is_definition && outer_brace_count != 0))
+    return NULL;
+  static const char suffix[] =
+      "\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  if (outer_brace_count > SIZE_MAX / 2 ||
+      declaration_end > SIZE_MAX - sizeof(suffix) ||
+      declaration_end + sizeof(suffix) >
+          SIZE_MAX - outer_brace_count * 2)
+    return NULL;
+  size_t result_length =
+      declaration_end + sizeof(suffix) - 1 +
+      outer_brace_count * 2;
+  char *result = malloc(result_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, declaration_end);
+  size_t output = declaration_end;
+  memcpy(result + output, suffix, sizeof(suffix) - 1);
+  output += sizeof(suffix) - 1;
+  for (size_t i = 0; i < outer_brace_count; i++) {
+    result[output++] = '}';
+    result[output++] = '\n';
+  }
+  result[output] = '\0';
+  if (changed) *changed = 1;
+  return result;
+}
+
 static char *build_object_declaration_recovery_source(
     const char *source, size_t length, size_t cursor, int *changed) {
   const char *name = NULL;
@@ -797,9 +939,28 @@ static char *build_recovery_source(const char *source, size_t source_length,
   char *enum_recovery = build_enum_declaration_recovery_source(
       source, source_length, cursor, changed);
   if (enum_recovery) return enum_recovery;
+  char *function_recovery =
+      build_function_declaration_recovery_source(
+          source, source_length, cursor, changed);
+  if (function_recovery) return function_recovery;
   char *object_recovery = build_object_declaration_recovery_source(
       source, source_length, cursor, changed);
   if (object_recovery) return object_recovery;
+  int has_complete_identifier = 0;
+  const char *cursor_name = NULL;
+  size_t cursor_name_length = 0;
+  identifier_at(
+      source, source_length, cursor,
+      &cursor_name, &cursor_name_length);
+  if (cursor_name && cursor_name_length > 0) {
+    size_t name_start = (size_t)(cursor_name - source);
+    size_t name_end = name_start + cursor_name_length;
+    /* A delimiter after the name proves that this is a complete source token,
+     * rather than an identifier prefix still being typed at EOF. */
+    if (name_end < source_length &&
+        cursor >= name_start && cursor <= name_end)
+      has_complete_identifier = 1;
+  }
   size_t capacity = cursor * 2 + 8192;
   if (capacity < cursor || capacity > (size_t)INT_MAX) return NULL;
   char *result = calloc(capacity, 1);
@@ -829,7 +990,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       result[operator_end - 2] = ' ';
       result[operator_end - 1] = ' ';
     }
-    stripped_identifier = 1;
+    stripped_identifier = has_complete_identifier ? 0 : 1;
   }
   size_t stack_count = 0;
   int line_comment = 0;

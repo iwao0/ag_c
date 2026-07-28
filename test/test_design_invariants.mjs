@@ -13148,6 +13148,9 @@ if (!/PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE/.test(
     !/test-wasm-selfhost-source:[^]*?src\/semantic\/syntax_typed_hir_resolution\.c/.test(
       makefileSource,
     ) ||
+    !/test-wasm-selfhost-source:[^]*?src\/arch\/wasm32\/wasm32_ir\.c/.test(
+      makefileSource,
+    ) ||
     /src\/semantic\/legacy_syntax_diagnostics\.c/.test(makefileSource) ||
     !/self-host compile failed: %s/.test(selfhostBuildScript)) {
   throw new Error(

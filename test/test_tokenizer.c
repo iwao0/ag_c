@@ -1604,6 +1604,68 @@ static void test_c11_long_escape_sequences(tokenizer_context_t *test_ctx) {
   ASSERT_EQ(TK_EOF, tok->kind);
 }
 
+static void test_stream_normalized_input_lifetime(
+    tokenizer_test_fixture_t *fixture) {
+  printf("test_stream_normalized_input_lifetime...\n");
+  /*
+   * A line splice forces phase 2 to allocate a normalized input buffer.
+   * Continue well beyond the recyclable arena's look-behind window so the
+   * pull lexer must still read that buffer after old token chunks are freed.
+   */
+  const size_t repeat_count = 12000;
+  const size_t source_capacity = repeat_count * 32 + 128;
+  char *source = malloc(source_capacity);
+  ASSERT_TRUE(source != NULL);
+  size_t used = (size_t)snprintf(
+      source, source_capacity, "int first_\\\nmarker;\n");
+  ASSERT_TRUE(used < source_capacity);
+  for (size_t i = 0; i < repeat_count; i++) {
+    int written = snprintf(
+        source + used, source_capacity - used,
+        "int value_%zu;\n", i);
+    ASSERT_TRUE(written > 0);
+    ASSERT_TRUE((size_t)written < source_capacity - used);
+    used += (size_t)written;
+  }
+  int written = snprintf(
+      source + used, source_capacity - used, "int final_marker;\n");
+  ASSERT_TRUE(written > 0);
+  ASSERT_TRUE((size_t)written < source_capacity - used);
+
+  tk_allocator_set_recyclable_in(fixture->allocator, 1);
+  tk_token_stream_t *stream =
+      tk_stream_new(&fixture->tokenizer, source);
+  ASSERT_TRUE(stream != NULL);
+  ASSERT_TRUE(
+      tk_allocator_recyclable_is_enabled_in(fixture->allocator));
+
+  size_t token_count = 0;
+  bool saw_first_marker = false;
+  bool saw_final_marker = false;
+  token_t *tok;
+  while ((tok = tk_stream_next(stream)) != NULL) {
+    token_count++;
+    if (tok->kind == TK_IDENT) {
+      token_ident_t *ident = as_ident(tok);
+      if (ident->len == 12 &&
+          memcmp(ident->str, "first_marker", 12) == 0)
+        saw_first_marker = true;
+      if (ident->len == 12 &&
+          memcmp(ident->str, "final_marker", 12) == 0)
+        saw_final_marker = true;
+    }
+    tk_allocator_recyc_on_cursor_in(fixture->allocator, tok);
+  }
+  ASSERT_EQ(3 * (repeat_count + 2) + 1, token_count);
+  ASSERT_TRUE(saw_first_marker);
+  ASSERT_TRUE(saw_final_marker);
+
+  tk_stream_delete(stream);
+  tk_allocator_set_recyclable_in(fixture->allocator, 0);
+  tk_allocator_recyc_reset_in(fixture->allocator);
+  free(source);
+}
+
 int main() {
   tokenizer_test_fixture_t fixture;
   init_explicit_context(&fixture);
@@ -1646,6 +1708,7 @@ int main() {
   test_c11_invalid_suffixes(test_ctx);
   test_c11_ucn_invalid_boundaries(test_ctx);
   test_c11_long_escape_sequences(test_ctx);
+  test_stream_normalized_input_lifetime(&fixture);
   test_at_eof(test_ctx);
   test_consume(test_ctx);
   test_consume_str(test_ctx);

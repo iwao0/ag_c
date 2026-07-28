@@ -144,6 +144,29 @@ static int same_object_display(
          strcmp(left->constant_value, right->constant_value) == 0;
 }
 
+static int same_function_hover(
+    const ag_language_symbol_t *left,
+    const ag_language_symbol_t *right) {
+  if (!left || !right ||
+      left->kind != AG_LANGUAGE_SYMBOL_FUNCTION ||
+      right->kind != AG_LANGUAGE_SYMBOL_FUNCTION ||
+      strcmp(left->name, right->name) != 0 ||
+      strcmp(left->type, right->type) != 0 ||
+      strcmp(left->signature, right->signature) != 0 ||
+      strcmp(left->return_type, right->return_type) != 0 ||
+      strcmp(left->storage_class, right->storage_class) != 0 ||
+      !same_range(&left->declaration, &right->declaration) ||
+      left->has_function_prototype != right->has_function_prototype ||
+      left->is_variadic != right->is_variadic ||
+      left->parameter_count != right->parameter_count)
+    return 0;
+  for (int i = 0; i < left->parameter_count; i++)
+    if (strcmp(left->parameters[i].name, right->parameters[i].name) != 0 ||
+        strcmp(left->parameters[i].type, right->parameters[i].type) != 0)
+      return 0;
+  return 1;
+}
+
 #define CHECK(condition, label)                                                  \
   do {                                                                           \
     if (!(condition)) {                                                           \
@@ -307,6 +330,47 @@ static int print_object_parity_snapshot(void) {
   return 0;
 }
 
+static int print_function_definition_parity_snapshot(void) {
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  if (!session) return 1;
+  const char *paths[] = {"game.h"};
+  const char *headers[] = {""};
+  header_bundle_t bundle = make_bundle(paths, headers, 1);
+  const char *source =
+      "#include <game.h>\n"
+      "static void move_and_draw(void) {}\n"
+      "int main(void) { move_and_draw(); return 0; }\n";
+  const char *name = strstr(source, "move_and_draw");
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = analyze(
+      session, source,
+      (size_t)(name - source) + strlen("move_and_draw") / 2,
+      bundle, ag_language_analysis_default_limits(),
+      &snapshot, &error);
+  free(bundle.bytes);
+  if (!ok) {
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  int length = ag_language_analysis_snapshot_write_json(
+      &snapshot, NULL, 0);
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  if (!json || ag_language_analysis_snapshot_write_json(
+                   &snapshot, json, (size_t)length + 1) != length) {
+    free(json);
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  puts(json);
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--parity-json") == 0)
     return print_parity_snapshot();
@@ -316,6 +380,9 @@ int main(int argc, char **argv) {
     return print_include_only_parity_snapshot();
   if (argc == 2 && strcmp(argv[1], "--object-parity-json") == 0)
     return print_object_parity_snapshot();
+  if (argc == 2 &&
+      strcmp(argv[1], "--function-definition-parity-json") == 0)
+    return print_function_definition_parity_snapshot();
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "session");
@@ -630,6 +697,151 @@ int main(int argc, char **argv) {
   }
   ag_language_analysis_snapshot_dispose(&object_use_snapshot);
   free(object_bundle.bytes);
+
+  const char *function_paths[] = {"game.h"};
+  const char *function_headers[] = {""};
+  header_bundle_t function_bundle = make_bundle(
+      function_paths, function_headers, 1);
+  const char *function_definition_source =
+      "#include <game.h>\n"
+      "static void move_and_draw(void) {}\n"
+      "int main(void) { move_and_draw(); return 0; }\n";
+  const char *function_definition = strstr(
+      function_definition_source, "move_and_draw");
+  const char *move_function_use = strstr(
+      function_definition + strlen("move_and_draw"),
+      "move_and_draw");
+  size_t function_name_length = strlen("move_and_draw");
+  size_t function_cursor_deltas[] = {
+      0, 1, function_name_length / 2, function_name_length,
+  };
+  ag_language_analysis_snapshot_t function_use_snapshot = {0};
+  CHECK(analyze(
+            session, function_definition_source,
+            (size_t)(move_function_use - function_definition_source) +
+                function_name_length,
+            function_bundle, defaults, &function_use_snapshot, &error),
+        "function use hover baseline");
+  const ag_language_symbol_t *function_use_hover =
+      hover_symbol(&function_use_snapshot);
+  CHECK(function_use_hover &&
+            function_use_hover->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
+            strcmp(function_use_hover->name, "move_and_draw") == 0 &&
+            strcmp(function_use_hover->return_type, "void") == 0 &&
+            function_use_hover->has_function_prototype &&
+            !function_use_hover->is_variadic &&
+            function_use_hover->parameter_count == 0 &&
+            function_use_hover->declaration.start.offset ==
+                (int)(function_definition -
+                      function_definition_source),
+        "function use hover baseline fields");
+  for (size_t cursor_index = 0;
+       cursor_index <
+           sizeof(function_cursor_deltas) /
+               sizeof(function_cursor_deltas[0]);
+       cursor_index++) {
+    size_t definition_cursor =
+        (size_t)(function_definition - function_definition_source) +
+        function_cursor_deltas[cursor_index];
+    CHECK(analyze(
+              session, function_definition_source, definition_cursor,
+              function_bundle, defaults, &snapshot, &error),
+          "function definition hover");
+    CHECK(same_function_hover(
+              hover_symbol(&snapshot), function_use_hover),
+          "function definition and use hover parity");
+    CHECK(!snapshot.partial && snapshot.diagnostic_count == 0,
+          "complete function definition hover is not partial");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+
+    size_t use_cursor =
+        (size_t)(move_function_use - function_definition_source) +
+        function_cursor_deltas[cursor_index];
+    CHECK(analyze(
+              session, function_definition_source, use_cursor,
+              function_bundle, defaults, &snapshot, &error),
+          "function use hover after definition hover");
+    CHECK(same_function_hover(
+              hover_symbol(&snapshot), function_use_hover),
+          "function definition/use alternating analysis");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  ag_language_analysis_snapshot_dispose(&function_use_snapshot);
+
+  const char *function_forms_source =
+      "extern int declared_only(int value);\n"
+      "static inline int defined_after(int value);\n"
+      "static inline int defined_after(int value) { return value + 1; }\n"
+      "int main(void) { return declared_only(1) + defined_after(2); }\n";
+  const char *declared_only = strstr(
+      function_forms_source, "declared_only");
+  const char *defined_prototype = strstr(
+      function_forms_source, "defined_after");
+  const char *defined_definition = strstr(
+      defined_prototype + strlen("defined_after"), "defined_after");
+  const char *defined_use = strstr(
+      defined_definition + strlen("defined_after"), "defined_after");
+  CHECK(analyze(
+            session, function_forms_source,
+            (size_t)(declared_only - function_forms_source) + 1,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "function prototype-only hover");
+  const ag_language_symbol_t *prototype_hover = hover_symbol(&snapshot);
+  CHECK(prototype_hover &&
+            prototype_hover->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
+            strcmp(prototype_hover->name, "declared_only") == 0 &&
+            strcmp(prototype_hover->return_type, "int") == 0 &&
+            prototype_hover->has_function_prototype &&
+            prototype_hover->parameter_count == 1 &&
+            prototype_hover->declaration.start.offset ==
+                (int)(declared_only - function_forms_source) &&
+            !snapshot.partial && snapshot.diagnostic_count == 0,
+        "function prototype-only fields");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  CHECK(analyze(
+            session, function_forms_source,
+            (size_t)(defined_prototype - function_forms_source) + 1,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "function prototype before definition hover");
+  CHECK(hover_symbol(&snapshot) &&
+            hover_symbol(&snapshot)->declaration.start.offset ==
+                (int)(defined_prototype - function_forms_source) &&
+            !snapshot.partial && snapshot.diagnostic_count == 0,
+        "function prototype before definition range");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  CHECK(analyze(
+            session, function_forms_source,
+            (size_t)(defined_definition - function_forms_source) + 1,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "static inline function definition hover");
+  const ag_language_symbol_t *definition_hover = hover_symbol(&snapshot);
+  CHECK(definition_hover &&
+            definition_hover->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
+            strcmp(definition_hover->name, "defined_after") == 0 &&
+            strcmp(definition_hover->return_type, "int") == 0 &&
+            definition_hover->has_function_prototype &&
+            definition_hover->parameter_count == 1 &&
+            definition_hover->declaration.start.offset ==
+                (int)(defined_definition - function_forms_source) &&
+            !snapshot.partial && snapshot.diagnostic_count == 0,
+        "static inline function definition fields");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  CHECK(analyze(
+            session, function_forms_source,
+            (size_t)(defined_use - function_forms_source) +
+                strlen("defined_after"),
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "function use after prototype and definition");
+  CHECK(hover_symbol(&snapshot) &&
+            hover_symbol(&snapshot)->declaration.start.offset ==
+                (int)(defined_definition - function_forms_source) &&
+            !snapshot.partial && snapshot.diagnostic_count == 0,
+        "function use resolves to definition range");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  free(function_bundle.bytes);
 
   struct {
     const char *label;
@@ -1009,7 +1221,7 @@ int main(int argc, char **argv) {
 
   source = "#define REMOVED 1\n#undef REMOVED\n"
            "#if 0\n#define DISABLED 2\n#else\n#define ENABLED 3\n#endif\n"
-           "#define ENABLED 4\n"
+           "#undef ENABLED\n#define ENABLED 4\n"
            "int fn(void) { EN";
   CHECK(analyze(session, source, strlen(source), (header_bundle_t){0}, defaults,
                 &snapshot, &error), "active macro state");

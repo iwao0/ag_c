@@ -704,8 +704,19 @@ struct tk_token_stream {
 
 void tk_stream_open(tk_token_stream_t *s, tokenizer_context_t *ctx, const char *in) {
   s->session = begin_tokenize_session(ctx);
+  /*
+   * phase 1/2 normalization may allocate one buffer covering the whole input.
+   * The pull lexer keeps `p` and every emitted token's source location inside
+   * that buffer until the stream is closed, so it must outlive recyclable
+   * token chunks reclaimed behind the parser cursor.
+   */
+  tk_allocator_context_t *allocator = tk_context_allocator(s->session.ctx);
+  int saved_recyclable =
+      tk_allocator_recyclable_is_enabled_in(allocator);
+  tk_allocator_set_recyclable_in(allocator, 0);
   s->p = tokenize_prepare_input(
       s->session.ctx, in, &s->splice_offsets, &s->splice_count);
+  tk_allocator_set_recyclable_in(allocator, saved_recyclable);
   s->input_start = s->p;
   s->next_splice = 0;
   s->at_bol = true;

@@ -29,6 +29,9 @@ size_t tk_allocator_total_reserved_bytes_in(
 /** @brief recyclable モード切替。1 のとき calloc は recyclable 側へ確保。 */
 void tk_allocator_set_recyclable_in(
     tk_allocator_context_t *ctx, int on);
+/** @brief 現在の recyclable モードを返す。 */
+int tk_allocator_recyclable_is_enabled_in(
+    const tk_allocator_context_t *ctx);
 /** @brief カーソル前進時に呼ぶ。カーソルが通り過ぎた古い recyclable チャンクを解放する。 */
 void tk_allocator_recyc_on_cursor_in(
     tk_allocator_context_t *ctx, const void *cursor);

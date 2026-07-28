@@ -5877,12 +5877,34 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(4, "(i32.and (i32.wrap_i64 (i64.shr_u (global.get $__ag_rand_state) (i64.const 16))) (i32.const 32767))\n");
     wasm_emitf(2, ")\n");
   }
+  int needs_allocator =
+      has_undefined_function("malloc", 6) ||
+      has_undefined_function("calloc", 6) ||
+      has_undefined_function("aligned_alloc", 13) ||
+      has_undefined_function("realloc", 7);
+  if (needs_allocator) {
+    wasm_emitf(2, "(func $__ag_alloc_bump (param $size i64) (param $alignment i64) (result i32)\n");
+    wasm_emitf(4, "(local $heap i64)\n");
+    wasm_emitf(4, "(local $aligned i64)\n");
+    wasm_emitf(4, "(local $next i64)\n");
+    wasm_emitf(4, "(local $limit i64)\n");
+    wasm_emitf(4, "(if (i64.eqz (local.get $alignment)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(if (i64.gt_u (local.get $alignment) (i64.const 2147483648)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(if (i64.ne (i64.and (local.get $alignment) (i64.sub (local.get $alignment) (i64.const 1))) (i64.const 0)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(if (i64.gt_u (local.get $size) (i64.const 4294967295)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(local.set $heap (i64.extend_i32_u (global.get $__ag_heap_pointer)))\n");
+    wasm_emitf(4, "(local.set $aligned (i64.and (i64.add (local.get $heap) (i64.sub (local.get $alignment) (i64.const 1))) (i64.xor (i64.sub (local.get $alignment) (i64.const 1)) (i64.const -1))))\n");
+    wasm_emitf(4, "(local.set $next (i64.and (i64.add (i64.add (local.get $aligned) (local.get $size)) (i64.const 7)) (i64.const -8)))\n");
+    wasm_emitf(4, "(local.set $limit (i64.extend_i32_u (global.get $__stack_pointer)))\n");
+    wasm_emitf(4, "(if (i64.gt_u (local.get $aligned) (local.get $limit)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(if (i64.gt_u (local.get $next) (local.get $limit)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(global.set $__ag_heap_pointer (i32.wrap_i64 (local.get $next)))\n");
+    wasm_emitf(4, "(i32.wrap_i64 (local.get $aligned))\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("malloc", 6)) {
     wasm_emitf(2, "(func $malloc (param $size i64) (result i32)\n");
-    wasm_emitf(4, "(local $p i32)\n");
-    wasm_emitf(4, "(local.set $p (global.get $__ag_heap_pointer))\n");
-    wasm_emitf(4, "(global.set $__ag_heap_pointer (i32.add (global.get $__ag_heap_pointer) (i32.and (i32.add (i32.wrap_i64 (local.get $size)) (i32.const 7)) (i32.const -8))))\n");
-    wasm_emitf(4, "(local.get $p)\n");
+    wasm_emitf(4, "(call $__ag_alloc_bump (local.get $size) (i64.const 8))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("calloc", 6)) {
@@ -5891,11 +5913,16 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(4, "(local $q i32)\n");
     wasm_emitf(4, "(local $end i32)\n");
     wasm_emitf(4, "(local $bytes i32)\n");
-    wasm_emitf(4, "(local.set $bytes (i32.wrap_i64 (i64.mul (local.get $nmemb) (local.get $size))))\n");
-    wasm_emitf(4, "(local.set $p (global.get $__ag_heap_pointer))\n");
+    wasm_emitf(4, "(local $bytes64 i64)\n");
+    wasm_emitf(4, "(if (i64.ne (local.get $nmemb) (i64.const 0)) (then\n");
+    wasm_emitf(6, "(if (i64.gt_u (local.get $size) (i64.div_u (i64.const -1) (local.get $nmemb))) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.set $bytes64 (i64.mul (local.get $nmemb) (local.get $size)))\n");
+    wasm_emitf(4, "(local.set $p (call $__ag_alloc_bump (local.get $bytes64) (i64.const 8)))\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $p)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(local.set $bytes (i32.wrap_i64 (local.get $bytes64)))\n");
     wasm_emitf(4, "(local.set $q (local.get $p))\n");
     wasm_emitf(4, "(local.set $end (i32.add (local.get $p) (local.get $bytes)))\n");
-    wasm_emitf(4, "(global.set $__ag_heap_pointer (i32.add (local.get $p) (i32.and (i32.add (local.get $bytes) (i32.const 7)) (i32.const -8))))\n");
     wasm_emitf(4, "(block $done (loop $loop\n");
     wasm_emitf(6, "(if (i32.ge_u (local.get $q) (local.get $end)) (then (br $done)))\n");
     wasm_emitf(6, "(i32.store8 (local.get $q) (i32.const 0))\n");
@@ -5907,17 +5934,10 @@ void wasm32_wat_emit_minimal_libc_stubs(
   }
   if (has_undefined_function("aligned_alloc", 13)) {
     wasm_emitf(2, "(func $aligned_alloc (param $alignment i64) (param $size i64) (result i32)\n");
-    wasm_emitf(4, "(local $align i32)\n");
-    wasm_emitf(4, "(local $p i32)\n");
-    wasm_emitf(4, "(if (i64.le_s (local.get $alignment) (i64.const 0)) (then (return (i32.const 0))))\n");
-    wasm_emitf(4, "(if (i64.lt_s (local.get $size) (i64.const 0)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(if (i64.eqz (local.get $alignment)) (then (return (i32.const 0))))\n");
     wasm_emitf(4, "(if (i64.ne (i64.and (local.get $alignment) (i64.sub (local.get $alignment) (i64.const 1))) (i64.const 0)) (then (return (i32.const 0))))\n");
     wasm_emitf(4, "(if (i64.ne (i64.rem_u (local.get $size) (local.get $alignment)) (i64.const 0)) (then (return (i32.const 0))))\n");
-    wasm_emitf(4, "(if (i64.gt_u (local.get $alignment) (i64.const 2147483648)) (then (return (i32.const 0))))\n");
-    wasm_emitf(4, "(local.set $align (i32.wrap_i64 (local.get $alignment)))\n");
-    wasm_emitf(4, "(local.set $p (i32.and (i32.add (global.get $__ag_heap_pointer) (i32.sub (local.get $align) (i32.const 1))) (i32.xor (i32.sub (local.get $align) (i32.const 1)) (i32.const -1))))\n");
-    wasm_emitf(4, "(global.set $__ag_heap_pointer (i32.add (local.get $p) (i32.and (i32.add (i32.wrap_i64 (local.get $size)) (i32.const 7)) (i32.const -8))))\n");
-    wasm_emitf(4, "(local.get $p)\n");
+    wasm_emitf(4, "(call $__ag_alloc_bump (local.get $size) (local.get $alignment))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("realloc", 7)) {
@@ -5928,9 +5948,9 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(4, "(local $end i32)\n");
     wasm_emitf(4, "(local $bytes i32)\n");
     wasm_emitf(4, "(if (i64.eqz (local.get $size)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(local.set $p (call $__ag_alloc_bump (local.get $size) (i64.const 8)))\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $p)) (then (return (i32.const 0))))\n");
     wasm_emitf(4, "(local.set $bytes (i32.wrap_i64 (local.get $size)))\n");
-    wasm_emitf(4, "(local.set $p (global.get $__ag_heap_pointer))\n");
-    wasm_emitf(4, "(global.set $__ag_heap_pointer (i32.add (local.get $p) (i32.and (i32.add (local.get $bytes) (i32.const 7)) (i32.const -8))))\n");
     wasm_emitf(4, "(if (i32.eqz (local.get $ptr)) (then (return (local.get $p))))\n");
     wasm_emitf(4, "(local.set $d (local.get $p))\n");
     wasm_emitf(4, "(local.set $s (local.get $ptr))\n");
