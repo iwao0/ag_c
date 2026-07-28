@@ -5,7 +5,11 @@
 #define _WINT_T
 typedef int wint_t;
 #endif
+#ifdef __wasm32__
 typedef int wctype_t;
+#else
+typedef unsigned int wctype_t;
+#endif
 typedef int wctrans_t;
 #ifndef WEOF
 #define WEOF ((wint_t)-1)

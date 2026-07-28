@@ -10,6 +10,8 @@
  *
  * va_list:
  *   Address value walking the contiguous stack array of variadic arguments.
+ *   Apple arm64 exposes this ABI value as char *.  The Wasm runtime retains
+ *   its existing 64-bit cursor representation.
  *
  * va_start(ap, last_named):
  *   Sets ap to the start of the variadic stack area. `last_named` is
@@ -23,7 +25,11 @@
 #ifndef _STDARG_H
 #define _STDARG_H
 
+#ifdef __wasm32__
 typedef long va_list;
+#else
+typedef char *va_list;
+#endif
 
 #define va_start(ap, last) \
   ((void)sizeof(last), (void)((ap) = (va_list)__va_arg_area))
