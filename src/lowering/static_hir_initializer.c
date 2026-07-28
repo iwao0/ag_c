@@ -245,6 +245,8 @@ static int type_is_pointer_like(
     const static_hir_eval_t *eval, const psx_hir_node_t *node);
 static int pointer_points_to_function(
     const static_hir_eval_t *eval, const psx_hir_node_t *node);
+static int is_integer_to_pointer_address_cast(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node);
 static int is_pointer_to_integer_address_cast(
     const static_hir_eval_t *eval, const psx_hir_node_t *node);
 
@@ -950,6 +952,26 @@ static int pointer_points_to_function(
          pointee_shape.kind == PSX_TYPE_FUNCTION;
 }
 
+static int is_integer_to_pointer_address_cast(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node) {
+  if (!eval || !node ||
+      psx_hir_node_kind(node) != PSX_HIR_CAST)
+    return 0;
+  psx_type_shape_t target = {0};
+  psx_type_shape_t source = {0};
+  const psx_hir_node_t *operand =
+      child_for_edge(eval, node, PSX_HIR_EDGE_LHS, 0);
+  if (!node_type_shape(eval, node, &target) ||
+      target.kind != PSX_TYPE_POINTER ||
+      !node_type_shape(eval, operand, &source) ||
+      (source.kind != PSX_TYPE_BOOL &&
+       source.kind != PSX_TYPE_INTEGER))
+    return 0;
+  int ok = 1;
+  (void)eval_const_int(eval, operand, &ok);
+  return ok;
+}
+
 static int is_pointer_to_integer_address_cast(
     const static_hir_eval_t *eval, const psx_hir_node_t *node) {
   if (!eval || !node ||
@@ -1637,7 +1659,10 @@ static int aggregate_write_scalar(
       target_type.kind == PSX_TYPE_FUNCTION) {
     int integer_ok = 1;
     integer = eval_const_int(&aggregate->eval, value, &integer_ok);
-    if (integer_ok && integer == 0) {
+    if (integer_ok &&
+        (integer == 0 ||
+         is_integer_to_pointer_address_cast(
+             &aggregate->eval, value))) {
       symbol = NULL;
     } else if (resolve_address(
                    &aggregate->eval, value, &symbol, &symbol_len,

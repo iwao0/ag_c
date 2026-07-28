@@ -493,8 +493,8 @@ static void gen_inst_int_cast(gen_ctx_t *ctx, ir_inst_t *inst) {
       char w_src[8], w_dst[8];
       to_w_name(src, w_src, sizeof(w_src));
       to_w_name(d, w_dst, sizeof(w_dst));
-      int source_size = ir_type_fixed_size(inst->src1.type);
-      int destination_size = ir_type_fixed_size(inst->dst.type);
+      int source_size = arm64_ir_type_size(ctx, inst->src1.type);
+      int destination_size = arm64_ir_type_size(ctx, inst->dst.type);
       if (inst->op == IR_TRUNC) {
         if (destination_size <= 4)
           arm64_cg_emitf(ctx, "  mov %s, %s\n", w_dst, w_src);

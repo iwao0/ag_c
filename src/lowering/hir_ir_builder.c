@@ -427,8 +427,12 @@ static ir_val_t coerce_scalar(
       }
       int result = hir_ir_new_vreg(context);
       if (result < 0) return ir_val_none();
+      /* Preserve the implementation-defined signed/unsigned source value
+       * when widening an explicit integer-to-pointer conversion. */
       ir_inst_t *conversion = ir_inst_new(
-          source_size > target_size ? IR_TRUNC : IR_ZEXT);
+          source_size > target_size
+              ? IR_TRUNC
+              : source.is_unsigned ? IR_ZEXT : IR_SEXT);
       if (!conversion) {
         context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
         return ir_val_none();
