@@ -3935,6 +3935,242 @@ static void emit_wasm_asctime_helpers(wasm32_ir_context_t *context) {
   wasm_emitf(2, ")\n");
 }
 
+static void emit_wasm_strtod_common(
+    wasm32_ir_context_t *context, int errno_addr) {
+  wasm_emitf(2, "(func $__ag_float_ch (param $p i32) (param $wide i32) (result i32)\n");
+  wasm_emitf(4, "(if (result i32) (local.get $wide)\n");
+  wasm_emitf(6, "(then (i32.load (local.get $p)))\n");
+  wasm_emitf(6, "(else (i32.load8_u (local.get $p)))\n");
+  wasm_emitf(4, ")\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $__ag_float_eq_ci (param $p i32) (param $index i32) (param $step i32) (param $wide i32) (param $expected i32) (result i32)\n");
+  wasm_emitf(4, "(i32.eq\n");
+  wasm_emitf(6, "(i32.or (call $__ag_float_ch (i32.add (local.get $p) (i32.mul (local.get $index) (local.get $step))) (local.get $wide)) (i32.const 32))\n");
+  wasm_emitf(6, "(local.get $expected))\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $__ag_float_hex_digit (param $ch i32) (result i32)\n");
+  wasm_emitf(4, "(if (i32.and (i32.ge_u (local.get $ch) (i32.const 48)) (i32.le_u (local.get $ch) (i32.const 57)))\n");
+  wasm_emitf(6, "(then (return (i32.sub (local.get $ch) (i32.const 48)))))\n");
+  wasm_emitf(4, "(if (i32.and (i32.ge_u (local.get $ch) (i32.const 97)) (i32.le_u (local.get $ch) (i32.const 102)))\n");
+  wasm_emitf(6, "(then (return (i32.sub (local.get $ch) (i32.const 87)))))\n");
+  wasm_emitf(4, "(if (i32.and (i32.ge_u (local.get $ch) (i32.const 65)) (i32.le_u (local.get $ch) (i32.const 70)))\n");
+  wasm_emitf(6, "(then (return (i32.sub (local.get $ch) (i32.const 55)))))\n");
+  wasm_emitf(4, "(i32.const -1)\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $__ag_strtod_common (param $s i32) (param $endptr i32) (param $wide i32) (result f64)\n");
+  wasm_emitf(4, "(local $p i32)\n");
+  wasm_emitf(4, "(local $ch i32)\n");
+  wasm_emitf(4, "(local $digit i32)\n");
+  wasm_emitf(4, "(local $step i32)\n");
+  wasm_emitf(4, "(local $sign f64)\n");
+  wasm_emitf(4, "(local $acc f64)\n");
+  wasm_emitf(4, "(local $place f64)\n");
+  wasm_emitf(4, "(local $exp i64)\n");
+  wasm_emitf(4, "(local $exp_sign i32)\n");
+  wasm_emitf(4, "(local $exp_start i32)\n");
+  wasm_emitf(4, "(local $have_exp i32)\n");
+  wasm_emitf(4, "(local $any_digit i32)\n");
+  wasm_emitf(4, "(local $nonzero i32)\n");
+  wasm_emitf(4, "(local $is_hex i32)\n");
+  wasm_emitf(4, "(local $hex_start i32)\n");
+  wasm_emitf(4, "(local $payload_start i32)\n");
+  wasm_emitf(4, "(local.set $step (if (result i32) (local.get $wide) (then (i32.const 4)) (else (i32.const 1))))\n");
+  wasm_emitf(4, "(local.set $sign (f64.const 1.0))\n");
+  wasm_emitf(4, "(local.set $p (local.get $s))\n");
+  wasm_emitf(4, "(block $space_done (loop $space_loop\n");
+  wasm_emitf(6, "(local.set $ch (call $__ag_float_ch (local.get $p) (local.get $wide)))\n");
+  wasm_emitf(6, "(if (i32.or (i32.eq (local.get $ch) (i32.const 32)) (i32.or (i32.eq (local.get $ch) (i32.const 9)) (i32.or (i32.eq (local.get $ch) (i32.const 10)) (i32.or (i32.eq (local.get $ch) (i32.const 11)) (i32.or (i32.eq (local.get $ch) (i32.const 12)) (i32.eq (local.get $ch) (i32.const 13))))))) (then\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(8, "(br $space_loop)\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(br $space_done)\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(if (i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 45)) (then\n");
+  wasm_emitf(6, "(local.set $sign (f64.const -1.0))\n");
+  wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(4, ") (else (if (i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 43)) (then\n");
+  wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(4, "))))\n");
+
+  /* Case-insensitive infinity and NaN subject sequences. */
+  wasm_emitf(4, "(if (i32.and\n");
+  wasm_emitf(6, "(call $__ag_float_eq_ci (local.get $p) (i32.const 0) (local.get $step) (local.get $wide) (i32.const 105))\n");
+  wasm_emitf(6, "(i32.and (call $__ag_float_eq_ci (local.get $p) (i32.const 1) (local.get $step) (local.get $wide) (i32.const 110)) (call $__ag_float_eq_ci (local.get $p) (i32.const 2) (local.get $step) (local.get $wide) (i32.const 102)))) (then\n");
+  wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.mul (i32.const 3) (local.get $step))))\n");
+  wasm_emitf(6, "(if (i32.and\n");
+  wasm_emitf(8, "(call $__ag_float_eq_ci (local.get $p) (i32.const 0) (local.get $step) (local.get $wide) (i32.const 105))\n");
+  wasm_emitf(8, "(i32.and (call $__ag_float_eq_ci (local.get $p) (i32.const 1) (local.get $step) (local.get $wide) (i32.const 110))\n");
+  wasm_emitf(10, "(i32.and (call $__ag_float_eq_ci (local.get $p) (i32.const 2) (local.get $step) (local.get $wide) (i32.const 105))\n");
+  wasm_emitf(12, "(i32.and (call $__ag_float_eq_ci (local.get $p) (i32.const 3) (local.get $step) (local.get $wide) (i32.const 116)) (call $__ag_float_eq_ci (local.get $p) (i32.const 4) (local.get $step) (local.get $wide) (i32.const 121)))))) (then\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.mul (i32.const 5) (local.get $step))))\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $p)))))\n");
+  wasm_emitf(6, "(return (f64.mul (f64.const inf) (local.get $sign)))\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(if (i32.and\n");
+  wasm_emitf(6, "(call $__ag_float_eq_ci (local.get $p) (i32.const 0) (local.get $step) (local.get $wide) (i32.const 110))\n");
+  wasm_emitf(6, "(i32.and (call $__ag_float_eq_ci (local.get $p) (i32.const 1) (local.get $step) (local.get $wide) (i32.const 97)) (call $__ag_float_eq_ci (local.get $p) (i32.const 2) (local.get $step) (local.get $wide) (i32.const 110)))) (then\n");
+  wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.mul (i32.const 3) (local.get $step))))\n");
+  wasm_emitf(6, "(if (i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 40)) (then\n");
+  wasm_emitf(8, "(local.set $payload_start (local.get $p))\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(8, "(block $payload_done (loop $payload_loop\n");
+  wasm_emitf(10, "(local.set $ch (call $__ag_float_ch (local.get $p) (local.get $wide)))\n");
+  wasm_emitf(10, "(if (i32.or (i32.eqz (local.get $ch)) (i32.eq (local.get $ch) (i32.const 41))) (then (br $payload_done)))\n");
+  wasm_emitf(10, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(10, "(br $payload_loop)\n");
+  wasm_emitf(8, "))\n");
+  wasm_emitf(8, "(if (i32.eq (local.get $ch) (i32.const 41))\n");
+  wasm_emitf(10, "(then (local.set $p (i32.add (local.get $p) (local.get $step))))\n");
+  wasm_emitf(10, "(else (local.set $p (local.get $payload_start))))\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $p)))))\n");
+  wasm_emitf(6, "(return (f64.const nan))\n");
+  wasm_emitf(4, "))\n");
+
+  /* Hexadecimal floating subject sequence. Invalid prefixes fall back to the
+   * decimal parser, which consumes only the leading zero. */
+  wasm_emitf(4, "(if (i32.and\n");
+  wasm_emitf(6, "(i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 48))\n");
+  wasm_emitf(6, "(call $__ag_float_eq_ci (local.get $p) (i32.const 1) (local.get $step) (local.get $wide) (i32.const 120))) (then\n");
+  wasm_emitf(6, "(local.set $hex_start (local.get $p))\n");
+  wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.mul (i32.const 2) (local.get $step))))\n");
+  wasm_emitf(6, "(block $hex_int_done (loop $hex_int_loop\n");
+  wasm_emitf(8, "(local.set $digit (call $__ag_float_hex_digit (call $__ag_float_ch (local.get $p) (local.get $wide))))\n");
+  wasm_emitf(8, "(if (i32.lt_s (local.get $digit) (i32.const 0)) (then (br $hex_int_done)))\n");
+  wasm_emitf(8, "(local.set $any_digit (i32.const 1))\n");
+  wasm_emitf(8, "(if (local.get $digit) (then (local.set $nonzero (i32.const 1))))\n");
+  wasm_emitf(8, "(local.set $acc (f64.add (f64.mul (local.get $acc) (f64.const 16.0)) (f64.convert_i32_u (local.get $digit))))\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(8, "(br $hex_int_loop)\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(if (i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 46)) (then\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(8, "(local.set $place (f64.const 0.0625))\n");
+  wasm_emitf(8, "(block $hex_frac_done (loop $hex_frac_loop\n");
+  wasm_emitf(10, "(local.set $digit (call $__ag_float_hex_digit (call $__ag_float_ch (local.get $p) (local.get $wide))))\n");
+  wasm_emitf(10, "(if (i32.lt_s (local.get $digit) (i32.const 0)) (then (br $hex_frac_done)))\n");
+  wasm_emitf(10, "(local.set $any_digit (i32.const 1))\n");
+  wasm_emitf(10, "(if (local.get $digit) (then (local.set $nonzero (i32.const 1))))\n");
+  wasm_emitf(10, "(local.set $acc (f64.add (local.get $acc) (f64.mul (f64.convert_i32_u (local.get $digit)) (local.get $place))))\n");
+  wasm_emitf(10, "(local.set $place (f64.div (local.get $place) (f64.const 16.0)))\n");
+  wasm_emitf(10, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(10, "(br $hex_frac_loop)\n");
+  wasm_emitf(8, "))\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(local.set $ch (call $__ag_float_ch (local.get $p) (local.get $wide)))\n");
+  wasm_emitf(6, "(if (i32.and (local.get $any_digit) (i32.or (i32.eq (local.get $ch) (i32.const 112)) (i32.eq (local.get $ch) (i32.const 80)))) (then\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(8, "(local.set $exp_sign (i32.const 1))\n");
+  wasm_emitf(8, "(if (i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 45))\n");
+  wasm_emitf(10, "(then (local.set $exp_sign (i32.const -1)) (local.set $p (i32.add (local.get $p) (local.get $step))))\n");
+  wasm_emitf(10, "(else (if (i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 43)) (then (local.set $p (i32.add (local.get $p) (local.get $step)))))))\n");
+  wasm_emitf(8, "(block $hex_exp_done (loop $hex_exp_loop\n");
+  wasm_emitf(10, "(local.set $ch (call $__ag_float_ch (local.get $p) (local.get $wide)))\n");
+  wasm_emitf(10, "(if (i32.or (i32.lt_u (local.get $ch) (i32.const 48)) (i32.gt_u (local.get $ch) (i32.const 57))) (then (br $hex_exp_done)))\n");
+  wasm_emitf(10, "(local.set $have_exp (i32.const 1))\n");
+  wasm_emitf(10, "(if (i64.lt_u (local.get $exp) (i64.const 4096)) (then\n");
+  wasm_emitf(12, "(local.set $exp (i64.add (i64.mul (local.get $exp) (i64.const 10)) (i64.extend_i32_u (i32.sub (local.get $ch) (i32.const 48)))))\n");
+  wasm_emitf(12, "(if (i64.gt_u (local.get $exp) (i64.const 4096)) (then (local.set $exp (i64.const 4096))))\n");
+  wasm_emitf(10, "))\n");
+  wasm_emitf(10, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(10, "(br $hex_exp_loop)\n");
+  wasm_emitf(8, "))\n");
+  wasm_emitf(8, "(if (local.get $have_exp) (then\n");
+  wasm_emitf(10, "(local.set $is_hex (i32.const 1))\n");
+  wasm_emitf(10, "(block $hex_scale_done (loop $hex_scale_loop\n");
+  wasm_emitf(12, "(if (i64.eqz (local.get $exp)) (then (br $hex_scale_done)))\n");
+  wasm_emitf(12, "(if (i32.lt_s (local.get $exp_sign) (i32.const 0))\n");
+  wasm_emitf(14, "(then (local.set $acc (f64.div (local.get $acc) (f64.const 2.0))))\n");
+  wasm_emitf(14, "(else (local.set $acc (f64.mul (local.get $acc) (f64.const 2.0))))\n");
+  wasm_emitf(12, ")\n");
+  wasm_emitf(12, "(local.set $exp (i64.sub (local.get $exp) (i64.const 1)))\n");
+  wasm_emitf(12, "(br $hex_scale_loop)\n");
+  wasm_emitf(10, "))\n");
+  wasm_emitf(8, "))\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(if (i32.eqz (local.get $is_hex)) (then\n");
+  wasm_emitf(8, "(local.set $p (local.get $hex_start))\n");
+  wasm_emitf(8, "(local.set $acc (f64.const 0))\n");
+  wasm_emitf(8, "(local.set $place (f64.const 0))\n");
+  wasm_emitf(8, "(local.set $exp (i64.const 0))\n");
+  wasm_emitf(8, "(local.set $exp_sign (i32.const 0))\n");
+  wasm_emitf(8, "(local.set $have_exp (i32.const 0))\n");
+  wasm_emitf(8, "(local.set $any_digit (i32.const 0))\n");
+  wasm_emitf(8, "(local.set $nonzero (i32.const 0))\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(4, "))\n");
+
+  wasm_emitf(4, "(if (i32.eqz (local.get $is_hex)) (then\n");
+  wasm_emitf(6, "(block $int_done (loop $int_loop\n");
+  wasm_emitf(8, "(local.set $ch (call $__ag_float_ch (local.get $p) (local.get $wide)))\n");
+  wasm_emitf(8, "(if (i32.or (i32.lt_u (local.get $ch) (i32.const 48)) (i32.gt_u (local.get $ch) (i32.const 57))) (then (br $int_done)))\n");
+  wasm_emitf(8, "(local.set $any_digit (i32.const 1))\n");
+  wasm_emitf(8, "(if (i32.ne (local.get $ch) (i32.const 48)) (then (local.set $nonzero (i32.const 1))))\n");
+  wasm_emitf(8, "(local.set $acc (f64.add (f64.mul (local.get $acc) (f64.const 10.0)) (f64.convert_i32_u (i32.sub (local.get $ch) (i32.const 48)))))\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(8, "(br $int_loop)\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(if (i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 46)) (then\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(8, "(local.set $place (f64.const 0.1))\n");
+  wasm_emitf(8, "(block $frac_done (loop $frac_loop\n");
+  wasm_emitf(10, "(local.set $ch (call $__ag_float_ch (local.get $p) (local.get $wide)))\n");
+  wasm_emitf(10, "(if (i32.or (i32.lt_u (local.get $ch) (i32.const 48)) (i32.gt_u (local.get $ch) (i32.const 57))) (then (br $frac_done)))\n");
+  wasm_emitf(10, "(local.set $any_digit (i32.const 1))\n");
+  wasm_emitf(10, "(if (i32.ne (local.get $ch) (i32.const 48)) (then (local.set $nonzero (i32.const 1))))\n");
+  wasm_emitf(10, "(local.set $acc (f64.add (local.get $acc) (f64.mul (f64.convert_i32_u (i32.sub (local.get $ch) (i32.const 48))) (local.get $place))))\n");
+  wasm_emitf(10, "(local.set $place (f64.div (local.get $place) (f64.const 10.0)))\n");
+  wasm_emitf(10, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(10, "(br $frac_loop)\n");
+  wasm_emitf(8, "))\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(local.set $ch (call $__ag_float_ch (local.get $p) (local.get $wide)))\n");
+  wasm_emitf(6, "(if (i32.or (i32.eq (local.get $ch) (i32.const 101)) (i32.eq (local.get $ch) (i32.const 69))) (then\n");
+  wasm_emitf(8, "(local.set $exp_start (local.get $p))\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(8, "(local.set $exp_sign (i32.const 1))\n");
+  wasm_emitf(8, "(if (i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 45))\n");
+  wasm_emitf(10, "(then (local.set $exp_sign (i32.const -1)) (local.set $p (i32.add (local.get $p) (local.get $step))))\n");
+  wasm_emitf(10, "(else (if (i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 43)) (then (local.set $p (i32.add (local.get $p) (local.get $step)))))))\n");
+  wasm_emitf(8, "(block $exp_digits_done (loop $exp_digits_loop\n");
+  wasm_emitf(10, "(local.set $ch (call $__ag_float_ch (local.get $p) (local.get $wide)))\n");
+  wasm_emitf(10, "(if (i32.or (i32.lt_u (local.get $ch) (i32.const 48)) (i32.gt_u (local.get $ch) (i32.const 57))) (then (br $exp_digits_done)))\n");
+  wasm_emitf(10, "(local.set $have_exp (i32.const 1))\n");
+  wasm_emitf(10, "(if (i64.lt_u (local.get $exp) (i64.const 4096)) (then\n");
+  wasm_emitf(12, "(local.set $exp (i64.add (i64.mul (local.get $exp) (i64.const 10)) (i64.extend_i32_u (i32.sub (local.get $ch) (i32.const 48)))))\n");
+  wasm_emitf(12, "(if (i64.gt_u (local.get $exp) (i64.const 4096)) (then (local.set $exp (i64.const 4096))))\n");
+  wasm_emitf(10, "))\n");
+  wasm_emitf(10, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
+  wasm_emitf(10, "(br $exp_digits_loop)\n");
+  wasm_emitf(8, "))\n");
+  wasm_emitf(8, "(if (local.get $have_exp) (then\n");
+  wasm_emitf(10, "(block $scale_done (loop $scale_loop\n");
+  wasm_emitf(12, "(if (i64.eqz (local.get $exp)) (then (br $scale_done)))\n");
+  wasm_emitf(12, "(if (i32.lt_s (local.get $exp_sign) (i32.const 0))\n");
+  wasm_emitf(14, "(then (local.set $acc (f64.div (local.get $acc) (f64.const 10.0))))\n");
+  wasm_emitf(14, "(else (local.set $acc (f64.mul (local.get $acc) (f64.const 10.0))))\n");
+  wasm_emitf(12, ")\n");
+  wasm_emitf(12, "(local.set $exp (i64.sub (local.get $exp) (i64.const 1)))\n");
+  wasm_emitf(12, "(br $scale_loop)\n");
+  wasm_emitf(10, "))\n");
+  wasm_emitf(8, ") (else (local.set $p (local.get $exp_start))))\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(if (i32.eqz (local.get $any_digit)) (then\n");
+  wasm_emitf(6, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $s)))))\n");
+  wasm_emitf(6, "(return (f64.const 0))\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $p)))))\n");
+  wasm_emitf(4, "(if (i32.or\n");
+  wasm_emitf(6, "(f64.eq (f64.abs (local.get $acc)) (f64.const inf))\n");
+  wasm_emitf(6, "(i32.and (local.get $nonzero) (f64.eq (local.get $acc) (f64.const 0)))) (then\n");
+  wasm_emitf(6, "(i32.store (i32.const %d) (i32.const 34))\n", errno_addr);
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(f64.mul (local.get $acc) (local.get $sign))\n");
+  wasm_emitf(2, ")\n");
+}
+
 #define emit_minimal_static_data_if_needed() \
   emit_minimal_static_data_if_needed(context)
 #define emit_wasm_sprintf_stub() emit_wasm_sprintf_stub(context)
@@ -3950,6 +4186,8 @@ static void emit_wasm_asctime_helpers(wasm32_ir_context_t *context) {
   emit_wasm_time_conversion_helpers(context)
 #define emit_wasm_mktime_stub() emit_wasm_mktime_stub(context)
 #define emit_wasm_asctime_helpers() emit_wasm_asctime_helpers(context)
+#define emit_wasm_strtod_common(...) \
+  emit_wasm_strtod_common(context, __VA_ARGS__)
 
 void wasm32_wat_emit_minimal_libc_stubs(
     wasm32_ir_context_t *context) {
@@ -5172,93 +5410,23 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(4, "(i32.wrap_i64 (call $atol (local.get $s)))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("strtod", 6) || has_undefined_function("strtof", 6) ||
-      has_undefined_function("strtold", 7) || has_undefined_function("atof", 4)) {
+  int needs_narrow_float_parser =
+      has_undefined_function("strtod", 6) ||
+      has_undefined_function("strtof", 6) ||
+      has_undefined_function("strtold", 7) ||
+      has_undefined_function("atof", 4);
+  int needs_wide_float_parser =
+      has_undefined_function("wcstod", 6) ||
+      has_undefined_function("wcstof", 6) ||
+      has_undefined_function("wcstold", 7);
+  if (needs_narrow_float_parser || needs_wide_float_parser) {
+    int float_errno_addr =
+        intern_data_symbol("__ag_stub_errno", 15, 4, 4)->addr;
+    emit_wasm_strtod_common(float_errno_addr);
+  }
+  if (needs_narrow_float_parser) {
     wasm_emitf(2, "(func $__ag_strtod (param $s i32) (param $endptr i32) (result f64)\n");
-    wasm_emitf(4, "(local $p i32)\n");
-    wasm_emitf(4, "(local $ch i32)\n");
-    wasm_emitf(4, "(local $sign f64)\n");
-    wasm_emitf(4, "(local $acc f64)\n");
-    wasm_emitf(4, "(local $place f64)\n");
-    wasm_emitf(4, "(local $exp i64)\n");
-    wasm_emitf(4, "(local $exp_sign i32)\n");
-    wasm_emitf(4, "(local $exp_start i32)\n");
-    wasm_emitf(4, "(local $have_exp i32)\n");
-    wasm_emitf(4, "(local $any_digit i32)\n");
-    wasm_emitf(4, "(local.set $sign (f64.const 1.0))\n");
-    wasm_emitf(4, "(local.set $p (local.get $s))\n");
-    wasm_emitf(4, "(block $space_done (loop $space_loop\n");
-    wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $p)))\n");
-    wasm_emitf(6, "(if (i32.or (i32.eq (local.get $ch) (i32.const 32)) (i32.or (i32.eq (local.get $ch) (i32.const 9)) (i32.or (i32.eq (local.get $ch) (i32.const 10)) (i32.or (i32.eq (local.get $ch) (i32.const 11)) (i32.or (i32.eq (local.get $ch) (i32.const 12)) (i32.eq (local.get $ch) (i32.const 13))))))) (then\n");
-    wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(8, "(br $space_loop)\n");
-    wasm_emitf(6, "))\n");
-    wasm_emitf(6, "(br $space_done)\n");
-    wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(if (i32.eq (i32.load8_u (local.get $p)) (i32.const 45)) (then\n");
-    wasm_emitf(6, "(local.set $sign (f64.const -1.0))\n");
-    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(4, ") (else (if (i32.eq (i32.load8_u (local.get $p)) (i32.const 43)) (then\n");
-    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(4, "))))\n");
-    wasm_emitf(4, "(block $int_done (loop $int_loop\n");
-    wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $p)))\n");
-    wasm_emitf(6, "(if (i32.or (i32.lt_u (local.get $ch) (i32.const 48)) (i32.gt_u (local.get $ch) (i32.const 57))) (then (br $int_done)))\n");
-    wasm_emitf(6, "(local.set $any_digit (i32.const 1))\n");
-    wasm_emitf(6, "(local.set $acc (f64.add (f64.mul (local.get $acc) (f64.const 10.0)) (f64.convert_i32_u (i32.sub (local.get $ch) (i32.const 48)))))\n");
-    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(6, "(br $int_loop)\n");
-    wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(if (i32.eq (i32.load8_u (local.get $p)) (i32.const 46)) (then\n");
-    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(6, "(local.set $place (f64.const 0.1))\n");
-    wasm_emitf(6, "(block $frac_done (loop $frac_loop\n");
-    wasm_emitf(8, "(local.set $ch (i32.load8_u (local.get $p)))\n");
-    wasm_emitf(8, "(if (i32.or (i32.lt_u (local.get $ch) (i32.const 48)) (i32.gt_u (local.get $ch) (i32.const 57))) (then (br $frac_done)))\n");
-    wasm_emitf(8, "(local.set $any_digit (i32.const 1))\n");
-    wasm_emitf(8, "(local.set $acc (f64.add (local.get $acc) (f64.mul (f64.convert_i32_u (i32.sub (local.get $ch) (i32.const 48))) (local.get $place))))\n");
-    wasm_emitf(8, "(local.set $place (f64.div (local.get $place) (f64.const 10.0)))\n");
-    wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(8, "(br $frac_loop)\n");
-    wasm_emitf(6, "))\n");
-    wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(local.set $ch (i32.load8_u (local.get $p)))\n");
-    wasm_emitf(4, "(if (i32.or (i32.eq (local.get $ch) (i32.const 101)) (i32.eq (local.get $ch) (i32.const 69))) (then\n");
-    wasm_emitf(6, "(local.set $exp_start (local.get $p))\n");
-    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(6, "(local.set $exp_sign (i32.const 1))\n");
-    wasm_emitf(6, "(if (i32.eq (i32.load8_u (local.get $p)) (i32.const 45)) (then\n");
-    wasm_emitf(8, "(local.set $exp_sign (i32.const -1))\n");
-    wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(6, ") (else (if (i32.eq (i32.load8_u (local.get $p)) (i32.const 43)) (then\n");
-    wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(6, "))))\n");
-    wasm_emitf(6, "(block $exp_digits_done (loop $exp_digits_loop\n");
-    wasm_emitf(8, "(local.set $ch (i32.load8_u (local.get $p)))\n");
-    wasm_emitf(8, "(if (i32.or (i32.lt_u (local.get $ch) (i32.const 48)) (i32.gt_u (local.get $ch) (i32.const 57))) (then (br $exp_digits_done)))\n");
-    wasm_emitf(8, "(local.set $have_exp (i32.const 1))\n");
-    wasm_emitf(8, "(local.set $exp (i64.add (i64.mul (local.get $exp) (i64.const 10)) (i64.extend_i32_u (i32.sub (local.get $ch) (i32.const 48)))))\n");
-    wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(8, "(br $exp_digits_loop)\n");
-    wasm_emitf(6, "))\n");
-    wasm_emitf(6, "(if (local.get $have_exp) (then\n");
-    wasm_emitf(8, "(block $scale_done (loop $scale_loop\n");
-    wasm_emitf(10, "(if (i64.eqz (local.get $exp)) (then (br $scale_done)))\n");
-    wasm_emitf(10, "(if (i32.lt_s (local.get $exp_sign) (i32.const 0))\n");
-    wasm_emitf(12, "(then (local.set $acc (f64.div (local.get $acc) (f64.const 10.0))))\n");
-    wasm_emitf(12, "(else (local.set $acc (f64.mul (local.get $acc) (f64.const 10.0))))\n");
-    wasm_emitf(10, ")\n");
-    wasm_emitf(10, "(local.set $exp (i64.sub (local.get $exp) (i64.const 1)))\n");
-    wasm_emitf(10, "(br $scale_loop)\n");
-    wasm_emitf(8, "))\n");
-    wasm_emitf(6, ") (else (local.set $p (local.get $exp_start))))\n");
-    wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(if (i32.eqz (local.get $any_digit)) (then\n");
-    wasm_emitf(6, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $s)))))\n");
-    wasm_emitf(6, "(return (f64.const 0))\n");
-    wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $p)))))\n");
-    wasm_emitf(4, "(f64.mul (local.get $acc) (local.get $sign))\n");
+    wasm_emitf(4, "(call $__ag_strtod_common (local.get $s) (local.get $endptr) (i32.const 0))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("strtod", 6)) {
@@ -5419,58 +5587,9 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(4, "(call $__ag_wcsto64 (local.get $s) (local.get $endptr) (i64.extend_i32_s (local.get $base)) (i32.const 1))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("wcstod", 6) || has_undefined_function("wcstof", 6) ||
-      has_undefined_function("wcstold", 7)) {
+  if (needs_wide_float_parser) {
     wasm_emitf(2, "(func $wcstod (param $s i32) (param $endptr i32) (result f64)\n");
-    wasm_emitf(4, "(local $p i32)\n");
-    wasm_emitf(4, "(local $ch i32)\n");
-    wasm_emitf(4, "(local $sign f64)\n");
-    wasm_emitf(4, "(local $acc f64)\n");
-    wasm_emitf(4, "(local $place f64)\n");
-    wasm_emitf(4, "(local $any_digit i32)\n");
-    wasm_emitf(4, "(local.set $sign (f64.const 1.0))\n");
-    wasm_emitf(4, "(local.set $p (local.get $s))\n");
-    wasm_emitf(4, "(block $space_done (loop $space_loop\n");
-    wasm_emitf(6, "(local.set $ch (i32.load (local.get $p)))\n");
-    wasm_emitf(6, "(if (i32.or (i32.eq (local.get $ch) (i32.const 32)) (i32.or (i32.eq (local.get $ch) (i32.const 9)) (i32.or (i32.eq (local.get $ch) (i32.const 10)) (i32.or (i32.eq (local.get $ch) (i32.const 11)) (i32.or (i32.eq (local.get $ch) (i32.const 12)) (i32.eq (local.get $ch) (i32.const 13))))))) (then\n");
-    wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
-    wasm_emitf(8, "(br $space_loop)\n");
-    wasm_emitf(6, "))\n");
-    wasm_emitf(6, "(br $space_done)\n");
-    wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(if (i32.eq (i32.load (local.get $p)) (i32.const 45)) (then\n");
-    wasm_emitf(6, "(local.set $sign (f64.const -1.0))\n");
-    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
-    wasm_emitf(4, ") (else (if (i32.eq (i32.load (local.get $p)) (i32.const 43)) (then\n");
-    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
-    wasm_emitf(4, "))))\n");
-    wasm_emitf(4, "(block $int_done (loop $int_loop\n");
-    wasm_emitf(6, "(local.set $ch (i32.load (local.get $p)))\n");
-    wasm_emitf(6, "(if (i32.or (i32.lt_u (local.get $ch) (i32.const 48)) (i32.gt_u (local.get $ch) (i32.const 57))) (then (br $int_done)))\n");
-    wasm_emitf(6, "(local.set $any_digit (i32.const 1))\n");
-    wasm_emitf(6, "(local.set $acc (f64.add (f64.mul (local.get $acc) (f64.const 10.0)) (f64.convert_i32_u (i32.sub (local.get $ch) (i32.const 48)))))\n");
-    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
-    wasm_emitf(6, "(br $int_loop)\n");
-    wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(if (i32.eq (i32.load (local.get $p)) (i32.const 46)) (then\n");
-    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
-    wasm_emitf(6, "(local.set $place (f64.const 0.1))\n");
-    wasm_emitf(6, "(block $frac_done (loop $frac_loop\n");
-    wasm_emitf(8, "(local.set $ch (i32.load (local.get $p)))\n");
-    wasm_emitf(8, "(if (i32.or (i32.lt_u (local.get $ch) (i32.const 48)) (i32.gt_u (local.get $ch) (i32.const 57))) (then (br $frac_done)))\n");
-    wasm_emitf(8, "(local.set $any_digit (i32.const 1))\n");
-    wasm_emitf(8, "(local.set $acc (f64.add (local.get $acc) (f64.mul (f64.convert_i32_u (i32.sub (local.get $ch) (i32.const 48))) (local.get $place))))\n");
-    wasm_emitf(8, "(local.set $place (f64.div (local.get $place) (f64.const 10.0)))\n");
-    wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
-    wasm_emitf(8, "(br $frac_loop)\n");
-    wasm_emitf(6, "))\n");
-    wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(if (i32.eqz (local.get $any_digit)) (then\n");
-    wasm_emitf(6, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $s)))))\n");
-    wasm_emitf(6, "(return (f64.const 0))\n");
-    wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $p)))))\n");
-    wasm_emitf(4, "(f64.mul (local.get $acc) (local.get $sign))\n");
+    wasm_emitf(4, "(call $__ag_strtod_common (local.get $s) (local.get $endptr) (i32.const 1))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wcstof", 6)) {

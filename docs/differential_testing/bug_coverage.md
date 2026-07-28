@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-28（inttypes.h wide greatest-width変換追加まで）
+最終更新: 2026-07-28（narrow/wide浮動文字列の特殊値・16進・範囲境界追加まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -419,6 +419,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | `wchar.h`の`WEOF`・`WCHAR_MIN/MAX`型・include順境界 | 🔧 | wchar_macro_type_boundaries | `wchar.h`→`stdint.h`の順では、前者の`(-2147483647-1)`と後者の`(-WCHAR_MAX-1)`が同値でも異なるmacro token列としてE1044になっていた。両headerで`WCHAR_MAX`を先に定義し、個別guard下の同一`WCHAR_MIN`式へ正本化する。`WEOF`をtargetの`wint_t`型かつ-1、両limitをsigned 32-bit `wchar_t`表現のint整数定数式として、両include順・再include・enum・静的wide配列・wide文字との非同一性をsystem Clang strict・native/WAT/objectで固定する |
 | `wchar.h` wide文字列・メモリAPIの関数pointer境界 | ✅ | wide_string_function_pointer_boundaries | wide文字列のcopy・連結・比較・変換・検索・tokenizeとwide memory APIのconst/sizeを含む全標準signatureを関数pointer代入で固定し、間接呼出し時の戻りpointer、終端NUL検索、padding、重複move、count=0をnative/WAT/objectで検証する |
 | `wchar.h` wide数値・restartable変換APIの関数pointer境界 | ✅ | wide_conversion_function_pointer_boundaries | `wcsto*`、`btowc`/`wctob`、`mbrtowc`/`mbrlen`/`mbsinit`/`wcrtomb`/`mbsrtowcs`/`wcsrtombs`の標準signatureと間接呼出しを固定する。出力NULLの必要長照会では`*src`を保持し、出力上限で停止した場合は次の入力位置へ進め、終端まで変換した場合だけNULLへ更新する契約をnative/WAT/objectで検証する |
+| `wchar.h` wide浮動変換の10進指数・`endptr`境界 | 🔧 | wide_floating_exponent_conversion_boundaries | standalone WATの`wcstof`/`wcstod`/`wcstold`共通parserが整数部と小数部だけを読み、`1.25e2`を`1.25`で止めていた。wide文字の4-byte strideで`e`/`E`、任意符号、指数digitを走査して10の累乗を適用し、指数digitが1個もなければ指数marker位置へ巻き戻す。先頭小数点、正負指数、空白・符号、変換不能入力、元wide文字列基準の`endptr`と3幅の関数pointer呼出しをsystem/bundled Clang strictおよびnative/WAT/objectで固定する |
+| `stdlib.h`/`wchar.h` 浮動文字列の特殊値・16進・range境界 | 🔧 | floating_string_special_range_boundaries | standalone WATのnarrow/wide浮動parserが`inf`/`infinity`/`nan`、16進仮数と2進指数、double overflow/underflow時の`ERANGE`を扱えなかった。1-byte/4-byte文字幅だけを引数にする共通parserへ統合し、大文字小文字を問わない特殊値、`nan(...)` payload、`0x`仮数と必須`p`指数、過大指数の上限化、非zero入力が無限大またはzeroへrange outした場合のerrno、符号付きzero、元文字列基準の`endptr`を固定する。6関数の標準signatureを関数pointerで保持し、system/bundled Clang strictおよびnative/WAT/objectで検証する |
 | `wchar.h` wide stream APIの関数pointer・状態境界 | ✅ | wchar_stream_function_pointer_state_boundaries | `f/get/put/unget` wide文字、wide文字列、`fwide`の全固定引数signatureを関数pointer代入で固定する。native/objectではwide orientationを維持したまま間接出力、rewind、pushback、改行単位入力、EOF/error clearを検証し、standalone WATではfile store非対応時の入出力stub契約を同じ間接呼出し経路で明示する |
 | `uchar.h` restartable変換APIの関数pointer・状態境界 | ✅ | uchar_function_pointer_state_boundaries | `mbrtoc16`/`c16rtomb`/`mbrtoc32`/`c32rtomb`の`char16_t`・`char32_t`・const・`size_t`・`mbstate_t`を含む標準signatureを関数pointer代入で固定する。symbolを持たないDarwin libc向けには同梱headerのUTF-8 state実装を使い、fixture内の代替定義を廃止する。ASCII/NUL、入力長0、NULL出力、state reset、最大`size_t`、4-byte scalarの分割入力、UTF-16 surrogate、invalid sequenceの`EILSEQ`、出力幅と前後canaryをnative/objectで検証し、standalone WATのASCII-only stub境界も明示する |
 | `wchar.h` / `uchar.h` のtarget別`mbstate_t` ABI境界 | 🔧 | mbstate_target_abi_boundaries | Apple SDK/libcの`mbstate_t`は128-byte・8-byte alignmentのopaque unionだが、同梱headerはWasm runtime用32-byte・4-byte stateをnativeにも公開していた。両headerを同時includeした型のsize/alignmentをtarget別に固定し、`mbrtowc`・`mbrtoc32`・`mbsinit`を同じguarded stateへ関数pointer経由で適用して前後canaryとreset状態をnative/WAT/objectで検証する |

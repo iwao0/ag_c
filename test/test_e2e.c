@@ -772,6 +772,8 @@ static const test_case_t test_cases[] = {
     {"probes", "wchar_macro_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wchar_macro_type_boundaries.c", 0, 0},
     {"probes", "wide_string_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_string_function_pointer_boundaries.c", 0, 0},
     {"probes", "wide_conversion_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_conversion_function_pointer_boundaries.c", 0, 0},
+    {"probes", "wide_floating_exponent_conversion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_floating_exponent_conversion_boundaries.c", 0, 0},
+    {"probes", "floating_string_special_range_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/floating_string_special_range_boundaries.c", 0, 0},
     {"probes", "wchar_stream_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wchar_stream_function_pointer_state_boundaries.c", 0, 0},
     {"probes", "uchar_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/uchar_function_pointer_state_boundaries.c", 0, 0},
     {"probes", "mbstate_target_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mbstate_target_abi_boundaries.c", 0, 0},
