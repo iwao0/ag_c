@@ -1,5 +1,6 @@
 #include "declaration_resolution.h"
 
+#include "character_array_initializer.h"
 #include "../parser/arena.h"
 #include "../parser/semantic_ctx.h"
 #include "../type_layout.h"
@@ -350,6 +351,9 @@ static long long initializer_string_count(
   const node_string_t *string = (const node_string_t *)initializer;
   int width = (int)string->char_width;
   if (width <= 0) width = 1;
+  if (!psx_character_array_element_accepts_string_literal(
+          semantic_types, element, string->str_prefix_kind))
+    return 0;
   if (psx_type_layout_character_code_unit_width(
           semantic_types, element.type_id, data_layout) != width)
     return 0;

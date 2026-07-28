@@ -342,6 +342,26 @@ static const psx_semantic_type_table_t *direct_semantic_types(
              : NULL;
 }
 
+static int reject_direct_character_array_initializer(
+    direct_resolution_context_t *context,
+    psx_character_array_initializer_status_t status,
+    token_t *token) {
+  if (!context || !context->semantic_context ||
+      status == PSX_CHARACTER_ARRAY_INITIALIZER_OK ||
+      status == PSX_CHARACTER_ARRAY_INITIALIZER_OUT_OF_MEMORY)
+    return 0;
+  diag_error_id_t diagnostic =
+      status == PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG
+          ? DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS
+          : DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE;
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(context->semantic_context);
+  diag_emit_tokf_in(
+      diagnostics, diagnostic, token, "%s",
+      diag_message_for_in(diagnostics, diagnostic));
+  return 0;
+}
+
 static int direct_qual_type_is_valid(
     const direct_resolution_context_t *context,
     psx_qual_type_t type) {
@@ -6452,6 +6472,9 @@ static psx_qual_type_t resolve_direct_completed_array_qual_type(
     if (!psx_semantic_type_table_describe(
             semantic_types, element.type_id, &element_shape))
       return invalid;
+    if (!psx_character_array_element_accepts_string_literal(
+            semantic_types, element, string->str_prefix_kind))
+      return invalid;
     psx_character_array_string_shape_t shape;
     if (psx_resolve_character_array_string_shape(
             array_shape.array_len,
@@ -6628,6 +6651,7 @@ static int resolve_direct_compound_literal(
             object_qual_type, string_initializer->literal_contents,
             string_initializer->literal_length,
             (int)string_initializer->char_width,
+            string_initializer->str_prefix_kind,
             &binding->character_array_initializer);
     if (status == PSX_CHARACTER_ARRAY_INITIALIZER_OUT_OF_MEMORY) {
       context->preflight_failed = 1;
@@ -6635,7 +6659,9 @@ static int resolve_direct_compound_literal(
           context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
           &compound->base);
     }
-    if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK) return 0;
+    if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK)
+      return reject_direct_character_array_initializer(
+          context, status, initializer.value_tok);
   } else if (!preflight_direct_flat_initializer(
                  context, object_qual_type, &initializer,
                  &binding->flat_initializer))
@@ -7176,6 +7202,7 @@ static int preflight_direct_local_declaration(
               string_initializer->literal_contents,
               string_initializer->literal_length,
               (int)string_initializer->char_width,
+              string_initializer->str_prefix_kind,
               &character_initializer);
       if (status == PSX_CHARACTER_ARRAY_INITIALIZER_OUT_OF_MEMORY) {
         context->preflight_failed = 1;
@@ -7184,7 +7211,8 @@ static int preflight_direct_local_declaration(
             initializer->value);
       }
       if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK)
-        return 0;
+        return reject_direct_character_array_initializer(
+            context, status, initializer->value_tok);
     } else if (initializer->has_initializer &&
         initializer->kind == PSX_DECL_INIT_LIST) {
       if (!preflight_direct_flat_initializer(
@@ -7548,7 +7576,8 @@ static int preflight_direct_statement_impl(
     case ND_FOR: {
       const node_ctrl_t *control = (const node_ctrl_t *)syntax;
       int declaration_scope = control->init &&
-          control->init->kind == ND_LOCAL_DECLARATION;
+          (control->init->kind == ND_LOCAL_DECLARATION ||
+           control->init->kind == ND_STATIC_ASSERT);
       int registry_scope =
           declaration_scope && !context->initialization_replay;
       direct_vm_scope_marker_t *vm_scope =

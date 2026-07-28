@@ -40,6 +40,36 @@ typedef struct {
   int capacity;
 } character_array_unit_writer_t;
 
+int psx_character_array_element_accepts_string_literal(
+    const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t element_qual_type,
+    tk_string_prefix_kind_t prefix_kind) {
+  psx_type_shape_t element_shape = {0};
+  if (!semantic_types ||
+      element_qual_type.type_id == PSX_TYPE_ID_INVALID ||
+      (element_qual_type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0 ||
+      !psx_semantic_type_table_describe(
+          semantic_types, element_qual_type.type_id, &element_shape) ||
+      element_shape.kind != PSX_TYPE_INTEGER)
+    return 0;
+  switch (prefix_kind) {
+    case TK_STR_PREFIX_NONE:
+    case TK_STR_PREFIX_u8:
+      return element_shape.integer_kind == PSX_INTEGER_KIND_CHAR;
+    case TK_STR_PREFIX_u:
+      return element_shape.integer_kind == PSX_INTEGER_KIND_SHORT &&
+             element_shape.is_unsigned;
+    case TK_STR_PREFIX_U:
+      return element_shape.integer_kind == PSX_INTEGER_KIND_INT &&
+             element_shape.is_unsigned;
+    case TK_STR_PREFIX_L:
+      return element_shape.integer_kind == PSX_INTEGER_KIND_INT &&
+             !element_shape.is_unsigned;
+    default:
+      return 0;
+  }
+}
+
 static void write_character_array_unit(uint32_t unit, void *opaque) {
   character_array_unit_writer_t *writer = opaque;
   if (!writer || writer->count >= writer->capacity) return;
@@ -53,7 +83,7 @@ psx_plan_character_array_string_initializer(
     const ag_data_layout_t *data_layout,
     psx_qual_type_t object_qual_type,
     const char *literal_contents, int literal_length,
-    int character_width,
+    int character_width, tk_string_prefix_kind_t prefix_kind,
     psx_character_array_initializer_plan_t *plan) {
   if (plan) *plan = (psx_character_array_initializer_plan_t){0};
   if (!arena_context || !semantic_types ||
@@ -72,6 +102,9 @@ psx_plan_character_array_string_initializer(
       !psx_semantic_type_table_describe(
           semantic_types, element_qual_type.type_id, &element_shape))
     return PSX_CHARACTER_ARRAY_INITIALIZER_INVALID;
+  if (!psx_character_array_element_accepts_string_literal(
+          semantic_types, element_qual_type, prefix_kind))
+    return PSX_CHARACTER_ARRAY_INITIALIZER_WIDTH_MISMATCH;
   psx_character_array_string_shape_t shape;
   psx_character_array_initializer_status_t status =
       psx_resolve_character_array_string_shape(

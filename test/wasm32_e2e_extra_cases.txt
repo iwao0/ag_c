@@ -292,6 +292,7 @@ probes_found_bugs/definite_initialization_goto_boundaries.c
 probes_found_bugs/predefined_environment_feature_macros.c
 probes_found_bugs/predefined_integer_macro_spelling_boundaries.c
 probes_found_bugs/predefined_stdc_version_type_boundaries.c
+probes_found_bugs/type_query_result_type_boundaries.c
 probes_found_bugs/vla_bound_assignment_expression.c
 probes_found_bugs/array_parameter_static_bound_evaluation.c
 probes_found_bugs/array_parameter_inner_bound_evaluation.c
@@ -470,6 +471,7 @@ probes_found_bugs/vla_mixed_dims.c
 probes_found_bugs/vla_sizeof_direct.c
 probes_found_bugs/vla_struct_local.c
 probes_found_bugs/wide_string_literal_init.c
+probes_found_bugs/string_array_element_type_boundaries.c
 shift/shift_neg_right.c
 struct_arg/large_sum.c
 tokenizer/charlit_L.c
@@ -712,6 +714,7 @@ probes_found_bugs/function_specifier_constraints.c
 probes_found_bugs/atomic_type_constraints.c
 probes_found_bugs/atomic_qualifier_typedef_constraints.c
 probes_found_bugs/static_assert_constraints.c
+probes_found_bugs/static_assert_for_initializer_boundaries.c
 probes_found_bugs/integer_constant_contexts.c
 probes_found_bugs/unsigned_integer_constant_expressions.c
 probes_found_bugs/static_initializer_short_circuit.c

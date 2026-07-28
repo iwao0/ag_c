@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "../target_info.h"
+#include "../tokenizer/token.h"
 #include "../type_system/type_ids.h"
 
 typedef struct arena_context_t arena_context_t;
@@ -38,6 +39,11 @@ psx_resolve_character_array_string_shape(
     const char *literal_contents, int literal_length, int character_width,
     psx_character_array_string_shape_t *shape);
 
+int psx_character_array_element_accepts_string_literal(
+    const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t element_qual_type,
+    tk_string_prefix_kind_t prefix_kind);
+
 psx_character_array_initializer_status_t
 psx_plan_character_array_string_initializer(
     arena_context_t *arena_context,
@@ -45,7 +51,7 @@ psx_plan_character_array_string_initializer(
     const ag_data_layout_t *data_layout,
     psx_qual_type_t object_qual_type,
     const char *literal_contents, int literal_length,
-    int character_width,
+    int character_width, tk_string_prefix_kind_t prefix_kind,
     psx_character_array_initializer_plan_t *plan);
 
 #endif

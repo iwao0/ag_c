@@ -447,7 +447,8 @@ static int validate_static_scalar_initializer_assignment(
             ps_ctx_arena(semantic_context), semantic_types,
             ps_ctx_data_layout(semantic_context), object_qual_type,
             string->literal_contents, string->literal_length,
-            (int)string->char_width, &plan);
+            (int)string->char_width, string->str_prefix_kind,
+            &plan);
     if (status == PSX_CHARACTER_ARRAY_INITIALIZER_OK) return 1;
     diag_error_id_t diagnostic =
         status == PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG

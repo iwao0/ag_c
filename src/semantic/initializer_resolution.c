@@ -1121,7 +1121,8 @@ static int flat_initializer_apply_value(
               context->data_layout,
               target->qual_type,
               string->literal_contents, string->literal_length,
-              (int)string->char_width, &string_plan);
+              (int)string->char_width, string->str_prefix_kind,
+              &string_plan);
       if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK ||
           string_plan.unit_count != target->leaf_end - target->leaf_begin)
         return 0;
