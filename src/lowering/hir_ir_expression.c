@@ -1576,6 +1576,52 @@ static int hir_ir_evaluate_constant_complex(
 static int hir_ir_evaluate_constant_truth(
     const hir_ir_context_t *context, const psx_hir_node_t *node,
     int *result);
+static int hir_ir_evaluate_truth_after_required_evaluation(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    int *result);
+static int hir_ir_evaluate_floating_after_required_evaluation(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    double *result);
+
+static const psx_hir_node_t *hir_ir_scalar_compound_literal_source(
+    const hir_ir_context_t *context, const psx_hir_node_t *node) {
+  if (!context || !node ||
+      psx_hir_node_kind(node) != PSX_HIR_STMT_EXPR)
+    return NULL;
+  psx_qual_type_t node_type = psx_hir_node_qual_type(node);
+  if ((node_type.qualifiers &
+       (PSX_TYPE_QUALIFIER_VOLATILE |
+        PSX_TYPE_QUALIFIER_ATOMIC)) != 0)
+    return NULL;
+  const psx_hir_node_t *initialization = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *value = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  if (!initialization || !value ||
+      psx_hir_node_kind(initialization) != PSX_HIR_BLOCK ||
+      psx_hir_node_kind(value) != PSX_HIR_LOCAL ||
+      (psx_hir_node_qual_type(value).qualifiers &
+       (PSX_TYPE_QUALIFIER_VOLATILE |
+        PSX_TYPE_QUALIFIER_ATOMIC)) != 0 ||
+      hir_ir_child_count_for_edge(
+          initialization, PSX_HIR_EDGE_BLOCK_ITEM) != 1)
+    return NULL;
+  const psx_hir_node_t *assignment = hir_ir_child_for_edge(
+      context, initialization, PSX_HIR_EDGE_BLOCK_ITEM, 0);
+  const psx_hir_node_t *target = hir_ir_child_for_edge(
+      context, assignment, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *source = hir_ir_child_for_edge(
+      context, assignment, PSX_HIR_EDGE_RHS, 0);
+  if (!assignment || !target || !source ||
+      psx_hir_node_kind(assignment) != PSX_HIR_ASSIGN ||
+      psx_hir_node_kind(target) != PSX_HIR_LOCAL ||
+      psx_hir_node_object_offset(target) !=
+          psx_hir_node_object_offset(value) ||
+      psx_hir_node_storage_offset(target) !=
+          psx_hir_node_storage_offset(value))
+    return NULL;
+  return source;
+}
 
 static int hir_ir_convert_constant_floating_to_integer(
     const hir_ir_context_t *context,
@@ -1656,6 +1702,21 @@ static int hir_ir_evaluate_constant_integer(
         PSX_INTEGER_CONSTANT_OP_UNARY_PLUS, &result_type,
         ag_target_info_data_layout(context->options->target),
         psx_hir_node_integer_value(node), result);
+  }
+  if (psx_hir_node_kind(node) == PSX_HIR_STMT_EXPR &&
+      (result_type.kind == PSX_TYPE_BOOL ||
+       result_type.kind == PSX_TYPE_INTEGER)) {
+    const psx_hir_node_t *source =
+        hir_ir_scalar_compound_literal_source(context, node);
+    long long value = 0;
+    if (!source ||
+        !hir_ir_evaluate_constant_integer(
+            context, source, &value))
+      return 0;
+    return psx_apply_typed_integer_constant_unary(
+        PSX_INTEGER_CONSTANT_OP_UNARY_PLUS, &result_type,
+        ag_target_info_data_layout(context->options->target),
+        value, result);
   }
 
   const psx_hir_node_t *lhs = hir_ir_child_for_edge(
@@ -1832,6 +1893,13 @@ static int hir_ir_evaluate_constant_floating(
   if (psx_hir_node_kind(node) == PSX_HIR_NUMBER) {
     *result = psx_hir_node_floating_value(node);
     return 1;
+  }
+  if (psx_hir_node_kind(node) == PSX_HIR_STMT_EXPR) {
+    const psx_hir_node_t *source =
+        hir_ir_scalar_compound_literal_source(context, node);
+    return source &&
+           hir_ir_evaluate_constant_floating(
+               context, source, result);
   }
 
   const psx_hir_node_t *lhs = hir_ir_child_for_edge(
@@ -2110,6 +2178,46 @@ static int hir_ir_evaluate_constant_pointer_truth(
       context, node, PSX_HIR_EDGE_LHS, 0);
   const psx_hir_node_t *rhs = hir_ir_child_for_edge(
       context, node, PSX_HIR_EDGE_RHS, 0);
+  if (kind == PSX_HIR_STMT_EXPR) {
+    const psx_hir_node_t *source =
+        hir_ir_scalar_compound_literal_source(context, node);
+    return source &&
+           hir_ir_evaluate_constant_pointer_truth(
+               context, source, result);
+  }
+  if (kind == PSX_HIR_ADD || kind == PSX_HIR_SUB) {
+    psx_type_shape_t lhs_type = {0};
+    psx_type_shape_t rhs_type = {0};
+    if (!lhs || !rhs ||
+        !hir_ir_node_type_shape(context, lhs, &lhs_type) ||
+        !hir_ir_node_type_shape(context, rhs, &rhs_type))
+      return 0;
+    const psx_hir_node_t *base = NULL;
+    const psx_hir_node_t *offset = NULL;
+    if (semantic_type_is_pointer_like(&lhs_type) &&
+        (rhs_type.kind == PSX_TYPE_BOOL ||
+         rhs_type.kind == PSX_TYPE_INTEGER)) {
+      base = lhs;
+      offset = rhs;
+    } else if (kind == PSX_HIR_ADD &&
+               semantic_type_is_pointer_like(&rhs_type) &&
+               (lhs_type.kind == PSX_TYPE_BOOL ||
+                lhs_type.kind == PSX_TYPE_INTEGER)) {
+      base = rhs;
+      offset = lhs;
+    }
+    int base_truth = 0;
+    long long ignored_offset = 0;
+    if (base && offset &&
+        hir_ir_evaluate_constant_pointer_truth(
+            context, base, &base_truth) &&
+        base_truth &&
+        hir_ir_evaluate_constant_integer(
+            context, offset, &ignored_offset)) {
+      *result = 1;
+      return 1;
+    }
+  }
   if (kind == PSX_HIR_ADDRESS &&
       lhs &&
       (psx_hir_node_kind(lhs) == PSX_HIR_LOCAL ||
@@ -2209,6 +2317,344 @@ static int hir_ir_evaluate_constant_truth(
   return 0;
 }
 
+static int hir_ir_evaluate_integer_after_required_evaluation(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    long long *result) {
+  if (!context || !node || !result) return 0;
+  if (hir_ir_evaluate_constant_integer(context, node, result))
+    return 1;
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  if (kind == PSX_HIR_STMT_EXPR) {
+    psx_type_shape_t result_type = {0};
+    const psx_hir_node_t *source =
+        hir_ir_scalar_compound_literal_source(context, node);
+    long long value = 0;
+    if (!source ||
+        !hir_ir_node_type_shape(context, node, &result_type) ||
+        (result_type.kind != PSX_TYPE_BOOL &&
+         result_type.kind != PSX_TYPE_INTEGER) ||
+        !hir_ir_evaluate_integer_after_required_evaluation(
+            context, source, &value))
+      return 0;
+    return psx_apply_typed_integer_constant_unary(
+        PSX_INTEGER_CONSTANT_OP_UNARY_PLUS, &result_type,
+        ag_target_info_data_layout(context->options->target),
+        value, result);
+  }
+  const psx_hir_node_t *rhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  if (kind == PSX_HIR_COMMA)
+    return hir_ir_evaluate_integer_after_required_evaluation(
+        context, rhs, result);
+  if (kind == PSX_HIR_LOGOR || kind == PSX_HIR_LOGAND) {
+    int left_truth = 0;
+    if (hir_ir_evaluate_truth_after_required_evaluation(
+            context,
+            hir_ir_child_for_edge(
+                context, node, PSX_HIR_EDGE_LHS, 0),
+            &left_truth)) {
+      if (kind == PSX_HIR_LOGAND && !left_truth) {
+        *result = 0;
+        return 1;
+      }
+      if (kind == PSX_HIR_LOGOR && left_truth) {
+        *result = 1;
+        return 1;
+      }
+    }
+    int right_truth = 0;
+    if (!hir_ir_evaluate_truth_after_required_evaluation(
+            context, rhs, &right_truth))
+      return 0;
+    if ((kind == PSX_HIR_LOGOR && right_truth) ||
+        (kind == PSX_HIR_LOGAND && !right_truth)) {
+      *result = right_truth;
+      return 1;
+    }
+    return 0;
+  }
+  if (kind == PSX_HIR_TERNARY) {
+    const psx_hir_node_t *otherwise = hir_ir_child_for_edge(
+        context, node, PSX_HIR_EDGE_ELSE, 0);
+    int condition = 0;
+    const psx_hir_node_t *condition_node = hir_ir_child_for_edge(
+        context, node, PSX_HIR_EDGE_LHS, 0);
+    if (hir_ir_evaluate_truth_after_required_evaluation(
+            context, condition_node, &condition))
+      return hir_ir_evaluate_integer_after_required_evaluation(
+          context, condition ? rhs : otherwise, result);
+    long long true_value = 0;
+    long long false_value = 0;
+    if (!hir_ir_evaluate_integer_after_required_evaluation(
+            context, rhs, &true_value) ||
+        !hir_ir_evaluate_integer_after_required_evaluation(
+            context, otherwise, &false_value) ||
+        true_value != false_value)
+      return 0;
+    *result = true_value;
+    return 1;
+  }
+  const psx_hir_node_t *lhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  psx_type_shape_t result_type = {0};
+  if (!hir_ir_node_type_shape(context, node, &result_type) ||
+      (result_type.kind != PSX_TYPE_BOOL &&
+       result_type.kind != PSX_TYPE_INTEGER))
+    return 0;
+  if (kind == PSX_HIR_CAST) {
+    psx_type_shape_t source_type = {0};
+    if (!lhs ||
+        !hir_ir_node_type_shape(context, lhs, &source_type))
+      return 0;
+    if (source_type.kind == PSX_TYPE_FLOAT) {
+      double value = 0.0;
+      return hir_ir_evaluate_floating_after_required_evaluation(
+                 context, lhs, &value) &&
+             hir_ir_convert_constant_floating_to_integer(
+                 context, &result_type, value, result);
+    }
+    if (source_type.kind == PSX_TYPE_BOOL ||
+        source_type.kind == PSX_TYPE_INTEGER) {
+      long long value = 0;
+      return hir_ir_evaluate_integer_after_required_evaluation(
+                 context, lhs, &value) &&
+             psx_apply_typed_integer_constant_unary(
+                 PSX_INTEGER_CONSTANT_OP_UNARY_PLUS,
+                 &result_type,
+                 ag_target_info_data_layout(context->options->target),
+                 value, result);
+    }
+    return 0;
+  }
+  psx_integer_constant_operation_t operation =
+      PSX_INTEGER_CONSTANT_OP_INVALID;
+  if (integer_constant_unary_operation(kind, &operation)) {
+    long long operand = 0;
+    return hir_ir_evaluate_integer_after_required_evaluation(
+               context, lhs, &operand) &&
+           psx_apply_typed_integer_constant_unary(
+               operation, &result_type,
+               ag_target_info_data_layout(context->options->target),
+               operand, result);
+  }
+  if (!integer_constant_binary_operation(kind, &operation))
+    return 0;
+  psx_type_shape_t lhs_type = {0};
+  psx_type_shape_t rhs_type = {0};
+  if (!lhs || !rhs ||
+      !hir_ir_node_type_shape(context, lhs, &lhs_type) ||
+      !hir_ir_node_type_shape(context, rhs, &rhs_type))
+    return 0;
+  if ((lhs_type.kind == PSX_TYPE_FLOAT ||
+       rhs_type.kind == PSX_TYPE_FLOAT) &&
+      (kind == PSX_HIR_EQ || kind == PSX_HIR_NE ||
+       kind == PSX_HIR_LT || kind == PSX_HIR_LE ||
+       kind == PSX_HIR_GT || kind == PSX_HIR_GE)) {
+    double left = 0.0;
+    double right = 0.0;
+    if (!hir_ir_evaluate_floating_after_required_evaluation(
+            context, lhs, &left) ||
+        !hir_ir_evaluate_floating_after_required_evaluation(
+            context, rhs, &right))
+      return 0;
+    switch (kind) {
+      case PSX_HIR_EQ: *result = left == right; return 1;
+      case PSX_HIR_NE: *result = left != right; return 1;
+      case PSX_HIR_LT: *result = left < right; return 1;
+      case PSX_HIR_LE: *result = left <= right; return 1;
+      case PSX_HIR_GT: *result = left > right; return 1;
+      case PSX_HIR_GE: *result = left >= right; return 1;
+      default: return 0;
+    }
+  }
+  long long left = 0;
+  long long right = 0;
+  return hir_ir_evaluate_integer_after_required_evaluation(
+             context, lhs, &left) &&
+         hir_ir_evaluate_integer_after_required_evaluation(
+             context, rhs, &right) &&
+         psx_apply_typed_integer_constant_binary(
+             operation, &lhs_type, &rhs_type, &result_type,
+             ag_target_info_data_layout(context->options->target),
+             left, right, result);
+}
+
+static int hir_ir_evaluate_floating_after_required_evaluation(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    double *result) {
+  if (!context || !node || !result) return 0;
+  if (hir_ir_evaluate_constant_floating(context, node, result))
+    return 1;
+  psx_type_shape_t result_type = {0};
+  if (!hir_ir_node_type_shape(context, node, &result_type))
+    return 0;
+  if (result_type.kind == PSX_TYPE_BOOL ||
+      result_type.kind == PSX_TYPE_INTEGER) {
+    long long value = 0;
+    if (!hir_ir_evaluate_integer_after_required_evaluation(
+            context, node, &value))
+      return 0;
+    *result = hir_ir_constant_integer_as_double(
+        context, node, value);
+    return 1;
+  }
+  if (result_type.kind != PSX_TYPE_FLOAT) return 0;
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  const psx_hir_node_t *lhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *rhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  if (kind == PSX_HIR_STMT_EXPR) {
+    const psx_hir_node_t *source =
+        hir_ir_scalar_compound_literal_source(context, node);
+    return source &&
+           hir_ir_evaluate_floating_after_required_evaluation(
+               context, source, result);
+  }
+  if (kind == PSX_HIR_COMMA)
+    return hir_ir_evaluate_floating_after_required_evaluation(
+        context, rhs, result);
+  if (kind == PSX_HIR_TERNARY) {
+    const psx_hir_node_t *otherwise = hir_ir_child_for_edge(
+        context, node, PSX_HIR_EDGE_ELSE, 0);
+    int condition = 0;
+    if (hir_ir_evaluate_truth_after_required_evaluation(
+            context, lhs, &condition))
+      return hir_ir_evaluate_floating_after_required_evaluation(
+          context, condition ? rhs : otherwise, result);
+    return 0;
+  }
+  if (kind == PSX_HIR_CAST) {
+    psx_type_shape_t source_type = {0};
+    if (!lhs ||
+        !hir_ir_node_type_shape(context, lhs, &source_type))
+      return 0;
+    if (source_type.kind == PSX_TYPE_FLOAT)
+      return hir_ir_evaluate_floating_after_required_evaluation(
+          context, lhs, result);
+    if (source_type.kind == PSX_TYPE_BOOL ||
+        source_type.kind == PSX_TYPE_INTEGER) {
+      long long value = 0;
+      if (!hir_ir_evaluate_integer_after_required_evaluation(
+              context, lhs, &value))
+        return 0;
+      *result = hir_ir_constant_integer_as_double(
+          context, lhs, value);
+      return 1;
+    }
+    return 0;
+  }
+  if (kind == PSX_HIR_UNARY_PLUS)
+    return hir_ir_evaluate_floating_after_required_evaluation(
+        context, lhs, result);
+  if (kind == PSX_HIR_NEGATE) {
+    if (!hir_ir_evaluate_floating_after_required_evaluation(
+            context, lhs, result))
+      return 0;
+    *result = -*result;
+    return 1;
+  }
+  if (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB &&
+      kind != PSX_HIR_MUL && kind != PSX_HIR_DIV)
+    return 0;
+  double left = 0.0;
+  double right = 0.0;
+  if (!lhs || !rhs ||
+      !hir_ir_evaluate_floating_after_required_evaluation(
+          context, lhs, &left) ||
+      !hir_ir_evaluate_floating_after_required_evaluation(
+          context, rhs, &right))
+    return 0;
+  switch (kind) {
+    case PSX_HIR_ADD:
+      *result = left + right;
+      return 1;
+    case PSX_HIR_SUB:
+      *result = left - right;
+      return 1;
+    case PSX_HIR_MUL:
+      *result = left * right;
+      return 1;
+    case PSX_HIR_DIV:
+      if (right == 0.0) return 0;
+      *result = left / right;
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int hir_ir_evaluate_pointer_truth_after_required_evaluation(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    int *result) {
+  if (!context || !node || !result) return 0;
+  if (hir_ir_evaluate_constant_pointer_truth(
+          context, node, result))
+    return 1;
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  const psx_hir_node_t *lhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *rhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  if (kind == PSX_HIR_STMT_EXPR) {
+    const psx_hir_node_t *source =
+        hir_ir_scalar_compound_literal_source(context, node);
+    return source &&
+           hir_ir_evaluate_pointer_truth_after_required_evaluation(
+               context, source, result);
+  }
+  if (kind == PSX_HIR_COMMA)
+    return hir_ir_evaluate_pointer_truth_after_required_evaluation(
+        context, rhs, result);
+  if (kind == PSX_HIR_TERNARY) {
+    const psx_hir_node_t *otherwise = hir_ir_child_for_edge(
+        context, node, PSX_HIR_EDGE_ELSE, 0);
+    int condition = 0;
+    if (hir_ir_evaluate_truth_after_required_evaluation(
+            context, lhs, &condition))
+      return hir_ir_evaluate_pointer_truth_after_required_evaluation(
+          context, condition ? rhs : otherwise, result);
+    int true_truth = 0;
+    int false_truth = 0;
+    if (!hir_ir_evaluate_pointer_truth_after_required_evaluation(
+            context, rhs, &true_truth) ||
+        !hir_ir_evaluate_pointer_truth_after_required_evaluation(
+            context, otherwise, &false_truth) ||
+        true_truth != false_truth)
+      return 0;
+    *result = true_truth;
+    return 1;
+  }
+  if (kind == PSX_HIR_CAST) {
+    psx_type_shape_t source_type = {0};
+    if (!lhs ||
+        !hir_ir_node_type_shape(context, lhs, &source_type))
+      return 0;
+    if (source_type.kind == PSX_TYPE_POINTER ||
+        source_type.kind == PSX_TYPE_ARRAY ||
+        source_type.kind == PSX_TYPE_FUNCTION)
+      return hir_ir_evaluate_pointer_truth_after_required_evaluation(
+          context, lhs, result);
+    if (source_type.kind == PSX_TYPE_BOOL ||
+        source_type.kind == PSX_TYPE_INTEGER) {
+      long long value = 0;
+      if (!hir_ir_evaluate_integer_after_required_evaluation(
+              context, lhs, &value))
+        return 0;
+      int pointer_size = ag_data_layout_pointer_size(
+          ag_target_info_data_layout(context->options->target));
+      if (pointer_size <= 0 || pointer_size > 8) return 0;
+      uint64_t normalized = (uint64_t)value;
+      if (pointer_size < 8)
+        normalized &=
+            (UINT64_C(1) << (pointer_size * 8)) - 1;
+      *result = normalized != 0;
+      return 1;
+    }
+  }
+  return 0;
+}
+
 static int hir_ir_evaluate_truth_after_required_evaluation(
     const hir_ir_context_t *context, const psx_hir_node_t *node,
     int *result) {
@@ -2220,6 +2666,92 @@ static int hir_ir_evaluate_truth_after_required_evaluation(
   const psx_hir_node_t *rhs = hir_ir_child_for_edge(
       context, node, PSX_HIR_EDGE_RHS, 0);
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  psx_type_shape_t evaluated_type = {0};
+  if (hir_ir_node_type_shape(context, node, &evaluated_type)) {
+    if (evaluated_type.kind == PSX_TYPE_BOOL ||
+        evaluated_type.kind == PSX_TYPE_INTEGER) {
+      long long value = 0;
+      if (hir_ir_evaluate_integer_after_required_evaluation(
+              context, node, &value)) {
+        *result = value != 0;
+        return 1;
+      }
+    } else if (evaluated_type.kind == PSX_TYPE_FLOAT) {
+      double value = 0.0;
+      if (hir_ir_evaluate_floating_after_required_evaluation(
+              context, node, &value)) {
+        *result = value != 0.0;
+        return 1;
+      }
+    } else if (evaluated_type.kind == PSX_TYPE_POINTER &&
+               hir_ir_evaluate_pointer_truth_after_required_evaluation(
+                   context, node, result)) {
+      return 1;
+    }
+  }
+  if (kind == PSX_HIR_STMT_EXPR) {
+    psx_type_shape_t type = {0};
+    if (!hir_ir_node_type_shape(context, node, &type))
+      return 0;
+    if (type.kind == PSX_TYPE_BOOL ||
+        type.kind == PSX_TYPE_INTEGER) {
+      long long value = 0;
+      if (!hir_ir_evaluate_integer_after_required_evaluation(
+              context, node, &value))
+        return 0;
+      *result = value != 0;
+      return 1;
+    }
+    if (type.kind == PSX_TYPE_FLOAT) {
+      double value = 0.0;
+      if (!hir_ir_evaluate_floating_after_required_evaluation(
+              context, node, &value))
+        return 0;
+      *result = value != 0.0;
+      return 1;
+    }
+    if (type.kind == PSX_TYPE_POINTER)
+      return hir_ir_evaluate_pointer_truth_after_required_evaluation(
+          context, node, result);
+    return 0;
+  }
+  if (kind == PSX_HIR_ADD || kind == PSX_HIR_SUB) {
+    psx_type_shape_t result_type = {0};
+    psx_type_shape_t lhs_type = {0};
+    psx_type_shape_t rhs_type = {0};
+    if (!lhs || !rhs ||
+        !hir_ir_node_type_shape(context, node, &result_type) ||
+        !semantic_type_is_pointer_like(&result_type) ||
+        !hir_ir_node_type_shape(context, lhs, &lhs_type) ||
+        !hir_ir_node_type_shape(context, rhs, &rhs_type))
+      return 0;
+    const psx_hir_node_t *base = NULL;
+    const psx_hir_node_t *offset = NULL;
+    if (semantic_type_is_pointer_like(&lhs_type) &&
+        (rhs_type.kind == PSX_TYPE_BOOL ||
+         rhs_type.kind == PSX_TYPE_INTEGER)) {
+      base = lhs;
+      offset = rhs;
+    } else if (kind == PSX_HIR_ADD &&
+               semantic_type_is_pointer_like(&rhs_type) &&
+               (lhs_type.kind == PSX_TYPE_BOOL ||
+                lhs_type.kind == PSX_TYPE_INTEGER)) {
+      base = rhs;
+      offset = lhs;
+    }
+    int base_truth = 0;
+    long long ignored_offset = 0;
+    if (base && offset &&
+        hir_ir_evaluate_constant_pointer_truth(
+            context, base, &base_truth) &&
+        base_truth &&
+        hir_ir_evaluate_integer_after_required_evaluation(
+            context, offset, &ignored_offset)) {
+      *result = 1;
+      return 1;
+    }
+    return 0;
+  }
   if (kind == PSX_HIR_COMMA)
     return hir_ir_evaluate_truth_after_required_evaluation(
         context, rhs, result);
