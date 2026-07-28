@@ -19115,6 +19115,16 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok_with_message(test_suite_session, "int main(void){ unsigned char c=300; return c; }", "W3011");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ unsigned char c=-1; return c; }", "W3011");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ _Bool b=300; return b; }", "W3011");
+  expect_parse_ok_without_message(
+      test_suite_session,
+      "int main(void){struct S{char text[3];};"
+      "struct S s={\"\\u03A9\"};return (unsigned char)s.text[0];}",
+      "W3011");
+  expect_parse_ok_with_message(
+      test_suite_session,
+      "int main(void){struct S{char value;};"
+      "struct S s={300};return s.value;}",
+      "W3011");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ return 2147483647 + 1; }", "W3023");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ return 2147483647 * 2; }", "W3023");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ return 2147483647L + 1L; }", "W3023");

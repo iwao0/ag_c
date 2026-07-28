@@ -698,6 +698,8 @@ static const test_case_t test_cases[] = {
     {"tokenizer", "string_concat_prefix", CASE_ASSERT_FILE, "test/fixtures/tokenizer/string_concat_prefix.c", 0, 0},
     {"probes", "adjacent_encoded_string_literal_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/adjacent_encoded_string_literal_boundaries.c", 0, 0},
     {"probes", "encoded_character_constant_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_character_constant_boundaries.c", 0, 0},
+    {"probes", "macro_paste_literal_prefix_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_paste_literal_prefix_boundaries.c", 0, 0},
+    {"probes", "narrow_ucn_string_literal_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/narrow_ucn_string_literal_boundaries.c", 0, 0},
     {"tokenizer", "ucn_string", CASE_ASSERT_FILE, "test/fixtures/tokenizer/ucn_string.c", 0, 0},
     {"tokenizer", "ucn_string_3byte", CASE_ASSERT_FILE, "test/fixtures/tokenizer/ucn_string_3byte.c", 0, 0},
     {"tokenizer", "ucn_string_u16_surrogate", CASE_ASSERT_FILE, "test/fixtures/tokenizer/ucn_string_u16_surrogate.c", 0, 0},
@@ -708,6 +710,7 @@ static const test_case_t test_cases[] = {
     {"probes", "universal_character_identifier_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/universal_character_identifier_boundaries.c", 0, 0},
     {"tokenizer", "trigraph_or", CASE_ASSERT_FILE, "test/fixtures/tokenizer/trigraph_or.c", 0, 0},
     {"tokenizer", "trigraph_xor", CASE_ASSERT_FILE, "test/fixtures/tokenizer/trigraph_xor.c", 0, 0},
+    {"probes", "digraph_preprocessing_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/digraph_preprocessing_boundaries.c", 0, 0},
     // #pragma pack
     {"pragma_pack", "pack1_sizeof", CASE_ASSERT_FILE, "test/fixtures/pragma_pack/pack1_sizeof.c", 0, 0},
     {"pragma_pack", "pack1_offset", CASE_ASSERT_FILE, "test/fixtures/pragma_pack/pack1_offset.c", 0, 0},

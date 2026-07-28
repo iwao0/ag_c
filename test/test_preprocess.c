@@ -51,6 +51,7 @@ static const success_case_t success_cases[] = {
     {0, "#define STR(x) #x\nint main() { char *s = STR(hello world); if (s[0] == 'h') if (s[6] == 'w') return 0; return 1; }"},
     {42, "#define STR(x) #x\nint main(void){char*s=STR();return s[0]=='\\0'?42:0;}"},
     {42, "#define STR(x) #x\nint main(void){char*s=STR('\\n');return s[0]=='\\''&&s[1]=='\\\\'&&s[2]=='n'&&s[3]=='\\''&&s[4]==0?42:0;}"},
+    {42, "#define PASTE(a,b) a##b\nint main(void){char s[]=PASTE(u8,\"\\u03A9\");return sizeof(s)==3&&(unsigned char)s[0]==0xCE&&(unsigned char)s[1]==0xA9&&s[2]==0?42:0;}"},
     {42, "#define VALUE (40 + 2)\n#define VALUE (40 /* same separator */ + 2)\nint main(void){return VALUE;}"},
     {42, "#define ADD(left,right) ((left)+(right))\n#define ADD( left , right ) ((left)+(right))\nint main(void){return ADD(19,23);}"},
     {42, "#define EMPTY\n#define EMPTY /* trailing whitespace */\n#define VALUE 42\nint main(void){return EMPTY VALUE;}"},

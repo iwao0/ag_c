@@ -1,6 +1,7 @@
 #include "../src/tokenizer/tokenizer.h"
 #include "../src/tokenizer/test_hook.h"
 #include "../src/tokenizer/allocator.h"
+#include "../src/tokenizer/literals.h"
 #include "../src/diag/diag.h"
 #include "../src/source_manager.h"
 #include <assert.h>
@@ -859,6 +860,29 @@ static void test_tokenize_string_prefixes_and_ucn(tokenizer_context_t *test_ctx)
   ASSERT_EQ(TK_STRING, tk_get_current_token_ctx(test_ctx)->kind); ASSERT_EQ(4, as_string(tk_get_current_token_ctx(test_ctx))->len); ASSERT_EQ(TK_CHAR_WIDTH_CHAR, as_string(tk_get_current_token_ctx(test_ctx))->char_width); tk_set_current_token_ctx(test_ctx, tk_get_current_token_ctx(test_ctx)->next);
   ASSERT_EQ(TK_STRING, tk_get_current_token_ctx(test_ctx)->kind); ASSERT_EQ(6, as_string(tk_get_current_token_ctx(test_ctx))->len); ASSERT_EQ(TK_CHAR_WIDTH_CHAR, as_string(tk_get_current_token_ctx(test_ctx))->char_width); tk_set_current_token_ctx(test_ctx, tk_get_current_token_ctx(test_ctx)->next);
   ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_ctx)->kind);
+
+  int pos = 0;
+  uint32_t units[4] = {0};
+  ASSERT_EQ(
+      2,
+      tk_next_string_code_units(
+          "\\u03A9", 6, &pos, TK_CHAR_WIDTH_CHAR, units));
+  ASSERT_EQ(6, pos);
+  ASSERT_EQ(0xCE, units[0]);
+  ASSERT_EQ(0xA9, units[1]);
+  pos = 0;
+  memset(units, 0, sizeof(units));
+  ASSERT_EQ(
+      4,
+      tk_next_string_code_units(
+          "\\U0001F600", 10, &pos, TK_CHAR_WIDTH_CHAR, units));
+  ASSERT_EQ(10, pos);
+  ASSERT_EQ(0xF0, units[0]);
+  ASSERT_EQ(0x9F, units[1]);
+  ASSERT_EQ(0x98, units[2]);
+  ASSERT_EQ(0x80, units[3]);
+  ASSERT_EQ(
+      1, tk_count_string_code_units("\\xA9", 4, TK_CHAR_WIDTH_CHAR));
 }
 
 static void test_tokenize_ucn_ident_and_trigraph(tokenizer_context_t *test_ctx) {

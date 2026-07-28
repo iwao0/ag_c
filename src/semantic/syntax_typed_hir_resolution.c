@@ -8200,7 +8200,11 @@ static psx_semantic_node_t *build_direct_flat_initializer(
           .kind = PSX_HIR_ASSIGN,
           .attached_qual_type = {
               PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-          .is_declaration_initializer = 1,
+          /*
+           * has_integer_value entries are encoded code units synthesized
+           * from a source string, not integer literals written by the user.
+           */
+          .is_declaration_initializer = !item->has_integer_value,
       };
       children[child_index] = psx_semantic_node_builder_expression(
           &context->builder, &assignment_spec,

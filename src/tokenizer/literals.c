@@ -101,19 +101,31 @@ uint32_t tk_decode_utf8(const char *s, int len, int *pos) {
 
 /** @brief 文字列リテラルの「次の 1 文字」を、ターゲット幅 (char_width) のコードユニット列に
  * 変換する。s[*pos] からエスケープ / UTF-8 / ASCII を 1 つ消費して *pos を進め、生成した
- * コードユニットを out[0..] に書き、その個数 (1 または 2) を返す。
- *   - char_width 1 (char/u8): 1 バイト = 1 ユニット (UTF-8 バイト列をそのまま)。
+ * コードユニットを out[0..] に書き、その個数 (1～4) を返す。
+ *   - char_width 1 (char/u8): 1 バイト = 1 ユニット。UCN escapeは
+ *     UTF-8の1～4バイトへ変換し、raw UTF-8バイト列はそのまま保持する。
  *   - char_width 2 (u, UTF-16): コードポイントへデコードし、BMP は 1、補助面は サロゲート対 2。
  *   - char_width 4 (U/L, UTF-32): コードポイント 1 個 = 1 ユニット。
  * emit / 配列初期化 / 要素数カウントで共通利用し挙動を一致させる。 */
-int tk_next_string_code_units(const char *s, int len, int *pos, int char_width, uint32_t out[2]) {
+int tk_next_string_code_units(
+    const char *s, int len, int *pos, int char_width, uint32_t out[4]) {
   uint32_t v;
+  bool is_ucn_escape =
+      s[*pos] == '\\' && *pos + 1 < len &&
+      (s[*pos + 1] == 'u' || s[*pos + 1] == 'U');
   if (s[*pos] == '\\') {
     if (!tk_parse_escape_value(s, len, pos, &v)) { v = (unsigned char)s[*pos]; (*pos)++; }
   } else if (char_width >= 2) {
     v = tk_decode_utf8(s, len, pos);
   } else {
     v = (unsigned char)s[*pos]; (*pos)++;
+  }
+  if (char_width == TK_CHAR_WIDTH_CHAR && is_ucn_escape) {
+    char bytes[4];
+    int count = tk_encode_utf8(v, bytes);
+    for (int i = 0; i < count; i++)
+      out[i] = (unsigned char)bytes[i];
+    return count;
   }
   if (char_width == 2 && v >= 0x10000) {
     uint32_t u = v - 0x10000;
@@ -145,7 +157,7 @@ int tk_emit_string_code_units(const char *s, int len, int char_width, int max_un
   int pos = 0;
   int cw = char_width > 0 ? char_width : TK_CHAR_WIDTH_CHAR;
   while (pos < len && (max_units <= 0 || count < max_units)) {
-    uint32_t units[2];
+    uint32_t units[4];
     int nu = tk_next_string_code_units(s, len, &pos, cw, units);
     for (int i = 0; i < nu && (max_units <= 0 || count < max_units); i++) {
       if (emit) emit(units[i], user);
@@ -195,7 +207,7 @@ int tk_emit_string_literal_bytes(const char *s, int len, int char_width,
   } else {
     int pos = 0;
     while (pos < len) {
-      uint32_t units[2];
+      uint32_t units[4];
       int nu = tk_next_string_code_units(s, len, &pos, cw, units);
       for (int u = 0; u < nu; u++) {
         for (int b = 0; b < cw; b++) {

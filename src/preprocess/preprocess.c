@@ -2055,13 +2055,31 @@ static token_t *paste_tokens(
       int len_r = 0;
       const char *s_l = token_text(cur, &len_l);
       const char *s_r = token_text(rhs, &len_r);
+      char *owned_l = NULL;
+      char *owned_r = NULL;
+      if (cur->kind == TK_STRING) {
+        owned_l = pp_string_token_spelling(
+            context, (token_string_t *)cur, &len_l,
+            DIAG_ERR_PREPROCESS_TOKEN_PASTE_SIZE_TOO_LARGE);
+        s_l = owned_l;
+      }
+      if (rhs->kind == TK_STRING) {
+        owned_r = pp_string_token_spelling(
+            context, (token_string_t *)rhs, &len_r,
+            DIAG_ERR_PREPROCESS_TOKEN_PASTE_SIZE_TOO_LARGE);
+        s_r = owned_r;
+      }
       if (len_l < 0 || len_r < 0 || (size_t)len_l > SIZE_MAX - (size_t)len_r - 1) {
+        free(owned_l);
+        free(owned_r);
         pp_error(context, DIAG_ERR_PREPROCESS_TOKEN_PASTE_SIZE_TOO_LARGE, NULL);
       }
       size_t len = (size_t)len_l + (size_t)len_r;
       char *buf = calloc(1, len + 1);
       memcpy(buf, s_l, (size_t)len_l);
       memcpy(buf + len_l, s_r, (size_t)len_r);
+      free(owned_l);
+      free(owned_r);
       
       const char *saved_input = tk_get_user_input_ctx(preprocess_tokenizer);
       const char *saved_filename = tk_get_filename_ctx(preprocess_tokenizer);
