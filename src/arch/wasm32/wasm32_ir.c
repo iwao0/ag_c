@@ -545,6 +545,23 @@ static int has_minimal_libc_stub_function(char *name, int name_len) {
   return 0;
 }
 
+static const char *minimal_libc_function_table_adapter(
+    const char *name, int name_len) {
+  if (name_eq(name, name_len, "printf", 6))
+    return "__ag_funcptr_printf";
+  if (name_eq(name, name_len, "fprintf", 7))
+    return "__ag_funcptr_fprintf";
+  if (name_eq(name, name_len, "snprintf", 8))
+    return "__ag_funcptr_snprintf";
+  if (name_eq(name, name_len, "sscanf", 6))
+    return "__ag_funcptr_sscanf";
+  if (name_eq(name, name_len, "swprintf", 8))
+    return "__ag_funcptr_swprintf";
+  if (name_eq(name, name_len, "swscanf", 7))
+    return "__ag_funcptr_swscanf";
+  return NULL;
+}
+
 static void emit_function_table(wasm32_ir_context_t *context) {
   if (g_func_table.ref_count <= 0) {
     if (g_func_table.needs_table) wasm_emitf(2, "(table 2 funcref)\n");
@@ -565,9 +582,12 @@ static void emit_function_table(wasm32_ir_context_t *context) {
   for (int i = 0; i < g_func_table.ref_count; i++) {
     char *name = g_func_table.refs[i].name;
     int name_len = g_func_table.refs[i].name_len;
-    if (name_len == 7 && memcmp(name, "fprintf", 7) == 0 &&
-        !has_defined_function(context, name, name_len)) {
-      wasm_cg_emitf(" $__ag_funcptr_fprintf");
+    const char *adapter =
+        !has_defined_function(context, name, name_len)
+            ? minimal_libc_function_table_adapter(name, name_len)
+            : NULL;
+    if (adapter) {
+      wasm_cg_emitf(" $%s", adapter);
     } else {
       wasm_cg_emitf(" ");
       wasm_emit_wat_function_id(context, name, name_len);

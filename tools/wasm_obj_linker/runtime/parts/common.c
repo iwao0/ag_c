@@ -2,15 +2,15 @@
 #include <stddef.h>
 
 static void ag_rt_putc(char *buf, size_t size, int bounded, size_t *pos, int ch) {
-  if (!bounded || (long)(*pos + 1) < (long)size) buf[(long)*pos] = (char)ch;
+  if (!bounded || (size != 0 && *pos < size - 1)) buf[*pos] = (char)ch;
   *pos = *pos + 1;
 }
 
 static void ag_rt_finish(char *buf, size_t size, int bounded, size_t pos) {
   if (!bounded) {
-    buf[(long)pos] = 0;
+    buf[pos] = 0;
   } else if (size != 0) {
-    buf[(long)((long)pos < (long)size ? pos : size - 1)] = 0;
+    buf[pos < size ? pos : size - 1] = 0;
   }
 }
 

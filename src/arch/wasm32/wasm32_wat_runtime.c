@@ -364,6 +364,23 @@ static const char *wasm_stub_param_type(
 #define wasm_stub_param_type(...) \
   wasm_stub_param_type(context, __VA_ARGS__)
 
+static int emit_declared_fixed_function_params(
+    wasm32_ir_context_t *context, const char *name, int name_len) {
+  wasm_function_symbol_t *symbol = function_symbol_state(name, name_len, 0);
+  int nparams = symbol && symbol->has_signature ? symbol->param_count : 0;
+  for (int i = 0; i < nparams; i++) {
+    const char *type = wasm_type(symbol->param_types[i]);
+    if (!type)
+      wasm_unsupported_msg(
+          "function-pointer parameter type in Wasm backend");
+    wasm_cg_emitf(" (param $p%d %s)", i, type);
+  }
+  return nparams;
+}
+
+#define emit_declared_fixed_function_params(...) \
+  emit_declared_fixed_function_params(context, __VA_ARGS__)
+
 static void emit_wasm_sprintf_stub(wasm32_ir_context_t *context) {
     wasm_emitf(2, "(func $sprintf (param $buf i32) (param $fmt i32) (result i32)\n");
     wasm_emitf(4, "(call $__ag_vsnprintf_impl (local.get $buf) (i64.const 2147483647) (local.get $fmt) (i64.extend_i32_u (global.get $__ag_va_arg_area)))\n");
@@ -379,6 +396,33 @@ static void emit_wasm_snprintf_stubs(wasm32_ir_context_t *context) {
     wasm_emitf(4, "(local.set $args (if (result i64) (i32.ne (global.get $__ag_va_arg_area) (i32.const 0)) (then (i64.extend_i32_u (global.get $__ag_va_arg_area))) (else (i64.const %d))))\n", slots_addr);
     wasm_emitf(4, "(call $__ag_vsnprintf_impl (local.get $buf) (local.get $size) (local.get $fmt) (local.get $args))\n");
     wasm_emitf(2, ")\n");
+    if (function_table_has_ref("snprintf", 8)) {
+      wasm_emitf(2, "(func $__ag_funcptr_snprintf");
+      int nparams =
+          emit_declared_fixed_function_params("snprintf", 8);
+      wasm_function_symbol_t *symbol =
+          function_symbol_state("snprintf", 8, 0);
+      const char *buffer_type =
+          symbol && nparams > 0 ? wasm_type(symbol->param_types[0]) : NULL;
+      const char *size_type =
+          symbol && nparams > 1 ? wasm_type(symbol->param_types[1]) : NULL;
+      const char *format_type =
+          symbol && nparams > 2 ? wasm_type(symbol->param_types[2]) : NULL;
+      if (nparams != 3 || !symbol ||
+          !buffer_type || strcmp(buffer_type, "i32") != 0 ||
+          !size_type || strcmp(size_type, "i64") != 0 ||
+          !format_type || strcmp(format_type, "i32") != 0) {
+        wasm_unsupported_msg(
+            "snprintf function-pointer declaration in Wasm backend");
+      }
+      wasm_cg_emitf(" (result i32)\n");
+      wasm_emitf(
+          4,
+          "(call $__ag_vsnprintf_impl (local.get $p0) (local.get $p1) "
+          "(local.get $p2) "
+          "(i64.extend_i32_u (global.get $__ag_va_arg_area)))\n");
+      wasm_emitf(2, ")\n");
+    }
 }
 
 static void emit_wasm_swprintf_stub(wasm32_ir_context_t *context) {
@@ -1372,6 +1416,42 @@ static void emit_wasm_swprintf_stub(wasm32_ir_context_t *context) {
       wasm_emitf(4, "(if (i32.or (i64.eqz (local.get $size)) (i64.le_u (local.get $size) (i64.extend_i32_u (local.get $result)))) (then (return (i32.const -1))))\n");
       wasm_emitf(4, "(local.get $result)\n");
       wasm_emitf(2, ")\n");
+      if (function_table_has_ref("swprintf", 8)) {
+        wasm_emitf(2, "(func $__ag_funcptr_swprintf");
+        int nparams =
+            emit_declared_fixed_function_params("swprintf", 8);
+        wasm_function_symbol_t *symbol =
+            function_symbol_state("swprintf", 8, 0);
+        const char *buffer_type =
+            symbol && nparams > 0 ? wasm_type(symbol->param_types[0]) : NULL;
+        const char *size_type =
+            symbol && nparams > 1 ? wasm_type(symbol->param_types[1]) : NULL;
+        const char *format_type =
+            symbol && nparams > 2 ? wasm_type(symbol->param_types[2]) : NULL;
+        if (nparams != 3 || !symbol ||
+            !buffer_type || strcmp(buffer_type, "i32") != 0 ||
+            !size_type || strcmp(size_type, "i64") != 0 ||
+            !format_type || strcmp(format_type, "i32") != 0) {
+          wasm_unsupported_msg(
+              "swprintf function-pointer declaration in Wasm backend");
+        }
+        wasm_cg_emitf(" (result i32)\n");
+        wasm_emitf(4, "(local $result i32)\n");
+        wasm_emitf(
+            4,
+            "(local.set $result "
+            "(call $__ag_vswprintf_impl (local.get $p0) (local.get $p1) "
+            "(local.get $p2) "
+            "(i64.extend_i32_u (global.get $__ag_va_arg_area))))\n");
+        wasm_emitf(
+            4,
+            "(if (i32.or (i64.eqz (local.get $p1)) "
+            "(i64.le_u (local.get $p1) "
+            "(i64.extend_i32_u (local.get $result)))) "
+            "(then (return (i32.const -1))))\n");
+        wasm_emitf(4, "(local.get $result)\n");
+        wasm_emitf(2, ")\n");
+      }
     }
     if (has_undefined_function("vwprintf", 8)) {
       wasm_emitf(2, "(func $vwprintf (param $fmt i32) (param $ap i64) (result i32)\n");
@@ -1926,21 +2006,6 @@ static void emit_wasm_vsnprintf_stubs(wasm32_ir_context_t *context) {
     }
 }
 
-static int emit_declared_fixed_function_params(
-    wasm32_ir_context_t *context, const char *name, int name_len) {
-  wasm_function_symbol_t *symbol = function_symbol_state(name, name_len, 0);
-  int nparams = symbol && symbol->has_signature ? symbol->param_count : 0;
-  for (int i = 0; i < nparams; i++) {
-    const char *type = wasm_type(symbol->param_types[i]);
-    if (!type) wasm_unsupported_msg("function-pointer parameter type in Wasm backend");
-    wasm_cg_emitf(" (param $p%d %s)", i, type);
-  }
-  return nparams;
-}
-
-#define emit_declared_fixed_function_params(...) \
-  emit_declared_fixed_function_params(context, __VA_ARGS__)
-
 static void emit_wasm_printf_stubs(wasm32_ir_context_t *context) {
   int slots_addr = intern_data_symbol("__ag_printf_va_slots", 20, 16, 8)->addr;
   if (has_undefined_function("printf", 6)) {
@@ -1951,6 +2016,26 @@ static void emit_wasm_printf_stubs(wasm32_ir_context_t *context) {
     wasm_emitf(4, "(local.set $args (if (result i64) (i32.ne (global.get $__ag_va_arg_area) (i32.const 0)) (then (i64.extend_i32_u (global.get $__ag_va_arg_area))) (else (i64.const %d))))\n", slots_addr);
     wasm_emitf(4, "(call $__ag_vsnprintf_impl (i32.const 0) (i64.const 0) (local.get $fmt) (local.get $args))\n");
     wasm_emitf(2, ")\n");
+    if (function_table_has_ref("printf", 6)) {
+      wasm_emitf(2, "(func $__ag_funcptr_printf");
+      int nparams = emit_declared_fixed_function_params("printf", 6);
+      wasm_function_symbol_t *symbol =
+          function_symbol_state("printf", 6, 0);
+      const char *format_type =
+          symbol && nparams > 0 ? wasm_type(symbol->param_types[0]) : NULL;
+      if (nparams != 1 || !symbol ||
+          !format_type || strcmp(format_type, "i32") != 0) {
+        wasm_unsupported_msg(
+            "printf function-pointer declaration in Wasm backend");
+      }
+      wasm_cg_emitf(" (result i32)\n");
+      wasm_emitf(
+          4,
+          "(call $__ag_vsnprintf_impl (i32.const 0) (i64.const 0) "
+          "(local.get $p0) "
+          "(i64.extend_i32_u (global.get $__ag_va_arg_area)))\n");
+      wasm_emitf(2, ")\n");
+    }
   }
   if (has_undefined_function("fprintf", 7)) {
     wasm_emitf(2, "(func $fprintf (param $stream i32) (param $fmt i32) (param $a i64) (param $b i64) (result i32)\n");
@@ -2609,6 +2694,28 @@ static void emit_wasm_vsscanf_stubs(wasm32_ir_context_t *context) {
     wasm_emitf(4, "(local.set $args (if (result i64) (i32.ne (global.get $__ag_va_arg_area) (i32.const 0)) (then (i64.extend_i32_u (global.get $__ag_va_arg_area))) (else (i64.const %d))))\n", slots_addr);
     wasm_emitf(4, "(call $__ag_vsscanf_impl (local.get $s) (local.get $fmt) (local.get $args))\n");
     wasm_emitf(2, ")\n");
+    if (function_table_has_ref("sscanf", 6)) {
+      wasm_emitf(2, "(func $__ag_funcptr_sscanf");
+      int nparams = emit_declared_fixed_function_params("sscanf", 6);
+      wasm_function_symbol_t *symbol =
+          function_symbol_state("sscanf", 6, 0);
+      const char *input_type =
+          symbol && nparams > 0 ? wasm_type(symbol->param_types[0]) : NULL;
+      const char *format_type =
+          symbol && nparams > 1 ? wasm_type(symbol->param_types[1]) : NULL;
+      if (nparams != 2 || !symbol ||
+          !input_type || strcmp(input_type, "i32") != 0 ||
+          !format_type || strcmp(format_type, "i32") != 0) {
+        wasm_unsupported_msg(
+            "sscanf function-pointer declaration in Wasm backend");
+      }
+      wasm_cg_emitf(" (result i32)\n");
+      wasm_emitf(
+          4,
+          "(call $__ag_vsscanf_impl (local.get $p0) (local.get $p1) "
+          "(i64.extend_i32_u (global.get $__ag_va_arg_area)))\n");
+      wasm_emitf(2, ")\n");
+    }
   }
 }
 
@@ -3240,6 +3347,28 @@ static void emit_wasm_swscanf_stub(wasm32_ir_context_t *context) {
     wasm_emitf(4, "(local.set $args (if (result i64) (i32.ne (global.get $__ag_va_arg_area) (i32.const 0)) (then (i64.extend_i32_u (global.get $__ag_va_arg_area))) (else (i64.const %d))))\n", slots_addr);
     wasm_emitf(4, "(call $__ag_vswscanf_impl (local.get $s) (local.get $fmt) (local.get $args))\n");
     wasm_emitf(2, ")\n");
+    if (function_table_has_ref("swscanf", 7)) {
+      wasm_emitf(2, "(func $__ag_funcptr_swscanf");
+      int nparams = emit_declared_fixed_function_params("swscanf", 7);
+      wasm_function_symbol_t *symbol =
+          function_symbol_state("swscanf", 7, 0);
+      const char *input_type =
+          symbol && nparams > 0 ? wasm_type(symbol->param_types[0]) : NULL;
+      const char *format_type =
+          symbol && nparams > 1 ? wasm_type(symbol->param_types[1]) : NULL;
+      if (nparams != 2 || !symbol ||
+          !input_type || strcmp(input_type, "i32") != 0 ||
+          !format_type || strcmp(format_type, "i32") != 0) {
+        wasm_unsupported_msg(
+            "swscanf function-pointer declaration in Wasm backend");
+      }
+      wasm_cg_emitf(" (result i32)\n");
+      wasm_emitf(
+          4,
+          "(call $__ag_vswscanf_impl (local.get $p0) (local.get $p1) "
+          "(i64.extend_i32_u (global.get $__ag_va_arg_area)))\n");
+      wasm_emitf(2, ")\n");
+    }
   }
 }
 
@@ -3251,7 +3380,7 @@ static void emit_wasm_strftime_stub(wasm32_ir_context_t *context) {
   int mon_full_addr =
       intern_data_symbol("__ag_time_mon_full_names", (int)sizeof("__ag_time_mon_full_names") - 1, 86, 1)->addr;
   wasm_emitf(2, "(func $__ag_strftime_putc (param $buf i32) (param $max i64) (param $pos i32) (param $ch i32) (result i32)\n");
-  wasm_emitf(4, "(if (i32.ge_u (i32.add (local.get $pos) (i32.const 1)) (i32.wrap_i64 (local.get $max))) (then (return (i32.const -1))))\n");
+  wasm_emitf(4, "(if (i64.ge_u (i64.extend_i32_u (i32.add (local.get $pos) (i32.const 1))) (local.get $max)) (then (return (i32.const -1))))\n");
   wasm_emitf(4, "(i32.store8 (i32.add (local.get $buf) (local.get $pos)) (local.get $ch))\n");
   wasm_emitf(4, "(i32.add (local.get $pos) (i32.const 1))\n");
   wasm_emitf(2, ")\n");
@@ -3695,7 +3824,7 @@ static void emit_wasm_strftime_stub(wasm32_ir_context_t *context) {
   wasm_emitf(6, "(if (i32.lt_s (local.get $pos) (i32.const 0)) (then (return (i64.const 0))))\n");
   wasm_emitf(6, "(br $loop)\n");
   wasm_emitf(4, "))\n");
-  wasm_emitf(4, "(if (i32.ge_u (local.get $pos) (i32.wrap_i64 (local.get $max))) (then (return (i64.const 0))))\n");
+  wasm_emitf(4, "(if (i64.ge_u (i64.extend_i32_u (local.get $pos)) (local.get $max)) (then (return (i64.const 0))))\n");
   wasm_emitf(4, "(i32.store8 (i32.add (local.get $buf) (local.get $pos)) (i32.const 0))\n");
   wasm_emitf(4, "(i64.extend_i32_u (local.get $pos))\n");
   wasm_emitf(2, ")\n");

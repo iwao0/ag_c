@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-28（multibyte APIの64-bit count境界追加まで）
+最終更新: 2026-07-28（WAT time formatの64-bit count境界追加まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -398,6 +398,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | formatted outputの整数基数・代替形式 | 🔧 | formatted_output_integer_base_boundaries | `snprintf`/`vsnprintf`の`%x/%X/%o/%p`、`#`、幅、左寄せ、zero padding、整数精度をnative/WAT/objectで固定する。`hh/h/j/z`による縮小と64-bit値、精度指定時の`0` flag無効化、pointerの`0x`表現、精度0のzero-value抑制、複数の動的width/precision/value引数によるva_list cursorを検証する |
 | formatted outputの文字列・文字境界 | 🔧 | formatted_output_string_character_boundaries, formatted_output_wide_character_conversion_boundaries | `snprintf`/`vsnprintf`の`%s/%c`と`%ls/%lc`を区別し、固定・可変幅、左寄せ、文字列精度、精度0を適用する。複数のwidth/precision/value引数によるva_list cursor、切り詰め時にも完全な必要長を返して終端する境界、wide文字列・文字から実行時multibyte文字列への基本実行文字変換をnative/WAT/objectで固定する |
 | formatted outputの浮動小数点境界 | 🔧 | formatted_output_floating_boundaries, formatted_output_narrow_wide_composition | `snprintf`/`vsnprintf`の`f/F/e/E/g/G/a/A`へ精度、幅、左寄せ、zero padding、`+`/space sign、`#`、`L`を実装する。10進・16進の丸め繰上がり、10進tieのnearest-even、`g`の固定小数/指数表記切替、負のゼロ、`inf`/`nan`、負の動的精度による既定精度復帰をnative/WAT/objectで固定する。WATではnarrow/wide formatterが同じ浮動小数点中核とscratchを一度だけ生成し、同一translation unitで順に使用できることも検証する |
+| formatted outputの64-bit `size_t`境界 | 🔧 | formatted_output_large_size_boundaries | object runtimeのnarrow/wide formatterが出力上限を比較するたびに`long`へcastし、`SIZE_MAX`を負数として扱って短い結果さえ書き込めず、終端位置も負のindexへしていた。出力・終端判定を`size_t`のunsigned比較へ揃え、`snprintf`/`vsnprintf`/`swprintf`/`vswprintf`の短い整数・文字列出力、終端NUL、結果直後のbyte保持をsystem Clang strictおよびnative/WAT/objectで固定する |
+| WAT variadic標準関数のfunction pointer ABI境界 | 🔧 | variadic_function_pointer_wat_boundaries | standalone WATの直接呼出し用`printf`/`fprintf`/`snprintf`/`sscanf`/`swprintf`/`swscanf` stubは便宜上2個の可変引数parameterを持つ一方、関数tableへ同じstubを登録していたため、宣言上の固定引数だけを持つ`call_indirect`と型が一致せずtrapしていた。address取得時だけ固定引数signatureのadapterをtableへ登録し、compilerが準備する`__ag_va_arg_area`を既存formatter/scannerへ渡す。空のstream出力、narrow/wide整形、2個の整数scan、global function pointer初期化をsystem Clang strictおよびnative/WAT/objectで固定する |
 | `sprintf`共通formatter経路 | 🔧 | sprintf_common_formatter_boundaries | WATの旧`d/u/s/c`専用parserを廃止して`sprintf`/`vsprintf`を`snprintf`系と同じva-list formatterへ接続する。3個以上の可変引数、`#`/zero padding、浮動小数点、`%ls/%lc`、`%n`を組み合わせ、direct可変引数領域のcursorと完全な戻り長をnative/WAT/objectで固定する |
 | 整数文字列変換の基数自動判定 | 🔧 | strto_integer_base_detection_boundaries | `strtol`/`strtoul`/`strtoll`/`strtoull`/`strtoimax`/`strtoumax`とwide版について、`base == 0`の10進・8進・16進自動判定、符号、終端位置、最大基数の数字をnative/WAT/objectで固定する |
 | 標準文字列変換APIのconst入力 | 🔧 | stdlib_const_input_qualifier_boundaries | `atoi`/`atof`/`atol`/`atoll`、全`strto*`、`strtoimax`/`strtoumax`、wide版へ`const`配列を渡せる標準宣言と、変換値・終端pointerをnative/WAT/objectで固定する |
@@ -410,6 +412,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | `ctype.h` / `wctype.h` APIの関数pointer・入力domain境界 | ✅ | character_classification_function_pointer_boundaries | narrow/wideの全分類・大小文字変換、`wctype`/`wctrans` descriptor APIの標準signatureと間接呼出しを固定し、`EOF`・`WEOF`・unsigned-char上限で分類0・変換恒等となるC locale動作をnative/WAT/objectで検証する |
 | `wctype.h` のtarget別descriptor基礎型ABI境界 | 🔧 | wctype_descriptor_target_abi_boundaries | 既存の関数pointer試験は宣言と同じtypedefを両側に使うため、同梱`wctype_t`のsigned `int`固定がApple arm64 libcの`unsigned int` ABI型と異なることを検出できなかった。nativeの`wctype_t`だけをunsigned int、Wasm runtime契約はintに分離し、`wint_t`/`wctrans_t`は両targetでintを維持する。基礎型同一性・符号・size/alignment、基礎型を直接書いた`wctype`/`iswctype` function pointer、descriptor検索・分類・大小変換をsystem/bundled Clang strictとnative/WAT/objectで固定する |
 | `time.h` / `locale.h` APIの関数pointer・失敗境界 | ✅ | time_locale_function_pointer_boundaries | 時刻取得・差分・分解・正規化・文字列化・format・timespecおよびlocale APIのconst/sizeを含む標準signatureを間接呼出しで固定する。`setlocale`はC localeの照会・選択を受理し、未対応locale名にはNULLを返す契約をnative/WAT/objectで検証する |
+| `strftime` / `wcsftime` の64-bit `size_t`境界 | 🔧 | time_format_large_count_boundaries | standalone WATの`strftime` formatterが64-bitの出力上限を比較時にi32へ切り詰め、`2^32`を0件として短い結果も拒否していた。出力文字と終端NULの上限判定をi64 unsigned比較へ揃え、標準signatureの関数pointer経由で日時文字列、戻り長、終端NUL、結果直後の保持をsystem Clang strictおよびnative/WAT/objectで固定する |
 | `locale.h`の全category macro・選択境界 | 🧪 | locale_category_macro_boundaries | `LC_ALL/LC_COLLATE/LC_CTYPE/LC_MONETARY/LC_NUMERIC/LC_TIME`をtargetのint整数定数式として固定し、headerの重複include、enum・静的配列での利用、各categoryのC locale query/setを関数pointer経由で検証する。負値と十分大きい不正categoryはNULLを返し、native libc・standalone WAT・object runtimeで同じ公開境界を維持する |
 | `timespec_get` の`TIME_UTC`成功・失敗境界 | 🧪 | time_timespec_get_utc_boundaries | `TIME_UTC`が正のbase識別子であり、直接呼出しと関数pointer経由の呼出しが成功時に`TIME_UTC`、calendar clockを提供できない環境では0を返すことを固定する。成功時だけ`tv_nsec`が0以上10億未満へ正規化されることを確認し、nativeの時計取得とWAT/object runtimeの許容された失敗経路を同じfixtureで検証する |
 | `time.h` の`CLOCKS_PER_SEC`・`TIME_UTC`型境界 | 🔧 | time_macro_type_boundaries | `CLOCKS_PER_SEC`を裸の`int`定数として公開していたため、nativeの`unsigned long`とWasmの`long`である`clock_t`型契約を満たしていなかった。target別`clock_t`へ明示castし、1000000という値、整数定数式、静的配列初期化、差分・除算での型保持を固定する。`TIME_UTC`は正の`int`整数定数式としてenumと`_Static_assert`で検証する |

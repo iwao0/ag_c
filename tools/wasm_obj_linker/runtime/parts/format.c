@@ -2067,12 +2067,12 @@ static int ag_rt_vwscan(int *s, int *fmt, va_list ap) {
 }
 
 static void ag_rt_wputc(int *buf, size_t size, size_t *pos, int ch) {
-  if ((long)(*pos + 1) < (long)size) buf[(long)*pos] = ch;
+  if (size != 0 && *pos < size - 1) buf[*pos] = ch;
   *pos = *pos + 1;
 }
 
 static void ag_rt_wfinish(int *buf, size_t size, size_t pos) {
-  if (size != 0) buf[(long)((long)pos < (long)size ? pos : size - 1)] = 0;
+  if (size != 0) buf[pos < size ? pos : size - 1] = 0;
 }
 
 static int ag_rt_wstrn_len(const char *s, int precision) {
