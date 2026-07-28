@@ -837,6 +837,12 @@ static const test_case_t test_cases[] = {
     {"probes", "complex_control_flow_truth_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_control_flow_truth_boundaries.c", 0, 0},
     {"probes", "pointer_complex_constant_cfg_termination_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_complex_constant_cfg_termination_boundaries.c", 0, 0},
     {"probes", "pointer_complex_constant_cfg_warning_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_complex_constant_cfg_warning_boundaries.c", 0, 0},
+    {"probes", "complex_after_required_cfg_termination_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_after_required_cfg_termination_boundaries.c", 0, 0},
+    {"probes", "complex_after_required_cfg_warning_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_after_required_cfg_warning_boundaries.c", 0, 0},
+    {"probes", "known_lvalue_address_cfg_termination_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/known_lvalue_address_cfg_termination_boundaries.c", 0, 0},
+    {"probes", "known_lvalue_address_cfg_warning_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/known_lvalue_address_cfg_warning_boundaries.c", 0, 0},
+    {"probes", "complex_scalar_cfg_termination_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_scalar_cfg_termination_boundaries.c", 0, 0},
+    {"probes", "complex_scalar_cfg_warning_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_scalar_cfg_warning_boundaries.c", 0, 0},
     {"probes", "complex_component_function_unit_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_component_function_unit_boundaries.c", 0, 0},
     {"probes", "complex_static_initializer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_static_initializer_boundaries.c", 0, 0},
     {"probes", "complex_static_scalar_conversion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_static_scalar_conversion_boundaries.c", 0, 0},
@@ -5213,6 +5219,201 @@ int main(int argc, char **argv) {
       fprintf(
           stderr,
           "pointer/complex constant CFG warning regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "complex_after_required_cfg_termination_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/complex_after_required_cfg_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/"
+        "complex_after_required_cfg_wasm_object.log";
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/complex_after_required_cfg_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        log_file_contains_substr(native_log, "W3005") ||
+        log_file_contains_substr(wasm_log, "W3005")) {
+      fprintf(
+          stderr,
+          "complex after-required CFG diagnostics regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "complex_after_required_cfg_warning_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/"
+        "complex_after_required_cfg_warning_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/"
+        "complex_after_required_cfg_warning_wasm_object.log";
+    static const char *const expected[] = {
+        "W3005",
+        "comma_complex_false",
+        "cast_complex_false",
+        "unary_complex_false",
+        "add_complex_false",
+        "multiply_complex_false",
+        "selected_complex_false",
+        "selected_else_complex_false",
+        "complex_compare_false",
+        "complex_component_false",
+        "floating_to_complex_false",
+        "compound_complex_false",
+        "two_component_complex_false",
+        "volatile_complex_unknown",
+        "runtime_complex_unknown",
+    };
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/"
+            "complex_after_required_cfg_warning_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        !log_files_contain_all(
+            native_log, wasm_log, expected,
+            sizeof(expected) / sizeof(expected[0]))) {
+      fprintf(
+          stderr,
+          "complex after-required CFG warning regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "known_lvalue_address_cfg_termination_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/known_lvalue_address_cfg_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/"
+        "known_lvalue_address_cfg_wasm_object.log";
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/known_lvalue_address_cfg_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        log_file_contains_substr(native_log, "W3005") ||
+        log_file_contains_substr(wasm_log, "W3005")) {
+      fprintf(
+          stderr,
+          "known lvalue-address CFG diagnostics regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "known_lvalue_address_cfg_warning_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/"
+        "known_lvalue_address_cfg_warning_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/"
+        "known_lvalue_address_cfg_warning_wasm_object.log";
+    static const char *const expected[] = {
+        "W3005",
+        "runtime_array_index_address_unknown",
+        "runtime_string_index_address_unknown",
+        "pointer_member_address_unknown",
+        "scalar_compound_address_unknown",
+        "aggregate_compound_member_address_unknown",
+    };
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/"
+            "known_lvalue_address_cfg_warning_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        !log_files_contain_all(
+            native_log, wasm_log, expected,
+            sizeof(expected) / sizeof(expected[0]))) {
+      fprintf(
+          stderr,
+          "known lvalue-address CFG warning regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "complex_scalar_cfg_termination_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/complex_scalar_cfg_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/"
+        "complex_scalar_cfg_wasm_object.log";
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/complex_scalar_cfg_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        log_file_contains_substr(native_log, "W3005") ||
+        log_file_contains_substr(wasm_log, "W3005")) {
+      fprintf(
+          stderr,
+          "complex scalar-conversion CFG diagnostics regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "complex_scalar_cfg_warning_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/"
+        "complex_scalar_cfg_warning_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/"
+        "complex_scalar_cfg_warning_wasm_object.log";
+    static const char *const expected[] = {
+        "W3005",
+        "complex_to_double_false",
+        "complex_to_float_false",
+        "complex_to_int_false",
+        "complex_to_unsigned_char_false",
+        "complex_to_bool_false",
+        "fractional_complex_to_int_false",
+        "volatile_complex_to_int_unknown",
+        "runtime_complex_to_int_unknown",
+    };
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/"
+            "complex_scalar_cfg_warning_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        !log_files_contain_all(
+            native_log, wasm_log, expected,
+            sizeof(expected) / sizeof(expected[0]))) {
+      fprintf(
+          stderr,
+          "complex scalar-conversion CFG warning regression "
           "(see %s and %s)\n",
           native_log, wasm_log);
       return 1;

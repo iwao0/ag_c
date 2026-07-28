@@ -1576,12 +1576,18 @@ static int hir_ir_evaluate_constant_complex(
 static int hir_ir_evaluate_constant_truth(
     const hir_ir_context_t *context, const psx_hir_node_t *node,
     int *result);
+static int hir_ir_evaluate_constant_pointer_truth(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    int *result);
 static int hir_ir_evaluate_truth_after_required_evaluation(
     const hir_ir_context_t *context, const psx_hir_node_t *node,
     int *result);
 static int hir_ir_evaluate_floating_after_required_evaluation(
     const hir_ir_context_t *context, const psx_hir_node_t *node,
     double *result);
+static int hir_ir_evaluate_complex_after_required_evaluation(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    hir_ir_constant_complex_t *result);
 
 static const psx_hir_node_t *hir_ir_scalar_compound_literal_source(
     const hir_ir_context_t *context, const psx_hir_node_t *node) {
@@ -1747,6 +1753,13 @@ static int hir_ir_evaluate_constant_integer(
                  context, lhs, &value) &&
              hir_ir_convert_constant_floating_to_integer(
                  context, &result_type, value, result);
+    }
+    if (source_type.kind == PSX_TYPE_COMPLEX) {
+      hir_ir_constant_complex_t value = {0.0, 0.0};
+      return hir_ir_evaluate_constant_complex(
+                 context, lhs, &value) &&
+             hir_ir_convert_constant_floating_to_integer(
+                 context, &result_type, value.real, result);
     }
     long long value = 0;
     return hir_ir_evaluate_constant_integer(
@@ -1995,7 +2008,8 @@ static int hir_ir_evaluate_constant_floating(
 
 static int hir_ir_evaluate_complex_compound_literal(
     const hir_ir_context_t *context, const psx_hir_node_t *node,
-    hir_ir_constant_complex_t *result) {
+    hir_ir_constant_complex_t *result,
+    int allow_required_evaluation) {
   if (!context || !node || !result ||
       psx_hir_node_kind(node) != PSX_HIR_STMT_EXPR)
     return 0;
@@ -2050,8 +2064,13 @@ static int hir_ir_evaluate_complex_compound_literal(
     if (part > 1 || (initialized_parts & (1u << part)) != 0)
       return 0;
     double component = 0.0;
-    if (!hir_ir_evaluate_constant_floating(
-            context, source, &component))
+    int evaluated =
+        allow_required_evaluation
+            ? hir_ir_evaluate_floating_after_required_evaluation(
+                  context, source, &component)
+            : hir_ir_evaluate_constant_floating(
+                  context, source, &component);
+    if (!evaluated)
       return 0;
     if (part == 0)
       value_parts.real = component;
@@ -2081,7 +2100,7 @@ static int hir_ir_evaluate_constant_complex(
   }
   if (psx_hir_node_kind(node) == PSX_HIR_STMT_EXPR)
     return hir_ir_evaluate_complex_compound_literal(
-        context, node, result);
+        context, node, result, 0);
 
   const psx_hir_node_t *lhs = hir_ir_child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
@@ -2164,6 +2183,54 @@ static int hir_ir_evaluate_constant_complex(
   return 1;
 }
 
+static int hir_ir_lvalue_has_known_object_address(
+    const hir_ir_context_t *context,
+    const psx_hir_node_t *node) {
+  if (!context || !node) return 0;
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  if (kind == PSX_HIR_STRING ||
+      kind == PSX_HIR_FUNCTION_REF)
+    return 1;
+  if (kind == PSX_HIR_LOCAL || kind == PSX_HIR_GLOBAL)
+    return 1;
+  if (kind == PSX_HIR_MEMBER_ACCESS) {
+    const psx_hir_node_t *base = hir_ir_child_for_edge(
+        context, node, PSX_HIR_EDGE_LHS, 0);
+    if (!base) return 0;
+    if (!psx_hir_node_member_from_pointer(node))
+      return hir_ir_lvalue_has_known_object_address(
+          context, base);
+    int base_truth = 0;
+    return hir_ir_evaluate_constant_pointer_truth(
+               context, base, &base_truth) &&
+           base_truth;
+  }
+  if (kind == PSX_HIR_SUBSCRIPT) {
+    const psx_hir_node_t *base = hir_ir_child_for_edge(
+        context, node, PSX_HIR_EDGE_LHS, 0);
+    const psx_hir_node_t *index = hir_ir_child_for_edge(
+        context, node, PSX_HIR_EDGE_RHS, 0);
+    long long ignored_index = 0;
+    if (!base || !index ||
+        !hir_ir_evaluate_constant_integer(
+            context, index, &ignored_index))
+      return 0;
+    if (psx_hir_node_kind(base) == PSX_HIR_STRING)
+      return 1;
+    psx_type_shape_t base_type = {0};
+    if ((psx_hir_node_kind(base) == PSX_HIR_LOCAL ||
+         psx_hir_node_kind(base) == PSX_HIR_GLOBAL) &&
+        hir_ir_node_type_shape(context, base, &base_type) &&
+        base_type.kind == PSX_TYPE_ARRAY)
+      return 1;
+    int base_truth = 0;
+    return hir_ir_evaluate_constant_pointer_truth(
+               context, base, &base_truth) &&
+           base_truth;
+  }
+  return 0;
+}
+
 static int hir_ir_evaluate_constant_pointer_truth(
     const hir_ir_context_t *context, const psx_hir_node_t *node,
     int *result) {
@@ -2218,12 +2285,8 @@ static int hir_ir_evaluate_constant_pointer_truth(
       return 1;
     }
   }
-  if (kind == PSX_HIR_ADDRESS &&
-      lhs &&
-      (psx_hir_node_kind(lhs) == PSX_HIR_LOCAL ||
-       psx_hir_node_kind(lhs) == PSX_HIR_GLOBAL ||
-       psx_hir_node_kind(lhs) == PSX_HIR_FUNCTION_REF ||
-       psx_hir_node_kind(lhs) == PSX_HIR_STRING)) {
+  if (kind == PSX_HIR_ADDRESS && lhs &&
+      hir_ir_lvalue_has_known_object_address(context, lhs)) {
     *result = 1;
     return 1;
   }
@@ -2413,6 +2476,19 @@ static int hir_ir_evaluate_integer_after_required_evaluation(
              hir_ir_convert_constant_floating_to_integer(
                  context, &result_type, value, result);
     }
+    if (source_type.kind == PSX_TYPE_COMPLEX) {
+      hir_ir_constant_complex_t value = {0.0, 0.0};
+      if (!hir_ir_evaluate_complex_after_required_evaluation(
+              context, lhs, &value))
+        return 0;
+      if (result_type.kind == PSX_TYPE_BOOL) {
+        *result =
+            value.real != 0.0 || value.imaginary != 0.0;
+        return 1;
+      }
+      return hir_ir_convert_constant_floating_to_integer(
+          context, &result_type, value.real, result);
+    }
     if (source_type.kind == PSX_TYPE_BOOL ||
         source_type.kind == PSX_TYPE_INTEGER) {
       long long value = 0;
@@ -2445,6 +2521,22 @@ static int hir_ir_evaluate_integer_after_required_evaluation(
       !hir_ir_node_type_shape(context, lhs, &lhs_type) ||
       !hir_ir_node_type_shape(context, rhs, &rhs_type))
     return 0;
+  if ((lhs_type.kind == PSX_TYPE_COMPLEX ||
+       rhs_type.kind == PSX_TYPE_COMPLEX) &&
+      (kind == PSX_HIR_EQ || kind == PSX_HIR_NE)) {
+    hir_ir_constant_complex_t left = {0.0, 0.0};
+    hir_ir_constant_complex_t right = {0.0, 0.0};
+    if (!hir_ir_evaluate_complex_after_required_evaluation(
+            context, lhs, &left) ||
+        !hir_ir_evaluate_complex_after_required_evaluation(
+            context, rhs, &right))
+      return 0;
+    int equal =
+        left.real == right.real &&
+        left.imaginary == right.imaginary;
+    *result = kind == PSX_HIR_EQ ? equal : !equal;
+    return 1;
+  }
   if ((lhs_type.kind == PSX_TYPE_FLOAT ||
        rhs_type.kind == PSX_TYPE_FLOAT) &&
       (kind == PSX_HIR_EQ || kind == PSX_HIR_NE ||
@@ -2532,6 +2624,14 @@ static int hir_ir_evaluate_floating_after_required_evaluation(
     if (source_type.kind == PSX_TYPE_FLOAT)
       return hir_ir_evaluate_floating_after_required_evaluation(
           context, lhs, result);
+    if (source_type.kind == PSX_TYPE_COMPLEX) {
+      hir_ir_constant_complex_t value = {0.0, 0.0};
+      if (!hir_ir_evaluate_complex_after_required_evaluation(
+              context, lhs, &value))
+        return 0;
+      *result = value.real;
+      return 1;
+    }
     if (source_type.kind == PSX_TYPE_BOOL ||
         source_type.kind == PSX_TYPE_INTEGER) {
       long long value = 0;
@@ -2552,6 +2652,15 @@ static int hir_ir_evaluate_floating_after_required_evaluation(
             context, lhs, result))
       return 0;
     *result = -*result;
+    return 1;
+  }
+  if (kind == PSX_HIR_CREAL || kind == PSX_HIR_CIMAG) {
+    hir_ir_constant_complex_t value = {0.0, 0.0};
+    if (!hir_ir_evaluate_complex_after_required_evaluation(
+            context, lhs, &value))
+      return 0;
+    *result =
+        kind == PSX_HIR_CREAL ? value.real : value.imaginary;
     return 1;
   }
   if (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB &&
@@ -2582,6 +2691,107 @@ static int hir_ir_evaluate_floating_after_required_evaluation(
     default:
       return 0;
   }
+}
+
+static int hir_ir_evaluate_complex_after_required_evaluation(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    hir_ir_constant_complex_t *result) {
+  if (!context || !node || !result) return 0;
+  if (hir_ir_evaluate_constant_complex(context, node, result))
+    return 1;
+
+  psx_type_shape_t type = {0};
+  if (!hir_ir_node_type_shape(context, node, &type))
+    return 0;
+  if (type.kind != PSX_TYPE_COMPLEX) {
+    double real = 0.0;
+    if (!hir_ir_evaluate_floating_after_required_evaluation(
+            context, node, &real))
+      return 0;
+    *result = (hir_ir_constant_complex_t){real, 0.0};
+    return 1;
+  }
+
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  if (kind == PSX_HIR_STMT_EXPR)
+    return hir_ir_evaluate_complex_compound_literal(
+        context, node, result, 1);
+
+  const psx_hir_node_t *lhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *rhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  if (kind == PSX_HIR_CAST || kind == PSX_HIR_UNARY_PLUS)
+    return hir_ir_evaluate_complex_after_required_evaluation(
+        context, lhs, result);
+  if (kind == PSX_HIR_NEGATE) {
+    if (!hir_ir_evaluate_complex_after_required_evaluation(
+            context, lhs, result))
+      return 0;
+    result->real = -result->real;
+    result->imaginary = -result->imaginary;
+    return 1;
+  }
+  if (kind == PSX_HIR_COMMA)
+    return hir_ir_evaluate_complex_after_required_evaluation(
+        context, rhs, result);
+  if (kind == PSX_HIR_TERNARY) {
+    const psx_hir_node_t *otherwise = hir_ir_child_for_edge(
+        context, node, PSX_HIR_EDGE_ELSE, 0);
+    int condition = 0;
+    if (!hir_ir_evaluate_truth_after_required_evaluation(
+            context, lhs, &condition))
+      return 0;
+    return hir_ir_evaluate_complex_after_required_evaluation(
+        context, condition ? rhs : otherwise, result);
+  }
+  if (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB &&
+      kind != PSX_HIR_MUL && kind != PSX_HIR_DIV)
+    return 0;
+
+  hir_ir_constant_complex_t left = {0.0, 0.0};
+  hir_ir_constant_complex_t right = {0.0, 0.0};
+  if (!lhs || !rhs ||
+      !hir_ir_evaluate_complex_after_required_evaluation(
+          context, lhs, &left) ||
+      !hir_ir_evaluate_complex_after_required_evaluation(
+          context, rhs, &right))
+    return 0;
+  if (kind == PSX_HIR_ADD) {
+    result->real = left.real + right.real;
+    result->imaginary =
+        left.imaginary + right.imaginary;
+    return 1;
+  }
+  if (kind == PSX_HIR_SUB) {
+    result->real = left.real - right.real;
+    result->imaginary =
+        left.imaginary - right.imaginary;
+    return 1;
+  }
+  if (kind == PSX_HIR_MUL) {
+    result->real =
+        left.real * right.real -
+        left.imaginary * right.imaginary;
+    result->imaginary =
+        left.real * right.imaginary +
+        left.imaginary * right.real;
+    return 1;
+  }
+
+  double denominator =
+      right.real * right.real +
+      right.imaginary * right.imaginary;
+  if (denominator == 0.0) return 0;
+  result->real =
+      (left.real * right.real +
+       left.imaginary * right.imaginary) /
+      denominator;
+  result->imaginary =
+      (left.imaginary * right.real -
+       left.real * right.imaginary) /
+      denominator;
+  return 1;
 }
 
 static int hir_ir_evaluate_pointer_truth_after_required_evaluation(
@@ -2681,6 +2891,14 @@ static int hir_ir_evaluate_truth_after_required_evaluation(
       if (hir_ir_evaluate_floating_after_required_evaluation(
               context, node, &value)) {
         *result = value != 0.0;
+        return 1;
+      }
+    } else if (evaluated_type.kind == PSX_TYPE_COMPLEX) {
+      hir_ir_constant_complex_t value = {0.0, 0.0};
+      if (hir_ir_evaluate_complex_after_required_evaluation(
+              context, node, &value)) {
+        *result =
+            value.real != 0.0 || value.imaginary != 0.0;
         return 1;
       }
     } else if (evaluated_type.kind == PSX_TYPE_POINTER &&
