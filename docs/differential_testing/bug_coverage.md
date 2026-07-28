@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-28（narrow/wide浮動文字列のhex subject境界追加まで）
+最終更新: 2026-07-28（multibyte APIの64-bit count境界追加まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -402,8 +402,11 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | 整数文字列変換の基数自動判定 | 🔧 | strto_integer_base_detection_boundaries | `strtol`/`strtoul`/`strtoll`/`strtoull`/`strtoimax`/`strtoumax`とwide版について、`base == 0`の10進・8進・16進自動判定、符号、終端位置、最大基数の数字をnative/WAT/objectで固定する |
 | 標準文字列変換APIのconst入力 | 🔧 | stdlib_const_input_qualifier_boundaries | `atoi`/`atof`/`atol`/`atoll`、全`strto*`、`strtoimax`/`strtoumax`、wide版へ`const`配列を渡せる標準宣言と、変換値・終端pointerをnative/WAT/objectで固定する |
 | 標準multibyte変換APIの型と変換長境界 | 🔧 | stdlib_multibyte_const_boundaries | `mblen`/`mbtowc`/`wctomb`/`mbstowcs`/`wcstombs`の`const`・`wchar_t`・`size_t`を含む標準宣言、出力NULLでの変換長照会、出力上限での切り詰めと終端NULをnative/WAT/objectで固定する |
+| multibyte変換APIの64-bit `size_t`境界 | 🔧 | multibyte_large_count_boundaries | object runtimeの`mbstowcs`/`wcstombs`/`mbsrtowcs`/`wcsrtombs`が64-bit unsigned上限をsigned `long`で保持し、`SIZE_MAX`を負数として短いASCII入力も0件にしていた。全8関数のlimitと、`size_t`を返す変換群の戻り値・内部counterをunsigned longへ揃え、2文字変換、終端NUL、restartable版のsource pointer NULL更新、標準signatureの関数pointerをsystem/bundled Clang strictおよびnative/WAT/objectで固定する |
 | 標準メモリ管理・環境・終了callback APIの型 | 🔧 | stdlib_management_signature_boundaries | `malloc`/`calloc`/`realloc`/`aligned_alloc`の`size_t`、`getenv`の`const`入力、`atexit`/`at_quick_exit`の関数pointer型と、確保・ゼロ初期化・再確保・alignment・callback登録をnative/WAT/objectで固定する |
 | `string.h` APIの関数pointer呼出し境界 | ✅ | string_function_pointer_boundaries | copy・連結・比較・collation・検索・tokenize・初期化・長さ・error文字列APIの標準signatureと、function table越しの`size_t`引数・戻りpointer・`strtok`状態をnative/WAT/objectで固定する |
+| `strchr`/`strrchr` の検索文字`char`変換境界 | 🔧 | string_search_char_conversion_boundaries | standalone WATが文字列byteをunsigned loadしながら、負のplain `char`からpromoteされた検索値を8-bit表現へ戻さず直接比較していたため、同じbit patternの文字を見つけられなかった。検索値を`unsigned char`表現へ正規化し、先頭・末尾の高bit byte、終端NUL、未検出、標準signatureの関数pointer呼出しをsystem/bundled Clang strictおよびnative/WAT/objectで固定する |
+| narrow/wide `*n*`文字列APIの64-bit `size_t`境界 | 🔧 | string_large_count_boundaries | standalone WATの`strncmp`/`strncat`が64-bit countを32-bit pointer差/countへ切り詰め、`2^32`で0件として扱っていた。object runtimeの`strncmp`/`strncat`/`wcsncmp`/`wcsncat`はunsigned `size_t`をsigned `long`で比較し、`strxfrm`/`wcsxfrm`もsigned limitへ変換して`SIZE_MAX`を負数扱いしていた。短いNUL終端入力なら巨大上限でもアクセス範囲は短いままなので、WATをi64 unsigned counter、objectをunsigned longの上限・indexへ揃え、両極値、変換結果とnarrow/wide関数pointerをsystem/bundled Clang strictおよびnative/WAT/objectで固定する |
 | `ctype.h` / `wctype.h` APIの関数pointer・入力domain境界 | ✅ | character_classification_function_pointer_boundaries | narrow/wideの全分類・大小文字変換、`wctype`/`wctrans` descriptor APIの標準signatureと間接呼出しを固定し、`EOF`・`WEOF`・unsigned-char上限で分類0・変換恒等となるC locale動作をnative/WAT/objectで検証する |
 | `wctype.h` のtarget別descriptor基礎型ABI境界 | 🔧 | wctype_descriptor_target_abi_boundaries | 既存の関数pointer試験は宣言と同じtypedefを両側に使うため、同梱`wctype_t`のsigned `int`固定がApple arm64 libcの`unsigned int` ABI型と異なることを検出できなかった。nativeの`wctype_t`だけをunsigned int、Wasm runtime契約はintに分離し、`wint_t`/`wctrans_t`は両targetでintを維持する。基礎型同一性・符号・size/alignment、基礎型を直接書いた`wctype`/`iswctype` function pointer、descriptor検索・分類・大小変換をsystem/bundled Clang strictとnative/WAT/objectで固定する |
 | `time.h` / `locale.h` APIの関数pointer・失敗境界 | ✅ | time_locale_function_pointer_boundaries | 時刻取得・差分・分解・正規化・文字列化・format・timespecおよびlocale APIのconst/sizeを含む標準signatureを間接呼出しで固定する。`setlocale`はC localeの照会・選択を受理し、未対応locale名にはNULLを返す契約をnative/WAT/objectで検証する |

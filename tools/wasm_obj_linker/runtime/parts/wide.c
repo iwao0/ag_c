@@ -47,11 +47,11 @@ long __agc_runtime_wcscat(long dst_addr, long src_addr) {
   return dst_addr;
 }
 
-long __agc_runtime_wcsncat(long dst_addr, long src_addr, long n) {
+long __agc_runtime_wcsncat(long dst_addr, long src_addr, unsigned long n) {
   int *dst = (int *)ag_rt_ptr(dst_addr);
   int *src = (int *)ag_rt_ptr(src_addr);
   long end = 0;
-  long i = 0;
+  unsigned long i = 0;
   while (dst[end]) end++;
   while (i < n && src[i]) {
     dst[end + i] = src[i];
@@ -69,10 +69,10 @@ int __agc_runtime_wcscmp(long a_addr, long b_addr) {
   return a[i] - b[i];
 }
 
-int __agc_runtime_wcsncmp(long a_addr, long b_addr, long n) {
+int __agc_runtime_wcsncmp(long a_addr, long b_addr, unsigned long n) {
   int *a = (int *)ag_rt_ptr(a_addr);
   int *b = (int *)ag_rt_ptr(b_addr);
-  long i = 0;
+  unsigned long i = 0;
   while (i < n) {
     if (a[i] != b[i]) return a[i] - b[i];
     if (a[i] == 0) return 0;
@@ -88,18 +88,17 @@ int __agc_runtime_wcscoll(long a_addr, long b_addr) {
 unsigned long __agc_runtime_wcsxfrm(long dst_addr, long src_addr, unsigned long n) {
   int *dst = dst_addr ? (int *)ag_rt_ptr(dst_addr) : (int *)0;
   int *src = (int *)ag_rt_ptr(src_addr);
-  long limit = (long)n;
-  long len = 0;
+  unsigned long len = 0;
   while (src[len]) len++;
-  if (dst && limit != 0) {
-    long i = 0;
-    while (i + 1 < limit && src[i]) {
+  if (dst && n != 0) {
+    unsigned long i = 0;
+    while (i + 1 < n && src[i]) {
       dst[i] = src[i];
       i++;
     }
     dst[i] = 0;
   }
-  return (unsigned long)len;
+  return len;
 }
 
 long __agc_runtime_wcschr(long s_addr, int ch) {
@@ -701,20 +700,21 @@ int __agc_runtime_mbsinit(long ps_addr) {
   return state->have == 0 && state->need == 0 && state->pending == 0 && state->kind == 0;
 }
 
-long __agc_runtime_mbsrtowcs(long dst_addr, long srcp_addr, long len, long ps_addr) {
+unsigned long __agc_runtime_mbsrtowcs(
+    long dst_addr, long srcp_addr, unsigned long len, long ps_addr) {
   long state_addr = ps_addr ? ps_addr : (long)&ag_rt_mbsrtowcs_state;
   char **srcp = (char **)ag_rt_ptr(srcp_addr);
   char *src = *srcp;
   int *dst = dst_addr ? (int *)ag_rt_ptr(dst_addr) : (int *)0;
-  long count = 0;
-  long pos = 0;
+  unsigned long count = 0;
+  unsigned long pos = 0;
   while ((!dst || count < len) && src[pos]) {
     int wc = 0;
     long r = __agc_runtime_mbrtowc((long)&wc, (long)(src + pos), 4, state_addr);
-    if (r < 0) return r;
+    if (r < 0) return (unsigned long)r;
     if (dst) dst[count] = wc;
     count++;
-    pos += r;
+    pos += (unsigned long)r;
   }
   if (dst) {
     if (src[pos] == 0 && count < len) {
@@ -727,29 +727,30 @@ long __agc_runtime_mbsrtowcs(long dst_addr, long srcp_addr, long len, long ps_ad
   return count;
 }
 
-long __agc_runtime_wcsrtombs(long dst_addr, long srcp_addr, long len, long ps_addr) {
+unsigned long __agc_runtime_wcsrtombs(
+    long dst_addr, long srcp_addr, unsigned long len, long ps_addr) {
   long state_addr = ps_addr ? ps_addr : (long)&ag_rt_wcsrtombs_state;
   int **srcp = (int **)ag_rt_ptr(srcp_addr);
   int *src = *srcp;
   char *dst = dst_addr ? ag_rt_ptr(dst_addr) : (char *)0;
-  long count = 0;
-  long bytes = 0;
+  unsigned long count = 0;
+  unsigned long bytes = 0;
   while (src[count]) {
     char tmp[4];
     long r = __agc_runtime_wcrtomb((long)tmp, src[count], state_addr);
-    if (r < 0) return r;
-    if (dst && bytes + r > len) {
+    if (r < 0) return (unsigned long)r;
+    if (dst && bytes + (unsigned long)r > len) {
       *srcp = src + count;
       return bytes;
     }
     if (dst) {
-      long j = 0;
-      while (j < r) {
+      unsigned long j = 0;
+      while (j < (unsigned long)r) {
         dst[bytes + j] = tmp[j];
         j++;
       }
     }
-    bytes += r;
+    bytes += (unsigned long)r;
     count++;
   }
   if (dst) {
@@ -809,7 +810,7 @@ unsigned long __agc_runtime_wcsftime(long dst_addr, unsigned long maxsize, long 
   return (unsigned long)pos;
 }
 
-int __agc_runtime_mblen(long s_addr, long n) {
+int __agc_runtime_mblen(long s_addr, unsigned long n) {
   long r;
   if (!s_addr) {
     ag_rt_mbstate_reset(&ag_rt_mblen_state);
@@ -820,7 +821,7 @@ int __agc_runtime_mblen(long s_addr, long n) {
   return (int)r;
 }
 
-int __agc_runtime_mbtowc(long pwc_addr, long s_addr, long n) {
+int __agc_runtime_mbtowc(long pwc_addr, long s_addr, unsigned long n) {
   long r;
   if (!s_addr) {
     ag_rt_mbstate_reset(&ag_rt_mbtowc_state);
@@ -842,15 +843,17 @@ int __agc_runtime_wctomb(long s_addr, int wc) {
   return (int)r;
 }
 
-long __agc_runtime_mbstowcs(long dst_addr, long src_addr, long n) {
+unsigned long __agc_runtime_mbstowcs(
+    long dst_addr, long src_addr, unsigned long n) {
   char *srcp = ag_rt_ptr(src_addr);
-  if (!src_addr) return -1;
+  if (!src_addr) return (unsigned long)-1;
   return __agc_runtime_mbsrtowcs(dst_addr, (long)&srcp, n, 0);
 }
 
-long __agc_runtime_wcstombs(long dst_addr, long src_addr, long n) {
+unsigned long __agc_runtime_wcstombs(
+    long dst_addr, long src_addr, unsigned long n) {
   int *srcp = (int *)ag_rt_ptr(src_addr);
-  if (!src_addr) return -1;
+  if (!src_addr) return (unsigned long)-1;
   return __agc_runtime_wcsrtombs(dst_addr, (long)&srcp, n, 0);
 }
 

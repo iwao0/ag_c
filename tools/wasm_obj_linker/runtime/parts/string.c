@@ -34,11 +34,11 @@ long __agc_runtime_strcat(long dst_addr, long src_addr) {
   return dst_addr;
 }
 
-long __agc_runtime_strncat(long dst_addr, long src_addr, long n) {
+long __agc_runtime_strncat(long dst_addr, long src_addr, unsigned long n) {
   char *dst = ag_rt_ptr(dst_addr);
   char *src = ag_rt_ptr(src_addr);
   long end = 0;
-  long i = 0;
+  unsigned long i = 0;
   while (dst[end]) end++;
   while (i < n && src[i]) {
     dst[end + i] = src[i];
@@ -48,10 +48,10 @@ long __agc_runtime_strncat(long dst_addr, long src_addr, long n) {
   return dst_addr;
 }
 
-int __agc_runtime_strncmp(long a_addr, long b_addr, long n) {
+int __agc_runtime_strncmp(long a_addr, long b_addr, unsigned long n) {
   unsigned char *a = (unsigned char *)ag_rt_ptr(a_addr);
   unsigned char *b = (unsigned char *)ag_rt_ptr(b_addr);
-  long i = 0;
+  unsigned long i = 0;
   while (i < n) {
     if (a[i] != b[i]) return (int)a[i] - (int)b[i];
     if (a[i] == 0) return 0;
@@ -75,11 +75,12 @@ int __agc_runtime_strcoll(long a_addr, long b_addr) {
   return __agc_runtime_strcmp(a_addr, b_addr);
 }
 
-long __agc_runtime_strxfrm(long dst_addr, long src_addr, long n) {
+unsigned long __agc_runtime_strxfrm(
+    long dst_addr, long src_addr, unsigned long n) {
   char *dst = ag_rt_ptr(dst_addr);
   char *src = ag_rt_ptr(src_addr);
-  long len = __agc_runtime_strlen(src_addr);
-  long i = 0;
+  unsigned long len = (unsigned long)__agc_runtime_strlen(src_addr);
+  unsigned long i = 0;
   if (n > 0) {
     while (i + 1 < n && src[i]) {
       dst[i] = src[i];
