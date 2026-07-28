@@ -183,6 +183,7 @@ int psx_hir_node_vla_runtime_store_dimension(
 int psx_hir_node_label_id(const psx_hir_node_t *node);
 int psx_hir_node_is_static_function(const psx_hir_node_t *node);
 int psx_hir_node_is_implicit_call(const psx_hir_node_t *node);
+int psx_hir_node_is_noreturn_call(const psx_hir_node_t *node);
 int psx_hir_node_is_source_assignment(const psx_hir_node_t *node);
 int psx_hir_node_is_declaration_initializer(
     const psx_hir_node_t *node);

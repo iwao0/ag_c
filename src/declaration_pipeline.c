@@ -727,6 +727,7 @@ int psx_apply_function_declaration_pipeline(
           .function_qual_type = request->function_qual_type,
           .is_definition = request->is_definition,
           .is_static = request->is_static,
+          .is_noreturn = request->is_noreturn,
       },
       &resolution);
   if (resolution.status != PSX_FUNCTION_DECLARATION_OK)
@@ -1780,6 +1781,7 @@ int psx_apply_block_extern_declaration_pipeline(
                 .name = request->name,
                 .name_len = request->name_len,
                 .function_qual_type = request->type,
+                .is_noreturn = request->is_noreturn,
                 .is_block_scope = 1,
                 .diag_context = "block-extern",
                 .diag_tok = request->diag_tok,

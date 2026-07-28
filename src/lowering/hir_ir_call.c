@@ -1104,6 +1104,8 @@ ir_val_t hir_ir_build_call(
   call->is_void_call = is_void_result ? 1 : 0;
   call->is_implicit_call =
       psx_hir_node_is_implicit_call(node) ? 1 : 0;
+  call->is_noreturn_call =
+      psx_hir_node_is_noreturn_call(node) ? 1 : 0;
   if (!ir_function_type_from_type_id(
           context->options->semantic_types,
           callable_type.type_id, &call->function_type) ||

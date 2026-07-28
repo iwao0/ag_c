@@ -112,6 +112,10 @@ static int append_implicit_return(
       !hir_ir_cfg_block_has_predecessor(
           context->function, context->function->cur_block))
     return 1;
+  int falls_through_noreturn_call =
+      context->function->cur_block->tail &&
+      context->function->cur_block->tail->op == IR_CALL &&
+      context->function->cur_block->tail->is_noreturn_call;
   int is_main = name_length == 4 && memcmp(name, "main", 4) == 0;
   ir_inst_t *ret = ir_inst_new(IR_RET);
   if (!ret) {
@@ -124,13 +128,30 @@ static int append_implicit_return(
     ret->src1 = hir_ir_is_float_type(context->return_info.type)
                     ? ir_val_fp_imm(context->return_info.type, 0.0)
                     : ir_val_imm(context->return_info.type, 0);
+  } else if ((context->return_info.type_class == IR_MIR_TYPE_AGGREGATE ||
+              hir_ir_is_complex_type(context->return_info)) &&
+             context->return_info.source_size > 0) {
+    int alignment = psx_qual_type_layout_alignof(
+        context->options->semantic_types,
+        context->options->record_layouts,
+        context->return_qual_type,
+        ag_target_info_data_layout(context->options->target));
+    if (alignment > 16) alignment = 16;
+    int temporary = hir_ir_allocate_scalar_temp(
+        context, context->return_info.source_size, alignment);
+    if (temporary < 0) {
+      free(ret);
+      return 0;
+    }
+    ret->src1 = ir_val_vreg(temporary, IR_TY_PTR);
   } else {
     free(ret);
     context->status = IR_HIR_BUILD_UNSUPPORTED;
     return 0;
   }
   if (!is_main && !context->returns_void &&
-      context->options->diagnostic_context) {
+      context->options->diagnostic_context &&
+      !falls_through_noreturn_call) {
     diag_warn_tokf_in(
         context->options->diagnostic_context,
         DIAG_WARN_PARSER_MISSING_RETURN, NULL,

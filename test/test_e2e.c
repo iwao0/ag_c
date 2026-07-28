@@ -760,6 +760,7 @@ static const test_case_t test_cases[] = {
     {"probes", "multibyte_large_count_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/multibyte_large_count_boundaries.c", 0, 0},
     {"probes", "stdlib_management_signature_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_management_signature_boundaries.c", 0, 0},
     {"probes", "allocation_failure_size_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/allocation_failure_size_boundaries.c", 0, 0},
+    {"probes", "nonvoid_aggregate_fallthrough_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nonvoid_aggregate_fallthrough_boundaries.c", 0, 0},
     {"probes", "string_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_function_pointer_boundaries.c", 0, 0},
     {"probes", "string_search_char_conversion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_search_char_conversion_boundaries.c", 0, 0},
     {"probes", "string_large_count_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_large_count_boundaries.c", 0, 0},

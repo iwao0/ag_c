@@ -276,6 +276,7 @@ typedef struct ir_inst_t {
     struct {            /* IR_CALL */
       unsigned char is_void_call;
       unsigned char is_implicit_call;
+      unsigned char is_noreturn_call;
     };
     struct {            /* IR_PARAM_BIND */
       size_t parameter_index;

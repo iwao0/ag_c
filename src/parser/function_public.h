@@ -15,6 +15,8 @@ psx_qual_type_t ps_function_symbol_qual_type(
     const psx_function_symbol_t *symbol);
 int ps_function_symbol_has_internal_linkage(
     const psx_function_symbol_t *symbol);
+int ps_function_symbol_is_noreturn(
+    const psx_function_symbol_t *symbol);
 psx_qual_type_t ps_ctx_get_function_qual_type_in(
     psx_semantic_context_t *context, char *name, int len);
 psx_qual_type_t psx_ctx_get_function_return_qual_type_in(

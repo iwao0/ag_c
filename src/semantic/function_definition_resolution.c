@@ -260,6 +260,8 @@ static int resolve_function_definition_header(
               .function_qual_type = applied.function_qual_type,
               .is_definition = 1,
               .is_static = definition->is_static,
+              .is_noreturn =
+                  definition->return_specifier.type_spec.is_noreturn,
               .diag_context = "funcdef",
               .diag_tok = (token_t *)name,
           })) {

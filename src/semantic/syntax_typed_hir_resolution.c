@@ -171,6 +171,7 @@ struct direct_call_binding_t {
   psx_call_types_resolution_t resolution;
   const node_identifier_t *direct_identifier;
   unsigned char is_implicit;
+  unsigned char is_noreturn;
   direct_call_binding_t *next;
 };
 
@@ -689,6 +690,7 @@ static int resolve_direct_function_call(
 
   const node_identifier_t *direct_identifier = NULL;
   int direct_identifier_is_implicit = 0;
+  int direct_identifier_is_noreturn = 0;
   psx_qual_type_t callee_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   if (call->callee->kind == ND_IDENTIFIER) {
@@ -706,6 +708,10 @@ static int resolve_direct_function_call(
     direct_identifier_is_implicit =
         callee_resolution.symbol.kind ==
         PSX_IDENTIFIER_UNDECLARED_CALL;
+    direct_identifier_is_noreturn =
+        callee_resolution.symbol.kind == PSX_IDENTIFIER_FUNCTION &&
+        ps_function_symbol_is_noreturn(
+            callee_resolution.symbol.function);
   } else if (!preflight_direct_expression(
                  context, call->callee, &callee_type)) {
     return 0;
@@ -811,6 +817,7 @@ static int resolve_direct_function_call(
       .resolution = resolution,
       .direct_identifier = direct_identifier,
       .is_implicit = direct_identifier_is_implicit,
+      .is_noreturn = direct_identifier_is_noreturn,
       .next = context->call_bindings,
   };
   context->call_bindings = binding;
@@ -4628,6 +4635,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
         .attached_qual_type =
             binding->resolution.function_qual_type,
         .is_implicit_call = binding->is_implicit,
+        .is_noreturn_call = binding->is_noreturn,
     };
     if (binding->direct_identifier) {
       spec.name = binding->direct_identifier->name;
@@ -7069,6 +7077,8 @@ static int preflight_direct_local_declaration(
                   .type = decl_qual_type,
                   .is_thread_local =
                       declaration->specifier.type_spec.is_thread_local,
+                  .is_noreturn =
+                      declaration->specifier.type_spec.is_noreturn,
                   .has_alignment_specifier =
                       declaration->specifier.alignas_specifier_count > 0,
                   .requested_alignment =

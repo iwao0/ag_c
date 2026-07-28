@@ -40,6 +40,7 @@ typedef struct {
   unsigned char member_from_pointer;
   unsigned char is_static_function;
   unsigned char is_implicit_call;
+  unsigned char is_noreturn_call;
   unsigned char is_source_assignment;
   unsigned char is_declaration_initializer;
   unsigned char is_resolved_initializer_entry;

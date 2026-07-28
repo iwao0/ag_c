@@ -149,6 +149,7 @@ struct psx_function_symbol_t {
    * のみではこのフラグは立たない。 */
   int is_defined;
   int has_internal_linkage;
+  int is_noreturn;
 };
 
 struct psx_semantic_context_t {
@@ -1518,6 +1519,11 @@ int ps_function_symbol_has_internal_linkage(
   return symbol && symbol->has_internal_linkage;
 }
 
+int ps_function_symbol_is_noreturn(
+    const psx_function_symbol_t *symbol) {
+  return symbol && symbol->is_noreturn;
+}
+
 void ps_ctx_checkpoint_function_registration_in(
     psx_semantic_context_t *context, char *name, int len,
     psx_function_registration_checkpoint_t *checkpoint) {
@@ -1531,6 +1537,7 @@ void ps_ctx_checkpoint_function_registration_in(
   checkpoint->is_defined = function->is_defined;
   checkpoint->has_internal_linkage =
       function->has_internal_linkage;
+  checkpoint->is_noreturn = function->is_noreturn;
   checkpoint->function_qual_type = function->function_qual_type;
 }
 
@@ -1557,6 +1564,7 @@ void ps_ctx_rollback_function_registration_in(
   function->is_defined = checkpoint->is_defined;
   function->has_internal_linkage =
       checkpoint->has_internal_linkage;
+  function->is_noreturn = checkpoint->is_noreturn;
   function->function_qual_type = checkpoint->function_qual_type;
 }
 
@@ -1642,6 +1650,15 @@ int ps_ctx_mark_function_internal_linkage_in(
       find_function_name_mut_in(context, name, len);
   if (!function) return 0;
   function->has_internal_linkage = 1;
+  return 1;
+}
+
+int ps_ctx_mark_function_noreturn_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  psx_function_symbol_t *function =
+      find_function_name_mut_in(context, name, len);
+  if (!function) return 0;
+  function->is_noreturn = 1;
   return 1;
 }
 

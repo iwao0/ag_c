@@ -1239,7 +1239,7 @@ int main(int argc, char **argv) {
         "active redefined macro and declaration range");
   ag_language_analysis_snapshot_dispose(&snapshot);
 
-  source = "int before_error; int fn(void) { bef\n"
+  source = "int before_error; int main(void) { bef\n"
            "this is invalid syntax after the cursor";
   size_t before_error_cursor = (size_t)(strstr(source, "bef\n") - source) + 3;
   CHECK(analyze(session, source, before_error_cursor, (header_bundle_t){0},

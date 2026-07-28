@@ -21,6 +21,7 @@ typedef struct {
   psx_qual_type_t function_qual_type;
   int is_definition;
   int is_static;
+  int is_noreturn;
 } psx_function_declaration_resolution_request_t;
 
 typedef struct {

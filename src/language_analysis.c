@@ -829,6 +829,12 @@ static int function_declaration_recovery_end(
   return 0;
 }
 
+typedef enum {
+  AG_LANGUAGE_RECOVERY_CHANGED = 1 << 0,
+  AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER = 1 << 1,
+  AG_LANGUAGE_RECOVERY_COMPLETE_IDENTIFIER_ELIDED = 1 << 2,
+} ag_language_recovery_flags_t;
+
 static char *build_function_declaration_recovery_source(
     const char *source, size_t length, size_t cursor, int *changed) {
   const char *name = NULL;
@@ -874,7 +880,7 @@ static char *build_function_declaration_recovery_source(
     result[output++] = '\n';
   }
   result[output] = '\0';
-  if (changed) *changed = 1;
+  if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
   return result;
 }
 
@@ -929,7 +935,7 @@ static char *build_object_declaration_recovery_source(
     result[output++] = '\n';
   }
   result[output] = '\0';
-  if (changed) *changed = 1;
+  if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
   return result;
 }
 
@@ -971,7 +977,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     return NULL;
   }
   memcpy(result, source, cursor);
-  int stripped_identifier = 0;
+  int identifier_elided = cursor_name && cursor_name_length > 0;
   if (cursor > 0 &&
       is_identifier_byte((unsigned char)source[cursor - 1])) {
     size_t identifier_start = cursor - 1;
@@ -990,7 +996,6 @@ static char *build_recovery_source(const char *source, size_t source_length,
       result[operator_end - 2] = ' ';
       result[operator_end - 1] = ' ';
     }
-    stripped_identifier = has_complete_identifier ? 0 : 1;
   }
   size_t stack_count = 0;
   int line_comment = 0;
@@ -1093,7 +1098,14 @@ static char *build_recovery_source(const char *source, size_t source_length,
   result[length] = '\0';
 #undef APPEND_LITERAL
   free(stack);
-  if (changed) *changed = stripped_identifier ? 2 : 1;
+  if (changed) {
+    *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+    if (identifier_elided) {
+      *changed |= has_complete_identifier
+                      ? AG_LANGUAGE_RECOVERY_COMPLETE_IDENTIFIER_ELIDED
+                      : AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER;
+    }
+  }
   return result;
 }
 
@@ -2445,7 +2457,8 @@ int ag_language_analyze_source(
   if (!builder.failed)
     append_saved_diagnostic(
         &builder, &final_parse->semantic_diagnostic);
-  if (!builder.failed && recovery_changed > 1)
+  if (!builder.failed &&
+      (recovery_changed & AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER))
     append_partial_identifier_diagnostic(&builder, request);
   if (final_parse->preprocessor_stream)
     pp_stream_close(final_parse->preprocessor_stream);
@@ -2465,10 +2478,18 @@ int ag_language_analyze_source(
   identifier_at(request->source, request->source_length,
                 request->cursor_byte_offset, &hover_name, &hover_name_len);
   select_hover(snapshot, hover_name, hover_name_len);
+  int unresolved_elided_identifier =
+      (recovery_changed &
+       AG_LANGUAGE_RECOVERY_COMPLETE_IDENTIFIER_ELIDED) &&
+      snapshot->hover_index < 0;
   int has_error = 0;
   for (int i = 0; i < snapshot->diagnostic_count; i++)
     if (snapshot->diagnostics[i].severity == 1) has_error = 1;
-  snapshot->partial = has_error || !marker || recovery_changed > 1 ||
+  snapshot->partial =
+                      has_error || !marker ||
+                      (recovery_changed &
+                       AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER) ||
+                      unresolved_elided_identifier ||
                       final_parse->fatal_recovered || recovered_before_retry ||
                       final_parse->semantic_diagnostic.code != NULL;
   dispose_saved_diagnostic(&saved_fatal);

@@ -40,6 +40,7 @@ struct psx_hir_node_t {
   unsigned char member_from_pointer;
   unsigned char is_static_function;
   unsigned char is_implicit_call;
+  unsigned char is_noreturn_call;
   unsigned char is_source_assignment;
   unsigned char is_declaration_initializer;
   unsigned char is_resolved_initializer_entry;
@@ -371,6 +372,7 @@ static psx_hir_node_id_t add_node(
   node->member_from_pointer = spec->member_from_pointer;
   node->is_static_function = spec->is_static_function;
   node->is_implicit_call = spec->is_implicit_call;
+  node->is_noreturn_call = spec->is_noreturn_call;
   node->is_source_assignment = spec->is_source_assignment;
   node->is_declaration_initializer =
       spec->is_declaration_initializer;
@@ -661,6 +663,11 @@ int psx_hir_node_is_static_function(const psx_hir_node_t *node) {
 int psx_hir_node_is_implicit_call(const psx_hir_node_t *node) {
   return node && node->kind == PSX_HIR_CALL
              ? node->is_implicit_call != 0 : 0;
+}
+
+int psx_hir_node_is_noreturn_call(const psx_hir_node_t *node) {
+  return node && node->kind == PSX_HIR_CALL
+             ? node->is_noreturn_call != 0 : 0;
 }
 
 psx_hir_symbol_id_t psx_hir_node_symbol_id(const psx_hir_node_t *node) {
