@@ -772,6 +772,7 @@ static const test_case_t test_cases[] = {
     {"probes", "wchar_stream_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wchar_stream_function_pointer_state_boundaries.c", 0, 0},
     {"probes", "uchar_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/uchar_function_pointer_state_boundaries.c", 0, 0},
     {"probes", "mbstate_target_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mbstate_target_abi_boundaries.c", 0, 0},
+    {"probes", "standard_header_shared_definition_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/standard_header_shared_definition_boundaries.c", 0, 0},
     {"probes", "inttypes_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_function_pointer_abi_boundaries.c", 0, 0},
     {"probes", "aggregate_return_register_width_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_return_register_width_boundaries.c", 0, 0},
     {"probes", "fenv_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fenv_function_pointer_boundaries.c", 0, 0},
@@ -862,6 +863,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "tgmath_variant_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/tgmath_variant_ops.c", 0, 0},
     {"probes", "tgmath_mixed_dispatch_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tgmath_mixed_dispatch_boundaries.c", 0, 0},
     {"probes", "tgmath_complex_dispatch_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tgmath_complex_dispatch_boundaries.c", 0, 0},
+    {"probes", "tgmath_extended_real_family_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tgmath_extended_real_family_boundaries.c", 0, 0},
     {"probes", "complex_inverse_function_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_inverse_function_boundaries.c", 0, 0},
     {"stdheader", "assert_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/assert_include.c", 0, 0},
     {"stdheader", "errno_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/errno_include.c", 0, 0},
@@ -4601,6 +4603,16 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_fmin") == 0 || strcmp(sym, "_fminf") == 0 ||
             strcmp(sym, "_fminl") == 0 || strcmp(sym, "_fmax") == 0 ||
             strcmp(sym, "_fmaxf") == 0 || strcmp(sym, "_fmaxl") == 0 ||
+            strcmp(sym, "_nextafter") == 0 ||
+            strcmp(sym, "_nextafterf") == 0 ||
+            strcmp(sym, "_nextafterl") == 0 ||
+            strcmp(sym, "_nexttoward") == 0 ||
+            strcmp(sym, "_nexttowardf") == 0 ||
+            strcmp(sym, "_nexttowardl") == 0 ||
+            strcmp(sym, "_tgamma") == 0 || strcmp(sym, "_tgammaf") == 0 ||
+            strcmp(sym, "_tgammal") == 0 ||
+            strcmp(sym, "_lgamma") == 0 || strcmp(sym, "_lgammaf") == 0 ||
+            strcmp(sym, "_lgammal") == 0 ||
             /* <wctype.h> / <wchar.h> / <fenv.h> / <locale.h> / <inttypes.h> の libc 関数。
              * 外部シンボルなので名前空間化しない (c11_standard_headers fixture が使用)。 */
             strcmp(sym, "_iswalnum") == 0 || strcmp(sym, "_iswalpha") == 0 ||

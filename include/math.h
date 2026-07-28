@@ -197,6 +197,34 @@ long double fminl(long double x, long double y);
 float fmaxf(float x, float y);
 long double fmaxl(long double x, long double y);
 
+#ifdef __wasm32__
+static double nextafter(double x, double y);
+static float nextafterf(float x, float y);
+static long double nextafterl(long double x, long double y);
+static double nexttoward(double x, long double y);
+static float nexttowardf(float x, long double y);
+static long double nexttowardl(long double x, long double y);
+static double tgamma(double x);
+static float tgammaf(float x);
+static long double tgammal(long double x);
+static double lgamma(double x);
+static float lgammaf(float x);
+static long double lgammal(long double x);
+#else
+double nextafter(double x, double y);
+float nextafterf(float x, float y);
+long double nextafterl(long double x, long double y);
+double nexttoward(double x, long double y);
+float nexttowardf(float x, long double y);
+long double nexttowardl(long double x, long double y);
+double tgamma(double x);
+float tgammaf(float x);
+long double tgammal(long double x);
+double lgamma(double x);
+float lgammaf(float x);
+long double lgammal(long double x);
+#endif
+
 int fpclassify(double x);
 int isfinite(double x);
 int isinf(double x);
@@ -296,6 +324,179 @@ static int __ag_math_isunordered(double x, double y) {
   return __ag_math_fpclassify_double(x) == FP_NAN ||
          __ag_math_fpclassify_double(y) == FP_NAN;
 }
+
+#ifdef __wasm32__
+static double nextafter(double x, double y) {
+  union __ag_math_double_bits repr;
+  if (__ag_math_fpclassify_double(x) == FP_NAN) return x;
+  if (__ag_math_fpclassify_double(y) == FP_NAN) return y;
+  if (x == y) return y;
+  if (x == 0.0) {
+    repr.bits = 1ULL;
+    return y < 0.0 ? -repr.value : repr.value;
+  }
+  repr.value = x;
+  if ((x > 0.0) == (x < y))
+    repr.bits++;
+  else
+    repr.bits--;
+  return repr.value;
+}
+
+static float nextafterf(float x, float y) {
+  union __ag_math_float_bits repr;
+  if (__ag_math_fpclassify_float(x) == FP_NAN) return x;
+  if (__ag_math_fpclassify_float(y) == FP_NAN) return y;
+  if (x == y) return y;
+  if (x == 0.0f) {
+    repr.bits = 1U;
+    return y < 0.0f ? -repr.value : repr.value;
+  }
+  repr.value = x;
+  if ((x > 0.0f) == (x < y))
+    repr.bits++;
+  else
+    repr.bits--;
+  return repr.value;
+}
+
+static long double nextafterl(long double x, long double y) {
+  return (long double)nextafter((double)x, (double)y);
+}
+
+static double nexttoward(double x, long double y) {
+  if (__ag_math_fpclassify_long_double(y) == FP_NAN) return (double)y;
+  if ((long double)x == y) return (double)y;
+  return nextafter(x, (long double)x < y ? 1.0 / 0.0 : -1.0 / 0.0);
+}
+
+static float nexttowardf(float x, long double y) {
+  if (__ag_math_fpclassify_long_double(y) == FP_NAN) return (float)y;
+  if ((long double)x == y) return (float)y;
+  return nextafterf(x, (long double)x < y ? 1.0f / 0.0f : -1.0f / 0.0f);
+}
+
+static long double nexttowardl(long double x, long double y) {
+  return nextafterl(x, y);
+}
+
+static int __ag_math_positive_integer(double x) {
+  unsigned long long whole;
+  if (x < 1.0 || x > 171.0 ||
+      __ag_math_fpclassify_double(x) != FP_NORMAL)
+    return 0;
+  whole = (unsigned long long)x;
+  return (double)whole == x;
+}
+
+static int __ag_math_nonpositive_integer(double x) {
+  long long whole;
+  if (x > 0.0 || x < -9007199254740992.0 ||
+      __ag_math_fpclassify_double(x) == FP_NAN ||
+      __ag_math_fpclassify_double(x) == FP_INFINITE)
+    return 0;
+  whole = (long long)x;
+  return (double)whole == x;
+}
+
+static double __ag_math_lanczos_sum(double shifted) {
+  static const double coefficients[] = {
+      0.99999999999980993,
+      676.5203681218851,
+      -1259.1392167224028,
+      771.32342877765313,
+      -176.61502916214059,
+      12.507343278686905,
+      -0.13857109526572012,
+      0.0000099843695780195716,
+      0.00000015056327351493116,
+  };
+  double sum = coefficients[0];
+  int index;
+  for (index = 1; index < 9; index++)
+    sum += coefficients[index] / (shifted + (double)index);
+  return sum;
+}
+
+static double __ag_math_tgamma_positive(double x) {
+  double shifted = x - 1.0;
+  double sum = __ag_math_lanczos_sum(shifted);
+  double t;
+  t = shifted + 7.5;
+  return 2.5066282746310005 * pow(t, shifted + 0.5) * exp(-t) * sum;
+}
+
+static double tgamma(double x) {
+  int classification;
+  double result;
+  unsigned long long integer;
+  double zero = 0.0;
+  classification = __ag_math_fpclassify_double(x);
+  if (classification == FP_NAN) return x;
+  if (classification == FP_INFINITE)
+    return x > 0.0 ? x : zero / zero;
+  if (x == 0.0)
+    return __ag_math_signbit_double(x) ? -1.0 / zero : 1.0 / zero;
+  if (__ag_math_nonpositive_integer(x)) return zero / zero;
+  if (x == 1.0 || x == 2.0) return 1.0;
+  if (__ag_math_positive_integer(x)) {
+    integer = (unsigned long long)x;
+    result = 1.0;
+    while (integer > 2ULL) {
+      integer--;
+      result *= (double)integer;
+    }
+    return result;
+  }
+  if (x < 0.5) {
+    double sine = sin(3.14159265358979323846 * x);
+    if (sine == 0.0) return 1.0 / 0.0;
+    return 3.14159265358979323846 /
+           (sine * __ag_math_tgamma_positive(1.0 - x));
+  }
+  return __ag_math_tgamma_positive(x);
+}
+
+static float tgammaf(float x) {
+  return (float)tgamma((double)x);
+}
+
+static long double tgammal(long double x) {
+  return (long double)tgamma((double)x);
+}
+
+static double __ag_math_lgamma_positive(double x) {
+  double shifted = x - 1.0;
+  double sum = __ag_math_lanczos_sum(shifted);
+  double t;
+  t = shifted + 7.5;
+  return 0.91893853320467274178 +
+         (shifted + 0.5) * log(t) - t + log(sum);
+}
+
+static double lgamma(double x) {
+  int classification = __ag_math_fpclassify_double(x);
+  if (classification == FP_NAN) return x;
+  if (classification == FP_INFINITE) return 1.0 / 0.0;
+  if (__ag_math_nonpositive_integer(x)) return 1.0 / 0.0;
+  if (x == 1.0 || x == 2.0) return 0.0;
+  if (x < 0.5) {
+    double sine = sin(3.14159265358979323846 * x);
+    if (sine == 0.0) return 1.0 / 0.0;
+    return log(3.14159265358979323846) - log(sine < 0.0 ? -sine : sine) -
+           __ag_math_lgamma_positive(1.0 - x);
+  }
+  return __ag_math_lgamma_positive(x);
+}
+
+static float lgammaf(float x) {
+  return (float)lgamma((double)x);
+}
+
+static long double lgammal(long double x) {
+  return (long double)lgamma((double)x);
+}
+#endif
 
 #define __ag_math_classify(x) \
   _Generic((x), \
