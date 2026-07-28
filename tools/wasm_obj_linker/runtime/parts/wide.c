@@ -366,12 +366,16 @@ static int *ag_rt_wide_float_end(int *orig) {
         p++;
       }
     }
-    if (!have_digit || !(*p == 'p' || *p == 'P')) return orig;
-    p++;
-    if (*p == '-' || *p == '+') p++;
-    digits = p;
-    while (*p >= '0' && *p <= '9') p++;
-    return p == digits ? orig : p;
+    if (!have_digit) return s + 1;
+    if (*p == 'p' || *p == 'P') {
+      int *exp_start = p;
+      p++;
+      if (*p == '-' || *p == '+') p++;
+      digits = p;
+      while (*p >= '0' && *p <= '9') p++;
+      if (p == digits) p = exp_start;
+    }
+    return p;
   }
   digits = s;
   while (*s >= '0' && *s <= '9') {

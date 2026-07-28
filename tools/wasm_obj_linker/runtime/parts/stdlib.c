@@ -238,35 +238,40 @@ static int __agc_runtime_parse_hex_float(char **sp, double *out, int *nonzero) {
       p++;
     }
   }
-  if (!have_digit || !(*p == 'p' || *p == 'P')) return 0;
-  p++;
+  if (!have_digit) return 0;
+  if (*p == 'p' || *p == 'P') {
+    char *exp_start = p;
+    p++;
 
-  int exp_sign = 1;
-  if (*p == '-') {
-    exp_sign = -1;
-    p++;
-  } else if (*p == '+') {
-    p++;
-  }
-  int have_exp = 0;
-  int exp = 0;
-  int exp_overflow = 0;
-  while (*p >= '0' && *p <= '9') {
-    have_exp = 1;
-    if (exp < 4096) {
-      exp = exp * 10 + (*p - '0');
-    } else {
-      exp_overflow = 1;
+    int exp_sign = 1;
+    if (*p == '-') {
+      exp_sign = -1;
+      p++;
+    } else if (*p == '+') {
+      p++;
     }
-    p++;
+    int have_exp = 0;
+    int exp = 0;
+    int exp_overflow = 0;
+    while (*p >= '0' && *p <= '9') {
+      have_exp = 1;
+      if (exp < 4096) {
+        exp = exp * 10 + (*p - '0');
+      } else {
+        exp_overflow = 1;
+      }
+      p++;
+    }
+    if (!have_exp) {
+      p = exp_start;
+    } else if (exp_overflow && *nonzero) {
+      acc = exp_sign < 0 ? 0.0 : __agc_runtime_float_inf();
+    } else {
+      acc = acc * __agc_runtime_pow2i(exp * exp_sign);
+    }
   }
-  if (!have_exp) return 0;
 
-  if (exp_overflow && *nonzero) {
-    *out = exp_sign < 0 ? 0.0 : __agc_runtime_float_inf();
-  } else {
-    *out = acc * __agc_runtime_pow2i(exp * exp_sign);
-  }
+  *out = acc;
   *sp = p;
   return 1;
 }
@@ -377,7 +382,16 @@ double __agc_runtime_strtod(long s_addr, long endptr_addr) {
 }
 
 float __agc_runtime_strtof(long s_addr, long endptr_addr) {
-  return (float)__agc_runtime_strtod(s_addr, endptr_addr);
+  double value = __agc_runtime_strtod(s_addr, endptr_addr);
+  float narrowed = (float)value;
+  if (!__agc_runtime_double_is_inf(value) && value != 0.0) {
+    float magnitude = narrowed < 0.0f ? -narrowed : narrowed;
+    if (__agc_runtime_double_is_inf((double)narrowed) ||
+        magnitude < 1.1754943508222875e-38) {
+      __agc_runtime_set_errno(34);
+    }
+  }
+  return narrowed;
 }
 
 long double __agc_runtime_strtold(long s_addr, long endptr_addr) {

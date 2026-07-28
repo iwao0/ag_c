@@ -4059,7 +4059,9 @@ static void emit_wasm_strtod_common(
   wasm_emitf(8, "))\n");
   wasm_emitf(6, "))\n");
   wasm_emitf(6, "(local.set $ch (call $__ag_float_ch (local.get $p) (local.get $wide)))\n");
+  wasm_emitf(6, "(local.set $is_hex (local.get $any_digit))\n");
   wasm_emitf(6, "(if (i32.and (local.get $any_digit) (i32.or (i32.eq (local.get $ch) (i32.const 112)) (i32.eq (local.get $ch) (i32.const 80)))) (then\n");
+  wasm_emitf(8, "(local.set $exp_start (local.get $p))\n");
   wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (local.get $step)))\n");
   wasm_emitf(8, "(local.set $exp_sign (i32.const 1))\n");
   wasm_emitf(8, "(if (i32.eq (call $__ag_float_ch (local.get $p) (local.get $wide)) (i32.const 45))\n");
@@ -4077,7 +4079,6 @@ static void emit_wasm_strtod_common(
   wasm_emitf(10, "(br $hex_exp_loop)\n");
   wasm_emitf(8, "))\n");
   wasm_emitf(8, "(if (local.get $have_exp) (then\n");
-  wasm_emitf(10, "(local.set $is_hex (i32.const 1))\n");
   wasm_emitf(10, "(block $hex_scale_done (loop $hex_scale_loop\n");
   wasm_emitf(12, "(if (i64.eqz (local.get $exp)) (then (br $hex_scale_done)))\n");
   wasm_emitf(12, "(if (i32.lt_s (local.get $exp_sign) (i32.const 0))\n");
@@ -4087,7 +4088,7 @@ static void emit_wasm_strtod_common(
   wasm_emitf(12, "(local.set $exp (i64.sub (local.get $exp) (i64.const 1)))\n");
   wasm_emitf(12, "(br $hex_scale_loop)\n");
   wasm_emitf(10, "))\n");
-  wasm_emitf(8, "))\n");
+  wasm_emitf(8, ") (else (local.set $p (local.get $exp_start))))\n");
   wasm_emitf(6, "))\n");
   wasm_emitf(6, "(if (i32.eqz (local.get $is_hex)) (then\n");
   wasm_emitf(8, "(local.set $p (local.get $hex_start))\n");
@@ -4168,6 +4169,20 @@ static void emit_wasm_strtod_common(
   wasm_emitf(6, "(i32.store (i32.const %d) (i32.const 34))\n", errno_addr);
   wasm_emitf(4, "))\n");
   wasm_emitf(4, "(f64.mul (local.get $acc) (local.get $sign))\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $__ag_strtof_result (param $value f64) (result f32)\n");
+  wasm_emitf(4, "(local $narrowed f32)\n");
+  wasm_emitf(4, "(local.set $narrowed (f32.demote_f64 (local.get $value)))\n");
+  wasm_emitf(4, "(if (i32.and\n");
+  wasm_emitf(6, "(f64.ne (f64.abs (local.get $value)) (f64.const inf))\n");
+  wasm_emitf(6, "(f64.ne (local.get $value) (f64.const 0))) (then\n");
+  wasm_emitf(6, "(if (i32.or\n");
+  wasm_emitf(8, "(f32.eq (f32.abs (local.get $narrowed)) (f32.const inf))\n");
+  wasm_emitf(8, "(f32.lt (f32.abs (local.get $narrowed)) (f32.const 1.17549435e-38))) (then\n");
+  wasm_emitf(8, "(i32.store (i32.const %d) (i32.const 34))\n", errno_addr);
+  wasm_emitf(6, "))\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(local.get $narrowed)\n");
   wasm_emitf(2, ")\n");
 }
 
@@ -5436,7 +5451,7 @@ void wasm32_wat_emit_minimal_libc_stubs(
   }
   if (has_undefined_function("strtof", 6)) {
     wasm_emitf(2, "(func $strtof (param $s i32) (param $endptr i32) (result f32)\n");
-    wasm_emitf(4, "(f32.demote_f64 (call $__ag_strtod (local.get $s) (local.get $endptr)))\n");
+    wasm_emitf(4, "(call $__ag_strtof_result (call $__ag_strtod (local.get $s) (local.get $endptr)))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("strtold", 7)) {
@@ -5594,7 +5609,7 @@ void wasm32_wat_emit_minimal_libc_stubs(
   }
   if (has_undefined_function("wcstof", 6)) {
     wasm_emitf(2, "(func $wcstof (param $s i32) (param $endptr i32) (result f32)\n");
-    wasm_emitf(4, "(f32.demote_f64 (call $wcstod (local.get $s) (local.get $endptr)))\n");
+    wasm_emitf(4, "(call $__ag_strtof_result (call $wcstod (local.get $s) (local.get $endptr)))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wcstold", 7)) {
