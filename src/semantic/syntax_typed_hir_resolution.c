@@ -308,6 +308,21 @@ typedef struct {
   int is_static_initializer;
 } direct_resolution_context_t;
 
+static psx_syntax_typed_hir_resolution_status_t
+resolve_direct_static_initializer_expression_in_function(
+    direct_resolution_context_t *function_context,
+    const node_t *syntax_expression,
+    const psx_typed_hir_tree_t **typed_hir,
+    psx_resolved_hir_build_failure_t *failure);
+
+static psx_syntax_typed_hir_resolution_status_t
+resolve_direct_static_initializer_for_object_in_function(
+    direct_resolution_context_t *function_context,
+    psx_qual_type_t object_qual_type,
+    const node_t *syntax_initializer,
+    const psx_typed_hir_tree_t **typed_hir,
+    psx_resolved_hir_build_failure_t *failure);
+
 typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
@@ -1297,12 +1312,23 @@ static int note_direct_rejection(
 static int direct_is_predefined_function_name(
     const direct_resolution_context_t *context,
     const node_identifier_t *identifier) {
-  static const char name[] = "__func__";
   return context && context->function_name && identifier &&
-         identifier->name_len == (int)(sizeof(name) - 1) &&
-         memcmp(
-             identifier->name, name,
-             sizeof(name) - 1) == 0;
+         psx_identifier_is_predefined_function_name(
+             identifier->name, identifier->name_len);
+}
+
+static int reject_direct_predefined_function_name_declaration(
+    direct_resolution_context_t *context,
+    const token_ident_t *identifier) {
+  if (!context || !context->function_name || !identifier ||
+      !psx_identifier_is_predefined_function_name(
+          identifier->str, identifier->len))
+    return 0;
+  ps_diag_duplicate_with_name_in(
+      ps_ctx_diagnostics(context->semantic_context),
+      (token_t *)identifier, "predefined function identifier",
+      identifier->str, identifier->len);
+  return 1;
 }
 
 static psx_qual_type_t direct_pointer_with_pointee_qualifiers(
@@ -6824,7 +6850,9 @@ static int preflight_direct_local_declaration(
       const psx_parsed_initializer_t *initializer =
           &declaration->initializers[i];
       token_ident_t *name = declarator->identifier;
-      if (!name || initializer->has_initializer)
+      if (!name || initializer->has_initializer ||
+          reject_direct_predefined_function_name_declaration(
+              context, name))
         return 0;
       psx_runtime_declarator_application_t application;
       if (!resolve_direct_declarator_application(
@@ -6901,6 +6929,8 @@ static int preflight_direct_local_declaration(
         &declaration->initializers[i];
     token_ident_t *name = declarator->identifier;
     if (!name ||
+        reject_direct_predefined_function_name_declaration(
+            context, name) ||
         (initializer->has_initializer &&
          initializer->kind != PSX_DECL_INIT_EXPR &&
          initializer->kind != PSX_DECL_INIT_LIST))
@@ -7032,19 +7062,13 @@ static int preflight_direct_local_declaration(
         psx_resolved_hir_build_failure_t initializer_failure;
         psx_syntax_typed_hir_resolution_status_t initializer_status =
             initializer->kind == PSX_DECL_INIT_LIST
-                ? psx_resolve_syntax_initializer_for_object_direct_to_typed_hir_in_contexts(
-                      context->semantic_context,
-                      context->global_registry,
-                      context->local_registry,
-                      context->lowering_context, context->options,
+                ? resolve_direct_static_initializer_for_object_in_function(
+                      context,
                       static_initializer_type,
                       initializer->value,
                       &initializer_typed_hir, &initializer_failure)
-                : psx_resolve_syntax_static_initializer_expression_direct_to_typed_hir_in_contexts(
-                      context->semantic_context,
-                      context->global_registry,
-                      context->local_registry,
-                      context->lowering_context, context->options,
+                : resolve_direct_static_initializer_expression_in_function(
+                      context,
                       initializer->value,
                       &initializer_typed_hir, &initializer_failure);
         if (initializer_status != PSX_SYNTAX_TYPED_HIR_RESOLVED) {
@@ -8844,6 +8868,9 @@ resolve_syntax_expression_direct_to_typed_hir(
     const ag_compilation_options_t *options,
     const psx_scope_lookup_point_t *lookup_point,
     int is_static_initializer,
+    char *function_name,
+    int function_name_len,
+    char **predefined_function_name_label,
     const node_t *syntax_expression,
     const psx_typed_hir_tree_t **typed_hir,
     psx_syntax_integer_constant_result_t *constant_result,
@@ -8914,11 +8941,13 @@ resolve_syntax_expression_direct_to_typed_hir(
     return PSX_SYNTAX_TYPED_HIR_FAILED;
   }
 
-  char *current_function_name = NULL;
-  int current_function_name_len = 0;
-  ps_local_registry_get_current_function_in(
-      local_registry, &current_function_name,
-      &current_function_name_len);
+  char *current_function_name = function_name;
+  int current_function_name_len =
+      current_function_name ? function_name_len : 0;
+  if (!current_function_name)
+    ps_local_registry_get_current_function_in(
+        local_registry, &current_function_name,
+        &current_function_name_len);
   direct_resolution_context_t context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
@@ -8929,6 +8958,9 @@ resolve_syntax_expression_direct_to_typed_hir(
       .identifier_lookup_point = lookup_point,
       .function_name = current_function_name,
       .function_name_len = current_function_name_len,
+      .predefined_function_name_label =
+          predefined_function_name_label
+              ? *predefined_function_name_label : NULL,
       .block_depth = current_function_name ? 1 : 0,
       .is_static_initializer = is_static_initializer,
   };
@@ -8987,6 +9019,9 @@ resolve_syntax_expression_direct_to_typed_hir(
     return PSX_SYNTAX_TYPED_HIR_FAILED;
   }
   record_direct_identifier_usage(&context);
+  if (predefined_function_name_label)
+    *predefined_function_name_label =
+        context.predefined_function_name_label;
   *typed_hir = tree;
   if (transactional) {
     psx_global_registry_checkpoint_commit(
@@ -9007,8 +9042,8 @@ psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
     psx_resolved_hir_build_failure_t *failure) {
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
-      NULL, NULL, NULL, 0, syntax_expression, typed_hir, NULL, NULL,
-      failure);
+      NULL, NULL, NULL, 0, NULL, 0, NULL,
+      syntax_expression, typed_hir, NULL, NULL, failure);
 }
 
 psx_syntax_typed_hir_resolution_status_t
@@ -9030,8 +9065,8 @@ psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
   }
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
-      NULL, NULL, lookup_point, 0, syntax_expression, typed_hir,
-      constant_result, NULL, failure);
+      NULL, NULL, lookup_point, 0, NULL, 0, NULL,
+      syntax_expression, typed_hir, constant_result, NULL, failure);
 }
 
 psx_syntax_typed_hir_resolution_status_t
@@ -9053,8 +9088,9 @@ psx_resolve_syntax_null_pointer_constant_direct_to_typed_hir_in_contexts(
   }
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
-      NULL, NULL, lookup_point, 0, syntax_expression, typed_hir,
-      NULL, is_null_pointer_constant, failure);
+      NULL, NULL, lookup_point, 0, NULL, 0, NULL,
+      syntax_expression, typed_hir, NULL,
+      is_null_pointer_constant, failure);
 }
 
 psx_syntax_typed_hir_resolution_status_t
@@ -9069,8 +9105,8 @@ psx_resolve_syntax_expression_direct_to_typed_hir_with_lowering_in_contexts(
     psx_resolved_hir_build_failure_t *failure) {
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
-      lowering_context, options, NULL, 0, syntax_expression, typed_hir,
-      NULL, NULL, failure);
+      lowering_context, options, NULL, 0, NULL, 0, NULL,
+      syntax_expression, typed_hir, NULL, NULL, failure);
 }
 
 psx_syntax_typed_hir_resolution_status_t
@@ -9085,8 +9121,28 @@ psx_resolve_syntax_static_initializer_expression_direct_to_typed_hir_in_contexts
     psx_resolved_hir_build_failure_t *failure) {
   return resolve_syntax_expression_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
-      lowering_context, options, NULL, 1, syntax_expression, typed_hir,
-      NULL, NULL, failure);
+      lowering_context, options, NULL, 1, NULL, 0, NULL,
+      syntax_expression, typed_hir, NULL, NULL, failure);
+}
+
+static psx_syntax_typed_hir_resolution_status_t
+resolve_direct_static_initializer_expression_in_function(
+    direct_resolution_context_t *function_context,
+    const node_t *syntax_expression,
+    const psx_typed_hir_tree_t **typed_hir,
+    psx_resolved_hir_build_failure_t *failure) {
+  if (!function_context)
+    return PSX_SYNTAX_TYPED_HIR_FAILED;
+  return resolve_syntax_expression_direct_to_typed_hir(
+      function_context->semantic_context,
+      function_context->global_registry,
+      function_context->local_registry,
+      function_context->lowering_context,
+      function_context->options, NULL, 1,
+      function_context->function_name,
+      function_context->function_name_len,
+      &function_context->predefined_function_name_label,
+      syntax_expression, typed_hir, NULL, NULL, failure);
 }
 
 static psx_syntax_typed_hir_resolution_status_t
@@ -9097,6 +9153,9 @@ resolve_syntax_initializer_direct_to_typed_hir(
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     psx_qual_type_t object_qual_type,
+    char *function_name,
+    int function_name_len,
+    char **predefined_function_name_label,
     const node_t *syntax_initializer,
     const psx_typed_hir_tree_t **typed_hir,
     psx_resolved_hir_build_failure_t *failure) {
@@ -9136,6 +9195,12 @@ resolve_syntax_initializer_direct_to_typed_hir(
       .lowering_context = lowering_context,
       .options = options,
       .failure = failure,
+      .function_name = function_name,
+      .function_name_len = function_name ? function_name_len : 0,
+      .predefined_function_name_label =
+          predefined_function_name_label
+              ? *predefined_function_name_label : NULL,
+      .block_depth = function_name ? 1 : 0,
       .is_static_initializer = 1,
   };
   psx_semantic_node_builder_init(
@@ -9176,6 +9241,9 @@ resolve_syntax_initializer_direct_to_typed_hir(
     return PSX_SYNTAX_TYPED_HIR_FAILED;
   }
   record_direct_identifier_usage(&context);
+  if (predefined_function_name_label)
+    *predefined_function_name_label =
+        context.predefined_function_name_label;
   *typed_hir = tree;
   if (transactional)
     psx_global_registry_checkpoint_commit(
@@ -9197,6 +9265,27 @@ psx_resolve_syntax_initializer_for_object_direct_to_typed_hir_in_contexts(
   return resolve_syntax_initializer_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
       lowering_context, options, object_qual_type,
+      NULL, 0, NULL, syntax_initializer, typed_hir, failure);
+}
+
+static psx_syntax_typed_hir_resolution_status_t
+resolve_direct_static_initializer_for_object_in_function(
+    direct_resolution_context_t *function_context,
+    psx_qual_type_t object_qual_type,
+    const node_t *syntax_initializer,
+    const psx_typed_hir_tree_t **typed_hir,
+    psx_resolved_hir_build_failure_t *failure) {
+  if (!function_context)
+    return PSX_SYNTAX_TYPED_HIR_FAILED;
+  return resolve_syntax_initializer_direct_to_typed_hir(
+      function_context->semantic_context,
+      function_context->global_registry,
+      function_context->local_registry,
+      function_context->lowering_context,
+      function_context->options, object_qual_type,
+      function_context->function_name,
+      function_context->function_name_len,
+      &function_context->predefined_function_name_label,
       syntax_initializer, typed_hir, failure);
 }
 

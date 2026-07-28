@@ -51,6 +51,8 @@ typedef struct {
   int local_is_vla_object;
 } psx_identifier_expression_resolution_t;
 
+int psx_identifier_is_predefined_function_name(
+    const char *name, int name_len);
 void psx_resolve_identifier(
     const psx_identifier_resolution_request_t *request,
     psx_identifier_resolution_t *resolution);

@@ -783,6 +783,7 @@ static const test_case_t test_cases[] = {
     {"probes", "definite_initialization_switch_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/definite_initialization_switch_boundaries.c", 0, 0},
     {"probes", "definite_initialization_goto_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/definite_initialization_goto_boundaries.c", 0, 0},
     {"probes", "predefined_environment_feature_macros", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/predefined_environment_feature_macros.c", 0, 0},
+    {"probes", "predefined_integer_macro_spelling_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/predefined_integer_macro_spelling_boundaries.c", 0, 0},
     {"probes", "predefined_stdc_version_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/predefined_stdc_version_type_boundaries.c", 0, 0},
     {"probes", "vla_bound_assignment_expression", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_bound_assignment_expression.c", 0, 0},
     {"probes", "array_parameter_static_bound_evaluation", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_parameter_static_bound_evaluation.c", 0, 0},
@@ -904,6 +905,8 @@ static const test_case_t test_cases[] = {
     {"func_name", "each_func_distinct", CASE_ASSERT_FILE, "test/fixtures/func_name/each_func_distinct.c", 0, 0},
     {"func_name", "sizeof_and_terminator", CASE_ASSERT_FILE, "test/fixtures/func_name/sizeof_and_terminator.c", 0, 0},
     {"probes", "predefined_function_name_const_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/predefined_function_name_const_boundaries.c", 0, 0},
+    {"probes", "predefined_function_name_static_initializer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/predefined_function_name_static_initializer_boundaries.c", 0, 0},
+    {"probes", "predefined_function_name_macro_unicode_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/predefined_function_name_macro_unicode_boundaries.c", 0, 0},
     // 2D VLA: constant inner dimension
     {"vla_2d", "const_inner_read", CASE_ASSERT_FILE, "test/fixtures/vla_2d/const_inner_read.c", 0, 0},
     {"vla_2d", "const_inner_loop", CASE_ASSERT_FILE, "test/fixtures/vla_2d/const_inner_loop.c", 0, 0},
@@ -3094,6 +3097,26 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#define __STDC__ 1\n"
      "int main(void) { return 0; }\n",
      "E1049"},
+    {"predefined_macro_define_stdc_version_rejected",
+     "#define __STDC_VERSION__ 201112L\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_define_stdc_hosted_rejected",
+     "#define __STDC_HOSTED__ 1\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_define_stdc_no_threads_rejected",
+     "#define __STDC_NO_THREADS__ 1\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_define_stdc_utf_16_rejected",
+     "#define __STDC_UTF_16__ 1\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_define_stdc_utf_32_rejected",
+     "#define __STDC_UTF_32__ 1\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
     {"predefined_macro_define_line_rejected",
      "#define __LINE__ 42\n"
      "int main(void) { return 0; }\n",
@@ -3114,8 +3137,20 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#undef __STDC__\n"
      "int main(void) { return 0; }\n",
      "E1049"},
+    {"predefined_macro_undef_stdc_version_rejected",
+     "#undef __STDC_VERSION__\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_undef_stdc_hosted_rejected",
+     "#undef __STDC_HOSTED__\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
     {"predefined_macro_undef_line_rejected",
      "#undef __LINE__\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_undef_file_rejected",
+     "#undef __FILE__\n"
      "int main(void) { return 0; }\n",
      "E1049"},
     {"predefined_macro_undef_date_rejected",
@@ -3128,6 +3163,14 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "E1049"},
     {"predefined_macro_undef_conditional_feature_rejected",
      "#undef __STDC_NO_THREADS__\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_undef_stdc_utf_16_rejected",
+     "#undef __STDC_UTF_16__\n"
+     "int main(void) { return 0; }\n",
+     "E1049"},
+    {"predefined_macro_undef_stdc_utf_32_rejected",
+     "#undef __STDC_UTF_32__\n"
      "int main(void) { return 0; }\n",
      "E1049"},
     {"macro_undef_va_args_rejected",
@@ -3507,6 +3550,23 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"predefined_function_name_mutable_pointer_rejected",
      "int main(void) { char *name = __func__; return name[0]; }\n",
      "E3078"},
+    {"predefined_function_name_local_redeclaration_rejected",
+     "int main(void) { int __func__ = 3; return 0; }\n",
+     "E3067"},
+    {"predefined_function_name_typedef_redeclaration_rejected",
+     "int main(void) { typedef int __func__; return 0; }\n",
+     "E3067"},
+    {"predefined_function_name_parameter_redeclaration_rejected",
+     "int f(int __func__) { return 0; }\n"
+     "int main(void) { return f(3); }\n",
+     "E3067"},
+    {"predefined_function_name_function_redeclaration_rejected",
+     "int __func__(void) { return 0; }\n",
+     "E3067"},
+    {"predefined_function_name_file_scope_use_rejected",
+     "const char *name = __func__;\n"
+     "int main(void) { return name != 0; }\n",
+     "E3066"},
     {"char16_supplementary_character_rejected",
      "unsigned short value = u'\\U0001F600'; "
      "int main(void) { return value != 0; }\n",

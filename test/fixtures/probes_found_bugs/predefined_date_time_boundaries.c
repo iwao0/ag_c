@@ -13,6 +13,18 @@ static const char build_stamp[] = "built " __DATE__ " " __TIME__;
 _Static_assert(sizeof(compile_date) == 12, "__DATE__ length");
 _Static_assert(sizeof(compile_time) == 9, "__TIME__ length");
 _Static_assert(sizeof(build_stamp) == 27, "concatenated build stamp length");
+_Static_assert(
+    _Generic(__DATE__, char *: 1, default: 0),
+    "__DATE__ undergoes string literal array conversion");
+_Static_assert(
+    _Generic(&__DATE__, char (*)[12]: 1, default: 0),
+    "__DATE__ preserves its array type under address-of");
+_Static_assert(
+    _Generic(__TIME__, char *: 1, default: 0),
+    "__TIME__ undergoes string literal array conversion");
+_Static_assert(
+    _Generic(&__TIME__, char (*)[9]: 1, default: 0),
+    "__TIME__ preserves its array type under address-of");
 
 static int is_digit(char value) {
   return value >= '0' && value <= '9';

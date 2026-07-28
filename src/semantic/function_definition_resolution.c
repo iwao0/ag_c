@@ -1,6 +1,7 @@
 #include "function_definition_resolution.h"
 
 #include "declaration_application.h"
+#include "identifier_resolution.h"
 #include "type_completeness.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
@@ -68,6 +69,47 @@ static int validate_function_definition_parameter_vla_stars(
   return 1;
 }
 
+static int validate_predefined_function_name_declarations(
+    ag_diagnostic_context_t *diagnostics,
+    const psx_parsed_function_definition_t *definition) {
+  token_ident_t *function_name =
+      definition ? definition->declarator.identifier : NULL;
+  if (function_name &&
+      psx_identifier_is_predefined_function_name(
+          function_name->str, function_name->len)) {
+    ps_diag_duplicate_with_name_in(
+        diagnostics, (token_t *)function_name,
+        "predefined function identifier",
+        function_name->str, function_name->len);
+    return 0;
+  }
+  const psx_parsed_function_suffix_t *primary_suffix =
+      definition
+          ? psx_declarator_outermost_function_suffix(
+                &definition->declarator)
+          : NULL;
+  const psx_parsed_function_parameters_t *parameters =
+      primary_suffix ? primary_suffix->parameters : NULL;
+  for (int i = 0; parameters && i < parameters->count; i++) {
+    psx_parsed_function_parameter_t parameter_storage;
+    if (!psx_function_definition_parameter_syntax_at(
+            parameters, i, &parameter_storage))
+      return 0;
+    token_ident_t *parameter_name =
+        parameter_storage.declarator.identifier;
+    if (!parameter_name ||
+        !psx_identifier_is_predefined_function_name(
+            parameter_name->str, parameter_name->len))
+      continue;
+    ps_diag_duplicate_with_name_in(
+        diagnostics, (token_t *)parameter_name,
+        "predefined function identifier",
+        parameter_name->str, parameter_name->len);
+    return 0;
+  }
+  return 1;
+}
+
 static int validate_function_definition_return_type(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t function_qual_type,
@@ -120,6 +162,8 @@ static int resolve_function_definition_header(
     return 0;
   }
   if (!validate_function_definition_parameter_vla_stars(
+          diagnostics, definition) ||
+      !validate_predefined_function_name_declarations(
           diagnostics, definition))
     return 0;
   ps_local_registry_prepare_function_resolution_in(local_registry);

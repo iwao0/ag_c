@@ -8,6 +8,16 @@
 
 #include <string.h>
 
+int psx_identifier_is_predefined_function_name(
+    const char *name, int name_len) {
+  static const char predefined_name[] = "__func__";
+  return name &&
+         name_len == (int)(sizeof(predefined_name) - 1) &&
+         memcmp(
+             name, predefined_name,
+             sizeof(predefined_name) - 1) == 0;
+}
+
 static void resolve_identifier_from_scope_graph(
     const psx_identifier_resolution_request_t *request,
     psx_identifier_resolution_t *resolution) {
