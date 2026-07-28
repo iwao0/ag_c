@@ -1103,11 +1103,10 @@ static void copy_source_location(token_t *dst, const token_t *src) {
   dst->byte_length = src->byte_length;
 }
 
-static token_t *make_int_token(
-    ag_preprocessor_context_t *context, long long val, token_t *ref) {
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%lld", val);
-  int slen = (int)strlen(buf);
+static token_t *make_integer_token(
+    ag_preprocessor_context_t *context, const char *spelling,
+    long long val, tk_int_size_t int_size, token_t *ref) {
+  int slen = (int)strlen(spelling);
   token_num_int_t *t = tk_allocator_calloc_in(
       pp_token_allocator(context), 1, sizeof(token_num_int_t));
   t->base.pp.base.kind = TK_NUM;
@@ -1116,14 +1115,22 @@ static token_t *make_int_token(
     t->base.pp.base.at_bol   = ref->at_bol;
     t->base.pp.base.has_space = ref->has_space;
   }
-  t->base.str      = my_strndup(buf, slen);
+  t->base.str      = my_strndup(spelling, slen);
   t->base.len      = slen;
   t->base.num_kind = TK_NUM_KIND_INT;
   t->val           = val;
   t->uval          = (unsigned long long)val;
-  t->int_size      = TK_INT_SIZE_INT;
+  t->int_size      = int_size;
   t->int_base      = 10;
   return (token_t *)t;
+}
+
+static token_t *make_int_token(
+    ag_preprocessor_context_t *context, long long val, token_t *ref) {
+  char spelling[32];
+  snprintf(spelling, sizeof(spelling), "%lld", val);
+  return make_integer_token(
+      context, spelling, val, TK_INT_SIZE_INT, ref);
 }
 
 static token_t *make_float_token(
@@ -1173,6 +1180,15 @@ static void add_int_macro(
             tok, NULL);
 }
 
+static void add_long_macro(
+    ag_preprocessor_context_t *context, const char *name,
+    const char *spelling, long long val) {
+  token_t *tok = make_integer_token(
+      context, spelling, val, TK_INT_SIZE_LONG, NULL);
+  add_macro(context, my_strndup(name, strlen(name)), false, false, NULL, 0,
+            tok, NULL);
+}
+
 static void add_float_macro(
     ag_preprocessor_context_t *context, const char *name,
     double value, tk_float_kind_t fp_kind,
@@ -1211,7 +1227,8 @@ static void pp_init_predefined_macros(
   int pointer_size =
       ag_data_layout_pointer_size(ag_target_info_data_layout(target));
   add_int_macro(context, "__STDC__", 1);
-  add_int_macro(context, "__STDC_VERSION__", 201112LL);
+  add_long_macro(
+      context, "__STDC_VERSION__", "201112L", 201112LL);
   add_int_macro(context, "__STDC_HOSTED__", 1);
   add_int_macro(context, "__STDC_NO_THREADS__", 1);
   add_int_macro(context, "__STDC_UTF_16__", 1);

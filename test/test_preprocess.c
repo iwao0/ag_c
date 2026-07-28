@@ -63,6 +63,7 @@ static const success_case_t success_cases[] = {
     // 定義済みマクロ
     {1,  "int main() { return __STDC__; }"},
     {42, "#if __STDC_VERSION__ >= 201112L\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
+    {42, "#define S_RAW(x) #x\n#define S(x) S_RAW(x)\n_Static_assert(_Generic(__STDC_VERSION__, long: 1, default: 0), \"long\");\nint main(void){char*s=S(__STDC_VERSION__);return sizeof(__STDC_VERSION__)==sizeof(long)&&sizeof(S(__STDC_VERSION__))==8&&s[6]=='L'?42:0;}"},
     {42, "#if __STDC_HOSTED__ == 1\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     {42, "#if __STDC_NO_THREADS__ == 1\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     {42, "#if __STDC_UTF_16__ == 1 && __STDC_UTF_32__ == 1\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
