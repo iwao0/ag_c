@@ -1398,6 +1398,10 @@ static const test_case_t test_cases[] = {
     {"probes", "local_2d_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_2d_funcptr_array.c", 0, 0},
     {"probes", "wide_string_literal_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_string_literal_init.c", 0, 0},
     {"probes", "string_array_element_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_array_element_type_boundaries.c", 0, 0},
+    {"probes", "string_array_typedef_element_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_array_typedef_element_boundaries.c", 0, 0},
+    {"probes", "string_array_typedef_unicode_inference_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_array_typedef_unicode_inference_boundaries.c", 0, 0},
+    {"probes", "encoded_string_unicode_exact_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_string_unicode_exact_boundaries.c", 0, 0},
+    {"probes", "encoded_string_embedded_null_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_string_embedded_null_boundaries.c", 0, 0},
     {"probes", "string_array_compound_literal_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_array_compound_literal_type_boundaries.c", 0, 0},
     {"probes", "encoded_multidimensional_string_array_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_multidimensional_string_array_boundaries.c", 0, 0},
     {"probes", "encoded_string_row_designator_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_string_row_designator_boundaries.c", 0, 0},
@@ -3577,7 +3581,7 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "E3099"},
     {"string_array_utf16_signed_short_inferred_rejected",
      "short values[] = u\"hi\"; int main(void) { return 0; }\n",
-     "E3064"},
+     "E3099"},
     {"string_array_utf32_signed_int_element_rejected",
      "int values[3] = U\"hi\"; int main(void) { return 0; }\n",
      "E3099"},
@@ -3590,6 +3594,36 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"string_array_atomic_character_element_rejected",
      "_Atomic char values[3] = \"hi\"; int main(void) { return 0; }\n",
      "E3099"},
+    {"string_array_typedef_enum_wide_element_rejected",
+     "enum code { CODE_ZERO, CODE_ONE }; typedef enum code code_t; "
+     "code_t values[3] = L\"hi\"; int main(void) { return 0; }\n",
+     "E3099"},
+    {"string_array_typedef_bool_element_rejected",
+     "typedef _Bool flag_t; flag_t values[3] = \"hi\"; "
+     "int main(void) { return 0; }\n",
+     "E3099"},
+    {"string_array_typedef_enum_inferred_global_rejected",
+     "enum code { CODE_ZERO, CODE_ONE }; typedef enum code code_t; "
+     "code_t values[] = L\"hi\"; int main(void) { return 0; }\n",
+     "E3099"},
+    {"string_array_typedef_bool_inferred_global_rejected",
+     "typedef _Bool flag_t; flag_t values[] = \"hi\"; "
+     "int main(void) { return 0; }\n",
+     "E3099"},
+    {"string_array_typedef_enum_inferred_local_rejected",
+     "enum code { CODE_ZERO, CODE_ONE }; typedef enum code code_t; "
+     "int main(void) { code_t values[] = L\"hi\"; return values[0]; }\n",
+     "E3099"},
+    {"string_array_typedef_enum_inferred_static_local_rejected",
+     "enum code { CODE_ZERO, CODE_ONE }; typedef enum code code_t; "
+     "int main(void) { static code_t values[] = L\"hi\"; "
+     "return values[0]; }\n",
+     "E3099"},
+    {"string_array_typedef_enum_multidimensional_rejected",
+     "enum code { CODE_ZERO, CODE_ONE }; typedef enum code code_t; "
+     "int main(void) { code_t rows[1][3] = {L\"hi\"}; "
+     "return rows[0][0]; }\n",
+     "E3099"},
     {"string_array_compound_literal_utf16_signed_short_rejected",
      "int main(void) { short *values = (short[3]){u\"hi\"}; "
      "return values[0]; }\n",
@@ -3597,10 +3631,64 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"string_array_compound_literal_utf16_inferred_signed_short_rejected",
      "int main(void) { short *values = (short[]){u\"hi\"}; "
      "return values[0]; }\n",
-     "E3114"},
+     "E3099"},
+    {"string_array_typedef_enum_compound_literal_rejected",
+     "enum code { CODE_ZERO, CODE_ONE }; typedef enum code code_t; "
+     "int main(void) { code_t *values = (code_t[3]){L\"hi\"}; "
+     "return values[0]; }\n",
+     "E3099"},
     {"encoded_multidimensional_string_overlong_global_rejected",
      "unsigned short rows[1][2] = {u\"abc\"}; "
      "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_string_utf8_unicode_too_long_global_rejected",
+     "char values[3] = u8\"\\U0001F600\"; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_string_utf16_unicode_too_long_local_rejected",
+     "#include <uchar.h>\n"
+     "int main(void) { char16_t values[1] = u\"\\U0001F600\"; "
+     "return values[0]; }\n",
+     "E3027"},
+    {"encoded_string_utf16_unicode_too_long_member_rejected",
+     "#include <uchar.h>\n"
+     "struct value { char16_t text[1]; }; "
+     "struct value instance = {u\"\\U0001F600\"}; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_string_utf16_unicode_too_long_multidimensional_rejected",
+     "#include <uchar.h>\n"
+     "char16_t rows[1][1] = {u\"\\U0001F600\"}; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_string_utf8_unicode_too_long_compound_rejected",
+     "int main(void) { char *values = "
+     "(char[3]){u8\"\\U0001F600\"}; return values[0]; }\n",
+     "E3027"},
+    {"encoded_string_utf8_embedded_null_too_long_global_rejected",
+     "char values[4] = u8\"\\U0001F600\\0\"; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_string_utf16_embedded_null_too_long_local_rejected",
+     "#include <uchar.h>\n"
+     "int main(void) { char16_t values[2] = "
+     "u\"\\U0001F600\\0\"; return values[0]; }\n",
+     "E3027"},
+    {"encoded_string_utf32_embedded_null_too_long_member_rejected",
+     "#include <uchar.h>\n"
+     "struct value { char32_t text[1]; }; "
+     "struct value instance = {U\"\\U0001F600\\0\"}; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_string_wide_embedded_null_too_long_multidimensional_rejected",
+     "#include <wchar.h>\n"
+     "wchar_t rows[1][1] = {L\"\\U0001F600\\0\"}; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_string_utf16_embedded_null_too_long_compound_rejected",
+     "#include <uchar.h>\n"
+     "int main(void) { char16_t *values = "
+     "(char16_t[2]){u\"\\U0001F600\\0\"}; return values[0]; }\n",
      "E3027"},
     {"encoded_multidimensional_string_wrong_local_element_rejected",
      "int main(void) { short rows[1][3] = {u\"hi\"}; "

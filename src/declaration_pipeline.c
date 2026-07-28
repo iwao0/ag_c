@@ -240,6 +240,22 @@ static void diagnose_static_initializer(
               diagnostics,
                        DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
       return;
+    case PSX_STATIC_INITIALIZER_CHARACTER_ARRAY_TOO_LONG:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS,
+          tok, "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+      return;
+    case PSX_STATIC_INITIALIZER_CHARACTER_ARRAY_INCOMPATIBLE:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE,
+          tok, "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE));
+      return;
     case PSX_STATIC_INITIALIZER_INVALID_SCALAR_LIST:
       ps_diag_ctx_in(
           diagnostics, tok, "static-init", "%s",
