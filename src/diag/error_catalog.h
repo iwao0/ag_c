@@ -237,16 +237,16 @@ typedef enum {
 } diag_error_id_t;
 
 /**
- * @brief エラーIDを表示用コード（例: "E3002"）へ変換する。
- * @param id エラーID。
- * @return 対応する表示用コード文字列。未定義IDの場合は既定コード。
+ * @brief Convert an error ID to a display code (for example, "E3002").
+ * @param id Error ID.
+ * @return Matching display-code string, or the default code for an undefined ID.
  */
 const char *diag_error_code(diag_error_id_t id);
 
 /**
- * @brief エラーIDを論理キー（例: "parser.unexpected_token"）へ変換する。
- * @param id エラーID。
- * @return 対応する論理キー文字列。未定義IDの場合は既定キー。
+ * @brief Convert an error ID to a logical key (for example, "parser.unexpected_token").
+ * @param id Error ID.
+ * @return Matching logical-key string, or the default key for an undefined ID.
  */
 const char *diag_error_key(diag_error_id_t id);
 

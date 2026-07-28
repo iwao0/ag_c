@@ -55,8 +55,9 @@ typedef struct {
   } value;
 } psx_parsed_toplevel_item_t;
 
-// トップレベル項目のストリーミングパース。frontendはitemを逐次適用する。
-// 1 関数ぶんの AST だけを保持して codegen→解放できるので、AST のピークメモリを抑える。
+// Stream top-level items.  The frontend applies each item incrementally.
+// Keeping only one function's AST through codegen and then releasing it reduces
+// peak AST memory usage.
 void ps_parser_stream_begin_with_syntax(
     psx_parser_stream_t *stream,
     tokenizer_context_t *tk_ctx, token_t *start,

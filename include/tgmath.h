@@ -2,11 +2,13 @@
 #define _TGMATH_H
 #include <math.h>
 #include <complex.h>
-/* C11 7.25: 型総称マクロ。実数の総称引数を共通の実数型へまとめて
- * f/無印/l 版へ _Generic ディスパッチする。整数引数は double として扱う。
- * Apple ARM64 では long double==double (同一 ABI) なので l 版呼び出しも安全。
- * complex 対応関数は引数のdomainもまとめ、c/無印/l 版へ振り分ける。
- * 下で必要な f/l 版を宣言する (math.h は double 中心で f/l を網羅しないため)。 */
+/* C11 7.25 type-generic macros.  Combine generic real arguments into a common
+ * real type and use _Generic to dispatch to the f, unsuffixed, or l variant.
+ * Integer arguments are treated as double.  On Apple ARM64, long double ==
+ * double (the same ABI), so calls to l variants are safe.  For functions that
+ * support complex values, combine the argument domains as well and dispatch
+ * to the c, unsuffixed, or l variant.  Declare the required f/l variants below
+ * because math.h focuses on double and does not cover all of them. */
 float       sqrtf(float);       long double sqrtl(long double);
 float       cbrtf(float);       long double cbrtl(long double);
 float       sinf(float);        long double sinl(long double);
@@ -60,8 +62,10 @@ float       hypotf(float, float);long double hypotl(long double, long double);
 float       fminf(float, float);long double fminl(long double, long double);
 float       fmaxf(float, float);long double fmaxl(long double, long double);
 
-/* 注: マクロ引数名は `fn`。`f` にすると float サフィックス `f` とトークン貼り付けで
- * 区別できず `f##f` が `sqrtsqrt` のように壊れる (引数名 == 貼り付け先トークンの衝突)。 */
+/* Note: the macro parameter is named `fn`.  Naming it `f` makes it
+ * indistinguishable from the float suffix token `f` during token pasting, so
+ * `f##f` can incorrectly become something like `sqrtsqrt` (a parameter/token
+ * collision at the paste site). */
 #define __tg_real_type(x) \
   _Generic((x), float: (float)0, long double: (long double)0, default: (double)0)
 #define __tg_math_type(x) \

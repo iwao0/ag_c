@@ -29,30 +29,30 @@ typedef enum {
 } diag_text_id_t;
 
 /**
- * @brief エラーIDに対応する日本語メッセージを取得する。
- * @param id エラーID。
- * @return 日本語メッセージ。未定義IDの場合は汎用メッセージ。
+ * @brief Return the Japanese message for an error ID.
+ * @param id Error ID.
+ * @return Japanese message, or a generic message for an undefined ID.
  */
 const char *diag_message_ja(diag_error_id_t id);
 
 /**
- * @brief エラーIDに対応する英語メッセージを取得する。
- * @param id エラーID。
- * @return 英語メッセージ。未定義IDの場合は汎用メッセージ。
+ * @brief Return the English message for an error ID.
+ * @param id Error ID.
+ * @return English message, or a generic message for an undefined ID.
  */
 const char *diag_message_en(diag_error_id_t id);
 
 /**
- * @brief テキストIDに対応する日本語テキストを取得する。
- * @param id テキストID。
- * @return 日本語テキスト。未定義時は NULL。
+ * @brief Return the Japanese text for a text ID.
+ * @param id Text ID.
+ * @return Japanese text, or NULL when undefined.
  */
 const char *diag_text_ja(diag_text_id_t id);
 
 /**
- * @brief テキストIDに対応する英語テキストを取得する。
- * @param id テキストID。
- * @return 英語テキスト。未定義時は NULL。
+ * @brief Return the English text for a text ID.
+ * @param id Text ID.
+ * @return English text, or NULL when undefined.
  */
 const char *diag_text_en(diag_text_id_t id);
 

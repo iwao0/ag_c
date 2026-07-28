@@ -1,7 +1,7 @@
 #ifndef _LOCALE_H
 #define _LOCALE_H
 #include <stddef.h>
-/* C11 7.11: ロケール。 */
+/* C11 7.11: Locale. */
 struct lconv {
   char *decimal_point;
   char *thousands_sep;

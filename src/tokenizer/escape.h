@@ -4,12 +4,12 @@
 #include <stdint.h>
 
 /**
- * @brief エスケープシーケンスをデコードする。
- * @param s 入力文字列。
- * @param len 入力長。
- * @param i 開始位置（`s[*i] == '\\'` を想定）。成功時は消費後位置へ進む。
- * @param out デコード結果のコードポイント。
- * @return 成功時 1、開始位置がエスケープでない場合 0。
+ * @brief Decode an escape sequence.
+ * @param s Input string.
+ * @param len Input length.
+ * @param i Start position (expects `s[*i] == '\\'`); advanced past the input on success.
+ * @param out Decoded code point.
+ * @return 1 on success, or 0 when the start position is not an escape.
  */
 int tk_parse_escape_value(const char *s, int len, int *i, uint32_t *out);
 

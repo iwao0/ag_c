@@ -8,10 +8,10 @@ typedef enum {
 } diag_ui_text_id_t;
 
 /**
- * @brief UI向け内部テキストをロケールに応じて取得する。
- * @param id テキストID。
- * @param locale ロケール（"ja" / "en"）。
- * @return 対応文字列。未定義時は英語既定文言。
+ * @brief Return internal UI text for the requested locale.
+ * @param id Text ID.
+ * @param locale Locale ("ja" / "en").
+ * @return Matching text, or the default English text when undefined.
  */
 const char *diag_ui_text_for(diag_ui_text_id_t id, const char *locale);
 const char *diag_ui_text_ja(diag_ui_text_id_t id);

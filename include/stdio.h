@@ -102,9 +102,10 @@ int feof(FILE *stream);
 int ferror(FILE *stream);
 void clearerr(FILE *stream);
 
-/* Standard streams (Apple libc が __std{in,out,err}p としてエクスポート、stdio.h は
- * 通常マクロで包む)。fprintf(stderr, ...) 等を使えるよう、同じ規約で extern 宣言する。
- * codegen は is_extern_decl のグローバル変数を @GOTPAGE 経由でリンクする。 */
+/* Standard streams (Apple libc exports these as __std{in,out,err}p and
+ * stdio.h normally wraps them in macros).  Declare them extern using the same
+ * convention so calls such as fprintf(stderr, ...) work.  Code generation
+ * links global variables marked is_extern_decl through @GOTPAGE. */
 extern FILE *__stdinp;
 extern FILE *__stdoutp;
 extern FILE *__stderrp;

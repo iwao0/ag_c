@@ -1,22 +1,23 @@
 #ifndef _COMPLEX_H
 #define _COMPLEX_H
 
-/* ag_c 同梱 <complex.h> (C11 7.3)。
+/* ag_c bundled <complex.h> (C11 7.3).
  *
- * ag_c の _Complex は {実部, 虚部} の連続レイアウト (double _Complex = 16B,
- * float _Complex = 8B) で、複素数の四則演算 (+ - * /) はコンパイラがネイティブに
- * 行う。虚数単位 I は複素数 compound literal {0,1} として定義し、`a + b*I` が
- * 複素数算術で組み立てられる。
+ * ag_c lays out _Complex as contiguous {real, imaginary} components
+ * (double _Complex = 16B, float _Complex = 8B), and the compiler implements
+ * complex arithmetic (+ - * /) natively.  The imaginary unit I is defined as
+ * the complex compound literal {0,1}, so `a + b*I` uses complex arithmetic.
  *
- * creal/cimag は GNU 拡張 __real__/__imag__ で実装するため任意の式 (rvalue) に
- * 効く (例: `creal(a+b)`)。cabs/carg は <math.h> の hypot/atan2 経由。_Complex の
- * 値渡し / 値返し (AAPCS64 HFA: re→d0, im→d1) も実装済みで、cexp/clog/csqrt
- * など使用頻度の高い複素初等関数も下で同梱実装する。 */
+ * creal/cimag use the GNU __real__/__imag__ extensions and therefore work
+ * with arbitrary expressions (rvalues), for example `creal(a+b)`.  cabs/carg
+ * use hypot/atan2 from <math.h>.  Passing and returning _Complex values
+ * (AAPCS64 HFA: re to d0, im to d1) is supported, and frequently used
+ * elementary complex functions such as cexp/clog/csqrt are provided below. */
 
 #define complex   _Complex
 #define imaginary _Imaginary
 
-/* 虚数単位。_Complex_I は i (= 0 + 1i)。I は通常 _Complex_I。 */
+/* Imaginary unit.  _Complex_I is i (= 0 + 1i), and I normally expands to it. */
 #define _Complex_I   ((float _Complex){0.0f, 1.0f})
 #define _Imaginary_I ((float _Complex){0.0f, 1.0f})
 #define I            _Complex_I
@@ -36,8 +37,8 @@ static float cimagf(float _Complex z) { return __imag__ z; }
 static long double creall(long double _Complex z) { return __real__ z; }
 static long double cimagl(long double _Complex z) { return __imag__ z; }
 
-/* 複素数の絶対値・偏角は <math.h> の実数関数で計算する (ag_c では sqrt/atan2 が
- * リンクする)。 */
+/* Compute complex magnitude and phase using real functions from <math.h>
+ * (sqrt/atan2 are linked by ag_c). */
 #include <math.h>
 
 /*
@@ -215,11 +216,14 @@ static double __ag_complex_cosh(double x) {
   return 0.5 * (__ag_complex_exp(x) + __ag_complex_exp(-x));
 }
 
-/* 複素数を返す初等関数。_Complex の値渡し/値返しが効くので static 関数として
- * 実装する (引数 z は 1 回だけ評価される)。実部/虚部の計算は <math.h> の実数関数。
- * float/long double 版は double 版へ委譲する (引数・戻り値の暗黙変換)。
- * 標準ライブラリの同名関数を static 定義で隠すため、ag_c でも clang (-I で本ヘッダ
- * 使用) でも同一実装になり結果が一致する。 */
+/* Elementary functions that return complex values.  Implement them as static
+ * functions now that passing and returning _Complex values is supported, so
+ * argument z is evaluated exactly once.  Real and imaginary components use
+ * real functions from <math.h>.  The float and long double variants delegate
+ * to the double variants through implicit argument and return conversions.
+ * These static definitions hide same-named library functions, giving ag_c and
+ * clang (when this header is selected with -I) identical implementations and
+ * results. */
 
 static double _Complex cexp(double _Complex z) {
   double r = __ag_complex_exp(__real__ z);

@@ -213,14 +213,15 @@ static inline psx_qual_type_t ps_ctx_typedef_decl_qual_type(
                                   PSX_TYPE_QUALIFIER_NONE};
 }
 
-/* typedef 名を登録する。decl_type_table + decl_qual_type が正本。
- * 戻り値 1 = 成功 (新規 or 互換な再宣言)、0 = 型欠落または型衝突。 */
+/* Register a typedef name.  decl_type_table + decl_qual_type are authoritative.
+ * Return 1 for success (new or compatible redeclaration), or 0 for a missing
+ * type or type conflict. */
 int ps_ctx_register_typedef_name_in(
     psx_semantic_context_t *context,
     char *name, int len, const psx_typedef_info_t *info,
     int *out_created, int *out_redeclared);
-/* typedef 名を引く。見つかれば true を返し *out に記述子を書く。
- * out が NULL のときは存在判定のみ (記述子は書かない)。 */
+/* Look up a typedef name.  Return true and write its descriptor to *out when
+ * found.  If out is NULL, only test for existence without writing a descriptor. */
 bool ps_ctx_find_typedef_name_in(
     psx_semantic_context_t *context,
     char *name, int len, psx_typedef_info_t *out);

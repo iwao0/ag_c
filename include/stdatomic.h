@@ -1,21 +1,23 @@
 #ifndef _STDATOMIC_H
 #define _STDATOMIC_H
 
-/* ag_c 同梱 <stdatomic.h> (C11 7.17)。
+/* ag_c bundled <stdatomic.h> (C11 7.17).
  *
- * Apple ARM64 の LSE アトミック命令とバリアで真にアトミックに実装する
- * (マルチスレッドで正しい)。操作は全て seq_cst 強度 (ldar/stlr/ld...al/swpal/
- * casal/dmb ish) で発行する。fetch 系は規格通り「演算前の旧値」を返す。
+ * Apple ARM64 LSE atomic instructions and barriers provide true atomicity
+ * (including in multithreaded code).  Every operation is emitted with seq_cst
+ * strength (ldar/stlr/ld...al/swpal/casal/dmb ish).  Fetch operations return
+ * the previous value, as required by the standard.
  *
- * 幅と符号はコンパイラが obj ポインタの指す型から決める。load/store は
- * scalar/pointerだけでなく、backendがatomic storageとして扱える幅の
- * aggregate/complexにも対応する。memory_order 引数は受け取るが、常に
- * seq_cst 強度で実行する (規格上、要求より強い順序付けは常に安全)。 */
+ * The compiler determines width and signedness from the type addressed by the
+ * obj pointer.  Loads and stores support scalars and pointers as well as
+ * aggregate and complex types whose widths the backend can treat as atomic
+ * storage.  A memory_order argument is accepted, but operations always use
+ * seq_cst strength (stronger ordering than requested is standards-compliant). */
 
 #include <stddef.h>
 #include <stdint.h>
 
-/* memory_order。 */
+/* memory_order. */
 typedef enum {
   memory_order_relaxed = 0,
   memory_order_consume = 1,
@@ -25,7 +27,7 @@ typedef enum {
   memory_order_seq_cst = 5
 } memory_order;
 
-/* ロックフリー性: 1/2/4/8 バイト整数は LSE で常にロックフリー (2)。 */
+/* Lock-free properties: 1/2/4/8-byte integers are always lock-free with LSE (2). */
 #define ATOMIC_BOOL_LOCK_FREE     2
 #define ATOMIC_CHAR_LOCK_FREE     2
 #define ATOMIC_CHAR16_T_LOCK_FREE 2
@@ -37,10 +39,10 @@ typedef enum {
 #define ATOMIC_LLONG_LOCK_FREE    2
 #define ATOMIC_POINTER_LOCK_FREE  2
 
-/* C11 の ATOMIC_VAR_INIT (C17 で非推奨だが互換のため提供)。 */
+/* C11 ATOMIC_VAR_INIT (deprecated in C17, retained for compatibility). */
 #define ATOMIC_VAR_INIT(value) (value)
 
-/* アトミック型 (= _Atomic 修飾した基底型)。 */
+/* Atomic types (= base types qualified with _Atomic). */
 typedef _Atomic _Bool              atomic_bool;
 typedef _Atomic char               atomic_char;
 typedef _Atomic signed char        atomic_schar;
@@ -63,7 +65,7 @@ typedef _Atomic ptrdiff_t          atomic_ptrdiff_t;
 typedef _Atomic intmax_t           atomic_intmax_t;
 typedef _Atomic uintmax_t          atomic_uintmax_t;
 
-/* atomic_flag: テスト&セット用のフラグ。 */
+/* atomic_flag: flag used for test-and-set. */
 typedef struct { _Atomic _Bool __ag_val; } atomic_flag;
 #define ATOMIC_FLAG_INIT {0}
 
@@ -80,18 +82,20 @@ long __ag_atomic_fetch_xor(void *obj, long value);
 long __ag_atomic_fetch_and(void *obj, long value);
 int  __ag_atomic_fence(void);
 
-/* memory_order 仮引数と同じ代入変換を適用し、非算術型を拒否する。
- * compound literal の初期化式なので引数はちょうど1回評価される。 */
+/* Apply the same assignment conversion as a memory_order parameter and reject
+ * non-arithmetic types.  The argument is evaluated exactly once because this
+ * is a compound-literal initializer. */
 #define __ag_atomic_order(order) \
   ((void)((memory_order){(order)}))
 
-/* 初期化。公開generic関数と同じ型制約を保つためcompiler intrinsicを通す。
- * seq_cst storeは、共有前の非atomic初期化より強いが規格上安全。 */
+/* Initialization.  Use a compiler intrinsic to preserve the same type
+ * constraints as the public generic function.  A seq_cst store is stronger
+ * than non-atomic initialization before publication, but remains conforming. */
 #define atomic_init(obj, value) \
   ((void)__ag_atomic_store((obj), (value)))
 
-/* ロード / ストア。compiler builtinがobject typeを保持し、
- * aggregate/complexを含む対応する非atomic型を返す。 */
+/* Load/store.  The compiler builtin preserves the object type and returns the
+ * corresponding non-atomic type, including aggregate and complex types. */
 #define atomic_load(obj)                         __ag_atomic_load(obj)
 #define atomic_load_explicit(obj, order) \
   (__ag_atomic_order(order), __ag_atomic_load(obj))
@@ -100,15 +104,17 @@ int  __ag_atomic_fence(void);
 #define atomic_store_explicit(obj, value, order) \
   (__ag_atomic_order(order), (void)__ag_atomic_store((obj), (value)))
 
-/* 交換: integer/pointerと1/2/4/8-byte objectはsingle-word exchange、
- * Apple ARM64の16-byte objectはCASPAL retryで旧値を返す。 */
+/* Exchange: integers, pointers, and 1/2/4/8-byte objects use a single-word
+ * exchange; 16-byte Apple ARM64 objects use a CASPAL retry loop.  Return the
+ * previous value. */
 #define atomic_exchange(obj, value)                 __ag_atomic_exchange((obj), (value))
 #define atomic_exchange_explicit(obj, value, order) \
   (__ag_atomic_order(order), __ag_atomic_exchange((obj), (value)))
 
-/* compare-and-swap: *obj==*expected なら *obj=desired にして 1、
- * さもなくば *expected=*obj にして 0 を返す (C11 7.17.7.4)。
- * Apple ARM64はCASAL/CASPALを使い、weakもspurious失敗なし = strongと同じ。 */
+/* Compare-and-swap: if *obj == *expected, assign desired to *obj and return 1;
+ * otherwise assign *obj to *expected and return 0 (C11 7.17.7.4).
+ * Apple ARM64 uses CASAL/CASPAL; weak has no spurious failures and therefore
+ * behaves like strong. */
 #define atomic_compare_exchange_strong(obj, expected, desired) \
   ((_Bool)__ag_atomic_cas((obj), (expected), (desired)))
 #define atomic_compare_exchange_weak(obj, expected, desired) \
@@ -120,7 +126,7 @@ int  __ag_atomic_fence(void);
   (__ag_atomic_order(succ), __ag_atomic_order(fail), \
    (_Bool)__ag_atomic_cas((obj), (expected), (desired)))
 
-/* 取得して演算 (LDADDAL/LDSETAL/LDCLRAL/LDEORAL): いずれも旧値を返す。 */
+/* Fetch-and-operate (LDADDAL/LDSETAL/LDCLRAL/LDEORAL): all return the old value. */
 #define atomic_fetch_add(obj, arg)                 __ag_atomic_fetch_add((obj), (arg))
 #define atomic_fetch_add_explicit(obj, arg, order) \
   (__ag_atomic_order(order), __ag_atomic_fetch_add((obj), (arg)))
@@ -137,7 +143,7 @@ int  __ag_atomic_fence(void);
 #define atomic_fetch_and_explicit(obj, arg, order) \
   (__ag_atomic_order(order), __ag_atomic_fetch_and((obj), (arg)))
 
-/* atomic_flag 操作。test_and_set は旧値 (真偽) を返す。 */
+/* atomic_flag operations.  test_and_set returns the previous Boolean value. */
 #define atomic_flag_test_and_set(flag) \
   ((_Bool)(__ag_atomic_exchange(&(flag)->__ag_val, 1) != 0))
 #define atomic_flag_test_and_set_explicit(flag, order) \
@@ -147,13 +153,13 @@ int  __ag_atomic_fence(void);
   (__ag_atomic_order(order), \
    (void)__ag_atomic_store(&(flag)->__ag_val, 0))
 
-/* フェンス (DMB ISH)。 */
+/* Fences (DMB ISH). */
 #define atomic_thread_fence(order) \
   (__ag_atomic_order(order), (void)__ag_atomic_fence())
 #define atomic_signal_fence(order) \
   (__ag_atomic_order(order), (void)__ag_atomic_fence())
 
-/* その他。 */
+/* Miscellaneous operations. */
 #define atomic_is_lock_free(obj) \
   ((void)(obj), (void)sizeof(__ag_atomic_load(obj)), \
    (_Bool)(sizeof(*(obj)) <= 16))

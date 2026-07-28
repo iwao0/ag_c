@@ -1,14 +1,15 @@
 /*
- * ag_c 中間表現 (IR) の型定義。
+ * Type definitions for the ag_c intermediate representation (IR).
  *
- * 詳細は docs/ir_intermediate_representation/implementation_plan.md。
+ * See docs/ir_intermediate_representation/implementation_plan.md for details.
  *
- * 設計方針:
- *   - 中レベル IR (chibicc 風): 型情報は保持、構造体メンバ/添字は base+offset に展開
- *   - 非 SSA: 各 vreg は複数回書ける
- *   - 無限仮想レジスタ (レジスタ割り付けフェーズで物理化)
- *   - メモリモデル: ローカル変数は ALLOCA + LOAD/STORE
- *   - 3 番地命令: dst = op src1, src2
+ * Design:
+ *   - Mid-level IR (in the style of chibicc): retain type information and
+ *     lower structure members/subscripts to base + offset.
+ *   - Non-SSA: each vreg may be written more than once.
+ *   - Unlimited virtual registers, made physical during register allocation.
+ *   - Memory model: local variables use ALLOCA + LOAD/STORE.
+ *   - Three-address instructions: dst = op src1, src2.
  */
 
 #ifndef AG_IR_H
@@ -21,7 +22,7 @@
 #include "../type_system/type_ids.h"
 
 /* ------------------------------------------------------------------ */
-/* 型システム                                                          */
+/* Type system                                                         */
 /* ------------------------------------------------------------------ */
 
 typedef enum {
@@ -68,51 +69,55 @@ int ir_function_type_copy(
 void ir_function_type_dispose(ir_function_type_t *type);
 
 /* ------------------------------------------------------------------ */
-/* オペコード                                                          */
+/* Opcodes                                                             */
 /* ------------------------------------------------------------------ */
 
 typedef enum {
   IR_NOP = 0,
 
-  /* 整数算術。SHR は算術シフト (signed)。LSR は論理シフト (unsigned)。
-   * UDIV/UMOD は unsigned 除算/剰余。 */
+  /* Integer arithmetic.  SHR is an arithmetic (signed) shift; LSR is a
+   * logical (unsigned) shift.  UDIV/UMOD are unsigned division/remainder. */
   IR_ADD, IR_SUB, IR_MUL, IR_DIV, IR_MOD,
   IR_UDIV, IR_UMOD,
   IR_AND, IR_OR,  IR_XOR, IR_SHL, IR_SHR, IR_LSR,
   IR_NEG, IR_NOT,
 
-  /* 比較 (signed)。unsigned は ULT/ULE で区別。結果は IR_TY_I32 (0/1) */
+  /* Signed comparisons; ULT/ULE distinguish unsigned comparisons.
+   * The result is IR_TY_I32 (0/1). */
   IR_EQ, IR_NE, IR_LT, IR_LE, IR_ULT, IR_ULE,
 
-  /* 浮動小数算術 */
+  /* Floating-point arithmetic. */
   IR_FADD, IR_FSUB, IR_FMUL, IR_FDIV, IR_FNEG,
   IR_FEQ, IR_FNE, IR_FLT, IR_FLE,
 
-  /* 型変換 */
+  /* Type conversions. */
   IR_ZEXT, IR_SEXT, IR_TRUNC,
   IR_F2I, IR_I2F, IR_F2F,
 
-  /* メモリ */
+  /* Memory. */
   IR_LOAD,
   IR_STORE,
   IR_ALLOCA,
   IR_LEA,
-  /* 構造体コピー (memcpy 相当)。src1=dst ptr, src2=src ptr, alloca_size=バイト数。 */
+  /* Structure copy (equivalent to memcpy): src1 = destination pointer,
+   * src2 = source pointer, alloca_size = byte count. */
   IR_MEMCPY,
 
-  /* 即値ロード */
+  /* Immediate loads. */
   IR_LOAD_IMM, IR_LOAD_FP_IMM, IR_LOAD_STR, IR_LOAD_SYM,
-  /* C thread-local objectのアドレス参照。具体的なTLS modelと呼出し規約は
-   * target側で選択する。dst は PTR (TLS変数のアドレス)。 */
+  /* Address reference to a C thread-local object.  The target selects the
+   * concrete TLS model and calling convention.  dst is PTR (the TLS variable's
+   * address). */
   IR_LOAD_TLS_SYM,
 
-  /* 制御フロー */
+  /* Control flow. */
   IR_BR, IR_BR_COND, IR_LABEL, IR_RET,
-  /* Resumable Wasm entryのframe条件境界。label_id/else_label_idは
-   * hostから渡された条件値のtrue/false継続先。 */
+  /* Frame-condition boundary for a resumable Wasm entry.
+   * label_id/else_label_id are the true/false continuations selected by the
+   * condition value supplied by the host. */
   IR_CONTINUATION_SUSPEND,
 
-  /* 関数呼び出し */
+  /* Function calls. */
   IR_CALL,
 
   /* Source-level parameter binding. src1 is the destination object address and
@@ -124,32 +129,34 @@ typedef enum {
   /* Current C variadic cursor. The selected backend supplies its ABI-specific
    * representation (frame address, global cursor, or another target form). */
   IR_VARARG_CURSOR,
-  /* VLA 動的スタック確保: src1 = 必要バイト数 (i32/i64)、dst = 確保した領域の
-   * 先頭アドレス (PTR)。codegen は内部で 16-byte アライン → sub sp, sp → mov dst, sp。
-   * SP を変更するため副作用ありで、regalloc/DCE は副作用扱いにする。 */
+  /* Dynamic VLA stack allocation: src1 = required byte count (i32/i64),
+   * dst = start address of allocated storage (PTR).  Codegen internally aligns
+   * to 16 bytes, subtracts from sp, and moves sp to dst.  Because this changes
+   * SP, regalloc and DCE treat it as having side effects. */
   IR_VLA_ALLOC,
 
-  /* C11 アトミック操作 (Apple ARM64 LSE 命令 / バリアにマップ)。
-   * atomic_width = 1/2/4/8/16 (操作幅)。atomic_kind = 下記
-   * IR_ATOMIC_* のいずれか。16-byte load/store は scalar IR 型を持たないため、
-   * src2 をそれぞれ出力先/入力元の16-byte storage pointerとして使う。
-   *  - IR_ATOMIC_LOAD:  dst = *src1 (LDAR)。
-   *  - IR_ATOMIC_STORE: *src1 = src2 (STLR)。
-   *  - IR_ATOMIC_RMW:   dst = old(*src1); *src1 op= src2 (LDADDAL/LDSETAL/...)。
-   *                     op は atomic_rmw_op (ADD/SUB/OR/AND/XOR/XCHG)。
-   *  - IR_ATOMIC_CAS:   src1=ptr, src2=expected-ptr, src3=desired; dst = 成否 (0/1)。
-   *    16-byte CASではsrc3もdesired storage pointer。
-   *  - IR_ATOMIC_FENCE: DMB ISH。 */
+  /* C11 atomic operations (mapped to Apple ARM64 LSE instructions/barriers).
+   * atomic_width = 1/2/4/8/16 (operation width), and atomic_kind is one of the
+   * IR_ATOMIC_* values below.  Because 16-byte loads/stores have no scalar IR
+   * type, src2 is respectively the output/input 16-byte storage pointer.
+   *  - IR_ATOMIC_LOAD:  dst = *src1 (LDAR).
+   *  - IR_ATOMIC_STORE: *src1 = src2 (STLR).
+   *  - IR_ATOMIC_RMW:   dst = old(*src1); *src1 op= src2 (LDADDAL/LDSETAL/...).
+   *                     op is atomic_rmw_op (ADD/SUB/OR/AND/XOR/XCHG).
+   *  - IR_ATOMIC_CAS:   src1=ptr, src2=expected-ptr, src3=desired;
+   *                     dst = success (0/1).
+   *    For 16-byte CAS, src3 is also a desired-value storage pointer.
+   *  - IR_ATOMIC_FENCE: DMB ISH. */
   IR_ATOMIC,
 
-  /* 過剰整列ローカル (_Alignas(>16)) のアドレスを実行時に丸める。
-   * dst = (src1 + (alloca_align-1)) & ~(alloca_align-1)。副作用なし。 */
+  /* Round an over-aligned local (_Alignas(>16)) address at runtime:
+   * dst = (src1 + (alloca_align-1)) & ~(alloca_align-1).  No side effects. */
   IR_ALIGN_PTR,
 
   IR_OP_COUNT,
 } ir_op_t;
 
-/* IR_ATOMIC の種別。 */
+/* IR_ATOMIC kinds. */
 typedef enum {
   IR_ATOMIC_LOAD = 0,
   IR_ATOMIC_STORE,
@@ -158,7 +165,7 @@ typedef enum {
   IR_ATOMIC_FENCE,
 } ir_atomic_kind_t;
 
-/* IR_ATOMIC_RMW の演算。 */
+/* IR_ATOMIC_RMW operations. */
 typedef enum {
   IR_ARMW_ADD = 0,
   IR_ARMW_SUB,
@@ -171,21 +178,22 @@ typedef enum {
 const char *ir_op_name(ir_op_t op);
 
 /* ------------------------------------------------------------------ */
-/* 値 (vreg or immediate)                                              */
+/* Values (vreg or immediate)                                          */
 /* ------------------------------------------------------------------ */
 
 #define IR_VAL_IMM  (-1)
 #define IR_VAL_NONE (-2)
 
 typedef struct ir_val_t {
-  int id;            /* >= 0: vreg id、IR_VAL_IMM: imm/fp_imm を見る、IR_VAL_NONE: 未使用 */
+  int id;            /* >= 0: vreg ID; IR_VAL_IMM: use imm/fp_imm; IR_VAL_NONE: unused. */
   ir_type_t type;
-  /* imm と fp_imm は排他 (値は整数即値か浮動小数即値のどちらか一方)。匿名 union で
-   * 共有し ir_val_t を 24→16B に縮小する。read は常に type / op でゲートされる
-   * (F32/F64 または IR_LOAD_FP_IMM のときだけ fp_imm、それ以外は imm)。 */
+  /* imm and fp_imm are mutually exclusive (a value is either an integer or a
+   * floating immediate).  Sharing them in an anonymous union reduces ir_val_t
+   * from 24B to 16B.  Reads are always gated by type/op: fp_imm only for
+   * F32/F64 or IR_LOAD_FP_IMM, and imm otherwise. */
   union {
-    long long imm;   /* 整数 immediate (IR_VAL_IMM かつ非 fp 型) */
-    double fp_imm;   /* 浮動小数 immediate (IR_VAL_IMM かつ F32/F64) */
+    long long imm;   /* Integer immediate (IR_VAL_IMM and non-FP type). */
+    double fp_imm;   /* Floating immediate (IR_VAL_IMM and F32/F64). */
   };
 } ir_val_t;
 
@@ -208,50 +216,53 @@ typedef struct {
 } ir_call_argument_t;
 
 /* ------------------------------------------------------------------ */
-/* 命令                                                                */
+/* Instructions                                                        */
 /* ------------------------------------------------------------------ */
 
 /*
- * フィールドはアライメント降順に寄せ、パディングを抑えている。codegen / regalloc が
- * 毎命令で読むホットフィールド (op / dst / src1 / src2) は先頭側に置き、op のあとの
- * 4 バイト穴を nargs で埋めている。
+ * Fields are ordered by decreasing alignment to reduce padding.  Hot fields
+ * read by codegen/regalloc for every instruction (op/dst/src1/src2) are near
+ * the front, and nargs fills the 4-byte gap after op.
  *
- * 匿名 union (C11 標準・GNU 拡張ではない) には op ごとに排他的にしか使われないスカラ系
- * メタフィールドだけを入れている。ir_opt / ir_regalloc の汎用オペランド走査が op を
- * 問わず全命令で読む args / nargs / callee / result_storage / src3 は union に入れない
- * (同一メモリを別 op の値と共有すると誤読する)。並べ替えはレイアウトのみの変更で、
- * ir_inst_new が calloc + フィールド代入のため挙動には影響しない。
+ * The anonymous union (standard C11, not a GNU extension) contains only scalar
+ * metadata used exclusively by a particular op.  args/nargs/callee/
+ * result_storage/src3 remain outside it because generic operand traversal in
+ * ir_opt/ir_regalloc reads them for all instructions regardless of op; sharing
+ * their storage with another op's values would cause misreads.  Reordering
+ * changes layout only and not behavior because ir_inst_new uses calloc and
+ * assigns fields individually.
  */
 typedef struct ir_inst_t {
   struct ir_inst_t *next;
   ir_op_t op;
-  int nargs;          /* CALL の実引数個数 (op 直後の 4 バイト穴を埋める。汎用走査される) */
+  int nargs;          /* CALL argument count; fills the 4-byte gap after op and is generically traversed. */
   ir_val_t dst, src1, src2;
 
-  /* --- 8 バイト (ポインタ / ir_val_t)。汎用オペランド走査が触るため union 外 --- */
-  char *sym;          /* CALL / LOAD_SYM / LOAD_STR のシンボル */
-  /* semantic passで確定したCALL / function LOAD_SYM参照のcanonical C関数型。
-   * backendはsemantic type tableへ戻らず、object metadataへそのまま運ぶ。 */
+  /* --- 8 bytes (pointer / ir_val_t), outside the union for generic traversal. --- */
+  char *sym;          /* Symbol for CALL / LOAD_SYM / LOAD_STR. */
+  /* Canonical C function type for CALL/function LOAD_SYM references, resolved
+   * by the semantic pass.  The backend carries it directly into object
+   * metadata without consulting the semantic type table. */
   char *reference_c_signature;
-  ir_call_argument_t *args; /* CALL のsource-level実引数列 */
-  /* IR_CALL のsource-level object結果を受け取る保存先。直接/間接returnや
-   * register pieceへの分解はAbiLowering sidecarが決定する。 */
+  ir_call_argument_t *args; /* Source-level argument sequence for CALL. */
+  /* Storage receiving an IR_CALL source-level object result.  The AbiLowering
+   * sidecar decides direct/indirect return and decomposition into register pieces. */
   ir_val_t result_storage;
-  /* 間接呼び出し時の callee 値 (関数ポインタ)。id != IR_VAL_NONE のとき
-   * sym ではなく callee vreg を blr する。 */
+  /* Callee value (function pointer) for indirect calls.  When
+   * id != IR_VAL_NONE, blr the callee vreg instead of sym. */
   ir_val_t callee;
-  ir_val_t src3;               /* IR_ATOMIC_CAS の desired 値 */
+  ir_val_t src3;               /* Desired value for IR_ATOMIC_CAS. */
 
-  /* --- 4 バイト --- */
-  int sym_len;        /* CALL / LOAD_* のシンボル長 (sym と対) */
+  /* --- 4 bytes --- */
+  int sym_len;        /* Symbol length for CALL / LOAD_*, paired with sym. */
   int reference_c_signature_len;
-  int object_size;    /* IR_LOAD_STR: 終端を含むlower済みデータサイズ */
+  int object_size;    /* IR_LOAD_STR: lowered data size including terminator. */
 
-  /* --- 1 バイト (複数 op 族で共有するため union 外) --- */
-  /* IR_LOAD / IR_ATOMIC: unsigned (zero-extend) なら 1。signed (sign-extend) なら 0。
-   * IR_I2F / IR_F2I: unsigned 変換なら 1。
-   * 32bit unsigned 値を 64bit reg で扱うとき、上位 32bit を 0 にしないと
-   * 後段の LSR/UDIV/ULT が誤動作するので必須。 */
+  /* --- 1 byte (outside the union because multiple op families share it) --- */
+  /* IR_LOAD / IR_ATOMIC: 1 for unsigned (zero extension), 0 for signed (sign
+   * extension).  IR_I2F / IR_F2I: 1 for unsigned conversion.  When a 32-bit
+   * unsigned value is held in a 64-bit register, its upper 32 bits must be
+   * cleared or later LSR/UDIV/ULT operations will behave incorrectly. */
   unsigned char is_unsigned;
   ir_function_type_t function_type;
   /* IR_LOAD_SYM linkage and symbol category. The selected backend decides the
@@ -260,18 +271,18 @@ typedef struct ir_inst_t {
   unsigned char is_function_symbol;
   unsigned char has_function_type;
 
-  /* --- op ごとに排他なスカラ系メタ (匿名 union で同一メモリを共有) ---
-   * 各命令は単一 op で対応アームのみを読み書きする。読み出しは全て op で
-   * ゲートされている (switch(op) / if(op==...))。ここに汎用走査される
-   * args/nargs/callee/result_storage/src3 を入れてはならない。 */
+  /* --- Mutually exclusive per-op scalar metadata sharing an anonymous union. ---
+   * Each instruction has one op and reads/writes only the corresponding arm.
+   * Every read is gated by op (switch(op) / if(op==...)).  Do not place
+   * generically traversed args/nargs/callee/result_storage/src3 here. */
   union {
     struct {            /* IR_BR / IR_BR_COND / IR_LABEL */
-      int label_id;       /* 分岐先 / ラベル id */
-      int else_label_id;  /* BR_COND の偽分岐先 */
+      int label_id;       /* Branch target / label ID. */
+      int else_label_id;  /* False target of BR_COND. */
     };
     struct {            /* IR_ALLOCA / IR_MEMCPY / IR_ALIGN_PTR */
-      int alloca_size;    /* スロットサイズ (バイト) */
-      int alloca_align;   /* アライメント (バイト) */
+      int alloca_size;    /* Slot size in bytes. */
+      int alloca_align;   /* Alignment in bytes. */
     };
     struct {            /* IR_CALL */
       unsigned char is_void_call;
@@ -283,14 +294,14 @@ typedef struct ir_inst_t {
     };
     struct {            /* IR_ATOMIC */
       unsigned char atomic_kind;   /* ir_atomic_kind_t */
-      unsigned char atomic_rmw_op; /* ir_atomic_rmw_op_t (RMW のとき) */
-      unsigned char atomic_width;  /* 1/2/4/8/16 バイト */
+      unsigned char atomic_rmw_op; /* ir_atomic_rmw_op_t for RMW. */
+      unsigned char atomic_width;  /* 1/2/4/8/16 bytes. */
     };
   };
 } ir_inst_t;
 
 /* ------------------------------------------------------------------ */
-/* 基本ブロック                                                        */
+/* Basic blocks                                                        */
 /* ------------------------------------------------------------------ */
 
 typedef struct ir_block_t {
@@ -300,17 +311,17 @@ typedef struct ir_block_t {
 } ir_block_t;
 
 /* ------------------------------------------------------------------ */
-/* 関数                                                                */
+/* Functions                                                           */
 /* ------------------------------------------------------------------ */
 
-/* フィールドはアライメント降順 (8→4 バイト) に並べる。 */
+/* Fields are ordered by decreasing alignment (8 to 4 bytes). */
 typedef struct ir_func_t {
   struct ir_func_t *next;
   ir_allocation_stats_t *allocation_stats;
   size_t tracked_instruction_count;
   size_t tracked_block_count;
   char *name;
-  char *c_signature; /* semantic pass由来のcanonical C関数型。backendはparserを再参照しない。 */
+  char *c_signature; /* Canonical C function type from semantics; the backend does not revisit the parser. */
   char *continuation_entry_name;
   char *continuation_condition_name;
   char *continuation_start_export;
@@ -321,27 +332,28 @@ typedef struct ir_func_t {
   ir_block_t *entry;
   ir_block_t *cur_block;
   ir_block_t *blocks_tail;
-  /* Phase 5: vreg → 物理レジスタ番号 (-1 = spill / frame に置く)。
-   * 物理レジスタ番号は実際の x{n} の n。長さ = next_vreg_id。
-   * NULL のとき regalloc 未実行 (codegen は全 vreg を frame に置く既存挙動)。 */
+  /* Phase 5: vreg to physical register number (-1 = spill/place in frame).
+   * A physical register number is n in the actual x{n}; length = next_vreg_id.
+   * NULL means regalloc has not run, preserving the existing codegen behavior
+   * of placing every vreg in the frame. */
   int *vreg_phys_reg;
   int name_len;
   int c_signature_len;
   int next_vreg_id;
   int next_block_id;
   int frame_size;
-  int is_static;      /* 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。 */
+  int is_static;      /* 1: static function (internal linkage); suppress .global in codegen. */
   int continuation_condition_block_id;
   unsigned char is_continuation_entry;
   unsigned char continuation_has_suspend;
 } ir_func_t;
 
 /* ------------------------------------------------------------------ */
-/* グローバル定義                                                      */
+/* Global definitions                                                  */
 /* ------------------------------------------------------------------ */
 
-/* フィールドはアライメント降順 (8→4 バイト) に並べてパディングを除いている
- * (sizeof=64B、並べ替え前は 72B)。 */
+/* Fields are ordered by decreasing alignment (8 to 4 bytes) to remove padding
+ * (sizeof = 64B, versus 72B before reordering). */
 typedef struct ir_global_t {
   struct ir_global_t *next;
   char *name;
@@ -356,8 +368,9 @@ typedef struct ir_global_t {
   int init_symbol_len;
 } ir_global_t;
 
-/* semantic/loweringで解決済みのシンボル情報。backendはparser registryへ
- * 戻らず、この表からobject layoutと初期関数ポインタ値を読む。 */
+/* Symbol information resolved by semantics/lowering.  The backend reads object
+ * layout and initial function-pointer values from this table without returning
+ * to the parser registry. */
 typedef struct ir_symbol_func_ref_t {
   struct ir_symbol_func_ref_t *next;
   char *name;
@@ -381,7 +394,7 @@ typedef struct ir_symbol_t {
 } ir_symbol_t;
 
 /* ------------------------------------------------------------------ */
-/* IR モジュール                                                       */
+/* IR module                                                           */
 /* ------------------------------------------------------------------ */
 
 typedef struct ir_module_t {
@@ -414,47 +427,47 @@ ir_func_t   *ir_func_new(ir_module_t *m, const char *name, int name_len);
 ir_block_t  *ir_block_new(ir_func_t *f);
 ir_inst_t   *ir_inst_new(ir_op_t op);
 
-/* 関数 1 つ / モジュール全体の IR を解放する (関数ごとストリーミング codegen 用)。 */
+/* Free one function or an entire IR module (for per-function streaming codegen). */
 void ir_func_free(ir_func_t *f);
 void ir_module_free(ir_module_t *m);
 
-/* 関数 f の現在ブロックに inst を末尾追加する */
+/* Append inst to the current block of function f. */
 void ir_func_append_inst(ir_func_t *f, ir_inst_t *inst);
 
-/* 新規 vreg を 1 つ確保する */
+/* Allocate one new vreg. */
 int ir_func_new_vreg(ir_func_t *f);
 
-/* 新規 label id を 1 つ確保する */
+/* Allocate one new label ID. */
 int ir_func_new_label(ir_func_t *f);
 
-/* 関数 f の cur_block を block に切り替える (block は ir_block_new 済み) */
+/* Switch function f's cur_block to block, which has already been created by ir_block_new. */
 void ir_func_switch_block(ir_func_t *f, ir_block_t *block);
 
 /* ------------------------------------------------------------------ */
-/* プリンタ (詳細は ir_print.h)                                        */
+/* Printer (see ir_print.h for details)                                */
 /* ------------------------------------------------------------------ */
 
-/* IR をテキスト形式で stdout にダンプ */
+/* Dump IR to stdout in text form. */
 void ir_print_module(ir_module_t *m);
 
-/* バッファに書き出す版 (テスト用)。buf の残量を超えたら切り詰める。 */
+/* Buffer-output variant for tests; truncate when buf lacks remaining space. */
 size_t ir_print_module_to_buf(ir_module_t *m, char *buf, size_t buf_size);
 
 /* ------------------------------------------------------------------ */
-/* レジスタ割り付け                                                    */
+/* Register allocation                                                 */
 /* ------------------------------------------------------------------ */
 
-/* Phase 5: 関数単位の線形スキャンレジスタ割り付け。
- * 関数全体で last use を計算し、x19..x28 (10 個の callee-saved) を割り当てる。
- * ループバック検出で live range を延長する。
- * 実行後、f->vreg_phys_reg[v] が -1 なら spill、>=0 なら物理レジスタ番号 (19..28)。 */
+/* Phase 5: per-function linear-scan register allocation.
+ * Compute last use across the function and allocate x19..x28 (10 callee-saved
+ * registers).  Loop-back detection extends live ranges.  After execution,
+ * f->vreg_phys_reg[v] is -1 for a spill or >= 0 for physical register 19..28. */
 void ir_regalloc_function(ir_func_t *f);
 
-/* Phase 6: モジュール全体の最適化パス。 */
+/* Phase 6: whole-module optimization passes. */
 void ir_opt_const_fold(
     ir_module_t *m, const ag_data_layout_t *data_layout);
-                                             /* 即値伝播 + 算術畳み込み */
-void ir_opt_copy_propagate(ir_module_t *m); /* 現状 const_fold が兼ねる */
-void ir_opt_dce(ir_module_t *m);            /* 副作用なしで dst が使われない命令を NOP 化 */
+                                             /* Immediate propagation + arithmetic folding. */
+void ir_opt_copy_propagate(ir_module_t *m); /* Currently covered by const_fold. */
+void ir_opt_dce(ir_module_t *m);            /* NOP side-effect-free instructions with unused dst. */
 
 #endif /* AG_IR_H */

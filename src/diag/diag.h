@@ -41,8 +41,9 @@ const char *diag_warn_message_for_in(
     const ag_diagnostic_context_t *context, diag_warn_id_t id);
 
 /**
- * 構造化診断の座標は正規化済みUTF-8入力上のbyte基準。
- * offsetは0始まり、line/columnは1始まり、endは範囲外終端(exclusive)を表す。
+ * Structured-diagnostic coordinates use byte positions in normalized UTF-8
+ * input.  Offsets are zero-based, lines and columns are one-based, and end
+ * denotes the exclusive end of the range.
  */
 void diag_reset_records_in(ag_diagnostic_context_t *context);
 int agc_wasm_diagnostic_api_version(void);
@@ -73,31 +74,31 @@ int diag_has_error_records_in(const ag_diagnostic_context_t *context);
 int diag_limit_kind_in(const ag_diagnostic_context_t *context);
 
 /**
- * @brief テキストIDに対応するローカライズ済みテキストを取得する。
- * @param id テキストID。
- * @return ローカライズ済みテキスト。未定義時は "unknown.text"。
+ * @brief Return localized text for a text ID.
+ * @param id Text ID.
+ * @return Localized text, or "unknown.text" when undefined.
  */
 const char *diag_text_for_in(
     const ag_diagnostic_context_t *context, diag_text_id_t id);
 
 /**
- * @brief 入力位置を指定して診断を出力し、プロセスを終了する。
- * @param id 出力するエラーID。
- * @param input 元入力全体（キャレット表示用）。
- * @param loc 入力中のエラー位置ポインタ。
- * @param fmt 可変引数付きフォーマット文字列。
- * @return 戻らない。
+ * @brief Emit a diagnostic at an input position and terminate the process.
+ * @param id Error ID to emit.
+ * @param input Complete original input (for caret display).
+ * @param loc Pointer to the error position in the input.
+ * @param fmt Variadic format string.
+ * @return Does not return.
  */
 _Noreturn void diag_emit_atf_in(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const char *input, const char *loc, const char *fmt, ...);
 
 /**
- * @brief トークン位置を指定して診断を出力し、プロセスを終了する。
- * @param id 出力するエラーID。
- * @param tok エラー位置を表すトークン。
- * @param fmt 可変引数付きフォーマット文字列。
- * @return 戻らない。
+ * @brief Emit a diagnostic at a token position and terminate the process.
+ * @param id Error ID to emit.
+ * @param tok Token identifying the error position.
+ * @param fmt Variadic format string.
+ * @return Does not return.
  */
 _Noreturn void diag_emit_tokf_in(
     ag_diagnostic_context_t *context, diag_error_id_t id,
@@ -112,29 +113,29 @@ int diag_report_tokf_in(
     const token_t *tok, const char *fmt, ...);
 
 /**
- * @brief トークン位置を指定して警告を出力する（プロセスは終了しない）。
- * @param id 警告ID。
- * @param tok 警告位置を表すトークン。
- * @param fmt 可変引数付きフォーマット文字列。
+ * @brief Emit a warning at a token position without terminating the process.
+ * @param id Warning ID.
+ * @param tok Token identifying the warning position.
+ * @param fmt Variadic format string.
  */
 void diag_warn_tokf_in(
     ag_diagnostic_context_t *context, diag_warn_id_t id,
     const token_t *tok, const char *fmt, ...);
 
 /**
- * @brief 入力位置なしの内部診断を出力し、プロセスを終了する。
- * @param id 出力するエラーID。
- * @param fmt 可変引数付きフォーマット文字列。
- * @return 戻らない。
+ * @brief Emit an internal diagnostic without an input position and terminate.
+ * @param id Error ID to emit.
+ * @param fmt Variadic format string.
+ * @return Does not return.
  */
 _Noreturn void diag_emit_internalf_in(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const char *fmt, ...);
 
 /**
- * @brief 入力位置なしの内部診断を出力する（プロセスは終了しない）。
- * @param id 出力するエラーID。
- * @param fmt 可変引数付きフォーマット文字列。
+ * @brief Emit an internal diagnostic without an input position or termination.
+ * @param id Error ID to emit.
+ * @param fmt Variadic format string.
  */
 void diag_report_internalf_in(
     ag_diagnostic_context_t *context, diag_error_id_t id,

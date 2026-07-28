@@ -39,7 +39,7 @@ typedef struct __sFILE FILE;
 #define WCHAR_MIN (-WCHAR_MAX - 1)
 #endif
 
-/* 文字列 */
+/* Strings */
 size_t wcslen(const wchar_t *s);
 wchar_t *wcscpy(wchar_t *dst, const wchar_t *src);
 wchar_t *wcsncpy(wchar_t *dst, const wchar_t *src, size_t n);
@@ -56,13 +56,13 @@ size_t wcsspn(const wchar_t *s, const wchar_t *accept);
 size_t wcscspn(const wchar_t *s, const wchar_t *reject);
 wchar_t *wcspbrk(const wchar_t *s, const wchar_t *accept);
 wchar_t *wcstok(wchar_t *s, const wchar_t *delim, wchar_t **ptr);
-/* メモリ */
+/* Memory */
 wchar_t *wmemcpy(wchar_t *dst, const wchar_t *src, size_t n);
 wchar_t *wmemmove(wchar_t *dst, const wchar_t *src, size_t n);
 wchar_t *wmemset(wchar_t *s, wchar_t c, size_t n);
 int wmemcmp(const wchar_t *s1, const wchar_t *s2, size_t n);
 wchar_t *wmemchr(const wchar_t *s, wchar_t c, size_t n);
-/* 変換 */
+/* Conversions */
 long wcstol(const wchar_t *nptr, wchar_t **endptr, int base);
 unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base);
 long long wcstoll(const wchar_t *nptr, wchar_t **endptr, int base);
@@ -70,7 +70,7 @@ unsigned long long wcstoull(const wchar_t *nptr, wchar_t **endptr, int base);
 float wcstof(const wchar_t *nptr, wchar_t **endptr);
 double wcstod(const wchar_t *nptr, wchar_t **endptr);
 long double wcstold(const wchar_t *nptr, wchar_t **endptr);
-/* マルチバイト */
+/* Multibyte conversion */
 size_t mbrtowc(wchar_t *pwc, const char *s, size_t n, mbstate_t *ps);
 size_t mbrlen(const char *s, size_t n, mbstate_t *ps);
 int mbsinit(const mbstate_t *ps);
@@ -78,7 +78,7 @@ size_t wcrtomb(char *s, wchar_t wc, mbstate_t *ps);
 size_t mbsrtowcs(wchar_t *dst, const char **src, size_t len, mbstate_t *ps);
 size_t wcsrtombs(char *dst, const wchar_t **src, size_t len, mbstate_t *ps);
 size_t wcsftime(wchar_t *wcs, size_t maxsize, const wchar_t *format, const struct tm *timeptr);
-/* I/O (可変長) */
+/* I/O (variadic) */
 int fwprintf(FILE *stream, const wchar_t *fmt, ...);
 int wprintf(const wchar_t *fmt, ...);
 int swprintf(wchar_t *s, size_t n, const wchar_t *fmt, ...);

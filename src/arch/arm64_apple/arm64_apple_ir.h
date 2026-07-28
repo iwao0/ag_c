@@ -1,5 +1,5 @@
 /*
- * ARM64 Apple ABI: IR → ASM 出力 (Phase 2 最小版)。
+ * ARM64 Apple ABI: IR to ASM output (minimal Phase 2 version).
  */
 
 #ifndef AG_ARM64_APPLE_IR_H

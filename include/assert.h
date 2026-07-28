@@ -1,10 +1,12 @@
 #ifndef _ASSERT_H
 #define _ASSERT_H
 
-/* C11 7.2.1.1: 式が偽のとき、引数テキスト・__FILE__・__LINE__・__func__ を
- * 標準エラー出力に処理系定義の形式で書き出し、その後 abort() する。
- * Apple のランタイムが提供する __assert_rtn を呼ぶ (clang の <assert.h> と同一形式・
- * stderr 出力)。従来は abort() のみで診断を書き出しておらず C11 非適合だった。 */
+/* C11 7.2.1.1: When the expression is false, write the argument text,
+ * __FILE__, __LINE__, and __func__ to standard error in an
+ * implementation-defined format, then call abort().  This invokes
+ * __assert_rtn from the Apple runtime (the same format and stderr output as
+ * clang's <assert.h>).  The previous abort-only implementation emitted no
+ * diagnostic and was not C11-conforming. */
 _Noreturn void __assert_rtn(
     const char *, const char *, int, const char *);
 

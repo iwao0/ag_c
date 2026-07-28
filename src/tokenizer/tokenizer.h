@@ -11,7 +11,7 @@ typedef struct ag_source_manager_t ag_source_manager_t;
 typedef void (*tk_cursor_hook_t)(void *user_data, token_t *cursor);
 typedef void (*tk_ensure_lookahead_hook_t)(void *user_data);
 
-/** @brief Tokenizerの実行時設定コンテキスト。 */
+/** @brief Runtime configuration context for the tokenizer. */
 struct tokenizer_context_t {
   tk_allocator_context_t *allocator_context;
   ag_diagnostic_context_t *diagnostic_context;
@@ -33,143 +33,146 @@ struct tokenizer_context_t {
 };
 
 /**
- * @brief 指定コンテキストの現在トークンカーソルを取得する。
- * @param ctx 対象コンテキスト。
- * @return 現在トークン。未設定時は `NULL`。
+ * @brief Return the current token cursor for a context.
+ * @param ctx Target context.
+ * @return Current token, or `NULL` when unset.
  */
 token_t *tk_get_current_token_ctx(tokenizer_context_t *ctx);
 /**
- * @brief 指定コンテキストの現在トークンカーソルを更新する。
- * @param ctx 対象コンテキスト。
- * @param tok 新しい現在トークン。`NULL` 可。
+ * @brief Update the current token cursor for a context.
+ * @param ctx Target context.
+ * @param tok New current token; may be `NULL`.
  */
 void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok);
 
 /**
- * @brief token kind を可読文字列へ変換する。
- * @param kind 変換対象の token kind。
- * @param len 文字列長の出力先。不要なら `NULL` 可。
- * @return 種別に対応する文字列表現。
+ * @brief Convert a token kind to a readable string.
+ * @param kind Token kind to convert.
+ * @param len Output for the string length; may be `NULL` if unnecessary.
+ * @return String representation of the kind.
  */
 const char *tk_token_kind_str(token_kind_t kind, int *len);
 
 /**
- * @brief 指定コンテキストで次トークンが1文字記号 `op` なら消費する。
- * @param ctx 対象コンテキスト。
- * @param op 期待する1文字記号。
- * @return 一致して消費した場合 `true`。不一致/未設定なら `false`（非破壊）。
+ * @brief Consume the next token in a context if it is the one-character punctuator `op`.
+ * @param ctx Target context.
+ * @param op Expected one-character punctuator.
+ * @return `true` when matched and consumed; `false` without mutation otherwise.
  */
 bool tk_consume_ctx(tokenizer_context_t *ctx, char op);
 /**
- * @brief 指定コンテキストで次トークンが記号文字列 `op` なら消費する。
- * @param ctx 対象コンテキスト。
- * @param op 期待する記号文字列。
- * @return 一致して消費した場合 `true`。不一致/未設定なら `false`（非破壊）。
+ * @brief Consume the next token in a context if it is the punctuator string `op`.
+ * @param ctx Target context.
+ * @param op Expected punctuator string.
+ * @return `true` when matched and consumed; `false` without mutation otherwise.
  */
 bool tk_consume_str_ctx(tokenizer_context_t *ctx, const char *op);
 /**
- * @brief 指定コンテキストで次トークンが識別子なら消費して返す。
- * @param ctx 対象コンテキスト。
- * @return 消費した識別子トークン。一致しない場合は `NULL`（非破壊）。
+ * @brief Consume and return the next token in a context if it is an identifier.
+ * @param ctx Target context.
+ * @return Consumed identifier token, or `NULL` without mutation if unmatched.
  */
 token_ident_t *tk_consume_ident_ctx(tokenizer_context_t *ctx);
 
 /**
- * @brief 指定コンテキストで次トークンが1文字記号 `op` であることを期待して消費する。
- * @param ctx 対象コンテキスト。
- * @param op 期待する1文字記号。
- * @warning 不一致または現在トークン未設定時は診断終了する。
+ * @brief Require and consume the one-character punctuator `op` in a context.
+ * @param ctx Target context.
+ * @param op Expected one-character punctuator.
+ * @warning A mismatch or unset current token terminates with a diagnostic.
  */
 void tk_expect_ctx(tokenizer_context_t *ctx, char op);
 
 /**
- * @brief 指定コンテキストで次トークンが整数リテラルであることを期待して `int` 値を返す。
- * @param ctx 対象コンテキスト。
- * @return 消費した整数値。
- * @warning 不一致・範囲外・現在トークン未設定時は診断終了する。
+ * @brief Require an integer literal in a context, consume it, and return its `int` value.
+ * @param ctx Target context.
+ * @return Consumed integer value.
+ * @warning A mismatch, out-of-range value, or unset current token terminates with a diagnostic.
  */
 int tk_expect_number_ctx(tokenizer_context_t *ctx);
 
 /**
- * @brief 指定コンテキストで現在トークンが EOF かを返す。
- * @param ctx 対象コンテキスト。
- * @return 現在トークンが EOF のとき `true`。未設定を含むそれ以外は `false`。
+ * @brief Test whether the current token in a context is EOF.
+ * @param ctx Target context.
+ * @return `true` at EOF; `false` otherwise, including when unset.
  */
 bool tk_at_eof_ctx(tokenizer_context_t *ctx);
 
 /**
- * @brief 指定コンテキストで入力文字列をトークナイズする。
- * @param ctx 対象コンテキスト。
- * @param p 入力文字列。
- * @return 先頭トークン（末尾は `TK_EOF`）。
- * @warning 不正な字句を検出した場合は診断APIで終了する。
+ * @brief Tokenize an input string in a context.
+ * @param ctx Target context.
+ * @param p Input string.
+ * @return First token, with `TK_EOF` at the end.
+ * @warning An invalid lexical element terminates through the diagnostic API.
  */
 token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *p);
 
-/* 遅延 (pull 型) トークナイザ。tk_stream_open で開始し、tk_stream_next を呼ぶたびに
- * 1 トークンだけ生成する (入力末尾で TK_EOF を 1 度返し、以降 NULL)。返すトークンの
- * ->next は未設定なので呼び出し側が連結する。tk_stream_close でセッションを閉じる。
- * トークンを一括保持せず字句解析→プリプロセス→パースを流すための基盤 API。 */
+/* Lazy pull tokenizer.  Start with tk_stream_open; each tk_stream_next call
+ * produces exactly one token (TK_EOF once at end of input, then NULL).  The
+ * returned token's ->next is unset, so the caller links tokens.  Close the
+ * session with tk_stream_close.  This API supports a lex/preprocess/parse
+ * pipeline without retaining all tokens at once. */
 typedef struct tk_token_stream tk_token_stream_t;
 void tk_stream_open(tk_token_stream_t *s, tokenizer_context_t *ctx, const char *in);
 token_t *tk_stream_next(tk_token_stream_t *s);
 void tk_stream_close(tk_token_stream_t *s);
-/* true の間、トークナイズ不能な文字 (` @ $) ・未終端リテラル・不正数値で即エラーにせず
- * TK_UNKNOWN として 1 文字進める。プリプロセッサが `#if 0` 偽分岐の読み飛ばし・行先読み中
- * だけ立てる (中身はどうせ捨てる)。 */
+/* While true, consume an untokenizable character (` @ $), unterminated literal,
+ * or invalid number as one TK_UNKNOWN character instead of failing immediately.
+ * The preprocessor enables this only while skipping a false `#if 0` branch or
+ * scanning ahead within a line, where the contents will be discarded. */
 void tk_set_tolerate_untokenizable_ctx(tokenizer_context_t *ctx, bool v);
-/* TK_DIAG_* マクロ内部用: 寛容モード中なら tk_stream_next の setjmp 地点へ巻き戻す。 */
+/* Internal to TK_DIAG_* macros: jump back to tk_stream_next's setjmp in tolerant mode. */
 void tk_tolerate_longjmp_if_active_ctx(tokenizer_context_t *ctx);
-/* ヒープ確保版 (不透明な構造体をポインタで保持したい呼び出し側用)。 */
+/* Heap-allocated variant for callers that retain the opaque structure by pointer. */
 tk_token_stream_t *tk_stream_new(tokenizer_context_t *ctx, const char *in);
 void tk_stream_delete(tk_token_stream_t *s);
 
-/* パーサのカーソル前進フックを登録する (トークンストリーム driver 用、NULL で解除)。 */
+/* Install the parser cursor-advance hook for the token-stream driver; NULL removes it. */
 void tk_set_cursor_hook_ctx(tokenizer_context_t *ctx, tk_cursor_hook_t fn,
                             void *user_data);
-/* 現在のカーソル前進フックを取得する (ネスト処理中に一時退避・復元する用)。 */
+/* Return the current cursor-advance hook for saving/restoring during nested processing. */
 tk_cursor_hook_t tk_get_cursor_hook_ctx(tokenizer_context_t *ctx);
 void *tk_get_cursor_hook_user_data_ctx(tokenizer_context_t *ctx);
-/* カーソルを進めない深い前方先読みの直前に呼ぶ。登録された生成器が前方 lookahead を満たす
- * (プリプロセッサが tk_set_ensure_lookahead_hook で登録)。未登録なら no-op。 */
+/* Call before deep lookahead that does not advance the cursor.  The registered
+ * generator satisfies forward lookahead (installed by the preprocessor through
+ * tk_set_ensure_lookahead_hook).  This is a no-op when no hook is registered. */
 void tk_set_ensure_lookahead_hook_ctx(tokenizer_context_t *ctx,
                                       tk_ensure_lookahead_hook_t fn,
                                       void *user_data);
 void tk_ensure_lookahead_ctx(tokenizer_context_t *ctx);
 
 /**
- * @brief 指定コンテキストの入力文字列（診断表示用）を取得する。
- * @param ctx 対象コンテキスト。
- * @return 設定済み入力文字列。未設定時は `NULL`。
+ * @brief Return a context's input string for diagnostic display.
+ * @param ctx Target context.
+ * @return Configured input string, or `NULL` when unset.
  */
 const char *tk_get_user_input_ctx(tokenizer_context_t *ctx);
 /**
- * @brief 指定コンテキストの入力文字列（診断表示用）を設定する。
- * @param ctx 対象コンテキスト。
- * @param p 設定する入力文字列。
+ * @brief Set a context's input string for diagnostic display.
+ * @param ctx Target context.
+ * @param p Input string to set.
  */
 void tk_set_user_input_ctx(tokenizer_context_t *ctx, const char *p);
 
 /**
- * @brief 指定コンテキストのファイル名（診断表示用）を取得する。
- * @param ctx 対象コンテキスト。
- * @return 設定済みファイル名。未設定時は `NULL`。
+ * @brief Return a context's file name for diagnostic display.
+ * @param ctx Target context.
+ * @return Configured file name, or `NULL` when unset.
  */
 const char *tk_get_filename_ctx(tokenizer_context_t *ctx);
 /**
- * @brief 指定コンテキストのファイル名（診断表示用）を設定する。
- * @param ctx 対象コンテキスト。
- * @param name 設定するファイル名。
+ * @brief Set a context's file name for diagnostic display.
+ * @param ctx Target context.
+ * @param name File name to set.
  */
 void tk_set_filename_ctx(tokenizer_context_t *ctx, const char *name);
 
 /**
- * @brief コンテキストを明示的な外部依存で初期化する。
- * @param ctx 初期化対象コンテキスト。
- * @param diagnostic_context 呼び出し側が所有する診断コンテキスト。
- * @param allocator_context 呼び出し側が所有する token allocator。
- * @param source_manager 呼び出し側が所有する source manager。
- * @return 初期化できた場合は 1、必須依存が無い場合は 0。
+ * @brief Initialize a context with explicit external dependencies.
+ * @param ctx Context to initialize.
+ * @param diagnostic_context Caller-owned diagnostic context.
+ * @param allocator_context Caller-owned token allocator.
+ * @param source_manager Caller-owned source manager.
+ * @return 1 on success, or 0 when a required dependency is absent.
  */
 int tk_context_init(
     tokenizer_context_t *ctx,
@@ -177,8 +180,8 @@ int tk_context_init(
     tk_allocator_context_t *allocator_context,
     ag_source_manager_t *source_manager);
 /**
- * @brief 既存 token 列の走査専用コンテキストを初期化する。
- * @warning token を生成する tokenize/stream API には渡さないこと。
+ * @brief Initialize a context solely for traversing an existing token sequence.
+ * @warning Do not pass it to tokenize/stream APIs that generate tokens.
  */
 int tk_cursor_context_init(
     tokenizer_context_t *ctx,
@@ -189,57 +192,57 @@ tk_allocator_context_t *tk_context_allocator(
     const tokenizer_context_t *ctx);
 ag_source_manager_t *tk_context_source_manager(
     const tokenizer_context_t *ctx);
-/** @brief コンテキスト自身が所有する実行時領域を解放する。 */
+/** @brief Release runtime storage owned by the context itself. */
 void tk_context_dispose(tokenizer_context_t *ctx);
 uint16_t tk_filename_intern_ctx(tokenizer_context_t *ctx, const char *name);
 const char *tk_filename_lookup_ctx(
     const tokenizer_context_t *ctx, uint16_t id);
 void tk_filename_reset_translation_unit_ctx(tokenizer_context_t *ctx);
-/** @brief コンテキストのstrict C11有効/無効を取得する。 */
+/** @brief Return whether strict C11 mode is enabled in the context. */
 bool tk_ctx_get_strict_c11_mode(const tokenizer_context_t *ctx);
 /**
- * @brief コンテキストのstrict C11有効/無効を設定する。
- * @param ctx 対象コンテキスト。
- * @param strict `true` で有効化。
+ * @brief Enable or disable strict C11 mode in the context.
+ * @param ctx Target context.
+ * @param strict `true` to enable.
  */
 void tk_ctx_set_strict_c11_mode(tokenizer_context_t *ctx, bool strict);
-/** @brief コンテキストのトライグラフ置換有効/無効を取得する。 */
+/** @brief Return whether trigraph replacement is enabled in the context. */
 bool tk_ctx_get_enable_trigraphs(const tokenizer_context_t *ctx);
 /**
- * @brief コンテキストのトライグラフ置換有効/無効を設定する。
- * @param ctx 対象コンテキスト。
- * @param enable `true` で有効化。
+ * @brief Enable or disable trigraph replacement in the context.
+ * @param ctx Target context.
+ * @param enable `true` to enable.
  */
 void tk_ctx_set_enable_trigraphs(tokenizer_context_t *ctx, bool enable);
-/** @brief コンテキストの2進整数リテラル拡張有効/無効を取得する。 */
+/** @brief Return whether the binary-integer-literal extension is enabled. */
 bool tk_ctx_get_enable_binary_literals(const tokenizer_context_t *ctx);
 /**
- * @brief コンテキストの2進整数リテラル拡張有効/無効を設定する。
- * @param ctx 対象コンテキスト。
- * @param enable `true` で有効化。
+ * @brief Enable or disable the binary-integer-literal extension.
+ * @param ctx Target context.
+ * @param enable `true` to enable.
  */
 void tk_ctx_set_enable_binary_literals(tokenizer_context_t *ctx, bool enable);
-/** @brief コンテキストのC11監査ログ有効/無効を取得する。 */
+/** @brief Return whether C11 audit logging is enabled in the context. */
 bool tk_ctx_get_enable_c11_audit_extensions(const tokenizer_context_t *ctx);
 /**
- * @brief コンテキストのC11監査ログ有効/無効を設定する。
- * @param ctx 対象コンテキスト。
- * @param enable `true` で有効化。
+ * @brief Enable or disable C11 audit logging in the context.
+ * @param ctx Target context.
+ * @param enable `true` to enable.
  */
 void tk_ctx_set_enable_c11_audit_extensions(tokenizer_context_t *ctx, bool enable);
 
-/** @brief Tokenizerメモリアロケーション統計。 */
+/** @brief Tokenizer memory-allocation statistics. */
 typedef struct {
   size_t alloc_count;
   size_t alloc_bytes;
   size_t peak_alloc_bytes;
 } tokenizer_stats_t;
 
-/** @brief Tokenizer統計カウンタをリセットする。 */
+/** @brief Reset tokenizer statistics counters. */
 void tk_reset_tokenizer_stats_ctx(tokenizer_context_t *ctx);
 /**
- * @brief 現在のTokenizer統計を取得する。
- * @return `alloc_count` / `alloc_bytes` / `peak_alloc_bytes` を格納した統計値。
+ * @brief Return current tokenizer statistics.
+ * @return Statistics containing `alloc_count`, `alloc_bytes`, and `peak_alloc_bytes`.
  */
 tokenizer_stats_t tk_get_tokenizer_stats_ctx(
     const tokenizer_context_t *ctx);

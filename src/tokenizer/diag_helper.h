@@ -11,11 +11,12 @@
   diag_text_for_in(tk_context_diagnostics((ctx)), (id))
 
 /**
- * @brief Tokenizer入力コンテキスト付きで位置ベース診断を出力する内部ヘルパー。
+ * @brief Internal helper that emits a location-based diagnostic with tokenizer input context.
  */
-/* 寛容モード (`#if 0` 偽分岐の skip/行先読み) 中は
- * tk_tolerate_longjmp_if_active_ctx が
- * tk_stream_next へ巻き戻すため diag_emit_atf には到達しない。通常時は従来どおり診断+終了。 */
+/* In tolerant mode (while skipping a false `#if 0` branch or scanning ahead
+ * within a line), tk_tolerate_longjmp_if_active_ctx jumps back to
+ * tk_stream_next before reaching diag_emit_atf.  Normal mode still emits the
+ * diagnostic and exits. */
 #define TK_DIAG_ATF_IN(ctx, id, loc, fmt, ...) \
   do { \
     tokenizer_context_t *tk_diag_ctx__ = (ctx); \
@@ -28,14 +29,14 @@
   } while (0)
 
 /**
- * @brief カタログ既定メッセージで位置ベース診断を出力する内部ヘルパー。
+ * @brief Internal helper that emits a location-based diagnostic with the catalog default message.
  */
 #define TK_DIAG_AT_IN(ctx, id, loc) \
   TK_DIAG_ATF_IN( \
       (ctx), (id), (loc), "%s", TK_DIAG_MESSAGE_IN((ctx), (id)))
 
 /**
- * @brief カタログ既定メッセージでトークンベース診断を出力する内部ヘルパー。
+ * @brief Internal helper that emits a token-based diagnostic with the catalog default message.
  */
 #define TK_DIAG_TOK_IN(ctx, id, tok) \
   diag_emit_tokf_in( \

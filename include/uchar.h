@@ -1,8 +1,8 @@
 #ifndef _UCHAR_H
 #define _UCHAR_H
 #include <stddef.h>
-/* C11 7.28: char16_t / char32_t。Apple ARM64 では uint_least16_t=unsigned short,
- * uint_least32_t=unsigned int。 */
+/* C11 7.28: char16_t / char32_t.  On Apple ARM64,
+ * uint_least16_t = unsigned short and uint_least32_t = unsigned int. */
 typedef unsigned short char16_t;
 typedef unsigned int   char32_t;
 #ifndef __MBSTATE_T_DEFINED

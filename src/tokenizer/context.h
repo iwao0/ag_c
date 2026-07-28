@@ -4,10 +4,11 @@
 #include "tokenizer.h"
 
 /*
- * Tokenizer 内部の実行コンテキスト / カーソル基盤。
- * 実体は tokenizer.c が定義し、token 生成コア (tokenizer.c)・数値リテラル解析
- * (number.c)・カーソル消費 API (cursor.c) が共有する。
- * 公開ヘッダには出さない内部基盤だが、正本の実体は tokenizer.c に閉じる。
+ * Internal tokenizer execution-context and cursor infrastructure.
+ * tokenizer.c defines the concrete type, which is shared by the token
+ * generation core (tokenizer.c), numeric-literal parser (number.c), and cursor
+ * consumption API (cursor.c).  This infrastructure is not exposed in public
+ * headers; its authoritative definition remains private to tokenizer.c.
  */
 
 tokenizer_context_t *tk_effective_ctx(tokenizer_context_t *ctx);

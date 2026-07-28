@@ -1,6 +1,6 @@
 #ifndef _WCTYPE_H
 #define _WCTYPE_H
-/* C11 7.30: ワイド文字分類。wint_t は wchar_t を含める int。 */
+/* C11 7.30: Wide-character classification.  wint_t is an int that can hold wchar_t. */
 #ifndef _WINT_T
 #define _WINT_T
 typedef int wint_t;

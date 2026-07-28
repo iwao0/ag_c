@@ -1,6 +1,6 @@
 #ifndef _FENV_H
 #define _FENV_H
-/* C11 7.6: 浮動小数点環境。 */
+/* C11 7.6: Floating-point environment. */
 #ifdef __wasm32__
 typedef struct { unsigned long long __fpcr; unsigned long long __fpsr; } fenv_t;
 typedef unsigned long long fexcept_t;

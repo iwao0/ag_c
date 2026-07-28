@@ -37,10 +37,11 @@ const char *pp_context_project_root(
 const char *pp_context_include_root(
     const ag_preprocessor_context_t *context);
 
-/* 遅延プリプロセス生成器。状態は呼び出し元の Preprocessor context に保持する。
- * pp_stream_open_in は predefined マクロを永続側に作り、recyclable 生成器を開き、
- * カーソル前進フックを登録して先頭トークンを返す。frontend stream beginで
- * その先頭から消費すると、前進のたびに先読み materialize + 通過トークン解放が走る。 */
+/* Lazy preprocessor generator.  State is held by the caller's Preprocessor
+ * context.  pp_stream_open_in creates predefined macros in persistent storage,
+ * opens the recyclable generator, installs a cursor-advance hook, and returns
+ * the first token.  Once frontend stream begin starts consuming from that
+ * token, each advance materializes lookahead and releases passed tokens. */
 typedef struct pp_stream pp_stream_t;
 token_t *pp_stream_open_in(ag_preprocessor_context_t *context,
                            pp_stream_t **out_s,
@@ -59,7 +60,7 @@ int pp_macro_format_replacement_in(const ag_preprocessor_context_t *context,
                                    int macro_index, char *out,
                                    size_t out_size);
 
-/** Wasm JS APIから渡されたcompile単位のvirtual header bundleを設定する。 */
+/** Configure the per-compilation virtual-header bundle supplied by the Wasm JS API. */
 void pp_virtual_headers_configure_in(
     ag_preprocessor_context_t *context,
     const unsigned char *bundle, size_t bundle_len,

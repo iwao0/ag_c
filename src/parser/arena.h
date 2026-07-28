@@ -16,7 +16,7 @@ typedef struct {
   size_t used;
 } arena_checkpoint_t;
 
-// ゼロクリア済みメモリを返すアリーナアロケータ
+// Arena allocator that returns zero-initialized memory.
 void *arena_alloc_in(arena_context_t *context, size_t size);
 int arena_register_cleanup_in(
     arena_context_t *context, arena_cleanup_fn cleanup, void *data);
@@ -25,10 +25,10 @@ arena_checkpoint_t arena_checkpoint_in(arena_context_t *context);
 void arena_rollback_in(
     arena_context_t *context, arena_checkpoint_t checkpoint);
 
-// アリーナ全体を解放する（プログラム終了時）
+// Release the entire arena (at program termination).
 void arena_free_all_in(arena_context_t *context);
 
-// これまでに malloc 予約したブロックの総バイト数 (メモリ計測用)。
+// Total bytes reserved through malloc so far (for memory measurements).
 size_t arena_total_reserved_bytes_in(const arena_context_t *context);
 size_t arena_current_reserved_bytes_in(const arena_context_t *context);
 

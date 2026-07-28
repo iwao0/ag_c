@@ -1,6 +1,6 @@
 #ifndef _ISO646_H
 #define _ISO646_H
-/* C11 7.9: 演算子の代替綴り。 */
+/* C11 7.9: Alternative operator spellings. */
 #define and    &&
 #define and_eq &=
 #define bitand &

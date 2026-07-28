@@ -1,8 +1,8 @@
 #ifndef PARSER_INTERNAL_CORE_H
 #define PARSER_INTERNAL_CORE_H
 
-/* core.h は AST node 型を使わない (token_kind_t と bool のみ)。
- * Phase C1-2: ast.h ではなく token.h を直接 include する。 */
+/* core.h does not use AST node types (only token_kind_t and bool).
+ * Phase C1-2: include token.h directly instead of ast.h. */
 #include "../tokenizer/token.h"
 #include "name_classifier.h"
 #include <stdbool.h>

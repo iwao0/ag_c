@@ -6,11 +6,11 @@
 #include "syntax_node_kind.h"
 struct psx_parsed_type_name_t;
 struct psx_parsed_local_declaration_t;
-/* シンボルテーブル (global_var_t / string_lit_t / float_lit_t) は symtab.h
- * へ分離済み (Phase C1)。ast.h は AST node 定義のみを担う。
- * symtab 型を使うファイルは symtab.h を個別に include すること。 */
+/* Symbol tables (global_var_t / string_lit_t / float_lit_t) were moved to
+ * symtab.h in Phase C1.  ast.h defines AST nodes only.  Files that use symbol
+ * table types must include symtab.h explicitly. */
 
-// 抽象構文木のノードの型
+// Abstract syntax tree node types.
 typedef struct node_t node_t;
 typedef struct {
   struct psx_parsed_type_name_t *syntax;
@@ -52,9 +52,9 @@ typedef struct {
 struct node_t {
   psx_syntax_node_kind_t kind;
 
-  // ツリー構造用
-  node_t *lhs;      // 左辺 / 条件式
-  node_t *rhs;      // 右辺 / then節 / ループ本体
+  // Tree structure.
+  node_t *lhs;      // Left operand / condition.
+  node_t *rhs;      // Right operand / then branch / loop body.
   token_t *tok;     // statement/expression start token for post-parse diagnostics
   token_kind_t source_op;
 
@@ -152,35 +152,35 @@ typedef struct {
   node_t *condition;
 } node_static_assert_t;
 
-// 数値ノード
+// Numeric node.
 typedef struct node_num_t node_num_t;
 struct node_num_t {
   node_t base;
-  long long val;    // 整数値
-  double fval;      // 浮動小数点値
+  long long val;    // Integer value.
+  double fval;      // Floating-point value.
   tk_float_suffix_kind_t float_suffix_kind;
 };
 
-// 文字列リテラルノード
+// String-literal node.
 typedef struct node_string_t node_string_t;
 struct node_string_t {
   node_t base;
-  char *literal_contents; // エスケープを含むソース由来の文字列内容。
-  int literal_length;     // literal_contents の raw バイト長。
+  char *literal_contents; // Source-derived contents including escapes.
+  int literal_length;     // Raw byte length of literal_contents.
   tk_char_width_t char_width;
   tk_string_prefix_kind_t str_prefix_kind;
-  int byte_len;       // 文字列の内容バイト数 (null 終端を含まない)。
-                      // `char a[] = "hi"` で配列サイズを推論するのに使う。
+  int byte_len;       // Content byte count, excluding the null terminator.
+                      // Used to infer the array size in `char a[] = "hi"`.
 };
 
-// ブロックノード
+// Block node.
 typedef struct node_block_t node_block_t;
 struct node_block_t {
   node_t base;
-  node_t **body;    // ブロック内の文（NULL終端の動的配列）
+  node_t **body;    // Statements in the block (NULL-terminated dynamic array).
 };
 
-// 関数呼び出しノード
+// Function-call node.
 typedef struct node_function_call_t node_function_call_t;
 struct node_function_call_t {
   node_t base;
@@ -189,28 +189,28 @@ struct node_function_call_t {
   node_t *callee;
 };
 
-// 制御構造ノード
+// Control-flow node.
 typedef struct node_ctrl_t node_ctrl_t;
 struct node_ctrl_t {
   node_t base;
-  node_t *els;      // else節（ND_IFのみ）
-  node_t *init;     // 初期化式（ND_FORのみ）
-  node_t *inc;      // インクリメント式（ND_FORのみ）
+  node_t *els;      // Else branch (ND_IF only).
+  node_t *init;     // Initializer (ND_FOR only).
+  node_t *inc;      // Increment expression (ND_FOR only).
 };
 
-// case ラベルノード
+// Case-label node.
 typedef struct node_case_t node_case_t;
 struct node_case_t {
   node_t base;
 };
 
-// default ラベルノード
+// Default-label node.
 typedef struct node_default_t node_default_t;
 struct node_default_t {
   node_t base;
 };
 
-// goto / label ノード
+// Goto / label node.
 typedef struct node_jump_t node_jump_t;
 struct node_jump_t {
   node_t base;
@@ -218,6 +218,6 @@ struct node_jump_t {
   int name_len;
 };
 
-/* global_var_t / string_lit_t / float_lit_t は symtab.h に移動 (Phase C1)。 */
+/* global_var_t / string_lit_t / float_lit_t moved to symtab.h in Phase C1. */
 
 #endif

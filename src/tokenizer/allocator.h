@@ -6,45 +6,45 @@
 typedef struct tk_allocator_context_t tk_allocator_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
-/** @brief 必須の診断コンテキストを借用して allocator を生成する。 */
+/** @brief Create an allocator borrowing the required diagnostic context. */
 tk_allocator_context_t *tk_allocator_context_create(
     ag_diagnostic_context_t *diagnostic_context);
 void tk_allocator_context_destroy(tk_allocator_context_t *ctx);
 ag_diagnostic_context_t *tk_allocator_diagnostics(
     const tk_allocator_context_t *ctx);
 
-/** @brief 入力サイズ見積りを設定してチャンク戦略を調整する。 */
+/** @brief Set the estimated input size to tune the chunk strategy. */
 void tk_allocator_set_expected_size_in(
     tk_allocator_context_t *ctx, size_t bytes);
-/** @brief Tokenizer用アリーナからゼロ初期化メモリを確保する。 */
+/** @brief Allocate zero-initialized memory from the tokenizer arena. */
 void *tk_allocator_calloc_in(
     tk_allocator_context_t *ctx, size_t n, size_t size);
-/** @brief 確保済みチャンク数を返す。 */
+/** @brief Return the number of allocated chunks. */
 size_t tk_allocator_total_chunks_in(const tk_allocator_context_t *ctx);
-/** @brief 同時 live の最大予約バイト数 (ピーク) を返す。 */
+/** @brief Return the peak number of bytes reserved concurrently. */
 size_t tk_allocator_total_reserved_bytes_in(
     const tk_allocator_context_t *ctx);
 
-/* ---- recyclable アリーナ (トークンストリーム経路) ---- */
-/** @brief recyclable モード切替。1 のとき calloc は recyclable 側へ確保。 */
+/* ---- Recyclable arena (token-stream path) ---- */
+/** @brief Toggle recyclable mode; when 1, calloc allocates from the recyclable side. */
 void tk_allocator_set_recyclable_in(
     tk_allocator_context_t *ctx, int on);
-/** @brief 現在の recyclable モードを返す。 */
+/** @brief Return the current recyclable-mode setting. */
 int tk_allocator_recyclable_is_enabled_in(
     const tk_allocator_context_t *ctx);
-/** @brief カーソル前進時に呼ぶ。カーソルが通り過ぎた古い recyclable チャンクを解放する。 */
+/** @brief Called on cursor advance to release old recyclable chunks passed by the cursor. */
 void tk_allocator_recyc_on_cursor_in(
     tk_allocator_context_t *ctx, const void *cursor);
-/** @brief _Generic バックトラック中、この位置より古いトークンの解放を禁じる/解除する。 */
+/** @brief Pin/unpin this position to retain older tokens during _Generic backtracking. */
 void tk_allocator_recyc_pin_in(
     tk_allocator_context_t *ctx, const void *p);
 void tk_allocator_recyc_unpin_in(tk_allocator_context_t *ctx);
 void tk_allocator_recyc_stream_pin_in(
     tk_allocator_context_t *ctx, const void *p);
 void tk_allocator_recyc_stream_unpin_in(tk_allocator_context_t *ctx);
-/** @brief recyclable アリーナを全解放する (コンパイル終了時)。 */
+/** @brief Release the entire recyclable arena at the end of compilation. */
 void tk_allocator_recyc_reset_in(tk_allocator_context_t *ctx);
-/** @brief 永続・recyclable の両アリーナを全解放する (翻訳単位の開始時)。 */
+/** @brief Release both persistent and recyclable arenas at translation-unit start. */
 void tk_allocator_reset_translation_unit_in(tk_allocator_context_t *ctx);
 
 #endif

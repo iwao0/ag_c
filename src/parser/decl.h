@@ -1,8 +1,8 @@
 #ifndef PARSER_DECL_H
 #define PARSER_DECL_H
 
-/* decl.h は AST node 型 (node_t) と シンボルテーブル (global_var_t) の
- * 両方を使う。Phase C1-2: 両ヘッダを明示的に include する。 */
+/* decl.h uses both the AST node type (node_t) and symbol table
+ * (global_var_t).  Phase C1-2: include both headers explicitly. */
 #include "ast.h"
 #include "arena.h"
 #include "core.h"
