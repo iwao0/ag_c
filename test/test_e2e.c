@@ -1402,11 +1402,14 @@ static const test_case_t test_cases[] = {
     {"probes", "string_array_typedef_unicode_inference_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_array_typedef_unicode_inference_boundaries.c", 0, 0},
     {"probes", "encoded_string_unicode_exact_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_string_unicode_exact_boundaries.c", 0, 0},
     {"probes", "encoded_string_embedded_null_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_string_embedded_null_boundaries.c", 0, 0},
+    {"probes", "encoded_string_union_member_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_string_union_member_boundaries.c", 0, 0},
     {"probes", "string_array_compound_literal_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_array_compound_literal_type_boundaries.c", 0, 0},
     {"probes", "encoded_multidimensional_string_array_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_multidimensional_string_array_boundaries.c", 0, 0},
     {"probes", "encoded_string_row_designator_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_string_row_designator_boundaries.c", 0, 0},
     {"probes", "c11_standard_headers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/c11_standard_headers.c", 0, 0},
     {"probes", "generic_long_double", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_long_double.c", 0, 0},
+    {"probes", "float_binary_macro_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_binary_macro_boundaries.c", 0, 0},
+    {"probes", "float_rounds_fenv_state", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_rounds_fenv_state.c", 0, 0},
     {"probes", "float_long_double_macro_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_long_double_macro_boundaries.c", 0, 0},
     {"probes", "stdint_limit_constant_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdint_limit_constant_type_boundaries.c", 0, 0},
     {"probes", "inttypes_max_format_macro_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_max_format_macro_boundaries.c", 0, 0},
@@ -3690,6 +3693,45 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "int main(void) { char16_t *values = "
      "(char16_t[2]){u\"\\U0001F600\\0\"}; return values[0]; }\n",
      "E3027"},
+    {"encoded_union_utf16_too_long_global_rejected",
+     "#include <uchar.h>\n"
+     "union value { unsigned long long raw; char16_t text[1]; }; "
+     "union value instance = {.text = u\"\\U0001F600\"}; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_union_utf32_too_long_nested_local_rejected",
+     "#include <uchar.h>\n"
+     "union value { unsigned long long raw; char32_t text[1]; }; "
+     "struct envelope { int prefix; union value value; int suffix; }; "
+     "int main(void) { struct envelope instance = "
+     "{.prefix = 1, .value.text = U\"ab\", .suffix = 2}; "
+     "return instance.prefix; }\n",
+     "E3027"},
+    {"encoded_union_wide_too_long_array_designator_rejected",
+     "#include <wchar.h>\n"
+     "union value { unsigned long long raw; wchar_t text[1]; }; "
+     "union value instances[2] = {[1].text = L\"ab\"}; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_union_utf8_too_long_compound_rejected",
+     "union value { unsigned long long raw; char text[3]; }; "
+     "int main(void) { union value *instance = "
+     "&(union value){.text = u8\"\\U0001F600\"}; "
+     "return instance->text[0]; }\n",
+     "E3027"},
+    {"encoded_union_utf16_embedded_null_too_long_rejected",
+     "#include <uchar.h>\n"
+     "union value { unsigned long long raw; char16_t text[2]; }; "
+     "static union value instance = "
+     "{.text = u\"\\U0001F600\\0\"}; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_union_incompatible_element_rejected",
+     "#include <uchar.h>\n"
+     "union value { unsigned long long raw; int text[2]; }; "
+     "static union value instance = {.text = U\"x\"}; "
+     "int main(void) { return 0; }\n",
+     "E3099"},
     {"encoded_multidimensional_string_wrong_local_element_rejected",
      "int main(void) { short rows[1][3] = {u\"hi\"}; "
      "return rows[0][0]; }\n",

@@ -53,8 +53,21 @@
 #define DBL_EPSILON    2.2204460492503131e-16
 #define LDBL_EPSILON   2.2204460492503131e-16L
 
-/* Rounding mode: round to nearest */
-#define FLT_ROUNDS     1
+/*
+ * Current rounding direction for floating-point addition.
+ *
+ * Apple ARM64 and the ag_c Wasm runtime use the same two-bit mode field:
+ *   0 = nearest, 1 = upward, 2 = downward, 3 = toward zero.
+ * C's FLT_ROUNDS encoding rotates those values to 1, 2, 3, 0.
+ * Keep the query dynamic so fesetround() is reflected immediately.
+ */
+int fegetround(void);
+static inline int __agc_flt_rounds(void) {
+    int mode = fegetround();
+    if (mode < 0) return -1;
+    return (((mode >> 22) + 1) & 3);
+}
+#define FLT_ROUNDS     (__agc_flt_rounds())
 
 /* Number of decimal digits needed to distinguish any two float/double values */
 #define FLT_DECIMAL_DIG  9
