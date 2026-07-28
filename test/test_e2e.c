@@ -759,6 +759,8 @@ static const test_case_t test_cases[] = {
     {"probes", "stdlib_multibyte_const_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_multibyte_const_boundaries.c", 0, 0},
     {"probes", "multibyte_large_count_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/multibyte_large_count_boundaries.c", 0, 0},
     {"probes", "stdlib_management_signature_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_management_signature_boundaries.c", 0, 0},
+    {"probes", "stdlib_noreturn_cfg_termination_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_noreturn_cfg_termination_boundaries.c", 0, 0},
+    {"probes", "stdlib_noreturn_cfg_warning_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_noreturn_cfg_warning_boundaries.c", 0, 0},
     {"probes", "allocation_failure_size_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/allocation_failure_size_boundaries.c", 0, 0},
     {"probes", "nonvoid_aggregate_fallthrough_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nonvoid_aggregate_fallthrough_boundaries.c", 0, 0},
     {"probes", "noreturn_cfg_termination_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/noreturn_cfg_termination_boundaries.c", 0, 0},
@@ -829,6 +831,8 @@ static const test_case_t test_cases[] = {
     {"probes", "complex_width_variant_function_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_width_variant_function_boundaries.c", 0, 0},
     {"probes", "complex_conditional_width_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_conditional_width_boundaries.c", 0, 0},
     {"probes", "complex_control_flow_truth_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_control_flow_truth_boundaries.c", 0, 0},
+    {"probes", "pointer_complex_constant_cfg_termination_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_complex_constant_cfg_termination_boundaries.c", 0, 0},
+    {"probes", "pointer_complex_constant_cfg_warning_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_complex_constant_cfg_warning_boundaries.c", 0, 0},
     {"probes", "complex_component_function_unit_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_component_function_unit_boundaries.c", 0, 0},
     {"probes", "complex_static_initializer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_static_initializer_boundaries.c", 0, 0},
     {"probes", "complex_static_scalar_conversion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_static_scalar_conversion_boundaries.c", 0, 0},
@@ -4067,6 +4071,19 @@ static int log_file_contains_substr(const char *path, const char *needle) {
   return strstr(buf, needle) != NULL;
 }
 
+static int log_files_contain_all(
+    const char *first_path, const char *second_path,
+    const char *const *needles, size_t needle_count) {
+  if (!first_path || !second_path || (!needles && needle_count != 0))
+    return 0;
+  for (size_t i = 0; i < needle_count; i++) {
+    if (!log_file_contains_substr(first_path, needles[i]) ||
+        !log_file_contains_substr(second_path, needles[i]))
+      return 0;
+  }
+  return 1;
+}
+
 static int run_ag_c_expect_fail_with_diag_timeout(const char *input, const char *expected_diag,
                                                   const char *log_path, int timeout_sec,
                                                   const char *reason_tag) {
@@ -4546,6 +4563,7 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_rand") == 0 || strcmp(sym, "_srand") == 0 ||
             strcmp(sym, "_qsort") == 0 || strcmp(sym, "_bsearch") == 0 ||
             strcmp(sym, "_atexit") == 0 || strcmp(sym, "_at_quick_exit") == 0 ||
+            strcmp(sym, "_quick_exit") == 0 ||
             strcmp(sym, "_getenv") == 0 ||
             strcmp(sym, "_system") == 0 || strcmp(sym, "_atof") == 0 ||
             strcmp(sym, "_strtol") == 0 || strcmp(sym, "_strtoul") == 0 ||
@@ -5082,6 +5100,9 @@ int main(int argc, char **argv) {
         !log_file_contains_substr(native_log, "while_true_can_break") ||
         !log_file_contains_substr(native_log, "while_false") ||
         !log_file_contains_substr(native_log, "constant_false_if") ||
+        !log_file_contains_substr(native_log, "goto_out_reaches_end") ||
+        !log_file_contains_substr(native_log, "switch_path_reaches_end") ||
+        !log_file_contains_substr(native_log, "nested_outer_break_reaches_end") ||
         !log_file_contains_substr(native_log, "W3017") ||
         !log_file_contains_substr(wasm_log, "W3005") ||
         !log_file_contains_substr(wasm_log, "partial_if") ||
@@ -5091,6 +5112,9 @@ int main(int argc, char **argv) {
         !log_file_contains_substr(wasm_log, "while_true_can_break") ||
         !log_file_contains_substr(wasm_log, "while_false") ||
         !log_file_contains_substr(wasm_log, "constant_false_if") ||
+        !log_file_contains_substr(wasm_log, "goto_out_reaches_end") ||
+        !log_file_contains_substr(wasm_log, "switch_path_reaches_end") ||
+        !log_file_contains_substr(wasm_log, "nested_outer_break_reaches_end") ||
         !log_file_contains_substr(wasm_log, "W3017")) {
       fprintf(
           stderr,
@@ -5119,6 +5143,127 @@ int main(int argc, char **argv) {
       fprintf(
           stderr,
           "constant-condition CFG diagnostics regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "pointer_complex_constant_cfg_termination_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/pointer_complex_constant_cfg_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/pointer_complex_constant_cfg_wasm_object.log";
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/pointer_complex_constant_cfg_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        log_file_contains_substr(native_log, "W3005") ||
+        log_file_contains_substr(wasm_log, "W3005")) {
+      fprintf(
+          stderr,
+          "pointer/complex constant CFG diagnostics regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "pointer_complex_constant_cfg_warning_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/pointer_complex_constant_cfg_warning_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/"
+        "pointer_complex_constant_cfg_warning_wasm_object.log";
+    static const char *const expected[] = {
+        "W3005",
+        "pointer_null_false",
+        "function_pointer_null_false",
+        "pointer_ternary_false",
+        "complex_zero_false",
+        "complex_literal_zero_false",
+        "complex_compare_false",
+        "complex_bool_cast_false",
+        "complex_ternary_false",
+        "side_effect_logical_and_false",
+        "side_effect_comma_pointer_false",
+        "floating_negative_zero_false",
+        "complex_signed_zero_false",
+        "complex_partial_initializer_false",
+    };
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/pointer_complex_constant_cfg_warning_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        !log_files_contain_all(
+            native_log, wasm_log, expected,
+            sizeof(expected) / sizeof(expected[0]))) {
+      fprintf(
+          stderr,
+          "pointer/complex constant CFG warning regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "stdlib_noreturn_cfg_termination_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/stdlib_noreturn_cfg_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/stdlib_noreturn_cfg_wasm_object.log";
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/stdlib_noreturn_cfg_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        log_file_contains_substr(native_log, "W3005") ||
+        log_file_contains_substr(wasm_log, "W3005")) {
+      fprintf(
+          stderr,
+          "stdlib noreturn CFG diagnostics regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "stdlib_noreturn_cfg_warning_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/stdlib_noreturn_cfg_warning_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/stdlib_noreturn_cfg_warning_wasm_object.log";
+    static const char *const expected[] = {
+        "W3005",
+        "conditional_assert_can_continue",
+        "indirect_exit_can_continue",
+        "constant_assert_success_can_continue",
+    };
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/stdlib_noreturn_cfg_warning_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        !log_files_contain_all(
+            native_log, wasm_log, expected,
+            sizeof(expected) / sizeof(expected[0]))) {
+      fprintf(
+          stderr,
+          "stdlib noreturn CFG warning regression "
           "(see %s and %s)\n",
           native_log, wasm_log);
       return 1;

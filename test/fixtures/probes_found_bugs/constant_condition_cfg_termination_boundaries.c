@@ -91,6 +91,49 @@ second:
     stop_b();
 }
 
+static int switch_break_stays_in_loop(int value) {
+    if (value == 42) return 42;
+    while (1) {
+        switch (value) {
+            case 0:
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+static int inner_loop_break_stays_in_outer(int value) {
+    if (value == 42) return 42;
+    for (;;) {
+        do {
+            if (value) {
+                break;
+            }
+        } while (0);
+    }
+}
+
+static int continue_stays_in_loop(int value) {
+    if (value == 42) return 42;
+    while (1) {
+        if (value) {
+            continue;
+        }
+    }
+}
+
+static int label_continue_stays_in_loop(int value) {
+    if (value == 42) return 42;
+    while (1) {
+        if (value) {
+            goto inside;
+        }
+inside:
+        continue;
+    }
+}
+
 int main(void) {
     if (while_integer(42) != 42) return 1;
     if (while_long(42) != 42) return 2;
@@ -104,5 +147,9 @@ int main(void) {
     if (while_short_circuit(42) != 42) return 10;
     if (constant_if_noreturn(42) != 42) return 11;
     if (goto_all_noreturn(42) != 42) return 12;
+    if (switch_break_stays_in_loop(42) != 42) return 13;
+    if (inner_loop_break_stays_in_outer(42) != 42) return 14;
+    if (continue_stays_in_loop(42) != 42) return 15;
+    if (label_continue_stays_in_loop(42) != 42) return 16;
     return 0;
 }

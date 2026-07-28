@@ -50,6 +50,37 @@ static int constant_false_if(int value) {
     }
 }
 
+static int goto_out_reaches_end(int value) {
+    while (1) {
+        if (value) {
+            goto out;
+        }
+    }
+out:
+    ;
+}
+
+static int switch_path_reaches_end(int value) {
+    switch (value) {
+        case 0:
+            while (1) {
+            }
+        default:
+            break;
+    }
+}
+
+static int nested_outer_break_reaches_end(int value) {
+    while (1) {
+        while (value) {
+            break;
+        }
+        if (value) {
+            break;
+        }
+    }
+}
+
 /*
  * The case body can still reach default when value is zero.  Recognizing the
  * _Noreturn arm of the conditional must not suppress W3017 for that edge.

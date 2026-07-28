@@ -4513,13 +4513,13 @@ void wasm32_wat_emit_minimal_libc_stubs(
     wasm_emitf(2, "(func $__error (result i32) (i32.const %d))\n", errno_addr);
   }
   if (has_undefined_function("exit", 4)) {
-    wasm_emitf(2, "(func $exit (param $status i64) (unreachable))\n");
+    wasm_emitf(2, "(func $exit (param $status i32) (unreachable))\n");
   }
   if (has_undefined_function("_Exit", 5)) {
-    wasm_emitf(2, "(func $_Exit (param $status i64) (unreachable))\n");
+    wasm_emitf(2, "(func $_Exit (param $status i32) (unreachable))\n");
   }
   if (has_undefined_function("quick_exit", 10)) {
-    wasm_emitf(2, "(func $quick_exit (param $status i64) (unreachable))\n");
+    wasm_emitf(2, "(func $quick_exit (param $status i32) (unreachable))\n");
   }
   if (has_undefined_function("abort", 5)) {
     wasm_emitf(2, "(func $abort (unreachable))\n");

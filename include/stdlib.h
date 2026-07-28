@@ -27,12 +27,12 @@ void free(void *ptr);
 void *aligned_alloc(size_t alignment, size_t size);
 
 /* Process control */
-void exit(int status);
-void abort(void);
-void _Exit(int status);
+_Noreturn void exit(int status);
+_Noreturn void abort(void);
+_Noreturn void _Exit(int status);
 int atexit(void (*func)(void));
 int at_quick_exit(void (*func)(void));
-void quick_exit(int status);
+_Noreturn void quick_exit(int status);
 
 /* String conversion */
 int atoi(const char *s);
