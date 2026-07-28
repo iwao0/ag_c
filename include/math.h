@@ -1,6 +1,10 @@
 #ifndef _MATH_H
 #define _MATH_H
 
+/* FLT_EVAL_METHOD is 0 for every ag_c target. */
+typedef float float_t;
+typedef double double_t;
+
 #ifndef __AGC_HUGE_VAL__
 #define __AGC_HUGE_VAL__ __builtin_huge_val()
 #define __AGC_HUGE_VALF__ __builtin_huge_valf()
