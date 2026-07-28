@@ -32,9 +32,11 @@ typedef struct __sFILE FILE;
 #ifndef WEOF
 #define WEOF ((wint_t)-1)
 #endif
-#ifndef WCHAR_MIN
-#define WCHAR_MIN (-2147483647 - 1)
+#ifndef WCHAR_MAX
 #define WCHAR_MAX 2147483647
+#endif
+#ifndef WCHAR_MIN
+#define WCHAR_MIN (-WCHAR_MAX - 1)
 #endif
 
 /* 文字列 */

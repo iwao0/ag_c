@@ -31,7 +31,7 @@ struct timespec {
   long tv_nsec;
 };
 
-#define CLOCKS_PER_SEC 1000000
+#define CLOCKS_PER_SEC ((clock_t)1000000)
 #define TIME_UTC 1
 
 time_t time(time_t *tloc);

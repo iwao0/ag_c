@@ -96,8 +96,12 @@ typedef unsigned long      uintptr_t;
 #define SIG_ATOMIC_MIN (-SIG_ATOMIC_MAX - 1)
 #define SIG_ATOMIC_MAX 2147483647
 #define SIZE_MAX       18446744073709551615UL
-#define WCHAR_MIN      (-WCHAR_MAX - 1)
+#ifndef WCHAR_MAX
 #define WCHAR_MAX      2147483647
+#endif
+#ifndef WCHAR_MIN
+#define WCHAR_MIN      (-WCHAR_MAX - 1)
+#endif
 #define WINT_MIN       (-WINT_MAX - 1)
 #define WINT_MAX       2147483647
 
