@@ -1398,6 +1398,9 @@ static const test_case_t test_cases[] = {
     {"probes", "local_2d_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_2d_funcptr_array.c", 0, 0},
     {"probes", "wide_string_literal_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_string_literal_init.c", 0, 0},
     {"probes", "string_array_element_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_array_element_type_boundaries.c", 0, 0},
+    {"probes", "string_array_compound_literal_type_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_array_compound_literal_type_boundaries.c", 0, 0},
+    {"probes", "encoded_multidimensional_string_array_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_multidimensional_string_array_boundaries.c", 0, 0},
+    {"probes", "encoded_string_row_designator_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/encoded_string_row_designator_boundaries.c", 0, 0},
     {"probes", "c11_standard_headers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/c11_standard_headers.c", 0, 0},
     {"probes", "generic_long_double", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_long_double.c", 0, 0},
     {"probes", "float_long_double_macro_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_long_double_macro_boundaries.c", 0, 0},
@@ -3586,6 +3589,45 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "E3099"},
     {"string_array_atomic_character_element_rejected",
      "_Atomic char values[3] = \"hi\"; int main(void) { return 0; }\n",
+     "E3099"},
+    {"string_array_compound_literal_utf16_signed_short_rejected",
+     "int main(void) { short *values = (short[3]){u\"hi\"}; "
+     "return values[0]; }\n",
+     "E3099"},
+    {"string_array_compound_literal_utf16_inferred_signed_short_rejected",
+     "int main(void) { short *values = (short[]){u\"hi\"}; "
+     "return values[0]; }\n",
+     "E3114"},
+    {"encoded_multidimensional_string_overlong_global_rejected",
+     "unsigned short rows[1][2] = {u\"abc\"}; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_multidimensional_string_wrong_local_element_rejected",
+     "int main(void) { short rows[1][3] = {u\"hi\"}; "
+     "return rows[0][0]; }\n",
+     "E3099"},
+    {"encoded_multidimensional_string_wrong_global_member_rejected",
+     "struct rows { int values[1][3]; }; "
+     "struct rows value = {.values = {U\"hi\"}}; "
+     "int main(void) { return 0; }\n",
+     "E3099"},
+    {"encoded_multidimensional_string_overlong_local_member_rejected",
+     "struct rows { int values[1][2]; }; "
+     "int main(void) { struct rows value = {.values = {L\"abc\"}}; "
+     "return value.values[0][0]; }\n",
+     "E3027"},
+    {"encoded_multidimensional_string_wrong_compound_literal_rejected",
+     "int main(void) { short (*rows)[3] = "
+     "(short[1][3]){{u\"hi\"}}; return rows[0][0]; }\n",
+     "E3099"},
+    {"encoded_string_row_designator_overlong_rejected",
+     "unsigned short rows[2][2] = {[1] = u\"abc\"}; "
+     "int main(void) { return 0; }\n",
+     "E3027"},
+    {"encoded_string_row_designator_wrong_member_type_rejected",
+     "struct rows { int values[2][3]; }; "
+     "int main(void) { struct rows value = {.values[1] = U\"hi\"}; "
+     "return value.values[1][0]; }\n",
      "E3099"},
     {"predefined_function_name_element_assignment_rejected",
      "int main(void) { __func__[0] = 'x'; return 0; }\n",

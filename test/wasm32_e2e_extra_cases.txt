@@ -472,6 +472,9 @@ probes_found_bugs/vla_sizeof_direct.c
 probes_found_bugs/vla_struct_local.c
 probes_found_bugs/wide_string_literal_init.c
 probes_found_bugs/string_array_element_type_boundaries.c
+probes_found_bugs/string_array_compound_literal_type_boundaries.c
+probes_found_bugs/encoded_multidimensional_string_array_boundaries.c
+probes_found_bugs/encoded_string_row_designator_boundaries.c
 shift/shift_neg_right.c
 struct_arg/large_sum.c
 tokenizer/charlit_L.c

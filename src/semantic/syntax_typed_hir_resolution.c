@@ -6306,6 +6306,14 @@ static int preflight_direct_flat_initializer(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY,
         initializer->value);
+  if (status == PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_TOO_LONG)
+    return reject_direct_character_array_initializer(
+        context, PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG,
+        initializer->value_tok);
+  if (status == PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_INCOMPATIBLE)
+    return reject_direct_character_array_initializer(
+        context, PSX_CHARACTER_ARRAY_INITIALIZER_WIDTH_MISMATCH,
+        initializer->value_tok);
   if (status != PSX_LOCAL_INITIALIZER_OK) return 0;
 
   psx_qual_type_t *evaluation_types = NULL;

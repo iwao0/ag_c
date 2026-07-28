@@ -1123,8 +1123,22 @@ static int flat_initializer_apply_value(
               string->literal_contents, string->literal_length,
               (int)string->char_width, string->str_prefix_kind,
               &string_plan);
-      if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK ||
-          string_plan.unit_count != target->leaf_end - target->leaf_begin)
+      if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK) {
+        if (status == PSX_CHARACTER_ARRAY_INITIALIZER_OUT_OF_MEMORY) {
+          context->failure_status =
+              PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY;
+        } else if (status ==
+                   PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG) {
+          context->failure_status =
+              PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_TOO_LONG;
+        } else {
+          context->failure_status =
+              PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_INCOMPATIBLE;
+        }
+        return 0;
+      }
+      if (string_plan.unit_count !=
+          target->leaf_end - target->leaf_begin)
         return 0;
       for (int i = 0; i < string_plan.unit_count; i++) {
         psx_local_initializer_item_t *item =
