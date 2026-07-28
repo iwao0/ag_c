@@ -348,6 +348,10 @@ static void test_tokenize_invalid(tokenizer_context_t *test_ctx) {
   expect_tokenize_fail(test_ctx, "'\\U0000DFFF'"); // surrogate
   expect_tokenize_fail(test_ctx, "safe\\u202Ename"); // 識別子内bidi制御文字UCN
   expect_tokenize_fail(test_ctx, "safe\\u200Cname"); // 識別子内ゼロ幅UCN
+  expect_tokenize_fail(
+      test_ctx, "safe\xe2\x80\xae" "name"); // 生UTF-8のbidi制御文字
+  expect_tokenize_fail(
+      test_ctx, "safe\xe2\x80\x8c" "name"); // 生UTF-8のゼロ幅文字
   expect_tokenize_fail(test_ctx, "\"\\\n\\u202E\""); // 行継続 + bidi制御文字UCN
   expect_tokenize_fail(test_ctx, "safe\\\n\\u200Cname"); // 行継続 + 識別子内ゼロ幅UCN
   expect_tokenize_fail(test_ctx, "\x80");        // 孤立したUTF-8継続バイト
@@ -859,9 +863,23 @@ static void test_tokenize_string_prefixes_and_ucn(tokenizer_context_t *test_ctx)
 
 static void test_tokenize_ucn_ident_and_trigraph(tokenizer_context_t *test_ctx) {
   printf("test_tokenize_ucn_ident_and_trigraph...\n");
-  tk_set_current_token_ctx(test_ctx, tk_tokenize_ctx(test_ctx, "foo\\u00A9 = 1;"));
+  tk_set_current_token_ctx(
+      test_ctx, tk_tokenize_ctx(test_ctx, "foo\\u00A9 foo© = 1;"));
   ASSERT_EQ(TK_IDENT, tk_get_current_token_ctx(test_ctx)->kind);
   ASSERT_EQ(5, as_ident(tk_get_current_token_ctx(test_ctx))->len);
+  token_ident_t *escaped_name =
+      as_ident(tk_get_current_token_ctx(test_ctx));
+  tk_set_current_token_ctx(
+      test_ctx, tk_get_current_token_ctx(test_ctx)->next);
+  ASSERT_EQ(TK_IDENT, tk_get_current_token_ctx(test_ctx)->kind);
+  ASSERT_EQ(
+      escaped_name->len,
+      as_ident(tk_get_current_token_ctx(test_ctx))->len);
+  ASSERT_TRUE(
+      memcmp(
+          escaped_name->str,
+          as_ident(tk_get_current_token_ctx(test_ctx))->str,
+          (size_t)escaped_name->len) == 0);
   tk_set_current_token_ctx(test_ctx, tk_get_current_token_ctx(test_ctx)->next);
   ASSERT_EQ(TK_ASSIGN, tk_get_current_token_ctx(test_ctx)->kind); tk_set_current_token_ctx(test_ctx, tk_get_current_token_ctx(test_ctx)->next);
   ASSERT_EQ(TK_NUM, tk_get_current_token_ctx(test_ctx)->kind); tk_set_current_token_ctx(test_ctx, tk_get_current_token_ctx(test_ctx)->next);

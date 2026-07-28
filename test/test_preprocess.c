@@ -50,6 +50,7 @@ static const success_case_t success_cases[] = {
     {0, "#if 0\n#error \"This should not be evaluated\"\n#endif\nint main() { return 0; }"},
     {0, "#define STR(x) #x\nint main() { char *s = STR(hello world); if (s[0] == 'h') if (s[6] == 'w') return 0; return 1; }"},
     {42, "#define STR(x) #x\nint main(void){char*s=STR();return s[0]=='\\0'?42:0;}"},
+    {42, "#define STR(x) #x\nint main(void){char*s=STR('\\n');return s[0]=='\\''&&s[1]=='\\\\'&&s[2]=='n'&&s[3]=='\\''&&s[4]==0?42:0;}"},
     {42, "#define VALUE (40 + 2)\n#define VALUE (40 /* same separator */ + 2)\nint main(void){return VALUE;}"},
     {42, "#define ADD(left,right) ((left)+(right))\n#define ADD( left , right ) ((left)+(right))\nint main(void){return ADD(19,23);}"},
     {42, "#define EMPTY\n#define EMPTY /* trailing whitespace */\n#define VALUE 42\nint main(void){return EMPTY VALUE;}"},
@@ -1053,6 +1054,19 @@ int main(void) {
   fclose(huge);
   expect_preprocess_fail_with_stderr_substr("#include \"build/huge_include.h\"\nint main() { return 0; }\n", "E1032");
   expect_preprocess_fail_with_stderr_substr("#error \"forced\"\nint main() { return 0; }\n", "E1033");
+  expect_preprocess_fail_with_stderr_substr(
+      "#error alpha+beta 0x2a L\"wide\" '\\n'\n"
+      "int main(void) { return 0; }\n",
+      "alpha+beta 0x2a L\"wide\" '\\n'");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define MESSAGE expanded\n"
+      "#error MESSAGE\n"
+      "int main(void) { return 0; }\n",
+      "error: MESSAGE");
+  expect_preprocess_fail_with_stderr_substr(
+      "#error alpha/**/beta\n"
+      "int main(void) { return 0; }\n",
+      "error: alpha beta");
   expect_preprocess_fail_with_stderr_substr("_Pragma 1\nint main(void) { return 0; }\n", "E1043");
   expect_preprocess_fail_with_stderr_substr("#define BAD 1\n_Pragma(BAD)\nint main(void) { return 0; }\n", "E1043");
   expect_preprocess_fail_with_stderr_sanitized(

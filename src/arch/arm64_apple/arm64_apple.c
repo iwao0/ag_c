@@ -14,6 +14,7 @@
 #include "arm64_apple_emit.h"
 #include "../../codegen_backend.h"
 #include <stdint.h>
+#include <string.h>
 
 /* AArch64 即値ロード: 16bit に収まらない値は movz/movk シーケンス。
  * IR バックエンドからも共有するため非 static。 */
@@ -42,6 +43,58 @@ void cg_emit_mov_imm_in(
                   reg, (unsigned long long)chunk, shift);
     }
   }
+}
+
+static int asm_symbol_byte_is_unquoted(unsigned char byte) {
+  return (byte >= 'a' && byte <= 'z') ||
+         (byte >= 'A' && byte <= 'Z') ||
+         (byte >= '0' && byte <= '9') ||
+         byte == '_' || byte == '.' || byte == '$';
+}
+
+static void emit_quoted_symbol_part(
+    ag_codegen_emit_context_t *emit_context,
+    const char *part, size_t length) {
+  for (size_t i = 0; i < length; i++) {
+    unsigned char byte = (unsigned char)part[i];
+    if (byte == '"' || byte == '\\')
+      cg_emitf_in(emit_context, "\\");
+    cg_emitf_in(emit_context, "%c", byte);
+  }
+}
+
+void cg_emit_asm_symbol_in(
+    ag_codegen_emit_context_t *emit_context,
+    const char *prefix, const char *name, int name_len,
+    const char *suffix) {
+  if (!prefix) prefix = "";
+  if (!name) {
+    name = "";
+    name_len = 0;
+  }
+  if (name_len < 0) name_len = 0;
+  if (!suffix) suffix = "";
+  size_t prefix_len = strlen(prefix);
+  size_t suffix_len = strlen(suffix);
+  int quote = 0;
+  for (size_t i = 0; i < prefix_len && !quote; i++)
+    quote = !asm_symbol_byte_is_unquoted((unsigned char)prefix[i]);
+  for (int i = 0; i < name_len && !quote; i++)
+    quote = !asm_symbol_byte_is_unquoted((unsigned char)name[i]);
+  for (size_t i = 0; i < suffix_len && !quote; i++)
+    quote = !asm_symbol_byte_is_unquoted((unsigned char)suffix[i]);
+
+  if (!quote) {
+    cg_emitf_in(
+        emit_context, "%s%.*s%s",
+        prefix, name_len, name, suffix);
+    return;
+  }
+  cg_emitf_in(emit_context, "\"");
+  emit_quoted_symbol_part(emit_context, prefix, prefix_len);
+  emit_quoted_symbol_part(emit_context, name, (size_t)name_len);
+  emit_quoted_symbol_part(emit_context, suffix, suffix_len);
+  cg_emitf_in(emit_context, "\"");
 }
 
 /* ------------------------------------------------------------------ */
@@ -132,8 +185,9 @@ static void emit_relocation_target(
       module, reloc->target, reloc->target_len);
   int raw_label = target && target->kind == IR_DATA_STRING;
   cg_emitf_in(emit_context, "  %s ", directive);
-  if (!raw_label) cg_emitf_in(emit_context, "_");
-  cg_emitf_in(emit_context, "%.*s", reloc->target_len, reloc->target);
+  cg_emit_asm_symbol_in(
+      emit_context, raw_label ? "" : "_",
+      reloc->target, reloc->target_len, "");
   if (reloc->addend > 0)
     cg_emitf_in(emit_context, "+%lld", reloc->addend);
   else if (reloc->addend < 0)
@@ -171,35 +225,50 @@ static void emit_global_object(
           ".section __DATA,__thread_data,thread_local_regular\n");
       cg_emitf_in(emit_context, ".align %d\n",
                   log2_alignment(object->alignment));
-      cg_emitf_in(emit_context, "_%.*s$tlv$init:\n",
-                  object->name_len, object->name);
+      cg_emit_asm_symbol_in(
+          emit_context, "_", object->name, object->name_len, "$tlv$init");
+      cg_emitf_in(emit_context, ":\n");
       emit_global_initializer(emit_context, module, object);
     } else {
+      cg_emitf_in(emit_context, ".tbss ");
+      cg_emit_asm_symbol_in(
+          emit_context, "_", object->name, object->name_len, "$tlv$init");
       cg_emitf_in(
-          emit_context, ".tbss _%.*s$tlv$init,%d,%d\n",
-          object->name_len, object->name, object->byte_size,
+          emit_context, ",%d,%d\n", object->byte_size,
           log2_alignment(object->alignment));
     }
     cg_emitf_in(
         emit_context, ".section __DATA,__thread_vars,thread_local_variables\n");
-    if (!object->is_static)
-      cg_emitf_in(emit_context, ".global _%.*s\n",
-                  object->name_len, object->name);
-    cg_emitf_in(emit_context, "_%.*s:\n", object->name_len, object->name);
+    if (!object->is_static) {
+      cg_emitf_in(emit_context, ".global ");
+      cg_emit_asm_symbol_in(
+          emit_context, "_", object->name, object->name_len, "");
+      cg_emitf_in(emit_context, "\n");
+    }
+    cg_emit_asm_symbol_in(
+        emit_context, "_", object->name, object->name_len, "");
+    cg_emitf_in(emit_context, ":\n");
     cg_emitf_in(emit_context, "  .quad __tlv_bootstrap\n");
     cg_emitf_in(emit_context, "  .quad 0\n");
-    cg_emitf_in(emit_context, "  .quad _%.*s$tlv$init\n",
-                object->name_len, object->name);
+    cg_emitf_in(emit_context, "  .quad ");
+    cg_emit_asm_symbol_in(
+        emit_context, "_", object->name, object->name_len, "$tlv$init");
+    cg_emitf_in(emit_context, "\n");
     return;
   }
   if (object->has_explicit_initializer) {
     cg_emitf_in(emit_context, ".section __DATA,__data\n");
-    if (!object->is_static)
-      cg_emitf_in(emit_context, ".global _%.*s\n",
-                  object->name_len, object->name);
+    if (!object->is_static) {
+      cg_emitf_in(emit_context, ".global ");
+      cg_emit_asm_symbol_in(
+          emit_context, "_", object->name, object->name_len, "");
+      cg_emitf_in(emit_context, "\n");
+    }
     cg_emitf_in(emit_context, ".align %d\n",
                 log2_alignment(object->alignment));
-    cg_emitf_in(emit_context, "_%.*s:\n", object->name_len, object->name);
+    cg_emit_asm_symbol_in(
+        emit_context, "_", object->name, object->name_len, "");
+    cg_emitf_in(emit_context, ":\n");
     emit_global_initializer(emit_context, module, object);
     return;
   }
@@ -208,13 +277,17 @@ static void emit_global_object(
    * 同名 static と共有/衝突するため、ローカルな .zerofill (__bss) に出す。 */
   int log2align = log2_alignment(object->alignment);
   if (object->is_static) {
-    cg_emitf_in(emit_context, ".zerofill __DATA,__bss,_%.*s,%d,%d\n",
-                object->name_len, object->name,
-                object->byte_size, log2align);
+    cg_emitf_in(emit_context, ".zerofill __DATA,__bss,");
+    cg_emit_asm_symbol_in(
+        emit_context, "_", object->name, object->name_len, "");
+    cg_emitf_in(
+        emit_context, ",%d,%d\n", object->byte_size, log2align);
   } else {
-    cg_emitf_in(emit_context, ".comm _%.*s,%d,%d\n",
-                object->name_len, object->name,
-                object->byte_size, log2align);
+    cg_emitf_in(emit_context, ".comm ");
+    cg_emit_asm_symbol_in(
+        emit_context, "_", object->name, object->name_len, "");
+    cg_emitf_in(
+        emit_context, ",%d,%d\n", object->byte_size, log2align);
   }
 }
 

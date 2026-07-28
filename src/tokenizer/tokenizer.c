@@ -445,10 +445,10 @@ static bool tokenize_ident_or_keyword(
   }
 
   char *start = p;
-  bool has_ucn_escape = (adv > 1);
+  bool has_ucn_escape = (*p == '\\' && adv > 1);
   p += adv;
   while (tk_scan_ident_continue(p, &adv)) {
-    if (adv > 1) has_ucn_escape = true;
+    if (*p == '\\' && adv > 1) has_ucn_escape = true;
     p += adv;
   }
 

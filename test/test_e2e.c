@@ -705,6 +705,7 @@ static const test_case_t test_cases[] = {
     {"tokenizer", "ucn_string_u16_mix", CASE_ASSERT_FILE, "test/fixtures/tokenizer/ucn_string_u16_mix.c", 0, 0},
     {"tokenizer", "ucn_string_u32", CASE_ASSERT_FILE, "test/fixtures/tokenizer/ucn_string_u32.c", 0, 0},
     {"tokenizer", "ucn_ident", CASE_ASSERT_FILE, "test/fixtures/tokenizer/ucn_ident.c", 0, 0},
+    {"probes", "universal_character_identifier_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/universal_character_identifier_boundaries.c", 0, 0},
     {"tokenizer", "trigraph_or", CASE_ASSERT_FILE, "test/fixtures/tokenizer/trigraph_or.c", 0, 0},
     {"tokenizer", "trigraph_xor", CASE_ASSERT_FILE, "test/fixtures/tokenizer/trigraph_xor.c", 0, 0},
     // #pragma pack
@@ -1322,6 +1323,7 @@ static const test_case_t test_cases[] = {
     {"probes", "sizeof_string_and_addr_of_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_string_and_addr_of_array.c", 0, 0},
     {"probes", "stringize_string_literal", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stringize_string_literal.c", 0, 0},
     {"probes", "macro_stringize_whitespace_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_stringize_whitespace_boundaries.c", 0, 0},
+    {"probes", "macro_stringize_character_constant_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_stringize_character_constant_boundaries.c", 0, 0},
     {"probes", "line_splicing_translation_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/line_splicing_translation_boundaries.c", 0, 0},
     {"probes", "macro_redefinition_identity_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_redefinition_identity_boundaries.c", 0, 0},
     {"probes", "macro_parameter_list_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_parameter_list_boundaries.c", 0, 0},
@@ -1332,6 +1334,7 @@ static const test_case_t test_cases[] = {
     {"probes", "line_directive_maximum_value", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/line_directive_maximum_value.c", 0, 0},
     {"probes", "predefined_date_time_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/predefined_date_time_boundaries.c", 0, 0},
     {"probes", "macro_invocation_argument_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_invocation_argument_boundaries.c", 0, 0},
+    {"probes", "macro_argument_prescan_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_argument_prescan_boundaries.c", 0, 0},
     {"probes", "char_2d_array_string_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/char_2d_array_string_init.c", 0, 0},
     {"probes", "empty_macro_argument", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/empty_macro_argument.c", 0, 0},
     {"probes", "generic_struct_vs_scalar", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_struct_vs_scalar.c", 0, 0},
@@ -3324,6 +3327,23 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "int main(void) { return 0; }\n"
      "#endif\n",
      "E1018"},
+    {"preprocess_error_empty_rejected",
+     "#error\n"
+     "int main(void) { return 0; }\n",
+     "E1033"},
+    {"preprocess_error_token_spelling_rejected",
+     "#error alpha+beta 0x2a L\"wide\" '\\n'\n"
+     "int main(void) { return 0; }\n",
+     "alpha+beta 0x2a L\"wide\" '\\n'"},
+    {"preprocess_error_macro_name_not_expanded_rejected",
+     "#define MESSAGE expanded\n"
+     "#error MESSAGE\n"
+     "int main(void) { return 0; }\n",
+     "error: MESSAGE"},
+    {"preprocess_error_comment_whitespace_rejected",
+     "#error alpha/**/beta\n"
+     "int main(void) { return 0; }\n",
+     "error: alpha beta"},
     {"include_missing_filename_rejected",
      "#include\n"
      "int main(void) { return 0; }\n",

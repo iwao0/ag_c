@@ -1905,6 +1905,52 @@ static bool evaluate_constexpr(
    return pp_integer_truth(val);
 }
 
+static char *pp_string_token_spelling(
+    ag_preprocessor_context_t *context,
+    token_string_t *string_token, int *out_len,
+    diag_error_id_t too_large_id) {
+  const char *prefix = "";
+  size_t prefix_len = 0;
+  switch (string_token->str_prefix_kind) {
+    case TK_STR_PREFIX_L:
+      prefix = "L";
+      prefix_len = 1;
+      break;
+    case TK_STR_PREFIX_u:
+      prefix = "u";
+      prefix_len = 1;
+      break;
+    case TK_STR_PREFIX_U:
+      prefix = "U";
+      prefix_len = 1;
+      break;
+    case TK_STR_PREFIX_u8:
+      prefix = "u8";
+      prefix_len = 2;
+      break;
+    default:
+      break;
+  }
+  size_t contents_len =
+      string_token->len < 0 ? 0 : (size_t)string_token->len;
+  if (contents_len > SIZE_MAX - prefix_len - 3) {
+    pp_error(context, too_large_id, NULL);
+  }
+  size_t full_len = prefix_len + contents_len + 2;
+  if (full_len > INT_MAX) {
+    pp_error(context, too_large_id, NULL);
+  }
+  char *spelling = xrealloc(context, NULL, full_len + 1);
+  memcpy(spelling, prefix, prefix_len);
+  spelling[prefix_len] = '"';
+  memcpy(
+      spelling + prefix_len + 1, string_token->str, contents_len);
+  spelling[full_len - 1] = '"';
+  spelling[full_len] = '\0';
+  *out_len = (int)full_len;
+  return spelling;
+}
+
 static token_t *stringify_tokens(
     ag_preprocessor_context_t *context,
     token_t *tok, token_t *macro_tok) {
@@ -1923,47 +1969,61 @@ static token_t *stringify_tokens(
         }
         buf[len++] = ' ';
       }
-    int tlen = 0;
-    char *tmp_quoted = NULL;
-    const char *ts;
+    int spelling_len = 0;
+    const char *spelling = token_text(t, &spelling_len);
+    char *literal_spelling = NULL;
+    bool escape_literal_spelling = false;
     if (t->kind == TK_STRING) {
-      /* C11 6.10.3.2: 文字列リテラルを stringize するときは囲みの `"` を保持し、
-       * 内部の `"` と `\` の前に `\` を挿入する。token_text は引用符なしの内容
-       * だけを返すため、ここで再構築する (これがないと STR("hi") が hi になる)。 */
-      token_string_t *st = (token_string_t *)t;
-      int slen = st->len < 0 ? 0 : st->len;
-      tmp_quoted = malloc((size_t)slen * 2 + 3);
-      size_t q = 0;
-      tmp_quoted[q++] = '"';
-      for (int i = 0; i < slen; i++) {
-        char c = st->str[i];
-        if (c == '"' || c == '\\') tmp_quoted[q++] = '\\';
-        tmp_quoted[q++] = c;
-      }
-      tmp_quoted[q++] = '"';
-      ts = tmp_quoted;
-      tlen = (int)q;
-    } else {
-      ts = token_text(t, &tlen);
+      /*
+       * token_string_t::str excludes the encoding prefix and surrounding
+       * quotes.  Reconstruct the complete preprocessing-token spelling
+       * before applying C11 6.10.3.2 escaping.
+       */
+      literal_spelling = pp_string_token_spelling(
+          context, (token_string_t *)t, &spelling_len,
+          DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE);
+      spelling = literal_spelling;
+      escape_literal_spelling = true;
+    } else if (t->kind == TK_NUM &&
+               as_num(t)->num_kind == TK_NUM_KIND_INT &&
+               ((token_num_int_t *)t)->char_width != 0) {
+      escape_literal_spelling = true;
     }
-    if (!ts) ts = "";
-    if (tlen < 0 || (size_t)tlen > SIZE_MAX - len - 1) {
+    if (!spelling) spelling = "";
+    if (spelling_len < 0) {
       pp_error(context, DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
     }
-    size_t need = len + (size_t)tlen + 1;
+    size_t escaped_len = (size_t)spelling_len;
+    if (escape_literal_spelling) {
+      for (int i = 0; i < spelling_len; i++) {
+        if (spelling[i] == '"' || spelling[i] == '\\') {
+          if (escaped_len == SIZE_MAX) {
+            pp_error(
+                context, DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
+          }
+          escaped_len++;
+        }
+      }
+    }
+    if (escaped_len > SIZE_MAX - len - 1) {
+      pp_error(context, DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
+    }
+    size_t need = len + escaped_len + 1;
     while (need > cap) {
       if (cap > SIZE_MAX / 2) {
         pp_error(context, DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
       }
       cap *= 2;
     }
-    if (need > len + (size_t)tlen + 1) {
-      pp_error(context, DIAG_ERR_PREPROCESS_STRINGIZE_INVALID_SIZE, NULL);
-    }
     buf = xrealloc(context, buf, cap);
-    memcpy(buf + len, ts, (size_t)tlen);
-    len += (size_t)tlen;
-    free(tmp_quoted);
+    for (int i = 0; i < spelling_len; i++) {
+      if (escape_literal_spelling &&
+          (spelling[i] == '"' || spelling[i] == '\\')) {
+        buf[len++] = '\\';
+      }
+      buf[len++] = spelling[i];
+    }
+    free(literal_spelling);
   }
   buf[len] = '\0';
   
@@ -2435,37 +2495,39 @@ static token_t *handle_error(
   while (tok->kind != TK_EOF && !tok->at_bol) {
     int tlen = 0;
     const char *ts = token_text(tok, &tlen);
-    char tmp[64];
-    tmp[0] = '\0';
-    if (tok->kind == TK_NUM) {
-      if (tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
-        snprintf(tmp, sizeof(tmp), "%lld", tk_as_num_int(tok)->val);
-      } else {
-        snprintf(tmp, sizeof(tmp), "%g", tk_as_num_float(tok)->fval);
-      }
-      ts = tmp;
-      tlen = (int)strlen(tmp);
+    char *owned_spelling = NULL;
+    if (tok->kind == TK_STRING) {
+      owned_spelling = pp_string_token_spelling(
+          context, (token_string_t *)tok, &tlen,
+          DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE);
+      ts = owned_spelling;
+    }
+    if (tlen < 0) {
+      free(owned_spelling);
+      pp_error(
+          context, DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
+    }
+    size_t separator =
+        tok->has_space && len > pfx_len ? 1 : 0;
+    if (len > SIZE_MAX - separator - 1 ||
+        (size_t)tlen > SIZE_MAX - len - separator - 1) {
+      free(owned_spelling);
+      pp_error(
+          context, DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
     }
     if (ts && tlen > 0) {
-      size_t need = len + (size_t)tlen + 2;
+      size_t need = len + separator + (size_t)tlen + 1;
       while (need > cap) {
         if (cap > SIZE_MAX / 2) pp_error(context, DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
         cap *= 2;
       }
       msg = xrealloc(context, msg, cap);
+      if (separator) msg[len++] = ' ';
       memcpy(msg + len, ts, (size_t)tlen);
       len += (size_t)tlen;
       msg[len] = '\0';
     }
-    if (tok->has_space) {
-      if (len + 2 > cap) {
-        if (cap > SIZE_MAX / 2) pp_error(context, DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
-        cap *= 2;
-        msg = xrealloc(context, msg, cap);
-      }
-      msg[len++] = ' ';
-      msg[len] = '\0';
-    }
+    free(owned_spelling);
     tok = tok->next;
   }
   const char *detail = msg;

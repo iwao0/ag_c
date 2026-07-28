@@ -45,6 +45,22 @@ typedef struct {
 #define arm64_cg_emitf(ctx, ...) \
   cg_emitf_in((ctx)->emit_context, __VA_ARGS__)
 
+static void arm64_emit_symbol(
+    gen_ctx_t *ctx, const char *prefix,
+    const char *name, int name_len, const char *suffix) {
+  cg_emit_asm_symbol_in(
+      ctx->emit_context, prefix, name, name_len, suffix);
+}
+
+static void arm64_emit_block_symbol(
+    gen_ctx_t *ctx, int label_id) {
+  char suffix[32];
+  int length = snprintf(suffix, sizeof(suffix), "_%d", label_id);
+  if (length < 0 || (size_t)length >= sizeof(suffix)) abort();
+  arm64_emit_symbol(
+      ctx, ".L", ctx->f->name, ctx->f->name_len, suffix);
+}
+
 static const ir_abi_signature_t *function_abi(
     const gen_ctx_t *ctx) {
   return ctx ? ir_abi_function_signature(ctx->abi, ctx->f) : NULL;
@@ -352,7 +368,8 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_VLA_ALLOC:     gen_inst_vla_alloc(ctx, inst); return;
     case IR_VARARG_CURSOR: gen_inst_va_arg_area(ctx, inst); return;
     case IR_LABEL:
-      arm64_cg_emitf(ctx, ".L%.*s_%d:\n", ctx->f->name_len, ctx->f->name, inst->label_id);
+      arm64_emit_block_symbol(ctx, inst->label_id);
+      arm64_cg_emitf(ctx, ":\n");
       return;
     case IR_LOAD_IMM:      gen_inst_load_imm(ctx, inst); return;
     case IR_LOAD_FP_IMM:   gen_inst_load_fp_imm(ctx, inst); return;
@@ -387,7 +404,9 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_PARAM_BIND:    gen_inst_param_bind(ctx, inst); return;
     case IR_CALL:          gen_inst_call(ctx, inst); return;
     case IR_BR:
-      arm64_cg_emitf(ctx, "  b .L%.*s_%d\n", ctx->f->name_len, ctx->f->name, inst->label_id);
+      arm64_cg_emitf(ctx, "  b ");
+      arm64_emit_block_symbol(ctx, inst->label_id);
+      arm64_cg_emitf(ctx, "\n");
       return;
     case IR_BR_COND:       gen_inst_br_cond(ctx, inst); return;
     case IR_RET:           gen_inst_ret(ctx, inst); return;
@@ -409,8 +428,12 @@ static void gen_inst_load_str(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-      arm64_cg_emitf(ctx, "  adrp %s, %.*s@PAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
-      arm64_cg_emitf(ctx, "  add %s, %s, %.*s@PAGEOFF\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+      arm64_cg_emitf(ctx, "  adrp %s, ", d);
+      arm64_emit_symbol(ctx, "", inst->sym, inst->sym_len, "");
+      arm64_cg_emitf(ctx, "@PAGE\n");
+      arm64_cg_emitf(ctx, "  add %s, %s, ", d, d);
+      arm64_emit_symbol(ctx, "", inst->sym, inst->sym_len, "");
+      arm64_cg_emitf(ctx, "@PAGEOFF\n");
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -422,12 +445,20 @@ static void gen_inst_load_sym(gen_ctx_t *ctx, ir_inst_t *inst) {
         /* 関数アドレス: GOT 経由 (外部 libc 関数は @PAGE 直参照だと「does not have
          * address」でリンク失敗。GOT はローカル定義にも有効)。
          *   adrp d, _sym@GOTPAGE ; ldr d, [d, _sym@GOTPAGEOFF] */
-        arm64_cg_emitf(ctx, "  adrp %s, _%.*s@GOTPAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
-        arm64_cg_emitf(ctx, "  ldr %s, [%s, _%.*s@GOTPAGEOFF]\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+        arm64_cg_emitf(ctx, "  adrp %s, ", d);
+        arm64_emit_symbol(ctx, "_", inst->sym, inst->sym_len, "");
+        arm64_cg_emitf(ctx, "@GOTPAGE\n");
+        arm64_cg_emitf(ctx, "  ldr %s, [%s, ", d, d);
+        arm64_emit_symbol(ctx, "_", inst->sym, inst->sym_len, "");
+        arm64_cg_emitf(ctx, "@GOTPAGEOFF]\n");
       } else {
         /* グローバル変数のアドレス (_<name>@PAGE/PAGEOFF) を vreg に */
-        arm64_cg_emitf(ctx, "  adrp %s, _%.*s@PAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
-        arm64_cg_emitf(ctx, "  add %s, %s, _%.*s@PAGEOFF\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+        arm64_cg_emitf(ctx, "  adrp %s, ", d);
+        arm64_emit_symbol(ctx, "_", inst->sym, inst->sym_len, "");
+        arm64_cg_emitf(ctx, "@PAGE\n");
+        arm64_cg_emitf(ctx, "  add %s, %s, ", d, d);
+        arm64_emit_symbol(ctx, "_", inst->sym, inst->sym_len, "");
+        arm64_cg_emitf(ctx, "@PAGEOFF\n");
       }
   release_dst(ctx, inst->dst, d, spill);
 }
@@ -440,8 +471,12 @@ static void gen_inst_load_tls_sym(gen_ctx_t *ctx, ir_inst_t *inst) {
        *   blr  x8                             ; returns TLS address in x0
        * 戻り値 (TLS のアドレス) を dst slot へ。CALL 同様 caller-saved を
        * 全 clobber する想定 (regalloc/DCE は callee 相当として扱う)。 */
-      arm64_cg_emitf(ctx, "  adrp x0, _%.*s@TLVPPAGE\n", inst->sym_len, inst->sym ? inst->sym : "");
-      arm64_cg_emitf(ctx, "  ldr x0, [x0, _%.*s@TLVPPAGEOFF]\n", inst->sym_len, inst->sym ? inst->sym : "");
+      arm64_cg_emitf(ctx, "  adrp x0, ");
+      arm64_emit_symbol(ctx, "_", inst->sym, inst->sym_len, "");
+      arm64_cg_emitf(ctx, "@TLVPPAGE\n");
+      arm64_cg_emitf(ctx, "  ldr x0, [x0, ");
+      arm64_emit_symbol(ctx, "_", inst->sym, inst->sym_len, "");
+      arm64_cg_emitf(ctx, "@TLVPPAGEOFF]\n");
       arm64_cg_emitf(ctx, "  ldr x8, [x0]\n");
       arm64_cg_emitf(ctx, "  blr x8\n");
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
@@ -1223,7 +1258,9 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
         if (strcmp(src, "x16") != 0) arm64_cg_emitf(ctx, "  mov x16, %s\n", src);
         arm64_cg_emitf(ctx, "  blr x16\n");
       } else {
-        arm64_cg_emitf(ctx, "  bl _%.*s\n", inst->sym_len, inst->sym ? inst->sym : "");
+        arm64_cg_emitf(ctx, "  bl ");
+        arm64_emit_symbol(ctx, "_", inst->sym, inst->sym_len, "");
+        arm64_cg_emitf(ctx, "\n");
       }
       /* variadic で stack を使った分を戻す */
       if (var_stack_bytes > 0) {
@@ -1285,10 +1322,11 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
 static void gen_inst_br_cond(gen_ctx_t *ctx, ir_inst_t *inst) {
       char b1[8];
       const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
-  arm64_cg_emitf(ctx, "  cbnz %s, .L%.*s_%d\n", s1,
-            ctx->f->name_len, ctx->f->name, inst->label_id);
-  arm64_cg_emitf(ctx, "  b .L%.*s_%d\n",
-            ctx->f->name_len, ctx->f->name, inst->else_label_id);
+  arm64_cg_emitf(ctx, "  cbnz %s, ", s1);
+  arm64_emit_block_symbol(ctx, inst->label_id);
+  arm64_cg_emitf(ctx, "\n  b ");
+  arm64_emit_block_symbol(ctx, inst->else_label_id);
+  arm64_cg_emitf(ctx, "\n");
 }
 
 static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
@@ -1553,10 +1591,14 @@ static void gen_func(
 
   /* static 関数 (内部リンケージ) は .global を出さない (C11 6.2.2p3)。
    * 出すと別 TU の同名 static とリンク衝突する (duplicate symbol)。 */
-  if (!f->is_static)
-    arm64_cg_emitf(&ctx, ".global _%.*s\n", f->name_len, f->name);
+  if (!f->is_static) {
+    arm64_cg_emitf(&ctx, ".global ");
+    arm64_emit_symbol(&ctx, "_", f->name, f->name_len, "");
+    arm64_cg_emitf(&ctx, "\n");
+  }
   arm64_cg_emitf(&ctx, ".align 2\n");
-  arm64_cg_emitf(&ctx, "_%.*s:\n", f->name_len, f->name);
+  arm64_emit_symbol(&ctx, "_", f->name, f->name_len, "");
+  arm64_cg_emitf(&ctx, ":\n");
   emit_addsub_imm(&ctx, "sub", "sp", "sp", ctx.total_size);
   arm64_cg_emitf(&ctx, "  stp x29, x30, [sp]\n");
   arm64_cg_emitf(&ctx, "  mov x29, sp\n");

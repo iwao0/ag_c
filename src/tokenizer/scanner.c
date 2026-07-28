@@ -93,7 +93,48 @@ char *tk_skip_ignored_ctx(tokenizer_context_t *ctx, char *p,
   }
 }
 
-/** @brief 識別子開始判定（UCN含む）を行う。 */
+static bool tk_scan_utf8_identifier_char(const char *p, int *adv) {
+  const unsigned char c0 = (unsigned char)p[0];
+  int length = 0;
+  uint32_t codepoint = 0;
+  if (c0 >= 0xC2 && c0 <= 0xDF) {
+    length = 2;
+    codepoint = c0 & 0x1Fu;
+  } else if (c0 >= 0xE0 && c0 <= 0xEF) {
+    length = 3;
+    codepoint = c0 & 0x0Fu;
+  } else if (c0 >= 0xF0 && c0 <= 0xF4) {
+    length = 4;
+    codepoint = c0 & 0x07u;
+  } else {
+    return false;
+  }
+
+  for (int i = 1; i < length; i++) {
+    const unsigned char continuation = (unsigned char)p[i];
+    if (continuation == '\0' || (continuation & 0xC0u) != 0x80u) {
+      return false;
+    }
+    codepoint = (codepoint << 6) | (continuation & 0x3Fu);
+  }
+
+  if ((length == 3 && c0 == 0xE0 &&
+       (unsigned char)p[1] < 0xA0) ||
+      (length == 3 && c0 == 0xED &&
+       (unsigned char)p[1] >= 0xA0) ||
+      (length == 4 && c0 == 0xF0 &&
+       (unsigned char)p[1] < 0x90) ||
+      (length == 4 && c0 == 0xF4 &&
+       (unsigned char)p[1] >= 0x90) ||
+      !tk_is_valid_ucn_codepoint(codepoint)) {
+    return false;
+  }
+
+  *adv = length;
+  return true;
+}
+
+/** @brief 識別子開始判定（UCN・UTF-8 source character含む）を行う。 */
 bool tk_scan_ident_start(const char *p, int *adv) {
   int ucn_len = 0;
   if (tk_is_ident_start_byte(*p)) {
@@ -105,10 +146,10 @@ bool tk_scan_ident_start(const char *p, int *adv) {
     *adv = ucn_len;
     return true;
   }
-  return false;
+  return tk_scan_utf8_identifier_char(p, adv);
 }
 
-/** @brief 識別子継続判定（UCN含む）を行う。 */
+/** @brief 識別子継続判定（UCN・UTF-8 source character含む）を行う。 */
 bool tk_scan_ident_continue(const char *p, int *adv) {
   int ucn_len = 0;
   if (tk_is_ident_continue_byte(*p)) {
@@ -120,5 +161,5 @@ bool tk_scan_ident_continue(const char *p, int *adv) {
     *adv = ucn_len;
     return true;
   }
-  return false;
+  return tk_scan_utf8_identifier_char(p, adv);
 }

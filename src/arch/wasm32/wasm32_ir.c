@@ -147,6 +147,47 @@ static void wasm_emit_indent(
     wasm_cg_emitf(__VA_ARGS__);            \
   } while (0)
 
+#define WAT_ENCODED_FUNCTION_ID_PREFIX "__agc_wat_"
+
+static int wat_function_id_requires_encoding(
+    const char *name, int name_len) {
+  const size_t reserved_len =
+      sizeof(WAT_ENCODED_FUNCTION_ID_PREFIX) - 1;
+  if (!name || name_len <= 0) return 1;
+  if ((size_t)name_len >= reserved_len &&
+      memcmp(name, WAT_ENCODED_FUNCTION_ID_PREFIX, reserved_len) == 0) {
+    return 1;
+  }
+  for (int i = 0; i < name_len; i++) {
+    unsigned char byte = (unsigned char)name[i];
+    if (!((byte >= 'a' && byte <= 'z') ||
+          (byte >= 'A' && byte <= 'Z') ||
+          (byte >= '0' && byte <= '9') ||
+          byte == '_')) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/*
+ * WABT does not accept raw UTF-8 bytes in WAT identifiers.  Preserve ordinary
+ * C names for readable output and encode every byte otherwise.  Names using
+ * the reserved prefix are encoded too, keeping this mapping injective.
+ */
+static void wasm_emit_wat_function_id(
+    wasm32_ir_context_t *context,
+    const char *name, int name_len) {
+  wasm_cg_emitf("$");
+  if (!wat_function_id_requires_encoding(name, name_len)) {
+    wasm_cg_emitf("%.*s", name_len, name);
+    return;
+  }
+  wasm_cg_emitf("%s", WAT_ENCODED_FUNCTION_ID_PREFIX);
+  for (int i = 0; i < name_len; i++)
+    wasm_cg_emitf("%02x", (unsigned int)(unsigned char)name[i]);
+}
+
 const char *wasm_type(ir_type_t t) {
   switch (t) {
     case IR_TY_I8:
@@ -527,7 +568,8 @@ static void emit_function_table(wasm32_ir_context_t *context) {
         !has_defined_function(context, name, name_len)) {
       wasm_cg_emitf(" $__ag_funcptr_fprintf");
     } else {
-      wasm_cg_emitf(" $%.*s", name_len, name);
+      wasm_cg_emitf(" ");
+      wasm_emit_wat_function_id(context, name, name_len);
     }
   }
   wasm_cg_emitf(")\n");
@@ -1316,7 +1358,9 @@ static void emit_call(
   int returns_hidden = call_signature->has_hidden_result;
   int returns_void = call_signature->result == IR_TY_VOID;
   if (returns_hidden) {
-    wasm_emitf(indent, "(call $%.*s ", i->sym_len, i->sym);
+    wasm_emitf(indent, "(call ");
+    wasm_emit_wat_function_id(context, i->sym, i->sym_len);
+    wasm_cg_emitf(" ");
     emit_val_expr_as(ctx, call->result_area, IR_TY_PTR);
   } else if (returns_direct_aggregate) {
     const char *store =
@@ -1325,11 +1369,14 @@ static void emit_call(
       wasm_unsupported_inst(context, i);
     wasm_emitf(indent, "(%s ", store);
     emit_addr_expr(ctx, call->result_area);
-    wasm_cg_emitf(" (call $%.*s", i->sym_len, i->sym);
+    wasm_cg_emitf(" (call ");
+    wasm_emit_wat_function_id(context, i->sym, i->sym_len);
   } else if (!returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
-    wasm_emitf(indent, "(local.set $v%d (call $%.*s", i->dst.id, i->sym_len, i->sym);
+    wasm_emitf(indent, "(local.set $v%d (call ", i->dst.id);
+    wasm_emit_wat_function_id(context, i->sym, i->sym_len);
   } else {
-    wasm_emitf(indent, "(call $%.*s", i->sym_len, i->sym);
+    wasm_emitf(indent, "(call ");
+    wasm_emit_wat_function_id(context, i->sym, i->sym_len);
   }
   const wasm32_wat_runtime_call_plan_t *runtime_plan =
       wasm32_wat_runtime_module_plan_call(
@@ -1721,8 +1768,9 @@ static void emit_func(
   const wasm32_machine_signature_t *function_signature =
       &ctx.machine.signature;
   int nparams = function_signature->nparams;
-  wasm_emitf(
-      2, "(func $%.*s", ctx.machine.name_len, ctx.machine.name);
+  wasm_emitf(2, "(func ");
+  wasm_emit_wat_function_id(
+      context, ctx.machine.name, ctx.machine.name_len);
   for (int p = 0; p < nparams; p++) {
     const char *pt = wasm_type(function_signature->params[p]);
     if (!pt)
