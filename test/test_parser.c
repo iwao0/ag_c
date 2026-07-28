@@ -12,6 +12,7 @@
 #include "../src/lowering/abi_target_policy.h"
 #include "../src/lowering/global_object_lowering.h"
 #include "../src/lowering/hir_ir_builder.h"
+#include "../src/lowering/hir_ir_builder_internal.h"
 #include "../src/lowering/local_object_lowering.h"
 #include "../src/lowering/local_storage.h"
 #include "../src/lowering/mir_type_lowering.h"
@@ -5906,6 +5907,65 @@ static void test_typed_hir_control_flow_lowering_without_ast(
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_BR_COND) >= 2);
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
+}
+
+static void test_noreturn_cfg_reachability_boundary(void) {
+  printf("test_noreturn_cfg_reachability_boundary...\n");
+  ir_module_t *module = ir_module_new();
+  ir_func_t *function =
+      ir_func_new(module, "noreturn_branches", 17);
+  ASSERT_TRUE(module != NULL);
+  ASSERT_TRUE(function != NULL);
+
+  ir_block_t *then_block = ir_block_new(function);
+  ir_block_t *else_block = ir_block_new(function);
+  ir_block_t *merge_block = ir_block_new(function);
+  ASSERT_TRUE(then_block != NULL);
+  ASSERT_TRUE(else_block != NULL);
+  ASSERT_TRUE(merge_block != NULL);
+
+  ir_inst_t *dispatch = ir_inst_new(IR_BR_COND);
+  ASSERT_TRUE(dispatch != NULL);
+  dispatch->label_id = then_block->id;
+  dispatch->else_label_id = else_block->id;
+  ir_func_append_inst(function, dispatch);
+
+  ir_func_switch_block(function, then_block);
+  ir_inst_t *then_call = ir_inst_new(IR_CALL);
+  ASSERT_TRUE(then_call != NULL);
+  then_call->is_noreturn_call = 1;
+  ir_func_append_inst(function, then_call);
+  ir_inst_t *then_branch = ir_inst_new(IR_BR);
+  ASSERT_TRUE(then_branch != NULL);
+  then_branch->label_id = merge_block->id;
+  ir_func_append_inst(function, then_branch);
+
+  ir_func_switch_block(function, else_block);
+  ir_inst_t *else_call = ir_inst_new(IR_CALL);
+  ASSERT_TRUE(else_call != NULL);
+  else_call->is_noreturn_call = 1;
+  ir_func_append_inst(function, else_call);
+  ir_inst_t *else_branch = ir_inst_new(IR_BR);
+  ASSERT_TRUE(else_branch != NULL);
+  else_branch->label_id = merge_block->id;
+  ir_func_append_inst(function, else_branch);
+
+  ASSERT_TRUE(!hir_ir_cfg_block_end_reachable_without_noreturn(
+      function, merge_block));
+  else_call->is_noreturn_call = 0;
+  ASSERT_TRUE(hir_ir_cfg_block_end_reachable_without_noreturn(
+      function, merge_block));
+  dispatch->src1 = ir_val_imm(IR_TY_I32, 1);
+  ASSERT_TRUE(!hir_ir_cfg_block_end_reachable_without_noreturn(
+      function, merge_block));
+  dispatch->src1 = ir_val_imm(IR_TY_I32, 0);
+  ASSERT_TRUE(hir_ir_cfg_block_end_reachable_without_noreturn(
+      function, merge_block));
+  dispatch->src1 = ir_val_vreg(0, IR_TY_I32);
+  else_call->is_noreturn_call = 1;
+  ASSERT_TRUE(!hir_ir_cfg_block_end_reachable_without_noreturn(
+      function, then_block));
+  ir_module_free(module);
 }
 
 static int parse_raw_function_item(
@@ -19111,6 +19171,11 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok_without_message(test_suite_session,
       "int main(void){ int x=0; switch(x){ case 0: case 1: return 1; } return x; }",
       "W3017");
+  expect_parse_ok_without_message(test_suite_session,
+      "_Noreturn void stop(void){for(;;){}}"
+      "int choose(int x){switch(x){case 0:stop();default:stop();}}"
+      "int main(void){return 0;}",
+      "W3017");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ char c=200; return c; }", "W3011");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ unsigned char c=300; return c; }", "W3011");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ unsigned char c=-1; return c; }", "W3011");
@@ -21326,6 +21391,7 @@ int main() {
   test_typed_hir_bitfield_lowering_without_ast(test_suite_session);
   test_typed_hir_conditional_expr_lowering_without_ast(test_suite_session);
   test_typed_hir_control_flow_lowering_without_ast(test_suite_session);
+  test_noreturn_cfg_reachability_boundary();
   test_anonymous_canonical_signature_stability(test_suite_session);
   test_semantic_type_identity(test_suite_session);
   test_semantic_context_isolation(test_suite_session);

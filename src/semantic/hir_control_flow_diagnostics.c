@@ -8,6 +8,18 @@ static int is_switch_label(const psx_hir_node_t *node) {
   return kind == PSX_HIR_CASE || kind == PSX_HIR_DEFAULT;
 }
 
+static const psx_hir_node_t *child_for_edge(
+    const psx_hir_module_t *module, const psx_hir_node_t *node,
+    psx_hir_edge_kind_t edge) {
+  if (!module || !node) return NULL;
+  for (size_t i = 0; i < psx_hir_node_child_count(node); i++) {
+    if (psx_hir_node_child_edge_at(node, i) != edge) continue;
+    return psx_hir_module_lookup(
+        module, psx_hir_node_child_at(node, i));
+  }
+  return NULL;
+}
+
 static int statement_tail_terminates(
     const psx_hir_module_t *module, const psx_hir_node_t *node) {
   if (!module || !node) return 0;
@@ -17,14 +29,60 @@ static int statement_tail_terminates(
     case PSX_HIR_CONTINUE:
     case PSX_HIR_GOTO:
       return 1;
-    case PSX_HIR_CASE:
-    case PSX_HIR_DEFAULT:
-    case PSX_HIR_LABEL: {
+    case PSX_HIR_CALL:
+      return psx_hir_node_is_noreturn_call(node);
+    case PSX_HIR_CAST:
+      return statement_tail_terminates(
+          module, child_for_edge(module, node, PSX_HIR_EDGE_LHS));
+    case PSX_HIR_STMT_EXPR:
+      return statement_tail_terminates(
+                 module,
+                 child_for_edge(module, node, PSX_HIR_EDGE_LHS)) ||
+             statement_tail_terminates(
+                 module,
+                 child_for_edge(module, node, PSX_HIR_EDGE_RHS));
+    case PSX_HIR_COMMA:
+      return statement_tail_terminates(
+                 module,
+                 child_for_edge(module, node, PSX_HIR_EDGE_LHS)) ||
+             statement_tail_terminates(
+                 module,
+                 child_for_edge(module, node, PSX_HIR_EDGE_RHS));
+    case PSX_HIR_TERNARY:
+      return statement_tail_terminates(
+                 module,
+                 child_for_edge(module, node, PSX_HIR_EDGE_LHS)) ||
+             (statement_tail_terminates(
+                  module,
+                  child_for_edge(module, node, PSX_HIR_EDGE_RHS)) &&
+              statement_tail_terminates(
+                  module,
+                  child_for_edge(module, node, PSX_HIR_EDGE_ELSE)));
+    case PSX_HIR_IF: {
+      const psx_hir_node_t *condition =
+          child_for_edge(module, node, PSX_HIR_EDGE_LHS);
+      const psx_hir_node_t *then_statement =
+          child_for_edge(module, node, PSX_HIR_EDGE_RHS);
+      const psx_hir_node_t *else_statement =
+          child_for_edge(module, node, PSX_HIR_EDGE_ELSE);
+      return statement_tail_terminates(module, condition) ||
+             (else_statement &&
+              statement_tail_terminates(module, then_statement) &&
+              statement_tail_terminates(module, else_statement));
+    }
+    case PSX_HIR_BLOCK: {
       size_t count = psx_hir_node_child_count(node);
-      const psx_hir_node_t *body = count > 0
+      const psx_hir_node_t *tail = count > 0
           ? psx_hir_module_lookup(
                 module, psx_hir_node_child_at(node, count - 1))
           : NULL;
+      return statement_tail_terminates(module, tail);
+    }
+    case PSX_HIR_CASE:
+    case PSX_HIR_DEFAULT:
+    case PSX_HIR_LABEL: {
+      const psx_hir_node_t *body =
+          child_for_edge(module, node, PSX_HIR_EDGE_RHS);
       return statement_tail_terminates(module, body);
     }
     default:

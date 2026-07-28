@@ -40,6 +40,90 @@ int hir_ir_cfg_block_has_predecessor(
   return 0;
 }
 
+static void enqueue_successor(
+    ir_block_t **blocks_by_id, size_t block_capacity,
+    unsigned char *visited, ir_block_t **queue, size_t *queue_count,
+    int block_id) {
+  if (block_id < 0 || (size_t)block_id >= block_capacity ||
+      !blocks_by_id[block_id] || visited[block_id])
+    return;
+  visited[block_id] = 1;
+  queue[(*queue_count)++] = blocks_by_id[block_id];
+}
+
+int hir_ir_cfg_block_end_reachable_without_noreturn(
+    const ir_func_t *function, const ir_block_t *target) {
+  if (!function || !function->entry || !target ||
+      function->next_block_id <= 0)
+    return 0;
+  size_t block_capacity = (size_t)function->next_block_id;
+  ir_block_t **blocks_by_id =
+      calloc(block_capacity, sizeof(*blocks_by_id));
+  unsigned char *visited = calloc(block_capacity, sizeof(*visited));
+  ir_block_t **queue = calloc(block_capacity, sizeof(*queue));
+  if (!blocks_by_id || !visited || !queue) {
+    free(blocks_by_id);
+    free(visited);
+    free(queue);
+    return 1;
+  }
+  for (ir_block_t *block = function->entry; block; block = block->next) {
+    if (block->id >= 0 && (size_t)block->id < block_capacity)
+      blocks_by_id[block->id] = block;
+  }
+  size_t queue_index = 0;
+  size_t queue_count = 0;
+  enqueue_successor(
+      blocks_by_id, block_capacity, visited, queue, &queue_count,
+      function->entry->id);
+  int reachable = 0;
+  while (queue_index < queue_count) {
+    ir_block_t *block = queue[queue_index++];
+    int terminated_by_noreturn = 0;
+    for (ir_inst_t *instruction = block->head; instruction;
+         instruction = instruction->next) {
+      if (instruction->op == IR_CALL &&
+          instruction->is_noreturn_call) {
+        terminated_by_noreturn = 1;
+        break;
+      }
+    }
+    if (terminated_by_noreturn) continue;
+    if (block == target) {
+      reachable = 1;
+      break;
+    }
+    for (ir_inst_t *instruction = block->head; instruction;
+         instruction = instruction->next) {
+      if (instruction->op != IR_BR &&
+          instruction->op != IR_BR_COND &&
+          instruction->op != IR_CONTINUATION_SUSPEND)
+        continue;
+      if (instruction->op == IR_BR_COND &&
+          instruction->src1.id == IR_VAL_IMM) {
+        enqueue_successor(
+            blocks_by_id, block_capacity, visited, queue, &queue_count,
+            instruction->src1.imm
+                ? instruction->label_id
+                : instruction->else_label_id);
+        continue;
+      }
+      enqueue_successor(
+          blocks_by_id, block_capacity, visited, queue, &queue_count,
+          instruction->label_id);
+      if (instruction->op == IR_BR_COND ||
+          instruction->op == IR_CONTINUATION_SUSPEND)
+        enqueue_successor(
+            blocks_by_id, block_capacity, visited, queue, &queue_count,
+            instruction->else_label_id);
+    }
+  }
+  free(blocks_by_id);
+  free(visited);
+  free(queue);
+  return reachable;
+}
+
 ir_block_t *hir_ir_cfg_new_block(hir_ir_context_t *context) {
   ir_block_t *block = ir_block_new(context->function);
   if (!block) context->status = IR_HIR_BUILD_OUT_OF_MEMORY;

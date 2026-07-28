@@ -112,10 +112,9 @@ static int append_implicit_return(
       !hir_ir_cfg_block_has_predecessor(
           context->function, context->function->cur_block))
     return 1;
-  int falls_through_noreturn_call =
-      context->function->cur_block->tail &&
-      context->function->cur_block->tail->op == IR_CALL &&
-      context->function->cur_block->tail->is_noreturn_call;
+  int falls_through_without_noreturn =
+      hir_ir_cfg_block_end_reachable_without_noreturn(
+          context->function, context->function->cur_block);
   int is_main = name_length == 4 && memcmp(name, "main", 4) == 0;
   ir_inst_t *ret = ir_inst_new(IR_RET);
   if (!ret) {
@@ -151,7 +150,7 @@ static int append_implicit_return(
   }
   if (!is_main && !context->returns_void &&
       context->options->diagnostic_context &&
-      !falls_through_noreturn_call) {
+      falls_through_without_noreturn) {
     diag_warn_tokf_in(
         context->options->diagnostic_context,
         DIAG_WARN_PARSER_MISSING_RETURN, NULL,

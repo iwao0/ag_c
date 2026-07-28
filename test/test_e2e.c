@@ -761,6 +761,9 @@ static const test_case_t test_cases[] = {
     {"probes", "stdlib_management_signature_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdlib_management_signature_boundaries.c", 0, 0},
     {"probes", "allocation_failure_size_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/allocation_failure_size_boundaries.c", 0, 0},
     {"probes", "nonvoid_aggregate_fallthrough_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nonvoid_aggregate_fallthrough_boundaries.c", 0, 0},
+    {"probes", "noreturn_cfg_termination_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/noreturn_cfg_termination_boundaries.c", 0, 0},
+    {"probes", "noreturn_fallthrough_warning_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/noreturn_fallthrough_warning_boundaries.c", 0, 0},
+    {"probes", "constant_condition_cfg_termination_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/constant_condition_cfg_termination_boundaries.c", 0, 0},
     {"probes", "string_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_function_pointer_boundaries.c", 0, 0},
     {"probes", "string_search_char_conversion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_search_char_conversion_boundaries.c", 0, 0},
     {"probes", "string_large_count_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_large_count_boundaries.c", 0, 0},
@@ -3933,6 +3936,60 @@ static int run_ag_c_expect_fail_with_diag(const char *input, const char *expecte
       "./build/ag_c", NULL, input, expected_diag, log_path);
 }
 
+static int run_compiler_expect_success_capture_diag(
+    const char *program, const char *object_path, const char *input,
+    const char *log_path) {
+  int pipefd[2];
+  if (pipe(pipefd) != 0) return -1;
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDERR_FILENO);
+    close(pipefd[1]);
+    freopen("/dev/null", "w", stdout);
+    if (object_path)
+      execl(program, program, "-c", "-o", object_path, input,
+            (char *)NULL);
+    else
+      execl(program, program, input, (char *)NULL);
+    _exit(1);
+  }
+  close(pipefd[1]);
+  if (pid < 0) {
+    close(pipefd[0]);
+    return -1;
+  }
+  char diag_buf[8192];
+  size_t used = 0;
+  for (;;) {
+    char sink[512];
+    char *destination = diag_buf + used;
+    size_t room = sizeof(diag_buf) - 1 - used;
+    if (room == 0) {
+      destination = sink;
+      room = sizeof(sink);
+    }
+    ssize_t nread = read(pipefd[0], destination, room);
+    if (nread <= 0) break;
+    if (used < sizeof(diag_buf) - 1) {
+      size_t keep = (size_t)nread;
+      if (keep > sizeof(diag_buf) - 1 - used)
+        keep = sizeof(diag_buf) - 1 - used;
+      used += keep;
+    }
+  }
+  close(pipefd[0]);
+  diag_buf[used] = '\0';
+  int status;
+  waitpid(pid, &status, 0);
+  FILE *log = fopen(log_path, "w");
+  if (log) {
+    fputs(diag_buf, log);
+    fclose(log);
+  }
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
+}
+
 static int diag_has_error_code_prefix(const char *diag) {
   if (!diag) return 0;
   for (size_t i = 0; diag[i] != '\0'; i++) {
@@ -4976,6 +5033,96 @@ int main(int argc, char **argv) {
   if (mkdir_p("build/e2e/logs") != 0) {
     fprintf(stderr, "Failed to create log directory\n");
     return 1;
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "noreturn_cfg_termination_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/noreturn_cfg_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/noreturn_cfg_wasm_object.log";
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/noreturn_cfg_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        log_file_contains_substr(native_log, "W3005") ||
+        log_file_contains_substr(native_log, "W3017") ||
+        log_file_contains_substr(wasm_log, "W3005") ||
+        log_file_contains_substr(wasm_log, "W3017")) {
+      fprintf(
+          stderr,
+          "noreturn CFG diagnostics regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "noreturn_fallthrough_warning_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/noreturn_fallthrough_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/noreturn_fallthrough_wasm_object.log";
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/noreturn_fallthrough_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        !log_file_contains_substr(native_log, "W3005") ||
+        !log_file_contains_substr(native_log, "partial_if") ||
+        !log_file_contains_substr(native_log, "partial_conditional") ||
+        !log_file_contains_substr(native_log, "partial_short_circuit") ||
+        !log_file_contains_substr(native_log, "indirect_call") ||
+        !log_file_contains_substr(native_log, "while_true_can_break") ||
+        !log_file_contains_substr(native_log, "while_false") ||
+        !log_file_contains_substr(native_log, "constant_false_if") ||
+        !log_file_contains_substr(native_log, "W3017") ||
+        !log_file_contains_substr(wasm_log, "W3005") ||
+        !log_file_contains_substr(wasm_log, "partial_if") ||
+        !log_file_contains_substr(wasm_log, "partial_conditional") ||
+        !log_file_contains_substr(wasm_log, "partial_short_circuit") ||
+        !log_file_contains_substr(wasm_log, "indirect_call") ||
+        !log_file_contains_substr(wasm_log, "while_true_can_break") ||
+        !log_file_contains_substr(wasm_log, "while_false") ||
+        !log_file_contains_substr(wasm_log, "constant_false_if") ||
+        !log_file_contains_substr(wasm_log, "W3017")) {
+      fprintf(
+          stderr,
+          "noreturn fallthrough diagnostics regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
+  }
+  {
+    const char *fixture =
+        "test/fixtures/probes_found_bugs/"
+        "constant_condition_cfg_termination_boundaries.c";
+    const char *native_log =
+        "build/e2e/logs/constant_condition_cfg_native.log";
+    const char *wasm_log =
+        "build/e2e/logs/constant_condition_cfg_wasm_object.log";
+    if (run_compiler_expect_success_capture_diag(
+            "./build/ag_c", NULL, fixture, native_log) != 0 ||
+        run_compiler_expect_success_capture_diag(
+            "./build/ag_c_wasm",
+            "build/e2e/constant_condition_cfg_diagnostics.o",
+            fixture, wasm_log) != 0 ||
+        log_file_contains_substr(native_log, "W3005") ||
+        log_file_contains_substr(wasm_log, "W3005")) {
+      fprintf(
+          stderr,
+          "constant-condition CFG diagnostics regression "
+          "(see %s and %s)\n",
+          native_log, wasm_log);
+      return 1;
+    }
   }
   int fd_count_baseline = count_open_fds_self();
   if (fd_count_baseline < 0) {

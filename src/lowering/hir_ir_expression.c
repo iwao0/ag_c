@@ -6,8 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../semantic/integer_constant_evaluation.h"
 #include "../semantic/type_identity.h"
 #include "../type_layout.h"
+#include "../type_system/integer_conversion.h"
 
 static ir_val_t build_atomic_inc_dec(
     hir_ir_context_t *context, const psx_hir_node_t *node,
@@ -1148,6 +1150,13 @@ static ir_val_t load_scalar_temp(
 
 ir_val_t hir_ir_scalar_truth_value(
     hir_ir_context_t *context, ir_val_t value) {
+  if (value.id == IR_VAL_IMM) {
+    if (hir_ir_is_float_type(value.type))
+      return ir_val_imm(IR_TY_I32, value.fp_imm != 0.0);
+    if (hir_ir_is_integer_type(value.type) ||
+        value.type == IR_TY_PTR)
+      return ir_val_imm(IR_TY_I32, value.imm != 0);
+  }
   if (hir_ir_is_float_type(value.type)) {
     int zero_vreg = hir_ir_new_vreg(context);
     if (zero_vreg < 0) return ir_val_none();
@@ -1465,9 +1474,428 @@ static ir_val_t coerce_complex_pointer_to_direct_value(
                    context, real, component, target);
 }
 
+static int integer_constant_unary_operation(
+    psx_hir_node_kind_t kind,
+    psx_integer_constant_operation_t *operation) {
+  if (!operation) return 0;
+  switch (kind) {
+    case PSX_HIR_UNARY_PLUS:
+      *operation = PSX_INTEGER_CONSTANT_OP_UNARY_PLUS;
+      return 1;
+    case PSX_HIR_NEGATE:
+      *operation = PSX_INTEGER_CONSTANT_OP_NEGATE;
+      return 1;
+    case PSX_HIR_LOGICAL_NOT:
+      *operation = PSX_INTEGER_CONSTANT_OP_LOGICAL_NOT;
+      return 1;
+    case PSX_HIR_BITWISE_NOT:
+      *operation = PSX_INTEGER_CONSTANT_OP_BITWISE_NOT;
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int integer_constant_binary_operation(
+    psx_hir_node_kind_t kind,
+    psx_integer_constant_operation_t *operation) {
+  if (!operation) return 0;
+  switch (kind) {
+    case PSX_HIR_ADD:
+      *operation = PSX_INTEGER_CONSTANT_OP_ADD;
+      return 1;
+    case PSX_HIR_SUB:
+      *operation = PSX_INTEGER_CONSTANT_OP_SUB;
+      return 1;
+    case PSX_HIR_MUL:
+      *operation = PSX_INTEGER_CONSTANT_OP_MUL;
+      return 1;
+    case PSX_HIR_DIV:
+      *operation = PSX_INTEGER_CONSTANT_OP_DIV;
+      return 1;
+    case PSX_HIR_MOD:
+      *operation = PSX_INTEGER_CONSTANT_OP_MOD;
+      return 1;
+    case PSX_HIR_SHL:
+      *operation = PSX_INTEGER_CONSTANT_OP_SHL;
+      return 1;
+    case PSX_HIR_SHR:
+      *operation = PSX_INTEGER_CONSTANT_OP_SHR;
+      return 1;
+    case PSX_HIR_BITAND:
+      *operation = PSX_INTEGER_CONSTANT_OP_BITAND;
+      return 1;
+    case PSX_HIR_BITXOR:
+      *operation = PSX_INTEGER_CONSTANT_OP_BITXOR;
+      return 1;
+    case PSX_HIR_BITOR:
+      *operation = PSX_INTEGER_CONSTANT_OP_BITOR;
+      return 1;
+    case PSX_HIR_EQ:
+      *operation = PSX_INTEGER_CONSTANT_OP_EQ;
+      return 1;
+    case PSX_HIR_NE:
+      *operation = PSX_INTEGER_CONSTANT_OP_NE;
+      return 1;
+    case PSX_HIR_LT:
+      *operation = PSX_INTEGER_CONSTANT_OP_LT;
+      return 1;
+    case PSX_HIR_LE:
+      *operation = PSX_INTEGER_CONSTANT_OP_LE;
+      return 1;
+    case PSX_HIR_GT:
+      *operation = PSX_INTEGER_CONSTANT_OP_GT;
+      return 1;
+    case PSX_HIR_GE:
+      *operation = PSX_INTEGER_CONSTANT_OP_GE;
+      return 1;
+    case PSX_HIR_LOGAND:
+      *operation = PSX_INTEGER_CONSTANT_OP_LOGAND;
+      return 1;
+    case PSX_HIR_LOGOR:
+      *operation = PSX_INTEGER_CONSTANT_OP_LOGOR;
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int hir_ir_evaluate_constant_integer(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    long long *result);
+static int hir_ir_evaluate_constant_floating(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    double *result);
+static int hir_ir_evaluate_constant_truth(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    int *result);
+
+static int hir_ir_convert_constant_floating_to_integer(
+    const hir_ir_context_t *context,
+    const psx_type_shape_t *target_type, double value,
+    long long *result) {
+  if (!context || !target_type || !result || value != value)
+    return 0;
+  if (target_type->kind == PSX_TYPE_BOOL) {
+    *result = value != 0.0;
+    return 1;
+  }
+  psx_integer_conversion_t conversion =
+      psx_integer_conversion_from_shape(target_type);
+  const ag_data_layout_t *data_layout =
+      ag_target_info_data_layout(context->options->target);
+  int bits =
+      psx_integer_conversion_size_for_data_layout(
+          conversion, data_layout) * 8;
+  if (!conversion.is_integer || bits <= 0 || bits > 64)
+    return 0;
+  long long converted = 0;
+  if (conversion.is_unsigned) {
+    long double upper_exclusive =
+        bits == 64
+            ? 18446744073709551616.0L
+            : (long double)(UINT64_C(1) << bits);
+    if (!((long double)value > -1.0L) ||
+        !((long double)value < upper_exclusive))
+      return 0;
+    uint64_t unsigned_value = (uint64_t)value;
+    memcpy(&converted, &unsigned_value, sizeof(converted));
+  } else {
+    long double magnitude =
+        bits == 64
+            ? 9223372036854775808.0L
+            : (long double)(UINT64_C(1) << (bits - 1));
+    if (!((long double)value >= -magnitude) ||
+        !((long double)value < magnitude))
+      return 0;
+    converted = (long long)value;
+  }
+  return psx_apply_typed_integer_constant_unary(
+      PSX_INTEGER_CONSTANT_OP_UNARY_PLUS, target_type,
+      data_layout, converted, result);
+}
+
+static double hir_ir_constant_integer_as_double(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    long long value) {
+  psx_type_shape_t type = {0};
+  if (!context || !node ||
+      !hir_ir_node_type_shape(context, node, &type) ||
+      type.kind != PSX_TYPE_INTEGER || !type.is_unsigned)
+    return (double)value;
+  psx_integer_conversion_t conversion =
+      psx_integer_conversion_from_shape(&type);
+  int bits = psx_integer_conversion_size_for_data_layout(
+                 conversion,
+                 ag_target_info_data_layout(context->options->target)) *
+             8;
+  uint64_t normalized = (uint64_t)value;
+  if (bits > 0 && bits < 64)
+    normalized &= (UINT64_C(1) << bits) - 1;
+  return (double)normalized;
+}
+
+static int hir_ir_evaluate_constant_integer(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    long long *result) {
+  if (!context || !node || !result) return 0;
+  psx_type_shape_t result_type = {0};
+  if (!hir_ir_node_type_shape(context, node, &result_type))
+    return 0;
+  if (psx_hir_node_kind(node) == PSX_HIR_NUMBER &&
+      (result_type.kind == PSX_TYPE_BOOL ||
+       result_type.kind == PSX_TYPE_INTEGER)) {
+    return psx_apply_typed_integer_constant_unary(
+        PSX_INTEGER_CONSTANT_OP_UNARY_PLUS, &result_type,
+        ag_target_info_data_layout(context->options->target),
+        psx_hir_node_integer_value(node), result);
+  }
+
+  const psx_hir_node_t *lhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *rhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  if (psx_hir_node_kind(node) == PSX_HIR_CAST) {
+    psx_type_shape_t source_type = {0};
+    if (!lhs ||
+        !hir_ir_node_type_shape(context, lhs, &source_type) ||
+        (result_type.kind != PSX_TYPE_BOOL &&
+         result_type.kind != PSX_TYPE_INTEGER))
+      return 0;
+    if (source_type.kind == PSX_TYPE_FLOAT) {
+      double value = 0.0;
+      return hir_ir_evaluate_constant_floating(
+                 context, lhs, &value) &&
+             hir_ir_convert_constant_floating_to_integer(
+                 context, &result_type, value, result);
+    }
+    long long value = 0;
+    return hir_ir_evaluate_constant_integer(
+               context, lhs, &value) &&
+           psx_apply_typed_integer_constant_unary(
+               PSX_INTEGER_CONSTANT_OP_UNARY_PLUS,
+               &result_type,
+               ag_target_info_data_layout(context->options->target),
+               value, result);
+  }
+  if (psx_hir_node_kind(node) == PSX_HIR_LOGICAL_NOT) {
+    int truth = 0;
+    if (!hir_ir_evaluate_constant_truth(context, lhs, &truth))
+      return 0;
+    *result = !truth;
+    return 1;
+  }
+  if (psx_hir_node_kind(node) == PSX_HIR_TERNARY) {
+    const psx_hir_node_t *otherwise = hir_ir_child_for_edge(
+        context, node, PSX_HIR_EDGE_ELSE, 0);
+    int condition = 0;
+    if (!hir_ir_evaluate_constant_truth(
+            context, lhs, &condition))
+      return 0;
+    return hir_ir_evaluate_constant_integer(
+        context, condition ? rhs : otherwise, result);
+  }
+  if (psx_hir_node_kind(node) == PSX_HIR_LOGAND ||
+      psx_hir_node_kind(node) == PSX_HIR_LOGOR) {
+    int left_truth = 0;
+    if (!hir_ir_evaluate_constant_truth(
+            context, lhs, &left_truth))
+      return 0;
+    if (psx_hir_node_kind(node) == PSX_HIR_LOGAND &&
+        !left_truth) {
+      *result = 0;
+      return 1;
+    }
+    if (psx_hir_node_kind(node) == PSX_HIR_LOGOR &&
+        left_truth) {
+      *result = 1;
+      return 1;
+    }
+    int right_truth = 0;
+    if (!hir_ir_evaluate_constant_truth(
+            context, rhs, &right_truth))
+      return 0;
+    *result = right_truth;
+    return 1;
+  }
+
+  psx_integer_constant_operation_t operation =
+      PSX_INTEGER_CONSTANT_OP_INVALID;
+  if (integer_constant_unary_operation(
+          psx_hir_node_kind(node), &operation)) {
+    long long operand = 0;
+    return hir_ir_evaluate_constant_integer(
+               context, lhs, &operand) &&
+           psx_apply_typed_integer_constant_unary(
+               operation, &result_type,
+               ag_target_info_data_layout(context->options->target),
+               operand, result);
+  }
+  if (!integer_constant_binary_operation(
+          psx_hir_node_kind(node), &operation))
+    return 0;
+  psx_type_shape_t lhs_type = {0};
+  psx_type_shape_t rhs_type = {0};
+  if (!lhs || !rhs ||
+      !hir_ir_node_type_shape(context, lhs, &lhs_type) ||
+      !hir_ir_node_type_shape(context, rhs, &rhs_type))
+    return 0;
+  if ((lhs_type.kind == PSX_TYPE_FLOAT ||
+       rhs_type.kind == PSX_TYPE_FLOAT) &&
+      (psx_hir_node_kind(node) == PSX_HIR_EQ ||
+       psx_hir_node_kind(node) == PSX_HIR_NE ||
+       psx_hir_node_kind(node) == PSX_HIR_LT ||
+       psx_hir_node_kind(node) == PSX_HIR_LE ||
+       psx_hir_node_kind(node) == PSX_HIR_GT ||
+       psx_hir_node_kind(node) == PSX_HIR_GE)) {
+    double left = 0.0;
+    double right = 0.0;
+    if (!hir_ir_evaluate_constant_floating(
+            context, lhs, &left) ||
+        !hir_ir_evaluate_constant_floating(
+            context, rhs, &right))
+      return 0;
+    switch (psx_hir_node_kind(node)) {
+      case PSX_HIR_EQ: *result = left == right; return 1;
+      case PSX_HIR_NE: *result = left != right; return 1;
+      case PSX_HIR_LT: *result = left < right; return 1;
+      case PSX_HIR_LE: *result = left <= right; return 1;
+      case PSX_HIR_GT: *result = left > right; return 1;
+      case PSX_HIR_GE: *result = left >= right; return 1;
+      default: return 0;
+    }
+  }
+  long long left = 0;
+  long long right = 0;
+  return hir_ir_evaluate_constant_integer(context, lhs, &left) &&
+         hir_ir_evaluate_constant_integer(context, rhs, &right) &&
+         psx_apply_typed_integer_constant_binary(
+             operation, &lhs_type, &rhs_type, &result_type,
+             ag_target_info_data_layout(context->options->target),
+             left, right, result);
+}
+
+static int hir_ir_evaluate_constant_floating(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    double *result) {
+  if (!context || !node || !result) return 0;
+  psx_type_shape_t result_type = {0};
+  if (!hir_ir_node_type_shape(context, node, &result_type))
+    return 0;
+  if (result_type.kind == PSX_TYPE_BOOL ||
+      result_type.kind == PSX_TYPE_INTEGER) {
+    long long integer = 0;
+    if (!hir_ir_evaluate_constant_integer(
+            context, node, &integer))
+      return 0;
+    *result = hir_ir_constant_integer_as_double(
+        context, node, integer);
+    return 1;
+  }
+  if (result_type.kind != PSX_TYPE_FLOAT) return 0;
+  if (psx_hir_node_kind(node) == PSX_HIR_NUMBER) {
+    *result = psx_hir_node_floating_value(node);
+    return 1;
+  }
+
+  const psx_hir_node_t *lhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *rhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  if (psx_hir_node_kind(node) == PSX_HIR_CAST) {
+    psx_type_shape_t source_type = {0};
+    if (!lhs ||
+        !hir_ir_node_type_shape(context, lhs, &source_type))
+      return 0;
+    if (source_type.kind == PSX_TYPE_FLOAT)
+      return hir_ir_evaluate_constant_floating(
+          context, lhs, result);
+    long long integer = 0;
+    if (!hir_ir_evaluate_constant_integer(
+            context, lhs, &integer))
+      return 0;
+    *result = hir_ir_constant_integer_as_double(
+        context, lhs, integer);
+    return 1;
+  }
+  if (psx_hir_node_kind(node) == PSX_HIR_UNARY_PLUS)
+    return hir_ir_evaluate_constant_floating(context, lhs, result);
+  if (psx_hir_node_kind(node) == PSX_HIR_NEGATE) {
+    if (!hir_ir_evaluate_constant_floating(
+            context, lhs, result))
+      return 0;
+    *result = -*result;
+    return 1;
+  }
+  if (psx_hir_node_kind(node) == PSX_HIR_TERNARY) {
+    const psx_hir_node_t *otherwise = hir_ir_child_for_edge(
+        context, node, PSX_HIR_EDGE_ELSE, 0);
+    int condition = 0;
+    if (!hir_ir_evaluate_constant_truth(
+            context, lhs, &condition))
+      return 0;
+    return hir_ir_evaluate_constant_floating(
+        context, condition ? rhs : otherwise, result);
+  }
+  double left = 0.0;
+  double right = 0.0;
+  if (!lhs || !rhs ||
+      !hir_ir_evaluate_constant_floating(context, lhs, &left) ||
+      !hir_ir_evaluate_constant_floating(context, rhs, &right))
+    return 0;
+  switch (psx_hir_node_kind(node)) {
+    case PSX_HIR_ADD:
+      *result = left + right;
+      return 1;
+    case PSX_HIR_SUB:
+      *result = left - right;
+      return 1;
+    case PSX_HIR_MUL:
+      *result = left * right;
+      return 1;
+    case PSX_HIR_DIV:
+      if (right == 0.0) return 0;
+      *result = left / right;
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int hir_ir_evaluate_constant_truth(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    int *result) {
+  if (!context || !node || !result) return 0;
+  psx_type_shape_t type = {0};
+  if (!hir_ir_node_type_shape(context, node, &type))
+    return 0;
+  if (type.kind == PSX_TYPE_BOOL ||
+      type.kind == PSX_TYPE_INTEGER) {
+    long long value = 0;
+    if (!hir_ir_evaluate_constant_integer(
+            context, node, &value))
+      return 0;
+    *result = value != 0;
+    return 1;
+  }
+  if (type.kind == PSX_TYPE_FLOAT) {
+    double value = 0.0;
+    if (!hir_ir_evaluate_constant_floating(
+            context, node, &value))
+      return 0;
+    *result = value != 0.0;
+    return 1;
+  }
+  return 0;
+}
+
 ir_val_t hir_ir_build_condition_value(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   if (!node) return hir_ir_unsupported_expr(context);
+  int constant_truth = 0;
+  if (hir_ir_evaluate_constant_truth(
+          context, node, &constant_truth))
+    return ir_val_imm(IR_TY_I32, constant_truth);
   ir_mir_type_info_t type = hir_ir_classify_node_type(context, node);
   ir_val_t value = hir_ir_build_expr(context, node);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();

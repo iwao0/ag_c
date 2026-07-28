@@ -170,6 +170,8 @@ ir_val_t hir_ir_coerce_direct_value_to_qual_type(
 int hir_ir_cfg_current_block_terminated(const hir_ir_context_t *context);
 int hir_ir_cfg_block_has_predecessor(
     const ir_func_t *function, const ir_block_t *target);
+int hir_ir_cfg_block_end_reachable_without_noreturn(
+    const ir_func_t *function, const ir_block_t *target);
 ir_block_t *hir_ir_cfg_new_block(hir_ir_context_t *context);
 int hir_ir_cfg_switch_to_block(
     hir_ir_context_t *context, ir_block_t *block);
