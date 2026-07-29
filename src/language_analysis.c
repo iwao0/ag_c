@@ -1466,6 +1466,23 @@ static void fill_function(snapshot_builder_t *builder,
   }
 }
 
+static void fill_function_storage_class(
+    snapshot_builder_t *builder,
+    const psx_scope_declaration_t *declaration,
+    ag_language_symbol_t *symbol) {
+  if (!declaration || declaration->kind != PSX_DECL_FUNCTION ||
+      !declaration->payload || !symbol)
+    return;
+  const psx_function_symbol_t *function = declaration->payload;
+  const char *storage_class = "";
+  if (ps_function_symbol_has_internal_linkage(function))
+    storage_class = "static";
+  else if (ps_function_symbol_has_explicit_extern(function))
+    storage_class = "extern";
+  free(symbol->storage_class);
+  symbol->storage_class = snapshot_copy(builder, storage_class);
+}
+
 static int is_parameter_type_word(const char *word, size_t length) {
   static const char *const words[] = {
       "void", "char", "short", "int", "long", "float", "double",
@@ -1723,6 +1740,7 @@ static int add_declaration_symbol(
     free(symbol->signature);
     symbol->signature = snapshot_copy(builder, symbol->type);
     fill_function(builder, types, qual_type, symbol);
+    fill_function_storage_class(builder, declaration, symbol);
     fill_function_parameter_names(builder, request, symbol);
   }
   free(symbol->constant_value);

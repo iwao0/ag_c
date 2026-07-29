@@ -115,6 +115,8 @@ const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
     psx_qual_type_t function_type);
 int ps_ctx_mark_function_internal_linkage_in(
     psx_semantic_context_t *context, char *name, int len);
+int ps_ctx_mark_function_explicit_extern_in(
+    psx_semantic_context_t *context, char *name, int len);
 int ps_ctx_mark_function_noreturn_in(
     psx_semantic_context_t *context, char *name, int len);
 void ps_ctx_checkpoint_function_registration_in(
@@ -241,6 +243,7 @@ struct psx_function_registration_checkpoint_t {
   int existed;
   int is_defined;
   int has_internal_linkage;
+  int has_explicit_extern;
   int is_noreturn;
 };
 bool psx_ctx_is_type_token(token_kind_t kind);

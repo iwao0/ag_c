@@ -7077,6 +7077,7 @@ static int preflight_direct_local_declaration(
                   .type = decl_qual_type,
                   .is_thread_local =
                       declaration->specifier.type_spec.is_thread_local,
+                  .is_explicit_extern = declaration->is_extern,
                   .is_noreturn =
                       declaration->specifier.type_spec.is_noreturn,
                   .has_alignment_specifier =

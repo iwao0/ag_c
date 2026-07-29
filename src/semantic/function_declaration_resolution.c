@@ -65,6 +65,12 @@ void psx_resolve_function_declaration(
     resolution->function = NULL;
     return;
   }
+  if (request->is_extern &&
+      !ps_ctx_mark_function_explicit_extern_in(
+          semantic_context, request->name, request->name_len)) {
+    resolution->function = NULL;
+    return;
+  }
   if (request->is_noreturn &&
       !ps_ctx_mark_function_noreturn_in(
           semantic_context, request->name, request->name_len)) {

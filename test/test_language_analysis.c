@@ -728,6 +728,7 @@ int main(int argc, char **argv) {
             function_use_hover->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
             strcmp(function_use_hover->name, "move_and_draw") == 0 &&
             strcmp(function_use_hover->return_type, "void") == 0 &&
+            strcmp(function_use_hover->storage_class, "static") == 0 &&
             function_use_hover->has_function_prototype &&
             !function_use_hover->is_variadic &&
             function_use_hover->parameter_count == 0 &&
@@ -791,6 +792,7 @@ int main(int argc, char **argv) {
             prototype_hover->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
             strcmp(prototype_hover->name, "declared_only") == 0 &&
             strcmp(prototype_hover->return_type, "int") == 0 &&
+            strcmp(prototype_hover->storage_class, "extern") == 0 &&
             prototype_hover->has_function_prototype &&
             prototype_hover->parameter_count == 1 &&
             prototype_hover->declaration.start.offset ==
@@ -807,6 +809,7 @@ int main(int argc, char **argv) {
   CHECK(hover_symbol(&snapshot) &&
             hover_symbol(&snapshot)->declaration.start.offset ==
                 (int)(defined_prototype - function_forms_source) &&
+            strcmp(hover_symbol(&snapshot)->storage_class, "static") == 0 &&
             !snapshot.partial && snapshot.diagnostic_count == 0,
         "function prototype before definition range");
   ag_language_analysis_snapshot_dispose(&snapshot);
@@ -821,6 +824,7 @@ int main(int argc, char **argv) {
             definition_hover->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
             strcmp(definition_hover->name, "defined_after") == 0 &&
             strcmp(definition_hover->return_type, "int") == 0 &&
+            strcmp(definition_hover->storage_class, "static") == 0 &&
             definition_hover->has_function_prototype &&
             definition_hover->parameter_count == 1 &&
             definition_hover->declaration.start.offset ==
@@ -838,9 +842,66 @@ int main(int argc, char **argv) {
   CHECK(hover_symbol(&snapshot) &&
             hover_symbol(&snapshot)->declaration.start.offset ==
                 (int)(defined_definition - function_forms_source) &&
+            strcmp(hover_symbol(&snapshot)->storage_class, "static") == 0 &&
             !snapshot.partial && snapshot.diagnostic_count == 0,
         "function use resolves to definition range");
   ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *function_storage_source =
+      "static void internal_function(void);\n"
+      "static void internal_function(void) {}\n"
+      "extern void external_function(void);\n"
+      "void external_function(void) {}\n"
+      "void default_function(void) {}\n"
+      "int main(void) {\n"
+      "  internal_function();\n"
+      "  external_function();\n"
+      "  default_function();\n"
+      "  return 0;\n"
+      "}\n";
+  struct {
+    const char *name;
+    const char *storage_class;
+    int occurrence_count;
+  } function_storage_cases[] = {
+      {"internal_function", "static", 3},
+      {"external_function", "extern", 3},
+      {"default_function", "", 2},
+  };
+  for (size_t case_index = 0;
+       case_index <
+           sizeof(function_storage_cases) /
+               sizeof(function_storage_cases[0]);
+       case_index++) {
+    const char *occurrence = function_storage_source;
+    for (int occurrence_index = 0;
+         occurrence_index <
+             function_storage_cases[case_index].occurrence_count;
+         occurrence_index++) {
+      occurrence = strstr(
+          occurrence, function_storage_cases[case_index].name);
+      CHECK(occurrence != NULL, "function storage occurrence");
+      CHECK(analyze(
+                session, function_storage_source,
+                (size_t)(occurrence - function_storage_source) + 1,
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "function storage hover");
+      const ag_language_symbol_t *storage_hover =
+          hover_symbol(&snapshot);
+      CHECK(storage_hover &&
+                storage_hover->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
+                strcmp(
+                    storage_hover->name,
+                    function_storage_cases[case_index].name) == 0 &&
+                strcmp(
+                    storage_hover->storage_class,
+                    function_storage_cases[case_index].storage_class) == 0 &&
+                !snapshot.partial && snapshot.diagnostic_count == 0,
+            "function storage hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+      occurrence += strlen(function_storage_cases[case_index].name);
+    }
+  }
   free(function_bundle.bytes);
 
   struct {
@@ -1427,6 +1488,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (32 scenarios)");
+  puts("language analysis tests passed (33 scenarios)");
   return 0;
 }

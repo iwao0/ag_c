@@ -462,6 +462,7 @@ function functionHoverFields(hover) {
     kind: hover.kind,
     type: hover.type,
     signature: hover.signature,
+    storageClass: hover.storageClass,
     declaration: hover.declaration,
     function: hover.function,
   };
@@ -479,6 +480,7 @@ const functionUseResult = compiler.analyzeSource(
 );
 if (functionUseResult.hover?.name !== moveName ||
     functionUseResult.hover.kind !== "function" ||
+    functionUseResult.hover.storageClass !== "static" ||
     functionUseResult.hover.function?.returnType !== "void" ||
     functionUseResult.hover.function?.hasPrototype !== true ||
     functionUseResult.hover.function?.variadic !== false ||
@@ -561,6 +563,57 @@ for (const cursorDelta of functionCursorDeltas) {
     }
   } finally {
     freshCompiler.dispose();
+  }
+}
+
+const functionStorageSource = {
+  name: "function-storage.c",
+  source:
+    "static void internal_function(void);\n" +
+    "static void internal_function(void) {}\n" +
+    "extern void external_function(void);\n" +
+    "void external_function(void) {}\n" +
+    "void default_function(void) {}\n" +
+    "int main(void) {\n" +
+    "  internal_function();\n" +
+    "  external_function();\n" +
+    "  default_function();\n" +
+    "  return 0;\n" +
+    "}\n",
+};
+const functionStorageCases = [
+  { name: "internal_function", storageClass: "static", count: 3 },
+  { name: "external_function", storageClass: "extern", count: 3 },
+  { name: "default_function", storageClass: "", count: 2 },
+];
+for (const functionCase of functionStorageCases) {
+  let occurrence = 0;
+  for (let index = 0; index < functionCase.count; index++) {
+    occurrence = functionStorageSource.source.indexOf(
+      functionCase.name,
+      occurrence,
+    );
+    assert.notEqual(
+      occurrence,
+      -1,
+      `missing ${functionCase.name} occurrence ${index}`,
+    );
+    const storageResult = compiler.analyzeSource(functionStorageSource, {
+      cursor: {
+        sourceName: functionStorageSource.name,
+        byteOffset: occurrence + 1,
+      },
+    });
+    assert.equal(storageResult.hover?.name, functionCase.name);
+    assert.equal(storageResult.hover?.kind, "function");
+    assert.equal(
+      storageResult.hover?.storageClass,
+      functionCase.storageClass,
+      `${functionCase.name} storage class differs at occurrence ${index}`,
+    );
+    assert.equal(storageResult.partial, false);
+    assert.deepStrictEqual(storageResult.diagnostics, []);
+    occurrence += functionCase.name.length;
   }
 }
 
