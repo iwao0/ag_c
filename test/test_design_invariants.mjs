@@ -12547,15 +12547,36 @@ if (!/\bIR_STACK_SAVE\b/.test(irHeaderSource) ||
       arm64IrEmitSource,
     ) ||
     !/ir_inst_new\s*\(\s*IR_STACK_SAVE\s*\)/.test(
-      hirIrStatementSource,
+      hirIrCfgSource,
     ) ||
     !/ir_inst_new\s*\(\s*IR_STACK_RESTORE\s*\)/.test(
-      hirIrStatementSource,
+      hirIrCfgSource,
     ) ||
     !/continue_stack_checkpoint/.test(hirIrBuilderInternalHeader) ||
-    !/break_stack_checkpoint/.test(hirIrBuilderInternalHeader)) {
+    !/break_stack_checkpoint/.test(hirIrBuilderInternalHeader) ||
+    !/\bPSX_HIR_SCOPE\b/.test(hirHeader) ||
+    !/\.kind\s*=\s*PSX_HIR_SCOPE/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\bvla_lifetime_id\b/.test(hirInternalHeader) ||
+    !/\bvla_target_lifetime_id\b/.test(hirInternalHeader) ||
+    !/direct_vm_scope_marker_t[^]*?\blifetime_id\b/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\.vla_target_lifetime_id\s*=/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/hir_ir_vla_lifetime_prepare_allocation\s*\(/.test(
+      hirIrStatementSource,
+    ) ||
+    !/hir_ir_vla_lifetime_finish_allocation\s*\(/.test(
+      hirIrStatementSource,
+    ) ||
+    !/hir_ir_vla_lifetime_restore\s*\(/.test(
+      hirIrStatementSource,
+    )) {
   throw new Error(
-    "VLA scope checkpoints must lower through target-independent MIR and both backend serializers",
+    "VLA lexical lifetimes must lower through Typed HIR checkpoints, target-independent MIR, and both backend serializers",
   );
 }
 

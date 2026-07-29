@@ -32,6 +32,8 @@ typedef struct {
   const int *vla_runtime_store_offsets;
   const int *vla_runtime_store_dimensions;
   size_t vla_runtime_store_count;
+  unsigned vla_lifetime_id;
+  unsigned vla_target_lifetime_id;
   int label_id;
   psx_hir_symbol_id_t symbol_id;
   unsigned char bit_width;

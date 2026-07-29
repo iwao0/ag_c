@@ -56,6 +56,9 @@ typedef enum {
   PSX_HIR_POST_DEC,
   PSX_HIR_RETURN,
   PSX_HIR_NOP,
+  /* A source compound statement with a lexical lifetime boundary. */
+  PSX_HIR_SCOPE,
+  /* A synthesized statement sequence without its own C scope. */
   PSX_HIR_BLOCK,
   PSX_HIR_FUNCTION,
   PSX_HIR_CALL,
@@ -180,6 +183,10 @@ int psx_hir_node_vla_runtime_store_offset(
     const psx_hir_node_t *node, size_t index);
 int psx_hir_node_vla_runtime_store_dimension(
     const psx_hir_node_t *node, size_t index);
+unsigned psx_hir_node_vla_lifetime_id(
+    const psx_hir_node_t *node);
+unsigned psx_hir_node_vla_target_lifetime_id(
+    const psx_hir_node_t *node);
 int psx_hir_node_label_id(const psx_hir_node_t *node);
 int psx_hir_node_is_static_function(const psx_hir_node_t *node);
 int psx_hir_node_is_implicit_call(const psx_hir_node_t *node);

@@ -70,6 +70,7 @@ static int statement_tail_terminates(
               statement_tail_terminates(module, then_statement) &&
               statement_tail_terminates(module, else_statement));
     }
+    case PSX_HIR_SCOPE:
     case PSX_HIR_BLOCK: {
       size_t count = psx_hir_node_child_count(node);
       const psx_hir_node_t *tail = count > 0
@@ -118,7 +119,8 @@ static void emit_node_warnings(
     psx_local_registry_t *local_registry,
     const token_t *fallback_diag_tok) {
   if (!module || !node) return;
-  if (psx_hir_node_kind(node) == PSX_HIR_BLOCK) {
+  if (psx_hir_node_kind(node) == PSX_HIR_SCOPE ||
+      psx_hir_node_kind(node) == PSX_HIR_BLOCK) {
     int seen_case = 0;
     int previous_terminates = 0;
     int in_unreachable_run = 0;

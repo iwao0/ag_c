@@ -117,6 +117,7 @@ struct direct_function_declaration_checkpoint_t {
 struct direct_local_declaration_binding_t {
   const node_local_declaration_t *syntax;
   direct_local_declarator_binding_t *declarators;
+  direct_vm_scope_marker_t *vm_scope;
   int declarator_count;
   int is_semantic_only;
   direct_local_declaration_binding_t *next;
@@ -248,6 +249,7 @@ struct direct_break_target_t {
 struct direct_vm_scope_marker_t {
   const node_local_declaration_t *syntax;
   direct_vm_scope_marker_t *parent;
+  unsigned lifetime_id;
 };
 
 struct direct_label_scope_state_t {
@@ -286,6 +288,7 @@ typedef struct {
   direct_break_target_t *break_target;
   size_t label_declaration_start;
   direct_vm_scope_marker_t *active_vm_scope;
+  unsigned next_vm_lifetime_id;
   direct_goto_binding_t *gotos;
   direct_local_declaration_binding_t *local_declarations;
   direct_function_declaration_checkpoint_t *function_declarations;
@@ -5779,6 +5782,13 @@ static int push_direct_vm_scope_marker(
     direct_resolution_context_t *context,
     const node_local_declaration_t *syntax) {
   if (!context || !syntax) return 0;
+  if (context->next_vm_lifetime_id == UINT_MAX) {
+    context->preflight_failed = 1;
+    set_failure(
+        context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        &syntax->base);
+    return 0;
+  }
   direct_vm_scope_marker_t *marker = arena_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*marker));
   if (!marker) {
@@ -5791,6 +5801,7 @@ static int push_direct_vm_scope_marker(
   *marker = (direct_vm_scope_marker_t){
       .syntax = syntax,
       .parent = context->active_vm_scope,
+      .lifetime_id = ++context->next_vm_lifetime_id,
   };
   context->active_vm_scope = marker;
   return 1;
@@ -5803,6 +5814,11 @@ static int direct_vm_scope_contains(
     if (scope == target) return 1;
   }
   return 0;
+}
+
+static unsigned direct_vm_scope_lifetime_id(
+    const direct_vm_scope_marker_t *scope) {
+  return scope ? scope->lifetime_id : 0;
 }
 
 static void forget_direct_label_declarations(
@@ -6997,8 +7013,10 @@ static int preflight_direct_local_declaration(
         .next = context->local_declarations,
     };
     context->local_declarations = binding;
-    return !declares_variably_modified_identifier ||
-           push_direct_vm_scope_marker(context, syntax);
+    if (!declares_variably_modified_identifier) return 1;
+    if (!push_direct_vm_scope_marker(context, syntax)) return 0;
+    binding->vm_scope = context->active_vm_scope;
+    return 1;
   }
 
   for (int i = 0; i < declaration->declarator_count; i++) {
@@ -7340,8 +7358,10 @@ static int preflight_direct_local_declaration(
       .next = context->local_declarations,
   };
   context->local_declarations = binding;
-  return !declares_variably_modified_identifier ||
-         push_direct_vm_scope_marker(context, syntax);
+  if (!declares_variably_modified_identifier) return 1;
+  if (!push_direct_vm_scope_marker(context, syntax)) return 0;
+  binding->vm_scope = context->active_vm_scope;
+  return 1;
 }
 
 static int preflight_direct_statement(
@@ -8057,7 +8077,7 @@ static psx_semantic_node_t *build_direct_block_excluding(
     }
   }
   psx_hir_node_spec_t spec = {
-      .kind = PSX_HIR_BLOCK,
+      .kind = PSX_HIR_SCOPE,
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
   };
@@ -8514,8 +8534,22 @@ static psx_semantic_node_t *build_direct_local_declaration(
         .attached_qual_type = {
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
     };
+    psx_semantic_node_t *nop =
+        psx_semantic_node_builder_statement(
+            &context->builder, &nop_spec, NULL, NULL, 0,
+            ND_LOCAL_DECLARATION);
+    if (!nop || !binding->vm_scope) return nop;
+    psx_semantic_node_t *children[] = {nop};
+    psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_BLOCK_ITEM};
+    psx_hir_node_spec_t block_spec = {
+        .kind = PSX_HIR_BLOCK,
+        .attached_qual_type = {
+            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+        .vla_lifetime_id =
+            direct_vm_scope_lifetime_id(binding->vm_scope),
+    };
     return psx_semantic_node_builder_statement(
-        &context->builder, &nop_spec, NULL, NULL, 0,
+        &context->builder, &block_spec, children, edges, 1,
         ND_LOCAL_DECLARATION);
   }
   if (binding->declarator_count <= 0) {
@@ -8721,6 +8755,8 @@ static psx_semantic_node_t *build_direct_local_declaration(
       .kind = PSX_HIR_BLOCK,
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .vla_lifetime_id =
+          direct_vm_scope_lifetime_id(binding->vm_scope),
   };
   return psx_semantic_node_builder_statement(
       &context->builder, &block_spec, children, edges, count,
@@ -8834,6 +8870,24 @@ static psx_semantic_node_t *build_direct_jump_statement(
           : PSX_DECL_ID_INVALID;
   if (declaration_id == PSX_DECL_ID_INVALID || declaration_id > INT_MAX)
     return NULL;
+  direct_vm_scope_marker_t *source_vm_scope = NULL;
+  direct_vm_scope_marker_t *target_vm_scope = NULL;
+  if (kind == PSX_HIR_GOTO) {
+    direct_goto_binding_t *source =
+        find_direct_goto_binding(context, jump);
+    direct_label_scope_state_t *target =
+        find_direct_label_scope_state(
+            context, jump->name, jump->name_len);
+    if (!source || !target) return NULL;
+    source_vm_scope = source->vm_scope;
+    target_vm_scope = target->vm_scope;
+  } else {
+    direct_label_scope_state_t *state =
+        find_direct_label_scope_state_for(context, jump);
+    if (!state) return NULL;
+    source_vm_scope = state->vm_scope;
+    target_vm_scope = state->vm_scope;
+  }
   psx_semantic_node_t *body = kind == PSX_HIR_LABEL && jump->base.rhs
       ? build_direct_statement(context, jump->base.rhs) : NULL;
   psx_semantic_node_t *children[] = {body};
@@ -8846,6 +8900,10 @@ static psx_semantic_node_t *build_direct_jump_statement(
       .name_length = jump->name_len > 0
                          ? (size_t)jump->name_len : 0,
       .label_id = (int)declaration_id,
+      .vla_lifetime_id =
+          direct_vm_scope_lifetime_id(source_vm_scope),
+      .vla_target_lifetime_id =
+          direct_vm_scope_lifetime_id(target_vm_scope),
   };
   return psx_semantic_node_builder_statement(
       &context->builder, &spec,

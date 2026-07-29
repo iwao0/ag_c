@@ -1746,7 +1746,7 @@ static void test_direct_statement_typed_hir_resolution_boundary(
       hir, typed_statement, &failure);
   ASSERT_TRUE(root_id != PSX_HIR_NODE_ID_INVALID);
   const psx_hir_node_t *root = psx_hir_module_lookup(hir, root_id);
-  ASSERT_EQ(PSX_HIR_BLOCK, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_SCOPE, psx_hir_node_kind(root));
   ASSERT_EQ(5, psx_hir_node_child_count(root));
   ASSERT_EQ(PSX_HIR_EDGE_BLOCK_ITEM,
             psx_hir_node_child_edge_at(root, 0));
@@ -1777,7 +1777,7 @@ static void test_direct_statement_typed_hir_resolution_boundary(
 
   const psx_hir_node_t *then_block = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(if_hir, 1));
-  ASSERT_EQ(PSX_HIR_BLOCK, psx_hir_node_kind(then_block));
+  ASSERT_EQ(PSX_HIR_SCOPE, psx_hir_node_kind(then_block));
   const psx_hir_node_t *while_hir = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(then_block, 0));
   ASSERT_EQ(PSX_HIR_WHILE, psx_hir_node_kind(while_hir));
@@ -1814,7 +1814,7 @@ static void test_direct_statement_typed_hir_resolution_boundary(
   ASSERT_EQ(2, psx_hir_node_child_count(switch_hir));
   const psx_hir_node_t *switch_body = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(switch_hir, 1));
-  ASSERT_EQ(PSX_HIR_BLOCK, psx_hir_node_kind(switch_body));
+  ASSERT_EQ(PSX_HIR_SCOPE, psx_hir_node_kind(switch_body));
   ASSERT_EQ(3, psx_hir_node_child_count(switch_body));
   const psx_hir_node_t *case_one = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(switch_body, 0));
@@ -1981,6 +1981,21 @@ static void test_direct_statement_typed_hir_resolution_boundary(
 static int resolve_program_input_hir(
     ag_compilation_session_t *test_suite_session, const char *input) {
   return resolve_test_program_hir_from(test_suite_session, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)input));
+}
+
+static const psx_hir_node_t *test_hir_child_for_edge(
+    const psx_hir_module_t *hir, const psx_hir_node_t *node,
+    psx_hir_edge_kind_t edge, size_t occurrence) {
+  for (size_t i = 0; i < psx_hir_node_child_count(node); i++) {
+    if (psx_hir_node_child_edge_at(node, i) != edge) continue;
+    if (occurrence) {
+      occurrence--;
+      continue;
+    }
+    return psx_hir_module_lookup(
+        hir, psx_hir_node_child_at(node, i));
+  }
+  return NULL;
 }
 
 static void test_typed_hir_ownership_and_type_boundary(
@@ -6204,6 +6219,79 @@ static void test_goto_variably_modified_scope_boundary(
       test_suite_session,
       "int f(int x) { switch (x) { int values[2]; "
       "case 1: return 1; default: return 0; } }");
+}
+
+static void test_vla_lifetime_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_vla_lifetime_typed_hir_boundary...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "int f(int n) { "
+      "entry: { int first[n]; "
+      "middle: { int second[n]; "
+      "if (n > 0) goto middle; goto entry; } } "
+      "return 0; }"));
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_TRUE(hir != NULL);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  const psx_hir_node_t *function = psx_hir_module_lookup(
+      hir, psx_hir_module_root_at(hir, 0));
+  const psx_hir_node_t *body = test_hir_child_for_edge(
+      hir, function, PSX_HIR_EDGE_FUNCTION_BODY, 0);
+  const psx_hir_node_t *entry_label = test_hir_child_for_edge(
+      hir, body, PSX_HIR_EDGE_BLOCK_ITEM, 0);
+  const psx_hir_node_t *entry_scope = test_hir_child_for_edge(
+      hir, entry_label, PSX_HIR_EDGE_RHS, 0);
+  const psx_hir_node_t *first_declaration =
+      test_hir_child_for_edge(
+          hir, entry_scope, PSX_HIR_EDGE_BLOCK_ITEM, 0);
+  const psx_hir_node_t *middle_label = test_hir_child_for_edge(
+      hir, entry_scope, PSX_HIR_EDGE_BLOCK_ITEM, 1);
+  const psx_hir_node_t *middle_scope = test_hir_child_for_edge(
+      hir, middle_label, PSX_HIR_EDGE_RHS, 0);
+  const psx_hir_node_t *second_declaration =
+      test_hir_child_for_edge(
+          hir, middle_scope, PSX_HIR_EDGE_BLOCK_ITEM, 0);
+  const psx_hir_node_t *conditional = test_hir_child_for_edge(
+      hir, middle_scope, PSX_HIR_EDGE_BLOCK_ITEM, 1);
+  const psx_hir_node_t *goto_middle = test_hir_child_for_edge(
+      hir, conditional, PSX_HIR_EDGE_RHS, 0);
+  const psx_hir_node_t *goto_entry = test_hir_child_for_edge(
+      hir, middle_scope, PSX_HIR_EDGE_BLOCK_ITEM, 2);
+
+  ASSERT_EQ(PSX_HIR_SCOPE, psx_hir_node_kind(body));
+  ASSERT_EQ(PSX_HIR_LABEL, psx_hir_node_kind(entry_label));
+  ASSERT_EQ(PSX_HIR_SCOPE, psx_hir_node_kind(entry_scope));
+  ASSERT_EQ(PSX_HIR_BLOCK, psx_hir_node_kind(first_declaration));
+  ASSERT_EQ(PSX_HIR_LABEL, psx_hir_node_kind(middle_label));
+  ASSERT_EQ(PSX_HIR_SCOPE, psx_hir_node_kind(middle_scope));
+  ASSERT_EQ(PSX_HIR_BLOCK, psx_hir_node_kind(second_declaration));
+  ASSERT_EQ(PSX_HIR_GOTO, psx_hir_node_kind(goto_middle));
+  ASSERT_EQ(PSX_HIR_GOTO, psx_hir_node_kind(goto_entry));
+
+  unsigned first_lifetime =
+      psx_hir_node_vla_lifetime_id(first_declaration);
+  unsigned second_lifetime =
+      psx_hir_node_vla_lifetime_id(second_declaration);
+  ASSERT_TRUE(first_lifetime != 0);
+  ASSERT_TRUE(second_lifetime != 0);
+  ASSERT_TRUE(first_lifetime != second_lifetime);
+  ASSERT_EQ(0, psx_hir_node_vla_lifetime_id(entry_label));
+  ASSERT_EQ(first_lifetime,
+            psx_hir_node_vla_lifetime_id(middle_label));
+  ASSERT_EQ(second_lifetime,
+            psx_hir_node_vla_lifetime_id(goto_middle));
+  ASSERT_EQ(first_lifetime,
+            psx_hir_node_vla_target_lifetime_id(goto_middle));
+  ASSERT_EQ(second_lifetime,
+            psx_hir_node_vla_lifetime_id(goto_entry));
+  ASSERT_EQ(0,
+            psx_hir_node_vla_target_lifetime_id(goto_entry));
+
+  reset_test_translation_unit_state(test_suite_session);
 }
 
 static void test_switch_case_conversion_boundary(
@@ -16762,7 +16850,7 @@ static void test_program_funcdef(
   const psx_hir_node_t *body = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(function, 0));
   ASSERT_TRUE(body != NULL);
-  ASSERT_EQ(PSX_HIR_BLOCK, psx_hir_node_kind(body));
+  ASSERT_EQ(PSX_HIR_SCOPE, psx_hir_node_kind(body));
   ASSERT_EQ(3, psx_hir_node_child_count(body));
   int assignment_count = 0;
   int addition_count = 0;
@@ -21408,6 +21496,7 @@ int main() {
   test_typed_integer_constant_conversion_boundary(test_suite_session);
   test_direct_statement_typed_hir_resolution_boundary(test_suite_session);
   test_goto_variably_modified_scope_boundary(test_suite_session);
+  test_vla_lifetime_typed_hir_boundary(test_suite_session);
   test_switch_case_conversion_boundary(test_suite_session);
   test_typed_hir_build_failure_first_cause_boundary(test_suite_session);
   test_expr_number(test_suite_session);

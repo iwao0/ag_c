@@ -834,6 +834,7 @@ static void dispose_hir_ir_context_storage(
   free(context->loop_targets);
   free(context->switch_targets);
   free(context->label_targets);
+  free(context->vla_lifetimes);
   context->local_slots = NULL;
   context->local_slot_count = 0;
   context->local_slot_capacity = 0;
@@ -846,6 +847,9 @@ static void dispose_hir_ir_context_storage(
   context->label_targets = NULL;
   context->label_count = 0;
   context->label_capacity = 0;
+  context->vla_lifetimes = NULL;
+  context->vla_lifetime_capacity = 0;
+  context->current_vla_lifetime_id = 0;
 }
 
 

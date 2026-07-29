@@ -32,6 +32,8 @@ struct psx_hir_node_t {
   int *vla_runtime_store_offsets;
   int *vla_runtime_store_dimensions;
   size_t vla_runtime_store_count;
+  unsigned vla_lifetime_id;
+  unsigned vla_target_lifetime_id;
   int label_id;
   psx_hir_symbol_id_t symbol_id;
   unsigned char bit_width;
@@ -364,6 +366,9 @@ static psx_hir_node_id_t add_node(
   node->vla_stride_slot_size = spec->vla_stride_slot_size;
   node->vla_dimension_count = spec->vla_dimension_count;
   node->vla_runtime_store_count = spec->vla_runtime_store_count;
+  node->vla_lifetime_id = spec->vla_lifetime_id;
+  node->vla_target_lifetime_id =
+      spec->vla_target_lifetime_id;
   node->label_id = spec->label_id;
   node->symbol_id = spec->symbol_id;
   node->bit_width = spec->bit_width;
@@ -649,6 +654,16 @@ int psx_hir_node_vla_runtime_store_dimension(
     const psx_hir_node_t *node, size_t index) {
   return node && index < node->vla_runtime_store_count
              ? node->vla_runtime_store_dimensions[index] : -1;
+}
+
+unsigned psx_hir_node_vla_lifetime_id(
+    const psx_hir_node_t *node) {
+  return node ? node->vla_lifetime_id : 0;
+}
+
+unsigned psx_hir_node_vla_target_lifetime_id(
+    const psx_hir_node_t *node) {
+  return node ? node->vla_target_lifetime_id : 0;
 }
 
 int psx_hir_node_label_id(const psx_hir_node_t *node) {

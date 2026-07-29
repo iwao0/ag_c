@@ -24,9 +24,14 @@ typedef struct {
 typedef struct {
   int label_id;
   ir_block_t *block;
-  int stack_checkpoint;
-  unsigned char has_been_built;
 } hir_label_target_t;
+
+typedef struct {
+  unsigned parent_id;
+  unsigned canonical_id;
+  int stack_checkpoint;
+  unsigned char registered;
+} hir_vla_lifetime_state_t;
 
 typedef struct {
   hir_case_target_t *cases;
@@ -60,6 +65,9 @@ typedef struct {
   hir_label_target_t *label_targets;
   size_t label_count;
   size_t label_capacity;
+  hir_vla_lifetime_state_t *vla_lifetimes;
+  size_t vla_lifetime_capacity;
+  unsigned current_vla_lifetime_id;
 } hir_ir_context_t;
 
 const psx_hir_node_t *hir_ir_child_for_edge(
@@ -190,5 +198,18 @@ ir_block_t *hir_ir_cfg_lookup_label(
     const hir_ir_context_t *context, int label_id);
 int hir_ir_cfg_collect_labels(
     hir_ir_context_t *context, const psx_hir_node_t *node);
+int hir_ir_emit_stack_save(
+    hir_ir_context_t *context, int *checkpoint);
+int hir_ir_emit_stack_restore(
+    hir_ir_context_t *context, int checkpoint);
+int hir_ir_vla_lifetime_register(
+    hir_ir_context_t *context, unsigned lifetime_id,
+    unsigned parent_id);
+int hir_ir_vla_lifetime_prepare_allocation(
+    hir_ir_context_t *context, unsigned lifetime_id);
+int hir_ir_vla_lifetime_finish_allocation(
+    hir_ir_context_t *context, unsigned lifetime_id);
+int hir_ir_vla_lifetime_restore(
+    hir_ir_context_t *context, unsigned target_lifetime_id);
 
 #endif

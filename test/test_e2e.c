@@ -1572,6 +1572,8 @@ static const test_case_t test_cases[] = {
     {"probes", "vla_sizeof_short_circuit_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_sizeof_short_circuit_boundaries.c", 0, 0},
     {"probes", "vla_scope_reentry_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_scope_reentry_boundaries.c", 0, 0},
     {"probes", "vla_scope_storage_release", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_scope_storage_release.c", 0, 0},
+    {"probes", "vla_sequential_scope_storage_release", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_sequential_scope_storage_release.c", 0, 0},
+    {"probes", "vla_goto_lifetime_checkpoint_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_goto_lifetime_checkpoint_boundaries.c", 0, 0},
     {"probes", "generic_unselected_constant_expression", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_unselected_constant_expression.c", 0, 0},
     {"probes", "generic_unselected_bitfield_address", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_unselected_bitfield_address.c", 0, 0},
     {"probes", "generic_null_pointer_constant_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_null_pointer_constant_boundaries.c", 0, 0},
