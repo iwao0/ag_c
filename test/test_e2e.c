@@ -1577,6 +1577,8 @@ static const test_case_t test_cases[] = {
     {"probes", "vla_for_initializer_lifetime_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_for_initializer_lifetime_boundaries.c", 0, 0},
     {"probes", "vla_for_init_body_lifetime_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_for_init_body_lifetime_boundaries.c", 0, 0},
     {"probes", "vla_switch_exit_lifetime_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_switch_exit_lifetime_boundaries.c", 0, 0},
+    {"probes", "vla_switch_fallthrough_lifetime_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_switch_fallthrough_lifetime_boundaries.c", 0, 0},
+    {"probes", "vla_nested_switch_lifetime_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_nested_switch_lifetime_boundaries.c", 0, 0},
     {"probes", "vla_nested_goto_lifetime_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_nested_goto_lifetime_boundaries.c", 0, 0},
     {"probes", "vla_return_lifetime_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_return_lifetime_boundaries.c", 0, 0},
     {"probes", "vla_nested_loop_lifetime_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_nested_loop_lifetime_boundaries.c", 0, 0},

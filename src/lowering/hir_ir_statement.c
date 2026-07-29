@@ -146,6 +146,11 @@ static int build_switch_statement(
     goto fail;
   }
 
+  int switch_checkpoint = -1;
+  if (statement_contains_vla(context, body) &&
+      !hir_ir_emit_stack_save(context, &switch_checkpoint)) {
+    goto fail;
+  }
   for (size_t i = 0; i < target->case_count; i++) {
     int compare_vreg = hir_ir_new_vreg(context);
     ir_block_t *next_block = hir_ir_cfg_new_block(context);
@@ -182,11 +187,6 @@ static int build_switch_statement(
           ? context->loop_targets[context->loop_depth - 1]
                 .continue_stack_checkpoint
           : -1;
-  int switch_checkpoint = -1;
-  if (statement_contains_vla(context, body) &&
-      !hir_ir_emit_stack_save(context, &switch_checkpoint)) {
-    goto fail;
-  }
   if (!body_entry || !hir_ir_cfg_emit_branch(context, fallback) ||
       !hir_ir_cfg_switch_to_block(context, body_entry) ||
       !hir_ir_cfg_push_loop(

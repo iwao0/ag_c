@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-29（for-init/body二段VLA lifetime境界まで）
+最終更新: 2026-07-30（nested switchのVLA lifetime境界まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -58,6 +58,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | **`for`初期宣言VLAのlifetime** `for (unsigned char bytes[n]; ...; ...)` | 🧪 | vla_for_initializer_lifetime_boundaries | `for`初期宣言のVLAはloop本体の各反復で再生成せず、`continue`後も同一instanceと捕捉済みboundを保持する。一方、loopのnormal終了・`break`・外側scopeへの`goto`ではstorageを解放する。大容量VLAを複数回生成して累積解放漏れも検出し、Clang strictおよびnative/WAT/objectで固定する |
 | **for-init/body二段VLA lifetime** 初期宣言VLAを保持したbody VLAの`continue`・normal退出・`break`・外側`goto` | 🧪 | vla_for_init_body_lifetime_boundaries | for-init VLAとbody-local VLAが同時にliveな二段checkpointで、`continue`はbody VLAだけを解放し、初期宣言VLAの内容・`sizeof`・captured boundを次反復まで保持する。normal終了、`break`、外側scopeへの`goto`では両storageを解放し、大容量VLAの反復で各bound評価回数とstack累積漏れをClang strictおよびnative/WAT/objectで固定する |
 | **switch内VLAの退出と外側VLA保持** case内VLAから`break` / 外側loopへの`continue` / `goto` / 通常退出 | 🧪 | vla_switch_exit_lifetime_boundaries | switch caseのlexical scopeで確保したVLAは各退出経路で解放し、switchより外側で生存中のVLAはcheckpoint復元後も内容と`sizeof`を保持する。大容量の内側VLAを全4経路で反復してstack累積漏れを検出し、Clang strictおよびnative/WAT/objectで固定する |
+| **switch case fallthroughのVLA lifetime** case-local VLAを破棄して次caseへfallthrough | 🔧 | vla_switch_fallthrough_lifetime_boundaries | switch終了時に使うstack checkpointをcase dispatch後に保存していたため、選択caseへ直接分岐する経路では未初期化checkpointを復元してnativeがSIGBUSになった。checkpoint保存をdispatch前へ移して全case/default経路を支配させ、各case-local VLAだけをfallthrough時に解放しながらswitch外側VLAを保持する。先頭・中間・末尾caseを入口にした大容量VLA列をClang strictおよびnative/WAT/objectで固定する |
+| **nested switchのVLA lifetime階層** loop body・outer case・inner caseの三段checkpoint | 🧪 | vla_nested_switch_lifetime_boundaries | nested switchでinner `break`とinner/outer fallthroughが外側caseおよびloop bodyのVLAを保持し、二重switch内の`continue`は全段を解放して外側loopへ移ることを確認する。outer/innerの先頭・中間・default入口を切り替え、各bound評価回数・生存中VLAの内容・反復時のstack累積漏れをClang strictおよびnative/WAT/objectで固定する |
 | **nested gotoのVLA lifetime階層** 外側VLAを保持したまま内側・兄弟scopeへ後方再入 | 🧪 | vla_nested_goto_lifetime_boundaries | 外側scopeのVLAを生存させたまま、後方`goto`で内側VLA scopeを繰り返し退出・再入する。内側storageは各edgeで解放し、外側VLAの内容・`sizeof`・captured boundは保持する。連続する兄弟scopeの異なるVLAも各反復でboundを再評価しつつ同時生存させず、Clang strictおよびnative/WAT/objectで固定する |
 | **関数return時のVLA lifetime** live VLAからscalar / complex / aggregate / `void` return | 🧪 | vla_return_lifetime_boundaries | VLAを保持したまま関数からreturnするとき、return値をstack復元前にmaterializeし、関数epilogueでcallerのdynamic stackを必ず復元する。整数scalar、専用loweringを通る`double _Complex`、外側・内側VLAが同時にliveなaggregate return、明示的`void return`を大容量VLA付きで反復呼出しし、bound評価回数・return値・stack累積漏れをClang strictおよびnative/WAT/objectで固定する |
 | **nested loopのVLA lifetime** 外側VLAを保持した内側`for` / `while` / `do-while`の`continue`・`break` | 🧪 | vla_nested_loop_lifetime_boundaries | loop target checkpointを二段積んだ状態で、内側loopの`continue`と`break`は内側VLAだけを解放し、外側loop bodyのVLAは内容・`sizeof`・captured boundを維持する。3種類のloopそれぞれで大容量の内側VLAを反復確保し、外側・内側bound評価回数とstack累積漏れをClang strictおよびnative/WAT/objectで固定する |
