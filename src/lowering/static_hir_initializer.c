@@ -1636,14 +1636,38 @@ static int aggregate_write_string(
   return 1;
 }
 
+static const psx_hir_node_t *aggregate_compound_literal_storage(
+    const static_hir_eval_t *eval,
+    const psx_hir_node_t *value) {
+  if (!eval || !value) return NULL;
+  if (psx_hir_node_kind(value) != PSX_HIR_CAST)
+    return value;
+  const psx_hir_node_t *operand =
+      child_for_edge(eval, value, PSX_HIR_EDGE_LHS, 0);
+  psx_qual_type_t result_type =
+      psx_hir_node_qual_type(value);
+  psx_qual_type_t operand_type =
+      psx_hir_node_qual_type(operand);
+  if (!operand ||
+      result_type.type_id == PSX_TYPE_ID_INVALID ||
+      result_type.type_id != operand_type.type_id ||
+      result_type.qualifiers != PSX_TYPE_QUALIFIER_NONE ||
+      operand_type.qualifiers == PSX_TYPE_QUALIFIER_NONE)
+    return value;
+  return operand;
+}
+
 static int aggregate_copy_compound_literal_value(
     static_hir_aggregate_t *aggregate,
     const psx_initializer_target_t *target,
     const psx_hir_node_t *value) {
   psx_type_shape_t target_shape = {0};
+  const psx_hir_node_t *storage =
+      aggregate_compound_literal_storage(
+          aggregate ? &aggregate->eval : NULL, value);
   global_var_t *source =
-      value && psx_hir_node_kind(value) == PSX_HIR_GLOBAL
-          ? find_global(&aggregate->eval, value)
+      storage && psx_hir_node_kind(storage) == PSX_HIR_GLOBAL
+          ? find_global(&aggregate->eval, storage)
           : NULL;
   if (!aggregate || !target || !source ||
       !source->is_compound_literal || !source->has_init ||
