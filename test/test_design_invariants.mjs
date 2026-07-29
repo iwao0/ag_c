@@ -12520,6 +12520,45 @@ if (!/wasm32_machine_alignment_plan_build\s*\(/.test(
   );
 }
 
+if (!/\bIR_STACK_SAVE\b/.test(irHeaderSource) ||
+    !/\bIR_STACK_RESTORE\b/.test(irHeaderSource) ||
+    !/case\s+IR_STACK_SAVE\s*:[^]*?WASM32_MACHINE_INST_STACK_SAVE/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/case\s+IR_STACK_RESTORE\s*:[^]*?WASM32_MACHINE_INST_STACK_RESTORE/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/case\s+WASM32_MACHINE_INST_STACK_SAVE\s*:[^]*?__stack_pointer/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/case\s+WASM32_MACHINE_INST_STACK_RESTORE\s*:[^]*?__stack_pointer/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/case\s+WASM32_MACHINE_INST_STACK_SAVE\s*:[^]*?emit_stack_global_get/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/case\s+WASM32_MACHINE_INST_STACK_RESTORE\s*:[^]*?emit_stack_global_set/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/case\s+IR_STACK_SAVE\s*:[^]*?gen_inst_stack_save/.test(
+      arm64IrEmitSource,
+    ) ||
+    !/case\s+IR_STACK_RESTORE\s*:[^]*?gen_inst_stack_restore/.test(
+      arm64IrEmitSource,
+    ) ||
+    !/ir_inst_new\s*\(\s*IR_STACK_SAVE\s*\)/.test(
+      hirIrStatementSource,
+    ) ||
+    !/ir_inst_new\s*\(\s*IR_STACK_RESTORE\s*\)/.test(
+      hirIrStatementSource,
+    ) ||
+    !/continue_stack_checkpoint/.test(hirIrBuilderInternalHeader) ||
+    !/break_stack_checkpoint/.test(hirIrBuilderInternalHeader)) {
+  throw new Error(
+    "VLA scope checkpoints must lower through target-independent MIR and both backend serializers",
+  );
+}
+
 if (!/wasm32_machine_stack_plan_build\s*\(/.test(
       wasmMachineIrSource,
     ) ||

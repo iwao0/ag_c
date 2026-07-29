@@ -331,6 +331,8 @@ static void gen_inst_load_sym(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_load_tls_sym(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_int_cast(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_vla_alloc(gen_ctx_t *ctx, ir_inst_t *inst);
+static void gen_inst_stack_save(gen_ctx_t *ctx, ir_inst_t *inst);
+static void gen_inst_stack_restore(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_va_arg_area(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_load_imm(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_load_fp_imm(gen_ctx_t *ctx, ir_inst_t *inst);
@@ -366,6 +368,8 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_SEXT:
     case IR_TRUNC:         gen_inst_int_cast(ctx, inst); return;
     case IR_VLA_ALLOC:     gen_inst_vla_alloc(ctx, inst); return;
+    case IR_STACK_SAVE:    gen_inst_stack_save(ctx, inst); return;
+    case IR_STACK_RESTORE: gen_inst_stack_restore(ctx, inst); return;
     case IR_VARARG_CURSOR: gen_inst_va_arg_area(ctx, inst); return;
     case IR_LABEL:
       arm64_emit_block_symbol(ctx, inst->label_id);
@@ -546,6 +550,22 @@ static void gen_inst_vla_alloc(gen_ctx_t *ctx, ir_inst_t *inst) {
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
     emit_frame_store(ctx, "x9", ctx->vreg_off[inst->dst.id]);
   }
+}
+
+static void gen_inst_stack_save(gen_ctx_t *ctx, ir_inst_t *inst) {
+  char destination[8];
+  int spill = 0;
+  const char *register_name = acquire_dst(
+      ctx, inst->dst, "x9", destination, sizeof(destination), &spill);
+  arm64_cg_emitf(ctx, "  mov %s, sp\n", register_name);
+  release_dst(ctx, inst->dst, register_name, spill);
+}
+
+static void gen_inst_stack_restore(gen_ctx_t *ctx, ir_inst_t *inst) {
+  char source_buffer[8];
+  const char *source = ensure_val_in(
+      ctx, inst->src1, "x9", source_buffer, sizeof(source_buffer));
+  arm64_cg_emitf(ctx, "  mov sp, %s\n", source);
 }
 
 static void gen_inst_va_arg_area(gen_ctx_t *ctx, ir_inst_t *inst) {

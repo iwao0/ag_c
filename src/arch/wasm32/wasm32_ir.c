@@ -1617,6 +1617,17 @@ static void emit_inst(
           i->alignment.addend, i->alignment.mask);
       wasm_emitf(indent, "(global.set $__stack_pointer (local.get $v%d))\n", i->dst.id);
       return;
+    case WASM32_MACHINE_INST_STACK_SAVE:
+      wasm_emitf(
+          indent,
+          "(local.set $v%d (global.get $__stack_pointer))\n",
+          i->dst.id);
+      return;
+    case WASM32_MACHINE_INST_STACK_RESTORE:
+      wasm_emitf(indent, "(global.set $__stack_pointer ");
+      emit_addr_expr(ctx, i->src1);
+      wasm_cg_emitf(")\n");
+      return;
     case WASM32_MACHINE_INST_VARARG_AREA:
       wasm_emitf(indent, "(local.set $v%d (global.get $__ag_va_arg_area))\n", i->dst.id);
       return;

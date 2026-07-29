@@ -12,6 +12,8 @@ typedef struct {
 typedef struct {
   ir_block_t *continue_block;
   ir_block_t *break_block;
+  int continue_stack_checkpoint;
+  int break_stack_checkpoint;
 } hir_loop_target_t;
 
 typedef struct {
@@ -22,6 +24,8 @@ typedef struct {
 typedef struct {
   int label_id;
   ir_block_t *block;
+  int stack_checkpoint;
+  unsigned char has_been_built;
 } hir_label_target_t;
 
 typedef struct {
@@ -179,7 +183,8 @@ int hir_ir_cfg_emit_branch(
     hir_ir_context_t *context, ir_block_t *target);
 int hir_ir_cfg_push_loop(
     hir_ir_context_t *context, ir_block_t *continue_block,
-    ir_block_t *break_block);
+    ir_block_t *break_block, int continue_stack_checkpoint,
+    int break_stack_checkpoint);
 void hir_ir_cfg_pop_loop(hir_ir_context_t *context);
 ir_block_t *hir_ir_cfg_lookup_label(
     const hir_ir_context_t *context, int label_id);

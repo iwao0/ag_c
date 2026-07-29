@@ -96,6 +96,8 @@ const char *ir_op_name(ir_op_t op) {
     case IR_PARAM_BIND:   return "param_bind";
     case IR_VARARG_CURSOR: return "vararg_cursor";
     case IR_VLA_ALLOC:    return "vla_alloc";
+    case IR_STACK_SAVE:   return "stack_save";
+    case IR_STACK_RESTORE:return "stack_restore";
     case IR_ATOMIC:       return "atomic";
     case IR_UDIV:         return "udiv";
     case IR_UMOD:         return "umod";

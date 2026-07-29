@@ -3,6 +3,54 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int statement_contains_vla(
+    const hir_ir_context_t *context, const psx_hir_node_t *node) {
+  if (!node) return 0;
+  if (psx_hir_node_kind(node) == PSX_HIR_VLA_ALLOC) return 1;
+  for (size_t i = 0; i < psx_hir_node_child_count(node); i++) {
+    const psx_hir_node_t *child = psx_hir_module_lookup(
+        context->hir, psx_hir_node_child_at(node, i));
+    if (statement_contains_vla(context, child)) return 1;
+  }
+  return 0;
+}
+
+static int emit_stack_save(
+    hir_ir_context_t *context, int *checkpoint) {
+  int vreg = hir_ir_new_vreg(context);
+  ir_inst_t *save = vreg >= 0 ? ir_inst_new(IR_STACK_SAVE) : NULL;
+  if (!save) {
+    if (context->status == IR_HIR_BUILD_OK)
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  save->dst = ir_val_vreg(vreg, IR_TY_PTR);
+  if (!hir_ir_append_instruction(context, save)) return 0;
+  *checkpoint = vreg;
+  return 1;
+}
+
+static int emit_stack_restore(
+    hir_ir_context_t *context, int checkpoint) {
+  if (checkpoint < 0) return 1;
+  ir_inst_t *restore = ir_inst_new(IR_STACK_RESTORE);
+  if (!restore) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  restore->src1 = ir_val_vreg(checkpoint, IR_TY_PTR);
+  return hir_ir_append_instruction(context, restore);
+}
+
+static hir_label_target_t *label_target_for(
+    hir_ir_context_t *context, int label_id) {
+  for (size_t i = 0; i < context->label_count; i++) {
+    if (context->label_targets[i].label_id == label_id)
+      return &context->label_targets[i];
+  }
+  return NULL;
+}
+
 static int reserve_switch_cases(
     hir_ir_context_t *context, hir_switch_target_t *target,
     size_t required) {
@@ -155,15 +203,28 @@ static int build_switch_statement(
                                          context->loop_depth - 1]
                                          .continue_block
                                    : NULL;
+  int outer_continue_checkpoint =
+      context->loop_depth
+          ? context->loop_targets[context->loop_depth - 1]
+                .continue_stack_checkpoint
+          : -1;
+  int switch_checkpoint = -1;
+  if (statement_contains_vla(context, body) &&
+      !emit_stack_save(context, &switch_checkpoint)) {
+    goto fail;
+  }
   if (!body_entry || !hir_ir_cfg_emit_branch(context, fallback) ||
       !hir_ir_cfg_switch_to_block(context, body_entry) ||
-      !hir_ir_cfg_push_loop(context, outer_continue, target->end_block)) {
+      !hir_ir_cfg_push_loop(
+          context, outer_continue, target->end_block,
+          outer_continue_checkpoint, -1)) {
     goto fail;
   }
   int built = hir_ir_build_statement(context, body);
   hir_ir_cfg_pop_loop(context);
   if (!built || !hir_ir_cfg_emit_branch(context, target->end_block) ||
-      !hir_ir_cfg_switch_to_block(context, target->end_block)) {
+      !hir_ir_cfg_switch_to_block(context, target->end_block) ||
+      !emit_stack_restore(context, switch_checkpoint)) {
     goto fail;
   }
   dispose_switch_target(target);
@@ -366,11 +427,17 @@ int hir_ir_build_statement(
       } else if (!hir_ir_cfg_emit_branch(context, body_block)) {
         return 0;
       }
-      if (!hir_ir_cfg_push_loop(context, condition_block, exit_block) ||
-          !hir_ir_cfg_switch_to_block(context, body_block) ||
+      int body_checkpoint = -1;
+      if (!hir_ir_cfg_switch_to_block(context, body_block) ||
+          (statement_contains_vla(context, body) &&
+           !emit_stack_save(context, &body_checkpoint)) ||
+          !hir_ir_cfg_push_loop(
+              context, condition_block, exit_block,
+              body_checkpoint, body_checkpoint) ||
           !hir_ir_build_statement(context, body)) return 0;
       hir_ir_cfg_pop_loop(context);
-      if (!hir_ir_cfg_emit_branch(context, condition_block)) return 0;
+      if (!emit_stack_restore(context, body_checkpoint) ||
+          !hir_ir_cfg_emit_branch(context, condition_block)) return 0;
       if (psx_hir_node_kind(node) == PSX_HIR_DO_WHILE) {
         if (!hir_ir_cfg_switch_to_block(context, condition_block)) return 0;
         ir_val_t value = hir_ir_build_condition_value(
@@ -394,6 +461,9 @@ int hir_ir_build_statement(
         context->status = IR_HIR_BUILD_INVALID;
         return 0;
       }
+      int loop_checkpoint = -1;
+      if (initial && statement_contains_vla(context, initial) &&
+          !emit_stack_save(context, &loop_checkpoint)) return 0;
       if (initial && !hir_ir_build_statement(context, initial)) return 0;
       ir_block_t *condition_block = hir_ir_cfg_new_block(context);
       ir_block_t *body_block = hir_ir_cfg_new_block(context);
@@ -411,15 +481,22 @@ int hir_ir_build_statement(
       } else if (!hir_ir_cfg_emit_branch(context, body_block)) {
         return 0;
       }
-      if (!hir_ir_cfg_push_loop(context, increment_block, exit_block) ||
-          !hir_ir_cfg_switch_to_block(context, body_block) ||
+      int body_checkpoint = -1;
+      if (!hir_ir_cfg_switch_to_block(context, body_block) ||
+          (statement_contains_vla(context, body) &&
+           !emit_stack_save(context, &body_checkpoint)) ||
+          !hir_ir_cfg_push_loop(
+              context, increment_block, exit_block,
+              body_checkpoint, body_checkpoint) ||
           !hir_ir_build_statement(context, body)) return 0;
       hir_ir_cfg_pop_loop(context);
-      if (!hir_ir_cfg_emit_branch(context, increment_block) ||
+      if (!emit_stack_restore(context, body_checkpoint) ||
+          !hir_ir_cfg_emit_branch(context, increment_block) ||
           !hir_ir_cfg_switch_to_block(context, increment_block)) return 0;
       if (increment && !hir_ir_build_statement(context, increment)) return 0;
       if (!hir_ir_cfg_emit_branch(context, condition_block)) return 0;
-      return hir_ir_cfg_switch_to_block(context, exit_block);
+      return hir_ir_cfg_switch_to_block(context, exit_block) &&
+             emit_stack_restore(context, loop_checkpoint);
     }
     case PSX_HIR_SWITCH:
       return build_switch_statement(context, node);
@@ -447,25 +524,34 @@ int hir_ir_build_statement(
       ir_block_t *destination =
           psx_hir_node_kind(node) == PSX_HIR_BREAK
               ? target.break_block : target.continue_block;
+      int checkpoint =
+          psx_hir_node_kind(node) == PSX_HIR_BREAK
+              ? target.break_stack_checkpoint
+              : target.continue_stack_checkpoint;
       ir_block_t *dead_block = hir_ir_cfg_new_block(context);
-      return dead_block && hir_ir_cfg_emit_branch(context, destination) &&
+      return dead_block && emit_stack_restore(context, checkpoint) &&
+             hir_ir_cfg_emit_branch(context, destination) &&
              hir_ir_cfg_switch_to_block(context, dead_block);
     }
     case PSX_HIR_GOTO: {
-      ir_block_t *target = hir_ir_cfg_lookup_label(
+      hir_label_target_t *label = label_target_for(
           context, psx_hir_node_label_id(node));
+      ir_block_t *target = label ? label->block : NULL;
       ir_block_t *dead_block = hir_ir_cfg_new_block(context);
       if (!target || !dead_block) {
         if (context->status == IR_HIR_BUILD_OK)
           context->status = IR_HIR_BUILD_INVALID;
         return 0;
       }
-      return hir_ir_cfg_emit_branch(context, target) &&
+      return (!label->has_been_built ||
+              emit_stack_restore(context, label->stack_checkpoint)) &&
+             hir_ir_cfg_emit_branch(context, target) &&
              hir_ir_cfg_switch_to_block(context, dead_block);
     }
     case PSX_HIR_LABEL: {
-      ir_block_t *target = hir_ir_cfg_lookup_label(
+      hir_label_target_t *label = label_target_for(
           context, psx_hir_node_label_id(node));
+      ir_block_t *target = label ? label->block : NULL;
       const psx_hir_node_t *statement = hir_ir_child_for_edge(
           context, node, PSX_HIR_EDGE_RHS, 0);
       if (!target) {
@@ -473,7 +559,9 @@ int hir_ir_build_statement(
         return 0;
       }
       if (!hir_ir_cfg_emit_branch(context, target) ||
-          !hir_ir_cfg_switch_to_block(context, target)) return 0;
+          !hir_ir_cfg_switch_to_block(context, target) ||
+          !emit_stack_save(context, &label->stack_checkpoint)) return 0;
+      label->has_been_built = 1;
       return !statement || hir_ir_build_statement(context, statement);
     }
     default:

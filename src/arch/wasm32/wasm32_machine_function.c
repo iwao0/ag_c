@@ -35,6 +35,10 @@ const char *wasm32_machine_inst_kind_name(
       return "machine.align_pointer";
     case WASM32_MACHINE_INST_DYNAMIC_ALLOCA:
       return "machine.dynamic_alloca";
+    case WASM32_MACHINE_INST_STACK_SAVE:
+      return "machine.stack_save";
+    case WASM32_MACHINE_INST_STACK_RESTORE:
+      return "machine.stack_restore";
     case WASM32_MACHINE_INST_VARARG_AREA: return "machine.vararg_area";
     case WASM32_MACHINE_INST_ADDRESS_ADD: return "machine.address_add";
     case WASM32_MACHINE_INST_CALL: return "machine.call";
@@ -486,6 +490,12 @@ static int select_instruction(
       selected->kind = WASM32_MACHINE_INST_DYNAMIC_ALLOCA;
       return wasm32_machine_alignment_plan_build(
           0, 16, &selected->alignment);
+    case IR_STACK_SAVE:
+      selected->kind = WASM32_MACHINE_INST_STACK_SAVE;
+      return 1;
+    case IR_STACK_RESTORE:
+      selected->kind = WASM32_MACHINE_INST_STACK_RESTORE;
+      return 1;
     case IR_VARARG_CURSOR:
       selected->kind = WASM32_MACHINE_INST_VARARG_AREA;
       return 1;
@@ -773,7 +783,9 @@ static void collect_function_flags(
   if (instruction->op == IR_LABEL || instruction->op == IR_BR ||
       instruction->op == IR_BR_COND)
     function->has_control_flow = 1;
-  if (instruction->op == IR_VLA_ALLOC)
+  if (instruction->op == IR_VLA_ALLOC ||
+      instruction->op == IR_STACK_SAVE ||
+      instruction->op == IR_STACK_RESTORE)
     function->stack.has_dynamic_allocation = 1;
   if (instruction->op == IR_ATOMIC &&
       instruction->atomic_kind == IR_ATOMIC_CAS) {
@@ -857,6 +869,14 @@ static int propagate_forced_i32(
           case IR_VLA_ALLOC:
             changed |= force_i32(
                 function, forced_i32, instruction->dst);
+            changed |= force_i32(
+                function, forced_i32, instruction->src1);
+            break;
+          case IR_STACK_SAVE:
+            changed |= force_i32(
+                function, forced_i32, instruction->dst);
+            break;
+          case IR_STACK_RESTORE:
             changed |= force_i32(
                 function, forced_i32, instruction->src1);
             break;

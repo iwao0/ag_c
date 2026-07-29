@@ -147,7 +147,11 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
       }
       break;
     case IR_VARARG_CURSOR:
+    case IR_STACK_SAVE:
       /* no operand */
+      break;
+    case IR_STACK_RESTORE:
+      print_val(s, i->src1);
       break;
     default:
       /* 二項演算 (ADD/SUB/.../FADD/...) と比較 (EQ/.../FEQ/...) */

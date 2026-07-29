@@ -157,7 +157,8 @@ int hir_ir_cfg_emit_branch(
 
 int hir_ir_cfg_push_loop(
     hir_ir_context_t *context, ir_block_t *continue_block,
-    ir_block_t *break_block) {
+    ir_block_t *break_block, int continue_stack_checkpoint,
+    int break_stack_checkpoint) {
   if (context->loop_depth == context->loop_capacity) {
     size_t capacity =
         context->loop_capacity ? context->loop_capacity * 2 : 16;
@@ -176,7 +177,9 @@ int hir_ir_cfg_push_loop(
     context->loop_capacity = capacity;
   }
   context->loop_targets[context->loop_depth++] =
-      (hir_loop_target_t){continue_block, break_block};
+      (hir_loop_target_t){
+          continue_block, break_block,
+          continue_stack_checkpoint, break_stack_checkpoint};
   return 1;
 }
 
@@ -228,7 +231,7 @@ int hir_ir_cfg_collect_labels(
       context->label_capacity = capacity;
     }
     context->label_targets[context->label_count++] =
-        (hir_label_target_t){label_id, block};
+        (hir_label_target_t){label_id, block, -1, 0};
   }
   for (size_t i = 0; i < psx_hir_node_child_count(node); i++) {
     const psx_hir_node_t *child = psx_hir_module_lookup(

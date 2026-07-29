@@ -590,7 +590,7 @@ int main(void) {
 
   char reference_c_signature[] = "i32(i64)";
   char call_c_signature[] = "i32(i32,...)";
-  ir_inst_t function_instructions[16] = {0};
+  ir_inst_t function_instructions[18] = {0};
   function_instructions[0].op = IR_ALLOCA;
   function_instructions[0].dst =
       (ir_val_t){.id = 0, .type = IR_TY_PTR};
@@ -686,14 +686,20 @@ int main(void) {
       (ir_val_t){.id = 11, .type = IR_TY_PTR};
   function_instructions[14].sym = "global_slot";
   function_instructions[14].sym_len = 11;
-  function_instructions[15].op = IR_BR;
-  function_instructions[15].label_id = 1;
-  for (size_t i = 0; i + 1 < 16; i++)
+  function_instructions[15].op = IR_STACK_SAVE;
+  function_instructions[15].dst =
+      (ir_val_t){.id = 12, .type = IR_TY_PTR};
+  function_instructions[16].op = IR_STACK_RESTORE;
+  function_instructions[16].src1 =
+      (ir_val_t){.id = 12, .type = IR_TY_PTR};
+  function_instructions[17].op = IR_BR;
+  function_instructions[17].label_id = 1;
+  for (size_t i = 0; i + 1 < 18; i++)
     function_instructions[i].next = &function_instructions[i + 1];
   ir_block_t function_block = {
       .id = 0,
       .head = &function_instructions[0],
-      .tail = &function_instructions[15],
+      .tail = &function_instructions[17],
   };
   char function_name[] = "planned_function";
   char function_c_signature[] = "i32(i32)";
@@ -715,7 +721,7 @@ int main(void) {
       .entry = &function_block,
       .name_len = 16,
       .c_signature_len = 8,
-      .next_vreg_id = 12,
+      .next_vreg_id = 13,
       .is_static = 1,
       .continuation_condition_block_id = 7,
       .is_continuation_entry = 1,
@@ -834,8 +840,12 @@ int main(void) {
       &machine_function.instructions[12];
   const wasm32_machine_inst_t *selected_parameter =
       &machine_function.instructions[13];
-  const wasm32_machine_inst_t *selected_control =
+  const wasm32_machine_inst_t *selected_stack_save =
       &machine_function.instructions[15];
+  const wasm32_machine_inst_t *selected_stack_restore =
+      &machine_function.instructions[16];
+  const wasm32_machine_inst_t *selected_control =
+      &machine_function.instructions[17];
   const wasm32_machine_block_t *selected_block =
       wasm32_machine_function_block(&machine_function, 0);
   vararg_action_log_t prepare_actions = {0};
@@ -867,7 +877,7 @@ int main(void) {
       !machine_function.continuation_has_suspend ||
       machine_function.stack.fixed_frame_size != 32 ||
       machine_function.alloca_count != 2 ||
-      machine_function.instruction_count != 16 ||
+      machine_function.instruction_count != 18 ||
       machine_function.block_count != 1 ||
       machine_function.instructions[0].kind !=
           WASM32_MACHINE_INST_ALLOCA ||
@@ -880,6 +890,12 @@ int main(void) {
       machine_function.instructions[6].alignment.alignment != 16 ||
       machine_function.instructions[6].alignment.addend != 15 ||
       machine_function.instructions[6].alignment.mask != -16 ||
+      selected_stack_save->kind !=
+          WASM32_MACHINE_INST_STACK_SAVE ||
+      selected_stack_restore->kind !=
+          WASM32_MACHINE_INST_STACK_RESTORE ||
+      wasm32_machine_function_vreg_type(
+          &machine_function, function_instructions[15].dst) != IR_TY_I32 ||
       machine_function.signature.nparams != 3 ||
       !machine_function.signature.has_hidden_result ||
       machine_function.direct_result_type != IR_TY_VOID ||
@@ -1024,7 +1040,7 @@ int main(void) {
       selected_control->control.target_block_id != 1 ||
       !selected_block || selected_block->id != 0 ||
       selected_block->first_instruction != 0 ||
-      selected_block->instruction_count != 16 ||
+      selected_block->instruction_count != 18 ||
       selected_block->next_block_id != -1 ||
       !selected_block->has_terminator ||
       wasm32_machine_function_block(&machine_function, 1) != NULL ||

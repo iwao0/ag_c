@@ -1632,6 +1632,14 @@ static void gen_func_body(
           emit_local_get(&body, local_index(param_count, i->dst.id));
           emit_stack_global_set(context, &body, of, stack_pointer);
           break;
+        case WASM32_MACHINE_INST_STACK_SAVE:
+          emit_stack_global_get(context, &body, of, stack_pointer);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        case WASM32_MACHINE_INST_STACK_RESTORE:
+          emit_addr_val(context, &body, i->src1, param_count);
+          emit_stack_global_set(context, &body, of, stack_pointer);
+          break;
         case WASM32_MACHINE_INST_VARARG_AREA:
           if (!va_arg_area)
             va_arg_area = intern_va_arg_area_global(context);

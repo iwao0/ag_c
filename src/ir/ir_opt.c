@@ -190,6 +190,7 @@ static int has_side_effect(ir_op_t op) {
     case IR_ALLOCA:    /* フレーム上の位置に意味がある */
     case IR_LOAD_TLS_SYM: /* target TLS model may call a resolver */
     case IR_VLA_ALLOC:    /* SP を動的に変更する */
+    case IR_STACK_RESTORE: /* VLA scopeから退出してSPをcheckpointへ戻す */
     case IR_ATOMIC:       /* メモリ書き換え / 順序付け効果。結果未使用でも消さない */
       return 1;
     default:

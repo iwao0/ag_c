@@ -134,6 +134,11 @@ typedef enum {
    * to 16 bytes, subtracts from sp, and moves sp to dst.  Because this changes
    * SP, regalloc and DCE treat it as having side effects. */
   IR_VLA_ALLOC,
+  /* Dynamic-stack lifetime checkpoints used around scopes that can repeatedly
+   * execute VLA declarations.  STACK_SAVE captures the current target stack
+   * pointer in dst (PTR); STACK_RESTORE replaces it with src1. */
+  IR_STACK_SAVE,
+  IR_STACK_RESTORE,
 
   /* C11 atomic operations (mapped to Apple ARM64 LSE instructions/barriers).
    * atomic_width = 1/2/4/8/16 (operation width), and atomic_kind is one of the
