@@ -204,13 +204,49 @@ skip_reason() {
     test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
+    test/fixtures/probes_found_bugs/atomic_function_pointer_data_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_function_pointer_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_incomplete_record_pointer_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_incomplete_record_wrapper_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_mutual_record_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_self_referential_record_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     test/fixtures/probes_found_bugs/atomic_function_signature_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
     test/fixtures/probes_found_bugs/atomic_pointer_function_signature_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_return_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_to_array_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_to_record_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_array_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_multidimensional_array_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     test/fixtures/probes_found_bugs/atomic_pointer_global_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_record_member_signature_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
     test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_other.c)
@@ -281,10 +317,30 @@ skip_reason() {
     test/fixtures/wasm32/function_parameter_atomic_pointee_type_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_atomic_pointer_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_atomic_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_function_pointer_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_function_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_to_array_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_to_array_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_pointer_to_atomic_array_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_pointer_to_atomic_array_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_record_member_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_record_member_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_record_layout_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_record_layout_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_self_record_atomic_pointer_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_self_record_atomic_pointer_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_self_record_atomic_member_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_self_record_atomic_member_type_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_atomic_array_element_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_atomic_array_element_type_mismatch_other.c|\
     test/fixtures/wasm32/function_return_atomic_type_mismatch_main.c|\
     test/fixtures/wasm32/function_return_atomic_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_atomic_pointer_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_atomic_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_atomic_pointee_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_atomic_pointee_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_atomic_function_pointer_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_atomic_function_pointer_type_mismatch_other.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_main.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_other.c|\
     test/fixtures/wasm32/record_member_alignment_presence_mismatch_main.c|\
@@ -337,6 +393,34 @@ skip_reason() {
     test/fixtures/wasm32/global_atomic_pointee_type_mismatch_other.c|\
     test/fixtures/wasm32/global_atomic_pointer_type_mismatch_main.c|\
     test/fixtures/wasm32/global_atomic_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_function_pointer_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_function_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_function_pointer_callback_signature_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_function_pointer_callback_signature_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointer_to_record_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointer_to_record_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_record_pointee_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_record_pointee_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointer_record_member_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointer_record_member_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointer_record_layout_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointer_record_layout_mismatch_other.c|\
+    test/fixtures/wasm32/global_mutual_atomic_record_member_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_mutual_atomic_record_member_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_mutual_atomic_record_layout_mismatch_main.c|\
+    test/fixtures/wasm32/global_mutual_atomic_record_layout_mismatch_other.c|\
+    test/fixtures/wasm32/global_array_atomic_pointer_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_array_atomic_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_array_atomic_pointee_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_array_atomic_pointee_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_multidimensional_array_atomic_pointer_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_multidimensional_array_atomic_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_multidimensional_array_atomic_pointee_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_multidimensional_array_atomic_pointee_type_mismatch_other.c|\
+    test/fixtures/wasm32/record_member_atomic_pointer_type_mismatch_main.c|\
+    test/fixtures/wasm32/record_member_atomic_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/record_member_atomic_pointee_type_mismatch_main.c|\
+    test/fixtures/wasm32/record_member_atomic_pointee_type_mismatch_other.c|\
     test/fixtures/wasm32/global_pointee_const_qualifier_mismatch_main.c|\
     test/fixtures/wasm32/global_pointee_const_qualifier_mismatch_other.c|\
     test/fixtures/wasm32/global_restrict_pointer_qualifier_mismatch_main.c|\
@@ -507,14 +591,50 @@ link_companion() {
     test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_other.c"
       ;;
+    test/fixtures/probes_found_bugs/atomic_function_pointer_data_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_function_pointer_data_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_function_pointer_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_function_pointer_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_incomplete_record_pointer_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_incomplete_record_pointer_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_incomplete_record_wrapper_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_incomplete_record_wrapper_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_mutual_record_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_mutual_record_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_self_referential_record_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_self_referential_record_signature_xtu_other.c"
+      ;;
     test/fixtures/probes_found_bugs/atomic_function_signature_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/atomic_function_signature_xtu_other.c"
       ;;
     test/fixtures/probes_found_bugs/atomic_pointer_function_signature_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/atomic_pointer_function_signature_xtu_other.c"
       ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_return_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_pointer_return_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_to_array_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_pointer_to_array_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_to_record_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_pointer_to_record_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_array_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_pointer_array_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_multidimensional_array_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_pointer_multidimensional_array_signature_xtu_other.c"
+      ;;
     test/fixtures/probes_found_bugs/atomic_pointer_global_signature_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/atomic_pointer_global_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/atomic_record_member_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/atomic_record_member_signature_xtu_other.c"
       ;;
     test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_main.c)
       echo "test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_other.c"
@@ -614,13 +734,49 @@ expected_result() {
     test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_main.c)
       echo 42
       ;;
+    test/fixtures/probes_found_bugs/atomic_function_pointer_data_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/atomic_function_pointer_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/atomic_incomplete_record_pointer_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/atomic_incomplete_record_wrapper_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/atomic_mutual_record_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/atomic_self_referential_record_signature_xtu_main.c)
+      echo 42
+      ;;
     test/fixtures/probes_found_bugs/atomic_function_signature_xtu_main.c)
       echo 42
       ;;
     test/fixtures/probes_found_bugs/atomic_pointer_function_signature_xtu_main.c)
       echo 42
       ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_return_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_to_array_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_to_record_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_array_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/atomic_pointer_multidimensional_array_signature_xtu_main.c)
+      echo 42
+      ;;
     test/fixtures/probes_found_bugs/atomic_pointer_global_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/atomic_record_member_signature_xtu_main.c)
       echo 42
       ;;
     test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_main.c)

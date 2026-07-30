@@ -403,6 +403,62 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "function_parameter_atomic_pointer",
       },
       {
+          "function_parameter_atomic_function_pointer_type_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_function_pointer_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_function_pointer_type_mismatch_other.c",
+          "function_parameter_atomic_function_pointer",
+      },
+      {
+          "function_parameter_atomic_pointer_to_array_type_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_to_array_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_to_array_type_mismatch_other.c",
+          "function_parameter_atomic_pointer_to_array",
+      },
+      {
+          "function_parameter_pointer_to_atomic_array_type_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_pointer_to_atomic_array_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_pointer_to_atomic_array_type_mismatch_other.c",
+          "function_parameter_pointer_to_atomic_array",
+      },
+      {
+          "function_parameter_atomic_pointer_record_member_type_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_record_member_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_record_member_type_mismatch_other.c",
+          "function_parameter_atomic_pointer_record_member",
+      },
+      {
+          "function_parameter_atomic_pointer_record_layout_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_record_layout_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_record_layout_mismatch_other.c",
+          "function_parameter_atomic_pointer_record_layout",
+      },
+      {
+          "function_parameter_self_record_atomic_pointer_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_self_record_atomic_pointer_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_self_record_atomic_pointer_qualifier_mismatch_other.c",
+          "function_parameter_self_record_atomic_pointer_qualifier",
+      },
+      {
+          "function_parameter_self_record_atomic_member_type_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_self_record_atomic_member_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_self_record_atomic_member_type_mismatch_other.c",
+          "function_parameter_self_record_atomic_member",
+      },
+      {
           "function_parameter_atomic_array_element_type_mismatch",
           "test/fixtures/wasm32/"
           "function_parameter_atomic_array_element_type_mismatch_main.c",
@@ -417,6 +473,30 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "function_return_atomic_type_mismatch_other.c",
           "function_return_atomic_type",
+      },
+      {
+          "function_return_atomic_pointer_type_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_pointer_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_pointer_type_mismatch_other.c",
+          "function_return_atomic_pointer",
+      },
+      {
+          "function_return_atomic_pointee_type_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_pointee_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_pointee_type_mismatch_other.c",
+          "function_return_atomic_pointee",
+      },
+      {
+          "function_return_atomic_function_pointer_type_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_function_pointer_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_function_pointer_type_mismatch_other.c",
+          "function_return_atomic_function_pointer",
       },
   };
   for (size_t index = 0;
@@ -942,6 +1022,118 @@ static int run_data_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "global_atomic_pointer_type_mismatch_other.c",
           "global_atomic_pointer_value",
+      },
+      {
+          "global_atomic_function_pointer_type_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_function_pointer_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_function_pointer_type_mismatch_other.c",
+          "global_atomic_function_pointer",
+      },
+      {
+          "global_atomic_function_pointer_callback_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_function_pointer_callback_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_function_pointer_callback_signature_mismatch_other.c",
+          "global_atomic_function_pointer_callback_signature",
+      },
+      {
+          "global_atomic_pointer_to_record_type_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_to_record_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_to_record_type_mismatch_other.c",
+          "global_atomic_pointer_to_record",
+      },
+      {
+          "global_atomic_record_pointee_type_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_record_pointee_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_record_pointee_type_mismatch_other.c",
+          "global_atomic_record_pointee",
+      },
+      {
+          "global_atomic_pointer_record_member_type_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_record_member_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_record_member_type_mismatch_other.c",
+          "global_atomic_pointer_record_member",
+      },
+      {
+          "global_atomic_pointer_record_layout_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_record_layout_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_record_layout_mismatch_other.c",
+          "global_atomic_pointer_record_layout",
+      },
+      {
+          "global_mutual_atomic_record_member_type_mismatch",
+          "test/fixtures/wasm32/"
+          "global_mutual_atomic_record_member_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_mutual_atomic_record_member_type_mismatch_other.c",
+          "global_mutual_atomic_record_member",
+      },
+      {
+          "global_mutual_atomic_record_layout_mismatch",
+          "test/fixtures/wasm32/"
+          "global_mutual_atomic_record_layout_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_mutual_atomic_record_layout_mismatch_other.c",
+          "global_mutual_atomic_record_layout",
+      },
+      {
+          "global_array_atomic_pointer_type_mismatch",
+          "test/fixtures/wasm32/"
+          "global_array_atomic_pointer_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_array_atomic_pointer_type_mismatch_other.c",
+          "global_array_atomic_pointer",
+      },
+      {
+          "global_array_atomic_pointee_type_mismatch",
+          "test/fixtures/wasm32/"
+          "global_array_atomic_pointee_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_array_atomic_pointee_type_mismatch_other.c",
+          "global_array_atomic_pointee",
+      },
+      {
+          "global_multidimensional_array_atomic_pointer_type_mismatch",
+          "test/fixtures/wasm32/"
+          "global_multidimensional_array_atomic_pointer_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_multidimensional_array_atomic_pointer_type_mismatch_other.c",
+          "global_multidimensional_array_atomic_pointer",
+      },
+      {
+          "global_multidimensional_array_atomic_pointee_type_mismatch",
+          "test/fixtures/wasm32/"
+          "global_multidimensional_array_atomic_pointee_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_multidimensional_array_atomic_pointee_type_mismatch_other.c",
+          "global_multidimensional_array_atomic_pointee",
+      },
+      {
+          "record_member_atomic_pointer_type_mismatch",
+          "test/fixtures/wasm32/"
+          "record_member_atomic_pointer_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "record_member_atomic_pointer_type_mismatch_other.c",
+          "record_member_atomic_pointer_value",
+      },
+      {
+          "record_member_atomic_pointee_type_mismatch",
+          "test/fixtures/wasm32/"
+          "record_member_atomic_pointee_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "record_member_atomic_pointee_type_mismatch_other.c",
+          "record_member_atomic_pointee_value",
       },
       {
           "global_pointee_const_qualifier_mismatch",
