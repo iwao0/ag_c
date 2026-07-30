@@ -2078,15 +2078,197 @@ static int abi_layout_signatures_compatible(
          right_offset == right.len;
 }
 
+static int canonical_qualifier_prefix_length(str_t signature) {
+  int length = 0;
+  while (length < signature.len &&
+         (signature.s[length] == 'k' ||
+          signature.s[length] == 'V' ||
+          signature.s[length] == 'A' ||
+          signature.s[length] == 'R'))
+    length++;
+  return length;
+}
+
+static int canonical_callback_object_function_types(
+    str_t left, str_t right,
+    str_t *left_function, str_t *right_function) {
+  int left_qualifiers =
+      canonical_qualifier_prefix_length(left);
+  int right_qualifiers =
+      canonical_qualifier_prefix_length(right);
+  if (left_qualifiers != right_qualifiers ||
+      memcmp(
+          left.s, right.s,
+          (size_t)left_qualifiers) != 0)
+    return 0;
+  left.s += left_qualifiers;
+  left.len -= left_qualifiers;
+  right.s += right_qualifiers;
+  right.len -= right_qualifiers;
+
+  if (left.len >= 3 && right.len >= 3 &&
+      left.s[0] == 'p' && right.s[0] == 'p' &&
+      left.s[1] == '<' && right.s[1] == '<' &&
+      left.s[left.len - 1] == '>' &&
+      right.s[right.len - 1] == '>') {
+    return canonical_callback_object_function_types(
+        (str_t){left.s + 2, left.len - 3},
+        (str_t){right.s + 2, right.len - 3},
+        left_function, right_function);
+  }
+
+  canonical_array_type_t left_array = {0};
+  canonical_array_type_t right_array = {0};
+  int left_is_array =
+      canonical_array_type_at(left, 0, &left_array);
+  int right_is_array =
+      canonical_array_type_at(right, 0, &right_array);
+  if (left_is_array || right_is_array) {
+    if (!left_is_array || !right_is_array ||
+        left.s[left.len - 1] != '>' ||
+        right.s[right.len - 1] != '>' ||
+        (left_array.bound != 0 &&
+         right_array.bound != 0 &&
+         left_array.bound != right_array.bound))
+      return 0;
+    return canonical_callback_object_function_types(
+        (str_t){
+            left.s + left_array.element_start,
+            left.len - left_array.element_start - 1},
+        (str_t){
+            right.s + right_array.element_start,
+            right.len - right_array.element_start - 1},
+        left_function, right_function);
+  }
+
+  if (!canonical_function_signature_parameter_list(
+          left, NULL, NULL) ||
+      !canonical_function_signature_parameter_list(
+          right, NULL, NULL))
+    return 0;
+  if (left_function) *left_function = left;
+  if (right_function) *right_function = right;
+  return 1;
+}
+
+static int abi_layout_callback_parameters_unspecified(
+    str_t signature, int *is_unspecified) {
+  if (is_unspecified) *is_unspecified = 0;
+  if (signature.len <= 0) return 0;
+  int offset = 0;
+  if (signature.s[offset] == 'a') {
+    uint32_t ignored_bound = 0;
+    offset++;
+    if (!canonical_decimal(
+            signature, &offset, &ignored_bound) ||
+        offset >= signature.len ||
+        signature.s[offset++] != '[' ||
+        signature.s[signature.len - 1] != ']')
+      return 0;
+    return abi_layout_callback_parameters_unspecified(
+        (str_t){
+            signature.s + offset,
+            signature.len - offset - 1},
+        is_unspecified);
+  }
+  if (signature.s[offset] == 'p') {
+    uint32_t ignored_size = 0;
+    uint32_t ignored_alignment = 0;
+    offset++;
+    if (!canonical_decimal(
+            signature, &offset, &ignored_size) ||
+        offset >= signature.len ||
+        signature.s[offset++] != ':' ||
+        !canonical_decimal(
+            signature, &offset, &ignored_alignment) ||
+        offset >= signature.len ||
+        signature.s[offset++] != '[' ||
+        signature.s[signature.len - 1] != ']')
+      return 0;
+    return abi_layout_callback_parameters_unspecified(
+        (str_t){
+            signature.s + offset,
+            signature.len - offset - 1},
+        is_unspecified);
+  }
+  if (signature.s[offset++] != 'c' ||
+      !abi_layout_skip_type(signature, &offset) ||
+      offset >= signature.len ||
+      signature.s[offset++] != '(')
+    return 0;
+  int unspecified =
+      offset + 1 < signature.len &&
+      signature.s[offset] == '?' &&
+      signature.s[offset + 1] == ')';
+  if (!abi_layout_skip_parameter_list(
+          signature, &offset) ||
+      offset != signature.len)
+    return 0;
+  if (is_unspecified) *is_unspecified = unspecified;
+  return 1;
+}
+
+static int canonical_unspecified_function_type_matches(
+    str_t unspecified, str_t specified) {
+  int unspecified_parameters = 0;
+  int specified_parameters = 0;
+  int unspecified_is_empty = 0;
+  if (!canonical_function_signature_parameter_list(
+          unspecified, &unspecified_parameters,
+          &unspecified_is_empty) ||
+      !canonical_function_signature_parameter_list(
+          specified, &specified_parameters, NULL) ||
+      !unspecified_is_empty ||
+      !canonical_type_signatures_compatible(
+          (str_t){
+              unspecified.s, unspecified_parameters},
+          (str_t){
+              specified.s, specified_parameters}) ||
+      !canonical_parameters_unchanged_by_default_promotions(
+          specified, specified_parameters))
+    return 0;
+  return 1;
+}
+
+static int data_c_signatures_compatible(
+    const data_signature_t *left_entry,
+    const data_signature_t *right_entry) {
+  if (canonical_type_signatures_compatible(
+          left_entry->c_signature,
+          right_entry->c_signature))
+    return 1;
+  str_t left_function = {0};
+  str_t right_function = {0};
+  if (!canonical_callback_object_function_types(
+          left_entry->c_signature,
+          right_entry->c_signature,
+          &left_function, &right_function))
+    return 0;
+  int left_unspecified = 0;
+  int right_unspecified = 0;
+  if (!abi_layout_callback_parameters_unspecified(
+          left_entry->layout_signature,
+          &left_unspecified) ||
+      !abi_layout_callback_parameters_unspecified(
+          right_entry->layout_signature,
+          &right_unspecified) ||
+      left_unspecified == right_unspecified)
+    return 0;
+  return left_unspecified
+             ? canonical_unspecified_function_type_matches(
+                   left_function, right_function)
+             : canonical_unspecified_function_type_matches(
+                   right_function, left_function);
+}
+
 static int data_signatures_compatible(
     const data_signature_t *left_entry,
     uint32_t left_layout_version,
     const data_signature_t *right_entry,
     uint32_t right_layout_version) {
   if (!left_entry || !right_entry) return 1;
-  if (!canonical_type_signatures_compatible(
-          left_entry->c_signature,
-          right_entry->c_signature))
+  if (!data_c_signatures_compatible(
+          left_entry, right_entry))
     return 0;
   if (str_eq(
           left_entry->layout_signature,

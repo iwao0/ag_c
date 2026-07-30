@@ -60,6 +60,12 @@ skip_reason() {
     test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/incomplete_array_bound_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/incomplete_array_bound_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/incomplete_global_array_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/incomplete_global_array_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/incomplete_global_record_pointer_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/incomplete_global_record_pointer_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/incomplete_global_record_object_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/incomplete_global_record_object_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/named_record_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/named_record_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/packed_indirect_record_signature_xtu_main.c|\
@@ -70,6 +76,8 @@ skip_reason() {
     test/fixtures/probes_found_bugs/packed_callback_record_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/packed_global_record_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/packed_global_record_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/packed_global_callback_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/packed_global_callback_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/incomplete_callback_record_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/incomplete_callback_record_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/record_member_alignment_signature_xtu_main.c|\
@@ -78,6 +86,8 @@ skip_reason() {
     test/fixtures/probes_found_bugs/union_member_order_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_main.c|\
     test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_other.c|\
+    test/fixtures/probes_found_bugs/unprototyped_global_callback_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/unprototyped_global_callback_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_main.c|\
     test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_other.c|\
     test/fixtures/probes_found_bugs/unprototyped_enum_funcptr_xtu_main.c|\
@@ -124,8 +134,16 @@ skip_reason() {
     test/fixtures/wasm32/incomplete_callback_sibling_layout_mismatch_other.c|\
     test/fixtures/wasm32/global_record_layout_signature_mismatch_main.c|\
     test/fixtures/wasm32/global_record_layout_signature_mismatch_other.c|\
+    test/fixtures/wasm32/global_pointer_record_layout_signature_mismatch_main.c|\
+    test/fixtures/wasm32/global_pointer_record_layout_signature_mismatch_other.c|\
+    test/fixtures/wasm32/global_callback_record_layout_signature_mismatch_main.c|\
+    test/fixtures/wasm32/global_callback_record_layout_signature_mismatch_other.c|\
     test/fixtures/wasm32/global_scalar_type_signature_mismatch_main.c|\
     test/fixtures/wasm32/global_scalar_type_signature_mismatch_other.c|\
+    test/fixtures/wasm32/global_array_bound_signature_mismatch_main.c|\
+    test/fixtures/wasm32/global_array_bound_signature_mismatch_other.c|\
+    test/fixtures/wasm32/global_unprototyped_callback_promotion_mismatch_main.c|\
+    test/fixtures/wasm32/global_unprototyped_callback_promotion_mismatch_other.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_main.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_other.c|\
     test/fixtures/wasm32/union_member_type_signature_mismatch_main.c|\

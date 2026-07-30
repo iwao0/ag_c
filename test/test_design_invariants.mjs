@@ -134,6 +134,12 @@ const wasmMultiTuProbeFixtures = [
   "enum_compatible_function_signature_xtu_other.c",
   "incomplete_array_bound_signature_xtu_main.c",
   "incomplete_array_bound_signature_xtu_other.c",
+  "incomplete_global_array_signature_xtu_main.c",
+  "incomplete_global_array_signature_xtu_other.c",
+  "incomplete_global_record_pointer_signature_xtu_main.c",
+  "incomplete_global_record_pointer_signature_xtu_other.c",
+  "incomplete_global_record_object_signature_xtu_main.c",
+  "incomplete_global_record_object_signature_xtu_other.c",
   "named_record_signature_xtu_main.c",
   "named_record_signature_xtu_other.c",
   "packed_indirect_record_signature_xtu_main.c",
@@ -144,6 +150,8 @@ const wasmMultiTuProbeFixtures = [
   "packed_callback_record_signature_xtu_other.c",
   "packed_global_record_signature_xtu_main.c",
   "packed_global_record_signature_xtu_other.c",
+  "packed_global_callback_signature_xtu_main.c",
+  "packed_global_callback_signature_xtu_other.c",
   "incomplete_callback_record_signature_xtu_main.c",
   "incomplete_callback_record_signature_xtu_other.c",
   "record_member_alignment_signature_xtu_main.c",
@@ -152,6 +160,8 @@ const wasmMultiTuProbeFixtures = [
   "union_member_order_signature_xtu_other.c",
   "unprototyped_funcptr_xtu_main.c",
   "unprototyped_funcptr_xtu_other.c",
+  "unprototyped_global_callback_signature_xtu_main.c",
+  "unprototyped_global_callback_signature_xtu_other.c",
   "unprototyped_funcptr_return_xtu_main.c",
   "unprototyped_funcptr_return_xtu_other.c",
   "unprototyped_enum_funcptr_xtu_main.c",
@@ -13205,6 +13215,13 @@ if (!/\bchar\s*\*\s*layout_signature\s*;/.test(abiLoweringHeader) ||
     !/agc\.data_signature/.test(wasmObjectSectionsSource) ||
     !/parse_data_signature_section\s*\(/.test(runtimeLinkerSource) ||
     !/data_signatures_compatible\s*\(/.test(runtimeLinkerSource) ||
+    !/data_c_signatures_compatible\s*\(/.test(runtimeLinkerSource) ||
+    !/canonical_callback_object_function_types\s*\(/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/abi_layout_callback_parameters_unspecified\s*\(/.test(
+      runtimeLinkerSource,
+    ) ||
     !/!is_runtime_data_symbol\s*\(\s*sym->name\s*\)/.test(
       runtimeLinkerSource,
     ) ||
@@ -13247,8 +13264,16 @@ const crossTuSignatureMismatchFixtures = [
   "incomplete_callback_sibling_layout_mismatch_other.c",
   "global_record_layout_signature_mismatch_main.c",
   "global_record_layout_signature_mismatch_other.c",
+  "global_pointer_record_layout_signature_mismatch_main.c",
+  "global_pointer_record_layout_signature_mismatch_other.c",
+  "global_callback_record_layout_signature_mismatch_main.c",
+  "global_callback_record_layout_signature_mismatch_other.c",
   "global_scalar_type_signature_mismatch_main.c",
   "global_scalar_type_signature_mismatch_other.c",
+  "global_array_bound_signature_mismatch_main.c",
+  "global_array_bound_signature_mismatch_other.c",
+  "global_unprototyped_callback_promotion_mismatch_main.c",
+  "global_unprototyped_callback_promotion_mismatch_other.c",
   "struct_member_order_signature_mismatch_main.c",
   "struct_member_order_signature_mismatch_other.c",
   "union_member_type_signature_mismatch_main.c",

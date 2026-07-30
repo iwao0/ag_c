@@ -126,6 +126,11 @@ before applying memory relocations. Subobject symbols with a non-zero segment
 offset and manifest-declared runtime data bridges are excluded because their
 symbol-level type intentionally differs from the owning storage object.
 Objects without this section remain linkable for backward compatibility.
+Function-pointer data objects also preserve C11 compatibility between an
+unprototyped callback and a prototype whose parameters are unchanged by the
+default argument promotions. This comparison follows pointer and array
+wrappers while still rejecting narrow, `_Bool`, `float`, and variadic
+parameter mismatches.
 
 ## Usage
 

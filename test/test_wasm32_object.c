@@ -554,12 +554,44 @@ static int run_data_signature_mismatch_cases(void) {
           "global_record_layout_value",
       },
       {
+          "global_pointer_record_layout_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "global_pointer_record_layout_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_pointer_record_layout_signature_mismatch_other.c",
+          "global_pointer_layout_value",
+      },
+      {
+          "global_callback_record_layout_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "global_callback_record_layout_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_callback_record_layout_signature_mismatch_other.c",
+          "global_callback_layout_reader",
+      },
+      {
           "global_scalar_type_signature_mismatch",
           "test/fixtures/wasm32/"
           "global_scalar_type_signature_mismatch_main.c",
           "test/fixtures/wasm32/"
           "global_scalar_type_signature_mismatch_other.c",
           "global_scalar_type_value",
+      },
+      {
+          "global_array_bound_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "global_array_bound_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_array_bound_signature_mismatch_other.c",
+          "global_array_bound_value",
+      },
+      {
+          "global_unprototyped_callback_promotion_mismatch",
+          "test/fixtures/wasm32/"
+          "global_unprototyped_callback_promotion_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_unprototyped_callback_promotion_mismatch_other.c",
+          "global_unprototyped_narrow_callback",
       },
   };
   for (size_t index = 0;
