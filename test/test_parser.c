@@ -20720,6 +20720,37 @@ static void test_anonymous_canonical_signature_stability(
   ASSERT_TRUE(strstr(enum_signatures[0], "__anon_tag_") == NULL);
 }
 
+static void test_named_enum_canonical_signature_compatible_integer(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_named_enum_canonical_signature_compatible_integer...\n");
+  psx_semantic_type_table_t *types =
+      psx_semantic_type_table_create();
+  ASSERT_TRUE(types != NULL);
+  psx_qual_type_t signed_enum =
+      psx_semantic_type_table_intern_enum(
+          types, 1, "signed_result", 13, 0);
+  psx_qual_type_t unsigned_enum =
+      psx_semantic_type_table_intern_enum(
+          types, 2, "unsigned_result", 15, 1);
+  char signature[64];
+  ASSERT_TRUE(psx_format_canonical_type_signature(
+      types, signed_enum,
+      ag_target_info_data_layout(
+          ag_compilation_session_target(test_suite_session)),
+      signature, sizeof(signature)) > 0);
+  ASSERT_TRUE(
+      strcmp(signature, "e{13:signed_result:i32}") == 0);
+  ASSERT_TRUE(psx_format_canonical_type_signature(
+      types, unsigned_enum,
+      ag_target_info_data_layout(
+          ag_compilation_session_target(test_suite_session)),
+      signature, sizeof(signature)) > 0);
+  ASSERT_TRUE(
+      strcmp(signature, "e{15:unsigned_result:u32}") == 0);
+  psx_semantic_type_table_destroy(types);
+}
+
 static void test_semantic_type_identity(
     ag_compilation_session_t *test_suite_session) {
   printf("test_semantic_type_identity...\n");
@@ -22324,6 +22355,8 @@ int main() {
   test_typed_hir_control_flow_lowering_without_ast(test_suite_session);
   test_noreturn_cfg_reachability_boundary();
   test_anonymous_canonical_signature_stability(test_suite_session);
+  test_named_enum_canonical_signature_compatible_integer(
+      test_suite_session);
   test_semantic_type_identity(test_suite_session);
   test_semantic_context_isolation(test_suite_session);
 #if defined(DIAG_LANG_ALL)

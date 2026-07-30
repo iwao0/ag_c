@@ -85,7 +85,11 @@ section. Common signature atoms are `v`, `b`, `i8`/`u8`, `i16`/`u16`,
 `i32`/`u32`, `lN`/`ulN`, `llN`/`ullN`, `f32`, `f64`, and recursive
 `p<type>` pointers. Function types use `result(param,...)`, so `void (void)` is
 `v()` and `int (int)` is `i32(i32)`. Function pointer types remain structural,
-for example `p<i32(i32)>`.
+for example `p<i32(i32)>`. A named enumeration records both its tag identity
+and compatible integer type, for example `e{6:status:u32}`. Cross-object
+signature comparison accepts that enumeration wherever the corresponding
+`u32` occurs recursively, while distinct enumeration tags and `i32` remain
+different types.
 
 ## Usage
 

@@ -243,6 +243,61 @@ static int run_atomic_aggregate_signature_mismatch_case(void) {
       "function signature mismatch: transform_words");
 }
 
+static int run_enum_return_signature_mismatch_cases(void) {
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "enum_incompatible_return_signature_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "enum_incompatible_return_signature_mismatch_main.c",
+          "enum incompatible return mismatch main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "enum_incompatible_return_signature_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "enum_incompatible_return_signature_mismatch_other.c",
+          "enum incompatible return mismatch other") != 0)
+    return 1;
+  if (run_fail_case(
+          "enum_incompatible_return_signature_mismatch",
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "enum_incompatible_return_signature_mismatch.wasm "
+          "build/wasm32_obj/"
+          "enum_incompatible_return_signature_mismatch_main.o "
+          "build/wasm32_obj/"
+          "enum_incompatible_return_signature_mismatch_other.o",
+          "function signature mismatch: incompatible_result") != 0)
+    return 1;
+
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "enum_distinct_return_signature_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "enum_distinct_return_signature_mismatch_main.c",
+          "enum distinct return mismatch main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "enum_distinct_return_signature_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "enum_distinct_return_signature_mismatch_other.c",
+          "enum distinct return mismatch other") != 0)
+    return 1;
+  return run_fail_case(
+      "enum_distinct_return_signature_mismatch",
+      "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+      "-o build/wasm32_obj/"
+      "enum_distinct_return_signature_mismatch.wasm "
+      "build/wasm32_obj/"
+      "enum_distinct_return_signature_mismatch_main.o "
+      "build/wasm32_obj/"
+      "enum_distinct_return_signature_mismatch_other.o",
+      "function signature mismatch: distinct_result");
+}
+
 static int run_unprototyped_function_pointer_xtu_case(void) {
   const char *main_source =
       "test/fixtures/probes_found_bugs/"
@@ -453,6 +508,33 @@ static int run_unprototyped_function_pointer_xtu_case(void) {
           "build/wasm32_obj/"
           "unprototyped_bool_signature_mismatch_other.o",
           "function signature mismatch: transform_bool") != 0)
+    return 1;
+
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_variadic_signature_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_variadic_signature_mismatch_main.c",
+          "unprototyped variadic mismatch main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_variadic_signature_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_variadic_signature_mismatch_other.c",
+          "unprototyped variadic mismatch other") != 0)
+    return 1;
+  if (run_fail_case(
+          "unprototyped_variadic_signature_mismatch",
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "unprototyped_variadic_signature_mismatch.wasm "
+          "build/wasm32_obj/"
+          "unprototyped_variadic_signature_mismatch_main.o "
+          "build/wasm32_obj/"
+          "unprototyped_variadic_signature_mismatch_other.o",
+          "function signature mismatch: variadic_target") != 0)
     return 1;
 
   if (run_cmd(
@@ -2851,6 +2933,8 @@ int main(void) {
   failures += run_e2e_fixture_object_scan();
   failures += run_linked_import_abi_case();
   failures += run_atomic_aggregate_signature_mismatch_case();
+  failures +=
+      run_enum_return_signature_mismatch_cases();
   failures += run_unprototyped_function_pointer_xtu_case();
   failures += run_linker_layout_option_cases();
   failures += run_optional_link_case();

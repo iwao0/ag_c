@@ -847,6 +847,163 @@ static uint32_t find_function_flags(
   return 0;
 }
 
+typedef struct {
+  int end;
+  int has_compatible_integer;
+  char integer_kind;
+  uint32_t integer_bits;
+} canonical_enum_type_t;
+
+static int canonical_decimal(
+    str_t signature, int *offset, uint32_t *value) {
+  if (!offset || !value || *offset < 0 ||
+      *offset >= signature.len ||
+      signature.s[*offset] < '0' ||
+      signature.s[*offset] > '9')
+    return 0;
+  uint32_t result = 0;
+  do {
+    uint32_t digit =
+        (uint32_t)(signature.s[*offset] - '0');
+    if (result > (UINT32_MAX - digit) / 10u) return 0;
+    result = result * 10u + digit;
+    (*offset)++;
+  } while (
+      *offset < signature.len &&
+      signature.s[*offset] >= '0' &&
+      signature.s[*offset] <= '9');
+  *value = result;
+  return 1;
+}
+
+static int canonical_integer_type_at(
+    str_t signature, int offset, char *kind,
+    uint32_t *bits, int *end) {
+  if (offset < 0 || offset >= signature.len ||
+      (signature.s[offset] != 'i' &&
+       signature.s[offset] != 'u'))
+    return 0;
+  char parsed_kind = signature.s[offset++];
+  uint32_t parsed_bits = 0;
+  if (!canonical_decimal(
+          signature, &offset, &parsed_bits))
+    return 0;
+  if (kind) *kind = parsed_kind;
+  if (bits) *bits = parsed_bits;
+  if (end) *end = offset;
+  return 1;
+}
+
+static int canonical_enum_type_at(
+    str_t signature, int offset,
+    canonical_enum_type_t *parsed) {
+  if (!parsed || offset < 0 ||
+      offset + 2 > signature.len ||
+      signature.s[offset] != 'e')
+    return 0;
+  canonical_enum_type_t result = {0};
+  int index = offset + 2;
+  if (signature.s[offset + 1] == '<') {
+    if (!canonical_integer_type_at(
+            signature, index, &result.integer_kind,
+            &result.integer_bits, &index) ||
+        index >= signature.len ||
+        signature.s[index] != '>')
+      return 0;
+    result.end = index + 1;
+    result.has_compatible_integer = 1;
+    *parsed = result;
+    return 1;
+  }
+  if (signature.s[offset + 1] != '{') return 0;
+  uint32_t name_length = 0;
+  if (!canonical_decimal(
+          signature, &index, &name_length) ||
+      index >= signature.len ||
+      signature.s[index++] != ':' ||
+      name_length > (uint32_t)(signature.len - index))
+    return 0;
+  index += (int)name_length;
+  if (index < signature.len &&
+      signature.s[index] == '}') {
+    result.end = index + 1;
+    *parsed = result;
+    return 1;
+  }
+  if (index >= signature.len ||
+      signature.s[index++] != ':' ||
+      !canonical_integer_type_at(
+          signature, index, &result.integer_kind,
+          &result.integer_bits, &index) ||
+      index >= signature.len ||
+      signature.s[index] != '}')
+    return 0;
+  result.end = index + 1;
+  result.has_compatible_integer = 1;
+  *parsed = result;
+  return 1;
+}
+
+static int canonical_type_signatures_compatible(
+    str_t left, str_t right) {
+  int left_offset = 0;
+  int right_offset = 0;
+  while (left_offset < left.len &&
+         right_offset < right.len) {
+    canonical_enum_type_t left_enum = {0};
+    canonical_enum_type_t right_enum = {0};
+    int left_is_enum = canonical_enum_type_at(
+        left, left_offset, &left_enum);
+    int right_is_enum = canonical_enum_type_at(
+        right, right_offset, &right_enum);
+    if (left_is_enum && right_is_enum) {
+      int left_length = left_enum.end - left_offset;
+      int right_length = right_enum.end - right_offset;
+      if (left_length != right_length ||
+          memcmp(
+              left.s + left_offset,
+              right.s + right_offset,
+              (size_t)left_length) != 0)
+        return 0;
+      left_offset = left_enum.end;
+      right_offset = right_enum.end;
+      continue;
+    }
+    if (left_is_enum || right_is_enum) {
+      canonical_enum_type_t enumeration =
+          left_is_enum ? left_enum : right_enum;
+      str_t integer_signature =
+          left_is_enum ? right : left;
+      int integer_offset =
+          left_is_enum ? right_offset : left_offset;
+      char integer_kind = 0;
+      uint32_t integer_bits = 0;
+      int integer_end = 0;
+      if (!enumeration.has_compatible_integer ||
+          !canonical_integer_type_at(
+              integer_signature, integer_offset,
+              &integer_kind, &integer_bits, &integer_end) ||
+          enumeration.integer_kind != integer_kind ||
+          enumeration.integer_bits != integer_bits)
+        return 0;
+      if (left_is_enum) {
+        left_offset = left_enum.end;
+        right_offset = integer_end;
+      } else {
+        left_offset = integer_end;
+        right_offset = right_enum.end;
+      }
+      continue;
+    }
+    if (left.s[left_offset] != right.s[right_offset])
+      return 0;
+    left_offset++;
+    right_offset++;
+  }
+  return left_offset == left.len &&
+         right_offset == right.len;
+}
+
 static int canonical_function_signature_parameter_list(
     str_t signature, int *parameter_list_offset, int *is_empty) {
   if (signature.len < 2 || signature.s[signature.len - 1] != ')')
@@ -950,10 +1107,13 @@ static int unspecified_function_signature_matches(
       !canonical_function_signature_parameter_list(
           specified->signature, &specified_offset, NULL) ||
       !unspecified_is_empty ||
-      unspecified_offset != specified_offset ||
-      memcmp(
-          unspecified->signature.s, specified->signature.s,
-          (size_t)unspecified_offset) != 0 ||
+      !canonical_type_signatures_compatible(
+          (str_t){
+              unspecified->signature.s,
+              unspecified_offset},
+          (str_t){
+              specified->signature.s,
+              specified_offset}) ||
       !canonical_parameters_unchanged_by_default_promotions(
           specified->signature, specified_offset))
     return 0;
@@ -982,7 +1142,8 @@ static int func_signature_matches(object_t *ref_obj, int ref_func,
   const c_signature_t *definition = find_c_signature(
       def_obj, def_obj->funcs[def_func].name);
   if (!reference || !definition) return wasm_types_equal;
-  if (str_eq(reference->signature, definition->signature))
+  if (canonical_type_signatures_compatible(
+          reference->signature, definition->signature))
     return wasm_types_equal;
   uint32_t reference_flags = find_function_flags(
       ref_obj, ref_obj->funcs[ref_func].name);

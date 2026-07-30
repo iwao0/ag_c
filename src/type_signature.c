@@ -150,6 +150,8 @@ static void write_type(signature_writer_t *writer,
           if (shape.enum_tag_length > 0)
             write_bytes(writer, shape.enum_tag_name,
                         (size_t)shape.enum_tag_length);
+          write_literal(writer, shape.is_unsigned ? ":u" : ":i");
+          write_unsigned(writer, bits);
           write_literal(writer, "}");
         }
       } else if (shape.is_plain_char) {
