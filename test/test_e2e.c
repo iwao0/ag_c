@@ -1745,6 +1745,9 @@ typedef struct {
 } link2_case_t;
 
 static const link2_case_t link2_cases[] = {
+    {"probes", "atomic_function_signature_xtu",
+     "test/fixtures/probes_found_bugs/atomic_function_signature_xtu_main.c",
+     "test/fixtures/probes_found_bugs/atomic_function_signature_xtu_other.c", 42},
     {"probes", "anonymous_flexible_callback_signature_xtu",
      "test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_main.c",
      "test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_other.c", 42},
@@ -1784,6 +1787,18 @@ static const link2_case_t link2_cases[] = {
     {"probes", "function_parameter_function_adjustment_xtu",
      "test/fixtures/probes_found_bugs/function_parameter_function_adjustment_xtu_main.c",
      "test/fixtures/probes_found_bugs/function_parameter_function_adjustment_xtu_other.c", 42},
+    {"probes", "function_parameter_callback_return_qualifier_xtu",
+     "test/fixtures/probes_found_bugs/function_parameter_callback_return_qualifier_xtu_main.c",
+     "test/fixtures/probes_found_bugs/function_parameter_callback_return_qualifier_xtu_other.c", 42},
+    {"probes", "function_parameter_callback_return_array_qualifier_xtu",
+     "test/fixtures/probes_found_bugs/function_parameter_callback_return_array_qualifier_xtu_main.c",
+     "test/fixtures/probes_found_bugs/function_parameter_callback_return_array_qualifier_xtu_other.c", 42},
+    {"probes", "function_parameter_callback_return_function_pointer_xtu",
+     "test/fixtures/probes_found_bugs/function_parameter_callback_return_function_pointer_xtu_main.c",
+     "test/fixtures/probes_found_bugs/function_parameter_callback_return_function_pointer_xtu_other.c", 42},
+    {"probes", "function_parameter_nested_pointer_qualifier_xtu",
+     "test/fixtures/probes_found_bugs/function_parameter_nested_pointer_qualifier_xtu_main.c",
+     "test/fixtures/probes_found_bugs/function_parameter_nested_pointer_qualifier_xtu_other.c", 42},
     {"probes", "enum_compatible_function_signature_xtu",
      "test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_main.c",
      "test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_other.c", 42},

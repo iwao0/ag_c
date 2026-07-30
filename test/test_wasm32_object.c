@@ -314,6 +314,70 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "function_parameter_callback_signedness_mismatch_other.c",
           "function_parameter_callback_signedness",
       },
+      {
+          "function_parameter_callback_return_pointee_const_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_return_pointee_const_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_return_pointee_const_qualifier_mismatch_other.c",
+          "function_parameter_callback_return_pointee_const_qualifier",
+      },
+      {
+          "function_parameter_callback_return_array_bound_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_return_array_bound_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_return_array_bound_mismatch_other.c",
+          "function_parameter_callback_return_array_bound",
+      },
+      {
+          "function_parameter_callback_return_array_element_const_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_return_array_element_const_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_return_array_element_const_qualifier_mismatch_other.c",
+          "function_parameter_callback_return_array_element_const_qualifier",
+      },
+      {
+          "function_parameter_callback_return_function_parameter_signedness_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_return_function_parameter_signedness_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_return_function_parameter_signedness_mismatch_other.c",
+          "function_parameter_callback_return_function_parameter_signedness",
+      },
+      {
+          "function_parameter_callback_return_function_result_signedness_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_return_function_result_signedness_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_return_function_result_signedness_mismatch_other.c",
+          "function_parameter_callback_return_function_result_signedness",
+      },
+      {
+          "function_parameter_nested_pointer_const_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_nested_pointer_const_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_nested_pointer_const_qualifier_mismatch_other.c",
+          "function_parameter_nested_pointer_const_qualifier",
+      },
+      {
+          "function_parameter_atomic_type_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_type_mismatch_other.c",
+          "function_parameter_atomic_type",
+      },
+      {
+          "function_return_atomic_type_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_type_mismatch_other.c",
+          "function_return_atomic_type",
+      },
   };
   for (size_t index = 0;
        index < sizeof(cases) / sizeof(cases[0]); index++) {
