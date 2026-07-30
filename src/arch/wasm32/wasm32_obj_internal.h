@@ -61,6 +61,10 @@ typedef struct {
 
 typedef wasm32_machine_signature_t obj_sig_t;
 
+enum {
+  AGC_FUNCTION_FLAG_PARAMETERS_UNSPECIFIED = 1u << 0,
+};
+
 typedef struct {
   char *name;
   int name_len;

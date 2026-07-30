@@ -81,6 +81,12 @@ skip_reason() {
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
+    test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
@@ -91,7 +97,11 @@ skip_reason() {
       echo "multi-TU link fixture component without main"
       ;;
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_main.c|\
-    test/fixtures/wasm32/atomic_aggregate_signature_mismatch_other.c)
+    test/fixtures/wasm32/atomic_aggregate_signature_mismatch_other.c|\
+    test/fixtures/wasm32/unprototyped_promotion_signature_mismatch_main.c|\
+    test/fixtures/wasm32/unprototyped_promotion_signature_mismatch_other.c|\
+    test/fixtures/wasm32/unprototyped_return_signature_mismatch_main.c|\
+    test/fixtures/wasm32/unprototyped_return_signature_mismatch_other.c)
       echo "intentional multi-TU C-signature mismatch covered by wasm32 object tests"
       ;;
     *)
@@ -110,6 +120,12 @@ link_companion() {
       ;;
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_other.c"
       ;;
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c"
@@ -135,6 +151,12 @@ expected_result() {
       echo 42
       ;;
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_main.c)
       echo 42
       ;;
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c)

@@ -130,6 +130,10 @@ const wasmMultiTuProbeFixtures = [
   "atomic_aggregate_callback_xtu_other.c",
   "extern_funcptr_xtu_main.c",
   "extern_funcptr_xtu_other.c",
+  "unprototyped_funcptr_xtu_main.c",
+  "unprototyped_funcptr_xtu_other.c",
+  "unprototyped_funcptr_return_xtu_main.c",
+  "unprototyped_funcptr_return_xtu_other.c",
   "inherited_static_linkage_xtu_main.c",
   "inherited_static_linkage_xtu_other.c",
   "static_internal_linkage_xtu_main.c",
@@ -146,6 +150,10 @@ const missingWasmProbeRegistrations = probeFixtureNames.filter(
 );
 const wasm32ObjectLinkFixtureScan = await readFile(
   "scripts/run_wasm32_object_link_fixture_scan.sh",
+  "utf8",
+);
+const wasm32WatFixtureScan = await readFile(
+  "scripts/run_wasm32_wat_fixture_scan.sh",
   "utf8",
 );
 if (JSON.stringify(missingNativeProbeRegistrations) !==
@@ -172,6 +180,19 @@ if (missingWasmMultiTuLinkRegistrations.length) {
   throw new Error(
     "Wasm multi-TU fixtures excluded from WAT must run in the object link scan:\n" +
       missingWasmMultiTuLinkRegistrations.join("\n"),
+  );
+}
+const missingWasmMultiTuScanExclusions =
+  wasmMultiTuProbeFixtures.filter(
+    (name) =>
+      !wasm32WatFixtureScan.includes(
+        `${probeFixtureDirectory}/${name}`,
+      ),
+  );
+if (missingWasmMultiTuScanExclusions.length) {
+  throw new Error(
+    "Wasm multi-TU fixtures must be excluded from the standalone WAT fixture scan:\n" +
+      missingWasmMultiTuScanExclusions.join("\n"),
   );
 }
 const removedMutableAstCompatibilityFiles = [
@@ -13061,6 +13082,22 @@ const runtimeCatalog = await readFile(
   "tools/wasm_obj_linker/runtime/generated/runtime-symbols.md",
   "utf8",
 );
+if (!/emit_function_flags_section\s*\(/.test(
+      wasmObjectSectionsSource,
+    ) ||
+    !/agc\.function_flags/.test(wasmObjectSectionsSource) ||
+    !/parse_function_flags_section\s*\(/.test(runtimeLinkerSource) ||
+    !/agc\.function_flags/.test(runtimeLinkerSource) ||
+    !/unspecified_function_signature_matches\s*\(/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/canonical_parameters_unchanged_by_default_promotions\s*\(/.test(
+      runtimeLinkerSource,
+    )) {
+  throw new Error(
+    "Wasm objects and the linker must preserve and safely match unspecified function parameter metadata across translation units",
+  );
+}
 const runtimeManifestFields = [
   "cSymbol",
   "runtimeSymbol",

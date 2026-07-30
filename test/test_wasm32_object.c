@@ -243,6 +243,191 @@ static int run_atomic_aggregate_signature_mismatch_case(void) {
       "function signature mismatch: transform_words");
 }
 
+static int run_unprototyped_function_pointer_xtu_case(void) {
+  const char *main_source =
+      "test/fixtures/probes_found_bugs/"
+      "unprototyped_funcptr_xtu_main.c";
+  const char *other_source =
+      "test/fixtures/probes_found_bugs/"
+      "unprototyped_funcptr_xtu_other.c";
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/unprototyped_funcptr_xtu_main.o "
+          "test/fixtures/probes_found_bugs/"
+          "unprototyped_funcptr_xtu_main.c",
+          main_source) != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/unprototyped_funcptr_xtu_other.o "
+          "test/fixtures/probes_found_bugs/"
+          "unprototyped_funcptr_xtu_other.c",
+          other_source) != 0) {
+    return 1;
+  }
+  if (command_available("wasm-objdump")) {
+    if (run_cmd(
+            "wasm-objdump -x "
+            "build/wasm32_obj/unprototyped_funcptr_xtu_main.o > "
+            "build/wasm32_obj/unprototyped_funcptr_xtu_main.objdump",
+            "dump unprototyped function flags") != 0)
+      return 1;
+    char dump[16384];
+    if (slurp(
+            "build/wasm32_obj/unprototyped_funcptr_xtu_main.objdump",
+            dump, sizeof(dump)) != 0)
+      return 1;
+    if (!strstr(dump, "agc.function_flags")) {
+      fprintf(
+          stderr,
+          "FAIL: unprototyped function object has no function flags metadata\n");
+      return 1;
+    }
+  }
+  if (run_cmd(
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/unprototyped_funcptr_xtu.wasm "
+          "build/wasm32_obj/unprototyped_funcptr_xtu_main.o "
+          "build/wasm32_obj/unprototyped_funcptr_xtu_other.o",
+          "link unprototyped function pointer cross-TU") != 0)
+    return 1;
+  if (command_available("wasm-validate") &&
+      run_cmd(
+          "wasm-validate "
+          "build/wasm32_obj/unprototyped_funcptr_xtu.wasm",
+          "validate unprototyped function pointer cross-TU") != 0)
+    return 1;
+  if (command_available("wasm-interp")) {
+    if (run_cmd(
+            "wasm-interp "
+            "build/wasm32_obj/unprototyped_funcptr_xtu.wasm "
+            "--run-all-exports > "
+            "build/wasm32_obj/unprototyped_funcptr_xtu.interp",
+            "run unprototyped function pointer cross-TU") != 0)
+      return 1;
+    char output[4096];
+    if (slurp(
+            "build/wasm32_obj/unprototyped_funcptr_xtu.interp",
+            output, sizeof(output)) != 0)
+      return 1;
+    if (!strstr(output, "main() => i32:42")) {
+      fprintf(
+          stderr,
+          "FAIL: unprototyped function pointer cross-TU returned "
+          "unexpected result\n");
+      return 1;
+    }
+  }
+
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_funcptr_return_xtu_main.o "
+          "test/fixtures/probes_found_bugs/"
+          "unprototyped_funcptr_return_xtu_main.c",
+          "unprototyped function return ABI main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_funcptr_return_xtu_other.o "
+          "test/fixtures/probes_found_bugs/"
+          "unprototyped_funcptr_return_xtu_other.c",
+          "unprototyped function return ABI other") != 0 ||
+      run_cmd(
+          "./build/ag_wasm_link --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "unprototyped_funcptr_return_xtu.wasm "
+          "build/wasm32_obj/"
+          "unprototyped_funcptr_return_xtu_main.o "
+          "build/wasm32_obj/"
+          "unprototyped_funcptr_return_xtu_other.o",
+          "link unprototyped function return ABI cross-TU") != 0)
+    return 1;
+  if (command_available("wasm-validate") &&
+      run_cmd(
+          "wasm-validate "
+          "build/wasm32_obj/"
+          "unprototyped_funcptr_return_xtu.wasm",
+          "validate unprototyped function return ABI cross-TU") != 0)
+    return 1;
+  if (command_available("wasm-interp")) {
+    if (run_cmd(
+            "wasm-interp "
+            "build/wasm32_obj/"
+            "unprototyped_funcptr_return_xtu.wasm "
+            "--run-all-exports > "
+            "build/wasm32_obj/"
+            "unprototyped_funcptr_return_xtu.interp",
+            "run unprototyped function return ABI cross-TU") != 0)
+      return 1;
+    char output[4096];
+    if (slurp(
+            "build/wasm32_obj/"
+            "unprototyped_funcptr_return_xtu.interp",
+            output, sizeof(output)) != 0)
+      return 1;
+    if (!strstr(output, "main() => i32:42")) {
+      fprintf(
+          stderr,
+          "FAIL: unprototyped function return ABI cross-TU returned "
+          "unexpected result\n");
+      return 1;
+    }
+  }
+
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_promotion_signature_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_promotion_signature_mismatch_main.c",
+          "unprototyped promotion mismatch main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_promotion_signature_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_promotion_signature_mismatch_other.c",
+          "unprototyped promotion mismatch other") != 0)
+    return 1;
+  if (run_fail_case(
+          "unprototyped_promotion_signature_mismatch",
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "unprototyped_promotion_signature_mismatch.wasm "
+          "build/wasm32_obj/"
+          "unprototyped_promotion_signature_mismatch_main.o "
+          "build/wasm32_obj/"
+          "unprototyped_promotion_signature_mismatch_other.o",
+          "function signature mismatch: transform_value") != 0)
+    return 1;
+
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_return_signature_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_return_signature_mismatch_main.c",
+          "unprototyped return mismatch main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_return_signature_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_return_signature_mismatch_other.c",
+          "unprototyped return mismatch other") != 0)
+    return 1;
+  return run_fail_case(
+      "unprototyped_return_signature_mismatch",
+      "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+      "-o build/wasm32_obj/"
+      "unprototyped_return_signature_mismatch.wasm "
+      "build/wasm32_obj/"
+      "unprototyped_return_signature_mismatch_main.o "
+      "build/wasm32_obj/"
+      "unprototyped_return_signature_mismatch_other.o",
+      "function signature mismatch: build_result");
+}
+
 typedef struct {
   int has_memory;
   unsigned memory_flags;
@@ -2612,6 +2797,7 @@ int main(void) {
   failures += run_e2e_fixture_object_scan();
   failures += run_linked_import_abi_case();
   failures += run_atomic_aggregate_signature_mismatch_case();
+  failures += run_unprototyped_function_pointer_xtu_case();
   failures += run_linker_layout_option_cases();
   failures += run_optional_link_case();
 

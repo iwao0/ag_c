@@ -359,6 +359,30 @@ static void emit_c_signature_section(
   free(payload.data);
 }
 
+static void emit_function_flags_section(
+    wasm32_obj_context_t *context, wb_t *output) {
+  int count = 0;
+  for (int index = 0; index < g_obj.func_count; index++) {
+    if (g_obj.funcs[index].signature_parameters_unspecified)
+      count++;
+  }
+  if (count == 0) return;
+  wb_t payload = {
+      .diagnostic_context = context->diagnostic_context};
+  wb_uleb(&payload, 1);
+  wb_uleb(&payload, (uint32_t)count);
+  for (int index = 0; index < g_obj.func_count; index++) {
+    const obj_func_t *function = &g_obj.funcs[index];
+    if (!function->signature_parameters_unspecified) continue;
+    wb_str(&payload, function->name, function->name_len);
+    wb_uleb(
+        &payload,
+        AGC_FUNCTION_FLAG_PARAMETERS_UNSPECIFIED);
+  }
+  emit_custom_section(output, "agc.function_flags", &payload);
+  free(payload.data);
+}
+
 static void emit_continuation_section(
     wasm32_obj_context_t *context, wb_t *output) {
   if (!g_obj.continuation_entry) return;
@@ -422,6 +446,7 @@ void wasm32_obj_serialize_sections(
   emit_code_section(context, output);
   emit_data_section(context, output);
   emit_c_signature_section(context, output);
+  emit_function_flags_section(context, output);
   emit_continuation_section(context, output);
   emit_linking_section(context, output);
   emit_reloc_section(

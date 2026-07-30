@@ -56,6 +56,10 @@ skip_reason() {
     test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_other.c|\
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c|\
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c|\
+    test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_main.c|\
+    test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_other.c|\
+    test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_main.c|\
+    test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_other.c|\
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c|\
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c|\
     test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_main.c|\
@@ -63,7 +67,11 @@ skip_reason() {
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_main.c|\
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_main.c|\
-    test/fixtures/wasm32/atomic_aggregate_signature_mismatch_other.c)
+    test/fixtures/wasm32/atomic_aggregate_signature_mismatch_other.c|\
+    test/fixtures/wasm32/unprototyped_promotion_signature_mismatch_main.c|\
+    test/fixtures/wasm32/unprototyped_promotion_signature_mismatch_other.c|\
+    test/fixtures/wasm32/unprototyped_return_signature_mismatch_main.c|\
+    test/fixtures/wasm32/unprototyped_return_signature_mismatch_other.c)
       echo "multi-TU link fixture; WAT mode is single-module standalone"
       ;;
     test/fixtures/probes_found_bugs/gnu_attribute_parse.c|\

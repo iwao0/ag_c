@@ -34,6 +34,8 @@ enum {
   LINK_SEGMENT_INFO = 5,
   LINK_SYMBOL_TABLE = 8,
 
+  AGC_FUNCTION_FLAG_PARAMETERS_UNSPECIFIED = 1u << 0,
+
   RUNTIME_SCRATCH_BASE = 32768,
 };
 
@@ -118,6 +120,11 @@ typedef struct {
 } c_signature_t;
 
 typedef struct {
+  str_t name;
+  uint32_t flags;
+} function_flags_t;
+
+typedef struct {
   str_t path;
   type_t *types;
   int type_count;
@@ -141,6 +148,10 @@ typedef struct {
   c_signature_t *c_signatures;
   int c_signature_count;
   int c_signature_cap;
+  function_flags_t *function_flags;
+  int function_flag_count;
+  int function_flag_cap;
+  int has_function_flags;
   int code_section_index;
   int data_section_index;
   int imports_table;
@@ -673,6 +684,58 @@ static void parse_c_signature_section(object_t *o, rd_t sec) {
   if (sec.pos != sec.len) die("trailing bytes in agc.c_signature section");
 }
 
+static void parse_function_flags_section(object_t *o, rd_t sec) {
+  if (o->has_function_flags)
+    die("duplicate agc.function_flags section");
+  uint32_t version = rd_uleb(&sec);
+  if (version != 1)
+    die("unsupported agc.function_flags version");
+  uint32_t count = rd_uleb(&sec);
+  for (uint32_t i = 0; i < count; i++) {
+    function_flags_t entry = {rd_str_dup(&sec), rd_uleb(&sec)};
+    if (str_empty(entry.name) || entry.flags == 0 ||
+        (entry.flags &
+         ~AGC_FUNCTION_FLAG_PARAMETERS_UNSPECIFIED) != 0)
+      die("invalid agc.function_flags entry");
+    for (int prev = 0; prev < o->function_flag_count; prev++) {
+      if (str_eq(o->function_flags[prev].name, entry.name))
+        dief("duplicate function flags metadata: %s", entry.name.s);
+    }
+    PUSH(
+        o->function_flags, o->function_flag_count,
+        o->function_flag_cap, entry);
+  }
+  if (sec.pos != sec.len)
+    die("trailing bytes in agc.function_flags section");
+  o->has_function_flags = 1;
+}
+
+static void validate_function_flags_metadata(const object_t *o) {
+  for (int flag_index = 0;
+       flag_index < o->function_flag_count; flag_index++) {
+    str_t name = o->function_flags[flag_index].name;
+    int has_function = 0;
+    int has_c_signature = 0;
+    for (int function_index = 0;
+         function_index < o->func_count; function_index++) {
+      if (str_eq(o->funcs[function_index].name, name)) {
+        has_function = 1;
+        break;
+      }
+    }
+    for (int signature_index = 0;
+         signature_index < o->c_signature_count;
+         signature_index++) {
+      if (str_eq(o->c_signatures[signature_index].name, name)) {
+        has_c_signature = 1;
+        break;
+      }
+    }
+    if (!has_function || !has_c_signature)
+      dief("orphan function flags metadata: %s", name.s);
+  }
+}
+
 static void parse_continuation_section(object_t *o, rd_t sec) {
   if (o->has_continuation) die("duplicate agc.continuation section");
   uint32_t version = rd_uleb(&sec);
@@ -729,11 +792,14 @@ static object_t parse_object_bytes(const char *path, const unsigned char *file, 
         parse_reloc_section(&o, sec, 0);
       } else if (name.len == 15 && memcmp(name.s, "agc.c_signature", 15) == 0) {
         parse_c_signature_section(&o, sec);
+      } else if (name.len == 18 && memcmp(name.s, "agc.function_flags", 18) == 0) {
+        parse_function_flags_section(&o, sec);
       } else if (name.len == 16 && memcmp(name.s, "agc.continuation", 16) == 0) {
         parse_continuation_section(&o, sec);
       }
     }
   }
+  validate_function_flags_metadata(&o);
   return o;
 }
 
@@ -767,8 +833,129 @@ static int type_equal(const type_t *a, const type_t *b) {
   return a->raw_len == b->raw_len && memcmp(a->raw, b->raw, a->raw_len) == 0;
 }
 
+static unsigned char wasm_type_result_valtype(const type_t *t);
+
 static const c_signature_t *find_c_signature(
     const object_t *obj, str_t name);
+
+static uint32_t find_function_flags(
+    const object_t *obj, str_t name) {
+  for (int index = 0; index < obj->function_flag_count; index++) {
+    if (str_eq(obj->function_flags[index].name, name))
+      return obj->function_flags[index].flags;
+  }
+  return 0;
+}
+
+static int canonical_function_signature_parameter_list(
+    str_t signature, int *parameter_list_offset, int *is_empty) {
+  if (signature.len < 2 || signature.s[signature.len - 1] != ')')
+    return 0;
+  int depth = 0;
+  for (int index = signature.len - 1; index >= 0; index--) {
+    if (signature.s[index] == ')') {
+      depth++;
+    } else if (signature.s[index] == '(') {
+      depth--;
+      if (depth == 0) {
+        if (parameter_list_offset)
+          *parameter_list_offset = index;
+        if (is_empty)
+          *is_empty = index + 1 == signature.len - 1;
+        return 1;
+      }
+      if (depth < 0) return 0;
+    }
+  }
+  return 0;
+}
+
+static int canonical_parameter_unchanged_by_default_promotions(
+    const char *parameter, int length) {
+  int index = 0;
+  while (index < length &&
+         (parameter[index] == 'k' || parameter[index] == 'V' ||
+          parameter[index] == 'A' || parameter[index] == 'R'))
+    index++;
+  if (index >= length ||
+      (length - index == 3 &&
+       memcmp(parameter + index, "...", 3) == 0))
+    return 0;
+  char kind = parameter[index++];
+  if (kind == 'b' || kind == 'c' || kind == 'e')
+    return 0;
+  if (kind != 'f' && kind != 'i' && kind != 'u')
+    return 1;
+  if (kind == 'u' && index < length &&
+      (parameter[index] == '{' || parameter[index] == '[' ||
+       parameter[index] == 'l'))
+    return 1;
+  int bits = 0;
+  int has_bits = 0;
+  while (index < length &&
+         parameter[index] >= '0' && parameter[index] <= '9') {
+    has_bits = 1;
+    bits = bits * 10 + parameter[index++] - '0';
+  }
+  if (!has_bits) return 1;
+  return kind == 'f' ? bits >= 64 : bits >= 32;
+}
+
+static int canonical_parameters_unchanged_by_default_promotions(
+    str_t signature, int parameter_list_offset) {
+  int parameter_start = parameter_list_offset + 1;
+  int depth = 0;
+  for (int index = parameter_start; index < signature.len; index++) {
+    char ch = signature.s[index];
+    if (index == signature.len - 1) {
+      if (depth != 0) return 0;
+      return index == parameter_start ||
+             canonical_parameter_unchanged_by_default_promotions(
+                 signature.s + parameter_start,
+                 index - parameter_start);
+    }
+    if (ch == '(' || ch == '<' || ch == '{' || ch == '[') {
+      depth++;
+    } else if (ch == ')' || ch == '>' || ch == '}' || ch == ']') {
+      if (depth == 0) return 0;
+      depth--;
+    } else if (ch == ',' && depth == 0) {
+      if (!canonical_parameter_unchanged_by_default_promotions(
+              signature.s + parameter_start,
+              index - parameter_start))
+        return 0;
+      parameter_start = index + 1;
+    }
+  }
+  return 0;
+}
+
+static int unspecified_function_signature_matches(
+    const c_signature_t *unspecified, uint32_t unspecified_flags,
+    const type_t *unspecified_type,
+    const c_signature_t *specified, const type_t *specified_type) {
+  if (!(unspecified_flags &
+        AGC_FUNCTION_FLAG_PARAMETERS_UNSPECIFIED))
+    return 0;
+  int unspecified_offset = 0;
+  int specified_offset = 0;
+  int unspecified_is_empty = 0;
+  if (!canonical_function_signature_parameter_list(
+          unspecified->signature, &unspecified_offset,
+          &unspecified_is_empty) ||
+      !canonical_function_signature_parameter_list(
+          specified->signature, &specified_offset, NULL) ||
+      !unspecified_is_empty ||
+      unspecified_offset != specified_offset ||
+      memcmp(
+          unspecified->signature.s, specified->signature.s,
+          (size_t)unspecified_offset) != 0 ||
+      !canonical_parameters_unchanged_by_default_promotions(
+          specified->signature, specified_offset))
+    return 0;
+  return wasm_type_result_valtype(unspecified_type) ==
+         wasm_type_result_valtype(specified_type);
+}
 
 static int func_signature_matches(object_t *ref_obj, int ref_func,
                                   object_t *def_obj, int def_func) {
@@ -782,16 +969,27 @@ static int func_signature_matches(object_t *ref_obj, int ref_func,
       def_type < 0 || def_type >= def_obj->type_count) {
     return 0;
   }
-  if (!type_equal(
-          &ref_obj->types[ref_type],
-          &def_obj->types[def_type]))
-    return 0;
+  const type_t *reference_type = &ref_obj->types[ref_type];
+  const type_t *definition_type = &def_obj->types[def_type];
+  int wasm_types_equal =
+      type_equal(reference_type, definition_type);
   const c_signature_t *reference = find_c_signature(
       ref_obj, ref_obj->funcs[ref_func].name);
   const c_signature_t *definition = find_c_signature(
       def_obj, def_obj->funcs[def_func].name);
-  if (!reference || !definition) return 1;
-  return str_eq(reference->signature, definition->signature);
+  if (!reference || !definition) return wasm_types_equal;
+  if (str_eq(reference->signature, definition->signature))
+    return wasm_types_equal;
+  uint32_t reference_flags = find_function_flags(
+      ref_obj, ref_obj->funcs[ref_func].name);
+  uint32_t definition_flags = find_function_flags(
+      def_obj, def_obj->funcs[def_func].name);
+  return unspecified_function_signature_matches(
+             reference, reference_flags, reference_type,
+             definition, definition_type) ||
+         unspecified_function_signature_matches(
+             definition, definition_flags, definition_type,
+             reference, reference_type);
 }
 
 static void check_duplicate_definitions(object_t *objs, int obj_count) {
@@ -909,7 +1107,7 @@ typedef struct {
 
 #include "runtime/generated/runtime-symbols.inc"
 
-static unsigned char wasm_type_result_valtype(type_t *t);
+static unsigned char wasm_type_result_valtype(const type_t *t);
 static uint32_t wasm_type_param_count(type_t *t);
 static unsigned char wasm_type_param_valtype(type_t *t, uint32_t idx);
 
@@ -981,7 +1179,7 @@ static int runtime_has_func(object_t *runtime, str_t name) {
   return 0;
 }
 
-static unsigned char wasm_type_result_valtype(type_t *t) {
+static unsigned char wasm_type_result_valtype(const type_t *t) {
   rd_t r = {t->raw, t->raw_len, 0, "runtime stub type"};
   if (r.pos >= r.len || r.p[r.pos++] != 0x60) die("bad runtime stub function type");
   uint32_t np = rd_uleb(&r);
