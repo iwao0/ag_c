@@ -75,6 +75,7 @@ int psx_resolve_parameter_declaration(
   if (psx_semantic_type_has_incomplete_array_element_in(
           request->type.semantic_context, identity.type_id))
     return 0;
+  int was_adjusted_from_array = shape.kind == PSX_TYPE_ARRAY;
   if (shape.kind == PSX_TYPE_ARRAY) {
     psx_qual_type_t element =
         psx_semantic_type_table_base(types, identity.type_id);
@@ -118,11 +119,17 @@ int psx_resolve_parameter_declaration(
     return 0;
   resolution->declaration_qual_type = identity;
   resolution->function_qual_type = identity;
-  /* C11 6.7.6.3p15 removes ordinary top-level qualification from a
-   * parameter's function type.  C11 6.2.5p27 distinguishes an atomic
-   * type from the "qualified type" covered by that rule. */
-  resolution->function_qual_type.qualifiers &=
-      PSX_TYPE_QUALIFIER_ATOMIC;
+  /* C11 6.7.6.3p7 applies qualifiers inside [] to the adjusted pointer
+   * parameter object, while p15 uses the unqualified adjusted type for
+   * function compatibility.  An atomic type written directly in the
+   * parameter declaration remains distinct under C11 6.2.5p27. */
+  if (was_adjusted_from_array) {
+    resolution->function_qual_type.qualifiers =
+        PSX_TYPE_QUALIFIER_NONE;
+  } else {
+    resolution->function_qual_type.qualifiers &=
+        PSX_TYPE_QUALIFIER_ATOMIC;
+  }
   if (is_incomplete_aggregate) return 1;
 
   int leaf_is_aggregate = derived_leaf_is_aggregate(

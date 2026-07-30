@@ -9566,7 +9566,7 @@ static void test_function_prototype_type_identity_boundary(
       "int __atomic_pointer(int * _Atomic value); "
       "int __atomic_pointer(value) "
       "int * _Atomic value; { return *value; } "
-      "int __atomic_array(int * _Atomic value); "
+      "int __atomic_array(int *value); "
       "int __atomic_array(int value[const _Atomic 1]) "
       "{ return value[0]; } "
       "int __prototype_use(void) { "
@@ -9685,7 +9685,7 @@ static void test_function_prototype_type_identity_boundary(
             test_qual_type_shape(
                 test_suite_session, atomic_pointer_parameter).kind);
   ASSERT_TRUE((atomic_array_parameter.qualifiers &
-               PSX_TYPE_QUALIFIER_ATOMIC) != 0);
+               PSX_TYPE_QUALIFIER_ATOMIC) == 0);
   ASSERT_EQ(PSX_TYPE_POINTER,
             test_qual_type_shape(
                 test_suite_session, atomic_array_parameter).kind);
@@ -9728,7 +9728,7 @@ static void test_function_prototype_type_identity_boundary(
   expect_parse_fail(test_suite_session,
       "int atomic_value(int *value); "
       "int atomic_value(int * _Atomic value);");
-  expect_parse_fail(test_suite_session,
+  expect_parse_ok(test_suite_session,
       "int atomic_value(int *value); "
       "int atomic_value(int value[_Atomic 1]) "
       "{ return value[0]; }");

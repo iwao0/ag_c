@@ -1745,9 +1745,18 @@ typedef struct {
 } link2_case_t;
 
 static const link2_case_t link2_cases[] = {
+    {"probes", "atomic_callback_function_signature_xtu",
+     "test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_main.c",
+     "test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_other.c", 42},
     {"probes", "atomic_function_signature_xtu",
      "test/fixtures/probes_found_bugs/atomic_function_signature_xtu_main.c",
      "test/fixtures/probes_found_bugs/atomic_function_signature_xtu_other.c", 42},
+    {"probes", "atomic_pointer_function_signature_xtu",
+     "test/fixtures/probes_found_bugs/atomic_pointer_function_signature_xtu_main.c",
+     "test/fixtures/probes_found_bugs/atomic_pointer_function_signature_xtu_other.c", 42},
+    {"probes", "atomic_pointer_global_signature_xtu",
+     "test/fixtures/probes_found_bugs/atomic_pointer_global_signature_xtu_main.c",
+     "test/fixtures/probes_found_bugs/atomic_pointer_global_signature_xtu_other.c", 42},
     {"probes", "anonymous_flexible_callback_signature_xtu",
      "test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_main.c",
      "test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_other.c", 42},
@@ -1796,6 +1805,9 @@ static const link2_case_t link2_cases[] = {
     {"probes", "function_parameter_callback_return_function_pointer_xtu",
      "test/fixtures/probes_found_bugs/function_parameter_callback_return_function_pointer_xtu_main.c",
      "test/fixtures/probes_found_bugs/function_parameter_callback_return_function_pointer_xtu_other.c", 42},
+    {"probes", "function_parameter_atomic_array_adjustment_xtu",
+     "test/fixtures/probes_found_bugs/function_parameter_atomic_array_adjustment_xtu_main.c",
+     "test/fixtures/probes_found_bugs/function_parameter_atomic_array_adjustment_xtu_other.c", 42},
     {"probes", "function_parameter_nested_pointer_qualifier_xtu",
      "test/fixtures/probes_found_bugs/function_parameter_nested_pointer_qualifier_xtu_main.c",
      "test/fixtures/probes_found_bugs/function_parameter_nested_pointer_qualifier_xtu_other.c", 42},
@@ -2083,22 +2095,6 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"array_parameter_nested_atomic_rejected",
      "int f(int (*values)[_Atomic 3]); int main(void) { return 0; }",
      "E3064"},
-    {"array_parameter_atomic_pointer_redeclaration_rejected",
-     "int read_value(int *value); "
-     "int read_value(int value[_Atomic 1]) { return value[0]; }",
-     "E3064"},
-    {"old_style_array_parameter_atomic_pointer_redeclaration_rejected",
-     "int read_value(int *value); "
-     "int read_value(value) int value[_Atomic 1]; "
-     "{ return value[0]; }",
-     "E3064"},
-    {"array_parameter_atomic_callback_argument_rejected",
-     "typedef int atomic_callback(int value[_Atomic 1]); "
-     "int apply(atomic_callback *callback, int *value) "
-     "{ return callback(value); } "
-     "int plain(int *value) { return *value; } "
-     "int main(void) { int value = 7; return apply(plain, &value); }",
-     "E3120"},
     {"array_parameter_incomplete_element_rejected",
      "struct incomplete; int f(struct incomplete values[]); int main(void) { return 0; }",
      "E3064"},

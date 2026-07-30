@@ -5,8 +5,8 @@ struct pair {
   int right;
 };
 
-/* A qualifier inside a parameter's [] is applied to the adjusted pointer.
- * _Atomic therefore remains part of this callback's parameter type. */
+/* A qualifier inside a parameter's [] is applied to the adjusted pointer
+ * object. Function compatibility uses the unqualified adjusted type. */
 typedef int atomic_array_callback_t(int values[_Atomic 1]);
 
 static int add_one(int value) {

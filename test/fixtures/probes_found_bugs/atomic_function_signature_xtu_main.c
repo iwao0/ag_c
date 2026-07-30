@@ -1,4 +1,5 @@
-_Atomic(int) transform_atomic_value(_Atomic(int) value);
+_Atomic(int) transform_atomic_value(
+    const volatile _Atomic(int) value);
 
 int main(void) {
   _Atomic(int) value = 40;

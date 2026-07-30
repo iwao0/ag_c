@@ -70,6 +70,8 @@ skip_reason() {
     test/fixtures/probes_found_bugs/function_parameter_callback_return_array_qualifier_xtu_other.c|\
     test/fixtures/probes_found_bugs/function_parameter_callback_return_function_pointer_xtu_main.c|\
     test/fixtures/probes_found_bugs/function_parameter_callback_return_function_pointer_xtu_other.c|\
+    test/fixtures/probes_found_bugs/function_parameter_atomic_array_adjustment_xtu_main.c|\
+    test/fixtures/probes_found_bugs/function_parameter_atomic_array_adjustment_xtu_other.c|\
     test/fixtures/probes_found_bugs/function_parameter_nested_pointer_qualifier_xtu_main.c|\
     test/fixtures/probes_found_bugs/function_parameter_nested_pointer_qualifier_xtu_other.c|\
     test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_main.c|\
@@ -114,8 +116,14 @@ skip_reason() {
     test/fixtures/probes_found_bugs/unprototyped_parameter_categories_xtu_other.c|\
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c|\
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/atomic_function_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/atomic_function_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_pointer_function_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_pointer_function_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_pointer_global_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_pointer_global_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/anonymous_flexible_function_signature_xtu_main.c|\
@@ -180,6 +188,10 @@ skip_reason() {
     test/fixtures/wasm32/function_parameter_array_element_const_qualifier_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_callback_signedness_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_callback_signedness_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_parameter_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_parameter_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_result_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_result_type_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_callback_return_pointee_const_qualifier_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_callback_return_pointee_const_qualifier_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_callback_return_array_bound_mismatch_main.c|\
@@ -194,6 +206,12 @@ skip_reason() {
     test/fixtures/wasm32/function_parameter_nested_pointer_const_qualifier_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_atomic_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_atomic_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointee_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointee_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_array_element_type_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_array_element_type_mismatch_other.c|\
     test/fixtures/wasm32/function_return_atomic_type_mismatch_main.c|\
     test/fixtures/wasm32/function_return_atomic_type_mismatch_other.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_main.c|\
@@ -244,6 +262,10 @@ skip_reason() {
     test/fixtures/wasm32/global_volatile_qualifier_mismatch_other.c|\
     test/fixtures/wasm32/global_atomic_qualifier_mismatch_main.c|\
     test/fixtures/wasm32/global_atomic_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointee_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointee_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointer_type_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointer_type_mismatch_other.c|\
     test/fixtures/wasm32/global_pointee_const_qualifier_mismatch_main.c|\
     test/fixtures/wasm32/global_pointee_const_qualifier_mismatch_other.c|\
     test/fixtures/wasm32/global_restrict_pointer_qualifier_mismatch_main.c|\

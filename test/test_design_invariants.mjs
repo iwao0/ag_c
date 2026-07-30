@@ -178,8 +178,14 @@ const wasmMultiTuProbeFixtures = [
   "anonymous_global_union_signature_xtu_other.c",
   "atomic_aggregate_callback_xtu_main.c",
   "atomic_aggregate_callback_xtu_other.c",
+  "atomic_callback_function_signature_xtu_main.c",
+  "atomic_callback_function_signature_xtu_other.c",
   "atomic_function_signature_xtu_main.c",
   "atomic_function_signature_xtu_other.c",
+  "atomic_pointer_function_signature_xtu_main.c",
+  "atomic_pointer_function_signature_xtu_other.c",
+  "atomic_pointer_global_signature_xtu_main.c",
+  "atomic_pointer_global_signature_xtu_other.c",
   "extern_funcptr_xtu_main.c",
   "extern_funcptr_xtu_other.c",
   "enum_compatible_function_signature_xtu_main.c",
@@ -198,6 +204,8 @@ const wasmMultiTuProbeFixtures = [
   "function_parameter_callback_return_array_qualifier_xtu_other.c",
   "function_parameter_callback_return_function_pointer_xtu_main.c",
   "function_parameter_callback_return_function_pointer_xtu_other.c",
+  "function_parameter_atomic_array_adjustment_xtu_main.c",
+  "function_parameter_atomic_array_adjustment_xtu_other.c",
   "function_parameter_nested_pointer_qualifier_xtu_main.c",
   "function_parameter_nested_pointer_qualifier_xtu_other.c",
   "incomplete_array_bound_signature_xtu_main.c",
@@ -8867,7 +8875,10 @@ if (!/\bpsx_resolve_parameter_declaration\s*\(/.test(
     !/resolution->declaration_qual_type\s*=\s*identity\s*;/.test(
       parameterDeclarationResolutionSource,
     ) ||
-    !/resolution->function_qual_type\s*=\s*identity\s*;[^]*?resolution->function_qual_type\.qualifiers\s*&=\s*PSX_TYPE_QUALIFIER_ATOMIC\s*;/.test(
+    !/int\s+was_adjusted_from_array\s*=\s*shape\.kind\s*==\s*PSX_TYPE_ARRAY\s*;/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/resolution->function_qual_type\s*=\s*identity\s*;[^]*?if\s*\(was_adjusted_from_array\)\s*\{[^]*?resolution->function_qual_type\.qualifiers\s*=\s*PSX_TYPE_QUALIFIER_NONE\s*;[^]*?\}\s*else\s*\{[^]*?resolution->function_qual_type\.qualifiers\s*&=\s*PSX_TYPE_QUALIFIER_ATOMIC\s*;/.test(
       parameterDeclarationResolutionSource,
     ) ||
     !/function_parameter_qual_type\.qualifiers\s*&=\s*PSX_TYPE_QUALIFIER_ATOMIC\s*;/.test(
@@ -8880,7 +8891,7 @@ if (!/\bpsx_resolve_parameter_declaration\s*\(/.test(
       declarationApplicationSource,
     )) {
   throw new Error(
-    "prototype and definition parameter types must share canonical adjustment while preserving definition-object and atomic function-type qualifiers",
+    "prototype and definition parameter types must share canonical adjustment while preserving definition-object qualifiers, direct atomic types, and unqualified array-adjusted function parameters",
   );
 }
 if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
@@ -13433,14 +13444,28 @@ const crossTuSignatureMismatchFixtures = [
   "function_parameter_callback_return_function_parameter_signedness_mismatch_other.c",
   "function_parameter_callback_return_function_result_signedness_mismatch_main.c",
   "function_parameter_callback_return_function_result_signedness_mismatch_other.c",
+  "function_parameter_callback_atomic_parameter_type_mismatch_main.c",
+  "function_parameter_callback_atomic_parameter_type_mismatch_other.c",
+  "function_parameter_callback_atomic_result_type_mismatch_main.c",
+  "function_parameter_callback_atomic_result_type_mismatch_other.c",
   "function_parameter_nested_pointer_const_qualifier_mismatch_main.c",
   "function_parameter_nested_pointer_const_qualifier_mismatch_other.c",
   "function_parameter_atomic_type_mismatch_main.c",
   "function_parameter_atomic_type_mismatch_other.c",
+  "function_parameter_atomic_pointee_type_mismatch_main.c",
+  "function_parameter_atomic_pointee_type_mismatch_other.c",
+  "function_parameter_atomic_pointer_type_mismatch_main.c",
+  "function_parameter_atomic_pointer_type_mismatch_other.c",
+  "function_parameter_atomic_array_element_type_mismatch_main.c",
+  "function_parameter_atomic_array_element_type_mismatch_other.c",
   "function_return_atomic_type_mismatch_main.c",
   "function_return_atomic_type_mismatch_other.c",
   "global_atomic_qualifier_mismatch_main.c",
   "global_atomic_qualifier_mismatch_other.c",
+  "global_atomic_pointee_type_mismatch_main.c",
+  "global_atomic_pointee_type_mismatch_other.c",
+  "global_atomic_pointer_type_mismatch_main.c",
+  "global_atomic_pointer_type_mismatch_other.c",
   "global_pointee_const_qualifier_mismatch_main.c",
   "global_pointee_const_qualifier_mismatch_other.c",
   "global_restrict_pointer_qualifier_mismatch_main.c",
