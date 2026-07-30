@@ -140,6 +140,12 @@ const wasmMultiTuProbeFixtures = [
   "packed_indirect_record_signature_xtu_other.c",
   "packed_pointer_record_signature_xtu_main.c",
   "packed_pointer_record_signature_xtu_other.c",
+  "packed_callback_record_signature_xtu_main.c",
+  "packed_callback_record_signature_xtu_other.c",
+  "packed_global_record_signature_xtu_main.c",
+  "packed_global_record_signature_xtu_other.c",
+  "incomplete_callback_record_signature_xtu_main.c",
+  "incomplete_callback_record_signature_xtu_other.c",
   "record_member_alignment_signature_xtu_main.c",
   "record_member_alignment_signature_xtu_other.c",
   "union_member_order_signature_xtu_main.c",
@@ -13163,6 +13169,12 @@ if (!/\bchar\s*\*\s*layout_signature\s*;/.test(abiLoweringHeader) ||
     !/pointee_shape\.kind\s*==\s*PSX_TYPE_STRUCT/.test(
       abiLoweringSource,
     ) ||
+    !/pointee_shape\.kind\s*==\s*PSX_TYPE_FUNCTION/.test(
+      abiLoweringSource,
+    ) ||
+    !/shape\.kind\s*==\s*PSX_TYPE_FUNCTION[^]*?abi_layout_write_literal\s*\(\s*writer\s*,\s*"c"\s*\)/.test(
+      abiLoweringSource,
+    ) ||
     !/abi_layout_write_literal\s*\(\s*writer\s*,\s*"\?"\s*\)/.test(
       abiLoweringSource,
     ) ||
@@ -13172,18 +13184,32 @@ if (!/\bchar\s*\*\s*layout_signature\s*;/.test(abiLoweringHeader) ||
     !/copy_abi_layout_signature\s*\(/.test(wasmMachineAbiSource) ||
     !/emit_abi_layout_section\s*\(/.test(wasmObjectSectionsSource) ||
     !/agc\.abi_layout/.test(wasmObjectSectionsSource) ||
-    !/emit_abi_layout_section[^]*?wb_uleb\s*\(\s*&payload\s*,\s*2\s*\)/.test(
+    !/emit_abi_layout_section[^]*?wb_uleb\s*\(\s*&payload\s*,\s*3\s*\)/.test(
       wasmObjectSectionsSource,
     ) ||
     !/parse_abi_layout_section\s*\(/.test(runtimeLinkerSource) ||
-    !/version\s*!=\s*1\s*&&\s*version\s*!=\s*2/.test(
+    !/version\s*!=\s*1\s*&&\s*version\s*!=\s*2\s*&&\s*version\s*!=\s*3/.test(
       runtimeLinkerSource,
     ) ||
     !/left_version\s*!=\s*right_version/.test(runtimeLinkerSource) ||
     !/abi_layout_types_compatible\s*\(/.test(runtimeLinkerSource) ||
+    !/abi_layout_parameter_lists_compatible\s*\(/.test(
+      runtimeLinkerSource,
+    ) ||
     !/abi_layout_signatures_compatible\s*\(/.test(
       runtimeLinkerSource,
-    )) {
+    ) ||
+    !/emit_data_signature_section\s*\(/.test(
+      wasmObjectSectionsSource,
+    ) ||
+    !/agc\.data_signature/.test(wasmObjectSectionsSource) ||
+    !/parse_data_signature_section\s*\(/.test(runtimeLinkerSource) ||
+    !/data_signatures_compatible\s*\(/.test(runtimeLinkerSource) ||
+    !/!is_runtime_data_symbol\s*\(\s*sym->name\s*\)/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/data signature mismatch: %s/.test(runtimeLinkerSource)
+  ) {
   throw new Error(
     "Wasm objects must preserve a target ABI aggregate-layout fingerprint separately from canonical C type signatures",
   );
@@ -13213,6 +13239,16 @@ const crossTuSignatureMismatchFixtures = [
   "nested_pointer_record_layout_signature_mismatch_other.c",
   "incomplete_pointer_sibling_layout_mismatch_main.c",
   "incomplete_pointer_sibling_layout_mismatch_other.c",
+  "callback_pointer_record_layout_signature_mismatch_main.c",
+  "callback_pointer_record_layout_signature_mismatch_other.c",
+  "callback_return_record_layout_signature_mismatch_main.c",
+  "callback_return_record_layout_signature_mismatch_other.c",
+  "incomplete_callback_sibling_layout_mismatch_main.c",
+  "incomplete_callback_sibling_layout_mismatch_other.c",
+  "global_record_layout_signature_mismatch_main.c",
+  "global_record_layout_signature_mismatch_other.c",
+  "global_scalar_type_signature_mismatch_main.c",
+  "global_scalar_type_signature_mismatch_other.c",
   "struct_member_order_signature_mismatch_main.c",
   "struct_member_order_signature_mismatch_other.c",
   "union_member_type_signature_mismatch_main.c",

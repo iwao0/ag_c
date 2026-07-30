@@ -121,6 +121,12 @@ typedef struct {
 
 typedef struct {
   str_t name;
+  str_t c_signature;
+  str_t layout_signature;
+} data_signature_t;
+
+typedef struct {
+  str_t name;
   uint32_t flags;
 } function_flags_t;
 
@@ -153,6 +159,11 @@ typedef struct {
   int abi_layout_signature_cap;
   int has_abi_layout_section;
   uint32_t abi_layout_version;
+  data_signature_t *data_signatures;
+  int data_signature_count;
+  int data_signature_cap;
+  int has_data_signature_section;
+  uint32_t data_layout_version;
   function_flags_t *function_flags;
   int function_flag_count;
   int function_flag_cap;
@@ -693,7 +704,7 @@ static void parse_abi_layout_section(object_t *o, rd_t sec) {
   if (o->has_abi_layout_section)
     die("duplicate agc.abi_layout section");
   uint32_t version = rd_uleb(&sec);
-  if (version != 1 && version != 2)
+  if (version != 1 && version != 2 && version != 3)
     die("unsupported agc.abi_layout version");
   uint32_t count = rd_uleb(&sec);
   for (uint32_t i = 0; i < count; i++) {
@@ -721,6 +732,44 @@ static void parse_abi_layout_section(object_t *o, rd_t sec) {
     die("trailing bytes in agc.abi_layout section");
   o->has_abi_layout_section = 1;
   o->abi_layout_version = version;
+}
+
+static void parse_data_signature_section(object_t *o, rd_t sec) {
+  if (o->has_data_signature_section)
+    die("duplicate agc.data_signature section");
+  uint32_t version = rd_uleb(&sec);
+  if (version != 1)
+    die("unsupported agc.data_signature version");
+  uint32_t layout_version = rd_uleb(&sec);
+  if (layout_version != 3)
+    die("unsupported agc.data_signature layout version");
+  uint32_t count = rd_uleb(&sec);
+  for (uint32_t index = 0; index < count; index++) {
+    data_signature_t entry = {
+        rd_str_dup(&sec), rd_str_dup(&sec),
+        rd_str_dup(&sec)};
+    if (str_empty(entry.name) ||
+        str_empty(entry.c_signature) ||
+        str_empty(entry.layout_signature))
+      die("invalid agc.data_signature entry");
+    for (int previous = 0;
+         previous < o->data_signature_count; previous++) {
+      if (str_eq(
+              o->data_signatures[previous].name,
+              entry.name))
+        dief(
+            "duplicate data signature metadata: %s",
+            entry.name.s);
+    }
+    PUSH(
+        o->data_signatures,
+        o->data_signature_count,
+        o->data_signature_cap, entry);
+  }
+  if (sec.pos != sec.len)
+    die("trailing bytes in agc.data_signature section");
+  o->has_data_signature_section = 1;
+  o->data_layout_version = layout_version;
 }
 
 static void parse_function_flags_section(object_t *o, rd_t sec) {
@@ -802,6 +851,27 @@ static void validate_abi_layout_metadata(const object_t *o) {
   }
 }
 
+static void validate_data_signature_metadata(const object_t *o) {
+  for (int signature_index = 0;
+       signature_index < o->data_signature_count;
+       signature_index++) {
+    str_t name = o->data_signatures[signature_index].name;
+    int has_data_symbol = 0;
+    for (int symbol_index = 0;
+         symbol_index < o->symbol_count; symbol_index++) {
+      const symbol_t *symbol = &o->symbols[symbol_index];
+      if (symbol->kind == SYM_DATA &&
+          !(symbol->flags & SYM_BINDING_LOCAL) &&
+          str_eq(symbol->name, name)) {
+        has_data_symbol = 1;
+        break;
+      }
+    }
+    if (!has_data_symbol)
+      dief("orphan data signature metadata: %s", name.s);
+  }
+}
+
 static void parse_continuation_section(object_t *o, rd_t sec) {
   if (o->has_continuation) die("duplicate agc.continuation section");
   uint32_t version = rd_uleb(&sec);
@@ -861,6 +931,9 @@ static object_t parse_object_bytes(const char *path, const unsigned char *file, 
       } else if (name.len == 14 &&
                  memcmp(name.s, "agc.abi_layout", 14) == 0) {
         parse_abi_layout_section(&o, sec);
+      } else if (name.len == 18 &&
+                 memcmp(name.s, "agc.data_signature", 18) == 0) {
+        parse_data_signature_section(&o, sec);
       } else if (name.len == 18 && memcmp(name.s, "agc.function_flags", 18) == 0) {
         parse_function_flags_section(&o, sec);
       } else if (name.len == 16 && memcmp(name.s, "agc.continuation", 16) == 0) {
@@ -870,6 +943,7 @@ static object_t parse_object_bytes(const char *path, const unsigned char *file, 
   }
   validate_function_flags_metadata(&o);
   validate_abi_layout_metadata(&o);
+  validate_data_signature_metadata(&o);
   return o;
 }
 
@@ -908,6 +982,8 @@ static unsigned char wasm_type_result_valtype(const type_t *t);
 static const c_signature_t *find_c_signature(
     const object_t *obj, str_t name);
 static const c_signature_t *find_abi_layout_signature(
+    const object_t *obj, str_t name);
+static const data_signature_t *find_data_signature(
     const object_t *obj, str_t name);
 
 static uint32_t find_function_flags(
@@ -1613,6 +1689,12 @@ static int abi_layout_array_bound_compatible(
           left_bound == 0 || right_bound == 0);
 }
 
+static int abi_layout_skip_parameter_list(
+    str_t signature, int *offset);
+static int abi_layout_parameter_lists_compatible(
+    str_t left, int *left_offset,
+    str_t right, int *right_offset);
+
 static int abi_layout_skip_type(
     str_t signature, int *offset) {
   if (!offset || *offset < 0 ||
@@ -1621,6 +1703,13 @@ static int abi_layout_skip_type(
   char kind = signature.s[(*offset)++];
   if (kind == '?' || kind == 'v' || kind == 'r')
     return 1;
+  if (kind == 'c') {
+    return abi_layout_skip_type(signature, offset) &&
+           *offset < signature.len &&
+           signature.s[(*offset)++] == '(' &&
+           abi_layout_skip_parameter_list(
+               signature, offset);
+  }
   uint32_t ignored = 0;
   if (kind == 'x' || kind == 'f') {
     return canonical_decimal(
@@ -1720,6 +1809,18 @@ static int abi_layout_types_compatible(
   char kind = left.s[(*left_offset)++];
   if (kind != right.s[(*right_offset)++]) return 0;
   if (kind == 'v' || kind == 'r') return 1;
+  if (kind == 'c') {
+    return abi_layout_types_compatible(
+               left, left_offset,
+               right, right_offset) &&
+           *left_offset < left.len &&
+           *right_offset < right.len &&
+           left.s[(*left_offset)++] == '(' &&
+           right.s[(*right_offset)++] == '(' &&
+           abi_layout_parameter_lists_compatible(
+               left, left_offset,
+               right, right_offset);
+  }
   if (kind == 'x' || kind == 'f') {
     return abi_layout_decimal_equal(
                left, left_offset,
@@ -1892,6 +1993,61 @@ static int abi_layout_skip_parameter_list(
   }
 }
 
+static int abi_layout_parameter_lists_compatible(
+    str_t left, int *left_offset,
+    str_t right, int *right_offset) {
+  if (!left_offset || !right_offset ||
+      *left_offset < 0 || *right_offset < 0)
+    return 0;
+  if (abi_layout_whole_parameter_wildcard(
+          left, *left_offset)) {
+    *left_offset += 2;
+    return abi_layout_skip_parameter_list(
+        right, right_offset);
+  }
+  if (abi_layout_whole_parameter_wildcard(
+          right, *right_offset)) {
+    *right_offset += 2;
+    return abi_layout_skip_parameter_list(
+        left, left_offset);
+  }
+  for (;;) {
+    if (*left_offset >= left.len ||
+        *right_offset >= right.len)
+      return 0;
+    if (left.s[*left_offset] == ')' ||
+        right.s[*right_offset] == ')') {
+      if (left.s[(*left_offset)++] != ')' ||
+          right.s[(*right_offset)++] != ')')
+        return 0;
+      return 1;
+    }
+    int left_ellipsis =
+        abi_layout_at_ellipsis(left, *left_offset);
+    int right_ellipsis =
+        abi_layout_at_ellipsis(right, *right_offset);
+    if (left_ellipsis || right_ellipsis) {
+      if (left_ellipsis != right_ellipsis) return 0;
+      *left_offset += 3;
+      *right_offset += 3;
+    } else if (!abi_layout_types_compatible(
+                   left, left_offset,
+                   right, right_offset)) {
+      return 0;
+    }
+    if (*left_offset >= left.len ||
+        *right_offset >= right.len)
+      return 0;
+    char left_delimiter = left.s[(*left_offset)++];
+    char right_delimiter = right.s[(*right_offset)++];
+    if (left_delimiter != right_delimiter ||
+        (left_delimiter != ',' &&
+         left_delimiter != ')'))
+      return 0;
+    if (left_delimiter == ')') return 1;
+  }
+}
+
 static int abi_layout_signatures_compatible(
     const c_signature_t *left_entry,
     uint32_t left_version,
@@ -1915,60 +2071,36 @@ static int abi_layout_signatures_compatible(
       left.s[left_offset++] != '(' ||
       right.s[right_offset++] != '(')
     return 0;
-  if (abi_layout_whole_parameter_wildcard(
-          left, left_offset)) {
-    left_offset += 2;
-    return left_offset == left.len &&
-           abi_layout_skip_parameter_list(
-               right, &right_offset) &&
-           right_offset == right.len;
-  }
-  if (abi_layout_whole_parameter_wildcard(
-          right, right_offset)) {
-    right_offset += 2;
-    return right_offset == right.len &&
-           abi_layout_skip_parameter_list(
-               left, &left_offset) &&
-           left_offset == left.len;
-  }
-  for (;;) {
-    if (left_offset >= left.len ||
-        right_offset >= right.len)
-      return 0;
-    if (left.s[left_offset] == ')' ||
-        right.s[right_offset] == ')') {
-      if (left.s[left_offset++] != ')' ||
-          right.s[right_offset++] != ')')
-        return 0;
-      return left_offset == left.len &&
-             right_offset == right.len;
-    }
-    int left_ellipsis =
-        abi_layout_at_ellipsis(left, left_offset);
-    int right_ellipsis =
-        abi_layout_at_ellipsis(right, right_offset);
-    if (left_ellipsis || right_ellipsis) {
-      if (left_ellipsis != right_ellipsis) return 0;
-      left_offset += 3;
-      right_offset += 3;
-    } else if (!abi_layout_types_compatible(
-                   left, &left_offset,
-                   right, &right_offset)) {
-      return 0;
-    }
-    if (left_offset >= left.len ||
-        right_offset >= right.len)
-      return 0;
-    char left_delimiter = left.s[left_offset++];
-    char right_delimiter = right.s[right_offset++];
-    if (left_delimiter != right_delimiter ||
-        (left_delimiter != ',' &&
-         left_delimiter != ')'))
-      return 0;
-    if (left_delimiter == ')')
-      return left_offset == left.len &&
-             right_offset == right.len;
-  }
+  return abi_layout_parameter_lists_compatible(
+             left, &left_offset,
+             right, &right_offset) &&
+         left_offset == left.len &&
+         right_offset == right.len;
+}
+
+static int data_signatures_compatible(
+    const data_signature_t *left_entry,
+    uint32_t left_layout_version,
+    const data_signature_t *right_entry,
+    uint32_t right_layout_version) {
+  if (!left_entry || !right_entry) return 1;
+  if (!canonical_type_signatures_compatible(
+          left_entry->c_signature,
+          right_entry->c_signature))
+    return 0;
+  if (str_eq(
+          left_entry->layout_signature,
+          right_entry->layout_signature))
+    return 1;
+  if (left_layout_version != right_layout_version)
+    return 1;
+  int left_offset = 0;
+  int right_offset = 0;
+  return abi_layout_types_compatible(
+             left_entry->layout_signature, &left_offset,
+             right_entry->layout_signature, &right_offset) &&
+         left_offset == left_entry->layout_signature.len &&
+         right_offset == right_entry->layout_signature.len;
 }
 
 static int func_signature_matches(object_t *ref_obj, int ref_func,
@@ -4220,6 +4352,16 @@ static uint32_t final_data_addr_for_symbol(object_t *objs, int obj_count, object
     if (!find_defined_data(objs, obj_count, sym->name, &def_obj, &data_index, &symbol_offset)) {
       dief("unresolved data symbol: %s", sym->name.s);
     }
+    const data_signature_t *reference =
+        find_data_signature(cur, sym->name);
+    const data_signature_t *definition =
+        find_data_signature(def_obj, sym->name);
+    if (symbol_offset == 0 &&
+        !is_runtime_data_symbol(sym->name) &&
+        !data_signatures_compatible(
+            reference, cur->data_layout_version,
+            definition, def_obj->data_layout_version))
+      dief("data signature mismatch: %s", sym->name.s);
   }
   if (data_index < 0 || data_index >= def_obj->data_count || !def_obj->data[data_index].defined) {
     dief("bad data symbol: %s", sym->name.s);
@@ -4387,6 +4529,16 @@ static const c_signature_t *find_abi_layout_signature(
     if (str_eq(
             obj->abi_layout_signatures[index].name, name))
       return &obj->abi_layout_signatures[index];
+  }
+  return NULL;
+}
+
+static const data_signature_t *find_data_signature(
+    const object_t *obj, str_t name) {
+  for (int index = 0;
+       index < obj->data_signature_count; index++) {
+    if (str_eq(obj->data_signatures[index].name, name))
+      return &obj->data_signatures[index];
   }
   return NULL;
 }

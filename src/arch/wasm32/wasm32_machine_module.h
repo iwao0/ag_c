@@ -55,12 +55,16 @@ typedef struct {
 
 struct wasm32_machine_data_object_t {
   char *name;
+  char *c_signature;
+  char *abi_layout_signature;
   unsigned char *bytes;
   wasm32_machine_data_reloc_t *relocations;
   int name_len;
   int byte_size;
   int alignment;
   int element_size;
+  int c_signature_len;
+  int abi_layout_signature_len;
   int relocation_count;
   wasm32_machine_data_object_kind_t kind;
   unsigned char is_extern;

@@ -62,6 +62,8 @@ static void dispose_data_object(
     wasm32_machine_data_object_t *object) {
   if (!object) return;
   free(object->name);
+  free(object->c_signature);
+  free(object->abi_layout_signature);
   free(object->bytes);
   for (int i = 0; i < object->relocation_count; i++) {
     free(object->relocations[i].target);
@@ -121,6 +123,24 @@ static int copy_data_object(
   if (!copy_name(
           &destination->name, source->name, source->name_len))
     return 0;
+  const ir_abi_data_object_t *signature =
+      ir_abi_data_object_signature(data_abi, source);
+  if (source->kind == IR_DATA_OBJECT) {
+    if (!signature) return 0;
+    destination->c_signature_len =
+        signature->c_signature_len;
+    destination->abi_layout_signature_len =
+        signature->layout_signature_len;
+    if (!copy_name(
+            &destination->c_signature,
+            signature->c_signature,
+            signature->c_signature_len) ||
+        !copy_name(
+            &destination->abi_layout_signature,
+            signature->layout_signature,
+            signature->layout_signature_len))
+      return 0;
+  }
   if (source->bytes && source->byte_size > 0) {
     destination->bytes = malloc((size_t)source->byte_size);
     if (!destination->bytes) return 0;

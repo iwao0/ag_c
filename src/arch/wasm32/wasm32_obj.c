@@ -22,6 +22,8 @@ static void wasm32_obj_clear_module(obj_ctx_t *obj) {
   }
   for (int i = 0; i < obj->data_count; i++) {
     free(obj->data[i].name);
+    free(obj->data[i].c_signature);
+    free(obj->data[i].abi_layout_signature);
     free(obj->data[i].bytes.data);
     free(obj->data[i].relocs);
   }
@@ -2736,12 +2738,49 @@ static obj_data_t *intern_lowered_data_object(
     const wasm32_machine_data_object_t *object) {
   if (!object || object->kind == WASM32_MACHINE_DATA_FLOAT) return NULL;
   int is_string = object->kind == WASM32_MACHINE_DATA_STRING;
-  return intern_data(
+  obj_data_t *data = intern_data(
       context,
       object->name, object->name_len,
       align_log2_for_size(object->alignment),
       is_string ? 1 : object->is_static,
       is_string ? 0 : object->is_extern);
+  if (!data || is_string) return data;
+  if (!object->c_signature ||
+      object->c_signature_len <= 0 ||
+      !object->abi_layout_signature ||
+      object->abi_layout_signature_len <= 0)
+    obj_unsupported_msg(
+        context, "missing lowered data type signature");
+  if (!data->c_signature) {
+    data->c_signature = dup_name(
+        context->diagnostic_context,
+        object->c_signature, object->c_signature_len);
+    data->c_signature_len = object->c_signature_len;
+  } else if (data->c_signature_len !=
+                 object->c_signature_len ||
+             memcmp(
+                 data->c_signature, object->c_signature,
+                 (size_t)object->c_signature_len) != 0) {
+    obj_unsupported_msg(
+        context, "conflicting Wasm object data C signature");
+  }
+  if (!data->abi_layout_signature) {
+    data->abi_layout_signature = dup_name(
+        context->diagnostic_context,
+        object->abi_layout_signature,
+        object->abi_layout_signature_len);
+    data->abi_layout_signature_len =
+        object->abi_layout_signature_len;
+  } else if (data->abi_layout_signature_len !=
+                 object->abi_layout_signature_len ||
+             memcmp(
+                 data->abi_layout_signature,
+                 object->abi_layout_signature,
+                 (size_t)object->abi_layout_signature_len) != 0) {
+    obj_unsupported_msg(
+        context, "conflicting Wasm object data ABI layout signature");
+  }
+  return data;
 }
 
 static void emit_obj_data_reloc(

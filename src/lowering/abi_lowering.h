@@ -93,7 +93,17 @@ typedef struct {
   ir_abi_signature_t signature;
 } ir_abi_data_relocation_t;
 
+typedef struct {
+  const ir_data_object_t *object;
+  char *c_signature;
+  char *layout_signature;
+  int c_signature_len;
+  int layout_signature_len;
+} ir_abi_data_object_t;
+
 typedef struct ir_abi_data_module_t {
+  ir_abi_data_object_t *objects;
+  size_t object_count;
   ir_abi_data_relocation_t *relocations;
   size_t relocation_count;
 } ir_abi_data_module_t;
@@ -134,5 +144,8 @@ void ir_abi_data_module_free(ir_abi_data_module_t *module);
 const ir_abi_signature_t *ir_abi_data_relocation_signature(
     const ir_abi_data_module_t *module,
     const ir_data_reloc_t *relocation);
+const ir_abi_data_object_t *ir_abi_data_object_signature(
+    const ir_abi_data_module_t *module,
+    const ir_data_object_t *object);
 
 #endif

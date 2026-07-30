@@ -408,6 +408,8 @@ static void lower_global_object(global_var_t *global, void *user) {
   }
   object->byte_size = storage_size;
   object->alignment = alignment;
+  object->qual_type = qual_type;
+  object->has_qual_type = 1;
   object->is_extern = is_extern;
   object->is_static = ps_gvar_is_static_storage(global) ? 1 : 0;
   object->is_thread_local = ps_gvar_is_thread_local(global) ? 1 : 0;

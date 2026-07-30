@@ -72,6 +72,18 @@ const ir_abi_signature_t *ir_abi_data_relocation_signature(
              ? fixture->relocation_abi : NULL;
 }
 
+const ir_abi_data_object_t *ir_abi_data_object_signature(
+    const ir_abi_data_module_t *module,
+    const ir_data_object_t *object) {
+  if (!module || !object) return NULL;
+  for (size_t index = 0;
+       index < module->object_count; index++) {
+    if (module->objects[index].object == object)
+      return &module->objects[index];
+  }
+  return NULL;
+}
+
 typedef struct {
   ir_op_t source_op;
   ir_type_t operand_type;
@@ -1140,7 +1152,29 @@ int main(void) {
       .objects = &target_object,
       .objects_tail = &holder_object,
   };
+  ir_abi_data_object_t data_object_signatures[] = {
+      {
+          .object = &target_object,
+          .c_signature = "i32",
+          .layout_signature = "x4:4",
+          .c_signature_len = 3,
+          .layout_signature_len = 4,
+      },
+      {
+          .object = &holder_object,
+          .c_signature = "a8<u8>",
+          .layout_signature = "a8<x1:1>",
+          .c_signature_len = 6,
+          .layout_signature_len = 8,
+      },
+  };
   fixture_abi_data_module_t fake_data_abi = {
+      .module = {
+          .objects = data_object_signatures,
+          .object_count =
+              sizeof(data_object_signatures) /
+              sizeof(data_object_signatures[0]),
+      },
       .relocation = &function_data_relocation,
       .relocation_abi = &reference_abi,
   };

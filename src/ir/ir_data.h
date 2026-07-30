@@ -36,7 +36,9 @@ typedef struct ir_data_object_t {
   int byte_size;
   int alignment;
   int element_size;
+  psx_qual_type_t qual_type;
   ir_data_object_kind_t kind;
+  unsigned char has_qual_type;
   unsigned char is_extern;
   unsigned char is_static;
   unsigned char is_thread_local;

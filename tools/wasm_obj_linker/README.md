@@ -105,17 +105,27 @@ Within one object, an earlier function-reference signature containing an
 incomplete array bound or record is refined to the more complete signature
 when its compatible definition becomes available.
 
-The separate version 2 `agc.abi_layout` section records the target ABI layout
+The separate version 3 `agc.abi_layout` section records the target ABI layout
 used for each function result and parameter. Its recursive fingerprint
 includes aggregate size, alignment, member offsets, bit offsets, nested member
-layouts, and complete aggregate layouts reachable through pointers. Recursive
-record pointers use a cycle marker, while an incomplete pointee uses a
-type-local wildcard so known result and parameter layouts remain checked.
+layouts, complete aggregate layouts reachable through pointers, and the
+result/parameter layouts of pointed-to callback types. Recursive record
+pointers use a cycle marker, while an incomplete pointee uses a type-local
+wildcard so known result and parameter layouts remain checked.
 This catches cross-object `#pragma pack` differences both for large aggregates
 passed indirectly by the ABI and for aggregates dereferenced through
-pointers. Union member fingerprints are compared independently of declaration
-order. Version 1 and objects without this section remain linkable for backward
-compatibility.
+pointers or passed through callbacks. Union member fingerprints are compared
+independently of declaration order. Versions 1 and 2 and objects without this
+section remain linkable for backward compatibility.
+
+The version 1 `agc.data_signature` section records both the canonical C type
+and version 3 target layout fingerprint of each externally visible data
+symbol. When both the reference and definition provide this metadata, the
+linker rejects incompatible scalar types and aggregate layout differences
+before applying memory relocations. Subobject symbols with a non-zero segment
+offset and manifest-declared runtime data bridges are excluded because their
+symbol-level type intentionally differs from the owning storage object.
+Objects without this section remain linkable for backward compatibility.
 
 ## Usage
 

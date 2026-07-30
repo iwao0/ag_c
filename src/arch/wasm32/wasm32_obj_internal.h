@@ -88,7 +88,11 @@ typedef struct {
 
 typedef struct {
   char *name;
+  char *c_signature;
+  char *abi_layout_signature;
   int name_len;
+  int c_signature_len;
+  int abi_layout_signature_len;
   wb_t bytes;
   size_t alloc_size;
   int align;
