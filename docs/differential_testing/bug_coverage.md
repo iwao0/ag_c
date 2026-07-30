@@ -4,7 +4,7 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 炙り出した miscompile / コンパイルエラーの **チェック済み領域** を管理する。同じ領域を
 何度も探さないための索引。
 
-最終更新: 2026-07-30（cross-TU aggregate ABIとruntime mixed-width通常算術変換まで）
+最終更新: 2026-07-30（runtime整数のmixed rank通常算術変換まで）
 
 ## 凡例（状態）
 - ✅ **済**: チェック済みで現状 green（差分なし）。
@@ -42,11 +42,12 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 | Wasm object の global signed sub-int scalar/array data | 🔧 | test_wasm32_object: global_signed_data | file-scope `signed char` / `short` scalar と配列初期化の object bytes と、参照時の `i32.load8_s` / `i32.load16_s` を固定 |
 | `unsigned long`/`unsigned char` 戻りの符号性追跡 | ✅ | unsigned_long_return_signedness | 旧 ⚠️。再検証で shift/divide/比較いずれも clang 一致＝再現せず。回帰 fixture 化 |
 | 混在幅比較（片側 i32・片側 i64） | ✅ | mixed_width_comparison | 旧 ⚠️。混在は 64bit で sign/zero-extend して比較され正しい（miscompile でない）。回帰 fixture 化 |
-| **runtime負値式のmixed-width通常算術変換** `long long x=-12; x==-9-runtime_int` | 🔧 | mixed_width_negative_runtime_conversion, aggregate_value_abi_xtu_boundaries | binary loweringが左右の値を通常算術変換後の共通型へ明示変換せず、ARM64でruntime `i32`演算結果をW-registerに置いたまま`i64` operandと演算・比較していた。負の`i32`は上位32bitがzeroになり、同じbit patternの正の`4294967284LL`として扱われる。TypeShapeとDataLayoutから共通整数型をMIRで一度だけ分類し、非shiftの加減乗算・bitwise・等価/関係比較前にsignedはSEXT、unsignedはZEXT、縮小時はTRUNCする。左右順序、全比較、算術・bitwise、runtime式の単一評価、cross-TU large aggregate member検査をClang strictおよびnative/WAT/objectで固定する |
+| **runtime負値式のmixed-width通常算術変換** `long long x=-12; x==-9-runtime_int` | 🔧 | mixed_width_negative_runtime_conversion, aggregate_value_abi_xtu_boundaries | binary loweringが左右の値を通常算術変換後の共通型へ明示変換せず、ARM64でruntime `i32`演算結果をW-registerに置いたまま`i64` operandと演算・比較していた。負の`i32`は上位32bitがzeroになり、同じbit patternの正の`4294967284LL`として扱われる。TypeShapeとDataLayoutから共通整数型をMIRで一度だけ分類し、非shiftの加減乗算・bitwise・等価/関係比較前にsignedはSEXT、unsignedはZEXT、縮小時はTRUNCする。左右順序、全比較・四則演算・剰余・bitwise、runtime式の単一評価、cross-TU large aggregate member検査をClang strictおよびnative/WAT/objectで固定する |
+| **同一IR幅でrankとsignednessが競合するruntime通常算術変換** `long long -7 + unsigned long 3` | 🧪 | mixed_rank_runtime_arithmetic_boundaries | `long + unsigned int`は全値を表現できるsigned long、同じ64-bitの`long long + unsigned long`はunsigned long long、`int + unsigned long`はunsigned longになるrank規則を型とruntime値の両方で固定する。左右順序、加減乗除・剰余・bitwise・比較、compound assignmentの演算後格納変換、関数呼出しoperandの単一評価をClangおよびnative/WAT/objectで照合する |
 | 複合代入の sub-int / unsigned wrap | ✅ | integer_runtime_arithmetic_boundaries | unsigned char/short の代入後変換と wrap を local・配列・member・pointer dereference で固定 |
 | 連鎖代入 `b=a=E` の sub-int lvalue 経由の値変換 | 🔧 | chained_assign_narrow_lvalue | 代入式の値が lvalue 型へ変換されず、`b=a=300`(a=uchar) で b が 300 のまま。格納後に再ロードして返す (lvar/gvar/deref/member) |
 | 三項 `c?int:char` の sub-int 分岐の値 | 🔧 | ternary_subint_branch | char 分岐を 4 バイト slot に strb で書き上位 garbage→merge ldrsw が誤値。結果型へ retag して full-width store (signed/unsigned 双方正しい) |
-| シフト境界・unsigned/signed 右シフト | ✅ | integer_runtime_arithmetic_boundaries | 32/64-bit最上位bit、符号なし論理右shift、targetの符号付き算術右shift、sub-int整数昇格、動的shift countをnative/Wasmで固定 |
+| シフト境界・左右独立の整数昇格・unsigned/signed 右シフト | ✅ | integer_runtime_arithmetic_boundaries, shift_integer_promotion_runtime_boundaries | 32/64-bit最上位bit、符号なし論理右shift、targetの符号付き算術右shift、sub-int/bit-field/_Boolの整数昇格、左辺と異なる幅・signednessの動的shift count、結果型がpromoted leftだけで決まること、複合代入の格納時変換、operandの単一評価をClang strictおよびnative/WAT/objectで固定 |
 | **シフト結果型 = promoted left operand** `((unsigned)1 << (long)1)` | 🔧 | shift_left_operand_type | C11 6.5.7p3。結果型を左右最大幅にしていたため右辺 `long` で結果が 64bit 化し c-testsuite 00200 が不一致。ND_SHL/ND_SHR の型幅・unsigned 伝播・IR result_ty を promoted 左辺基準へ。併せて `(long)1` / `(unsigned long)1` の cast 結果幅を保持し `sizeof((long)1)==8` を固定 |
 | **符号なし整数定数式の整数昇格・通常の算術変換** `~0u >> 1`, `UINT_MAX > -1`, `1u / -1`, `1ULL << 63` | 🔧 | unsigned_integer_constant_expressions / unsigned_long_long_constant_boundaries / compile_fail: switch_duplicate_case_unsigned_{shift,comparison} | Syntax定数評価と静的HIR初期化評価が生の `long long` 演算を使い、unsigned右シフト、mixed signed/unsigned比較・除算・剰余を誤評価していた。各Syntax式のcanonical `QualType`をresolver内に保持し、`TypeShape + DataLayout`による整数昇格・通常の算術変換・結果型正規化へ統一。32/64-bitの最上位bit・加算/乗算wrap、`_Static_assert`、enum、配列境界、bit-field幅、`_Alignas`、case重複、global/static local/aggregate初期化を網羅 |
 | **cast・`sizeof`・文字定数を含む整数定数式** `(unsigned char)257`, `(_Bool)-27`, `sizeof(int)-5`, `'A'+'\\n'` | 🧪 | constant_cast_sizeof_character / compile_fail: static_assert_sizeof_vla | 型付き定数評価の派生境界。unsigned char/shortの切り詰め、`_Bool`正規化、固定長`sizeof`が返す64-bit unsigned `size_t`の減算wrap、通常/escape/NUL文字定数を、直接evaluator・enum・`_Static_assert`・配列境界・bit-field幅・global/static初期化・native/Wasm実行で固定。VLAへの`sizeof`は実行時値のため`_Static_assert`では拒否する |

@@ -71,7 +71,9 @@ skip_reason() {
     test/fixtures/probes_found_bugs/unsupported_gnu_extensions_warn_skip.c)
       echo "intentional strict-C rejection covered by wasm32 E2E reject cases"
       ;;
-    test/fixtures/wasm32/setjmp_stub_ops.c)
+    test/fixtures/wasm32/setjmp_stub_ops.c|\
+    test/fixtures/probes_found_bugs/setjmp_noreturn_cfg_termination_boundaries.c|\
+    test/fixtures/probes_found_bugs/setjmp_noreturn_cfg_warning_boundaries.c)
       echo "intentional unsupported non-local control-flow rejection"
       ;;
     test/fixtures/wasm_continuation_basic.c)

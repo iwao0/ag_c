@@ -32,6 +32,10 @@ int main(void) {
   assert((-9 - amount) - negative == 0LL);
   assert(2LL * (-9 - amount) == -24LL);
   assert((-9 - amount) * 2LL == -24LL);
+  assert((-9 - amount) / 5LL == -2LL);
+  assert((-9 - amount) % 5LL == -2LL);
+  assert(25LL / (-9 - amount) == -2LL);
+  assert(25LL % (-9 - amount) == 1LL);
   assert((negative & (-9 - amount)) == -12LL);
   assert((negative | (-9 - amount)) == -12LL);
   assert((negative ^ (-9 - amount)) == 0LL);
