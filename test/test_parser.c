@@ -3292,6 +3292,152 @@ static void test_typed_hir_variadic_complex_call_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_typed_hir_atomic_variadic_value_promotion_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_atomic_variadic_value_promotion_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "struct small { int value; };"
+      "struct wide { long long left; long long right; };"
+      "int sink(int marker, ...);"
+      "int invoke(_Atomic signed char *byte_pointer,"
+      "           _Atomic float *float_pointer,"
+      "           _Atomic(double _Complex) *complex_pointer,"
+      "           _Atomic(struct small) *small_pointer,"
+      "           _Atomic(struct wide) *wide_pointer) {"
+      "  return sink(1, *byte_pointer, *float_pointer,"
+      "              *complex_pointer, *small_pointer,"
+      "              *wide_pointer);"
+      "}"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id =
+      psx_hir_module_root_at(hir, 0);
+  const psx_hir_node_t *hir_call =
+      find_test_hir_node_kind(hir, PSX_HIR_CALL, 0);
+  const psx_hir_node_t *promoted_byte = NULL;
+  const psx_hir_node_t *promoted_float = NULL;
+  size_t hir_argument_index = 0;
+  ASSERT_TRUE(hir_call != NULL);
+  for (size_t child_index = 0;
+       child_index < psx_hir_node_child_count(hir_call);
+       child_index++) {
+    if (psx_hir_node_child_edge_at(hir_call, child_index) !=
+        PSX_HIR_EDGE_ARGUMENT)
+      continue;
+    const psx_hir_node_t *argument = psx_hir_module_lookup(
+        hir, psx_hir_node_child_at(hir_call, child_index));
+    if (hir_argument_index == 1)
+      promoted_byte = argument;
+    else if (hir_argument_index == 2)
+      promoted_float = argument;
+    hir_argument_index++;
+  }
+  ASSERT_EQ(6, hir_argument_index);
+  ASSERT_TRUE(promoted_byte != NULL);
+  ASSERT_TRUE(promoted_float != NULL);
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(promoted_byte));
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(promoted_float));
+  psx_type_shape_t promoted_byte_shape =
+      test_hir_type_shape(test_suite_session, promoted_byte);
+  psx_type_shape_t promoted_float_shape =
+      test_hir_type_shape(test_suite_session, promoted_float);
+  ASSERT_EQ(PSX_TYPE_INTEGER, promoted_byte_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            promoted_byte_shape.integer_kind);
+  ASSERT_EQ(PSX_TYPE_FLOAT, promoted_float_shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            promoted_float_shape.floating_kind);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target =
+          ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(
+              test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  const ir_inst_t *call = NULL;
+  int loads_by_width[17] = {0};
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_CALL)
+        call = instruction;
+      if (instruction->op == IR_ATOMIC &&
+          instruction->atomic_kind == IR_ATOMIC_LOAD &&
+          instruction->atomic_width <= 16)
+        loads_by_width[instruction->atomic_width]++;
+    }
+  }
+
+  ASSERT_TRUE(call != NULL);
+  ASSERT_EQ(6, call->nargs);
+  ASSERT_TRUE(call->has_function_type);
+  ASSERT_EQ(1, call->function_type.param_count);
+  ASSERT_TRUE(call->function_type.is_variadic);
+  for (int argument_index = 0;
+       argument_index < call->nargs; argument_index++) {
+    ASSERT_TRUE(
+        (call->args[argument_index].type.qualifiers &
+         PSX_TYPE_QUALIFIER_ATOMIC) == 0);
+  }
+
+  psx_type_shape_t byte_shape = test_qual_type_shape(
+      test_suite_session, call->args[1].type);
+  psx_type_shape_t float_shape = test_qual_type_shape(
+      test_suite_session, call->args[2].type);
+  psx_type_shape_t complex_shape = test_qual_type_shape(
+      test_suite_session, call->args[3].type);
+  ASSERT_EQ(PSX_TYPE_INTEGER, byte_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, byte_shape.integer_kind);
+  ASSERT_EQ(IR_TY_I32, call->args[1].value.type);
+  ASSERT_EQ(PSX_TYPE_FLOAT, float_shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            float_shape.floating_kind);
+  ASSERT_EQ(IR_TY_F64, call->args[2].value.type);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, complex_shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            complex_shape.floating_kind);
+  ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS,
+            call->args[3].representation);
+  ASSERT_EQ(PSX_TYPE_STRUCT,
+            test_qual_type_shape(
+                test_suite_session,
+                call->args[4].type).kind);
+  ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS,
+            call->args[4].representation);
+  ASSERT_EQ(PSX_TYPE_STRUCT,
+            test_qual_type_shape(
+                test_suite_session,
+                call->args[5].type).kind);
+  ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS,
+            call->args[5].representation);
+
+  ASSERT_EQ(1, loads_by_width[1]);
+  ASSERT_EQ(2, loads_by_width[4]);
+  ASSERT_EQ(2, loads_by_width[16]);
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_atomic_lowering_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_atomic_lowering_without_ast...\n");
@@ -5951,7 +6097,7 @@ static void test_typed_hir_atomic_aggregate_variadic_callback_lowering_without_a
   ASSERT_EQ(4, signature->param_count);
   int expected_piece_types[] = {
       IR_TY_PTR, IR_TY_I32, IR_TY_PTR, IR_TY_I32};
-  int expected_source_sizes[] = {3, 4, 12, 1};
+  int expected_source_sizes[] = {3, 4, 12, 4};
   int expected_piece_kinds[] = {
       IR_ABI_PIECE_INDIRECT,
       IR_ABI_PIECE_DIRECT,
@@ -6009,11 +6155,15 @@ static void test_typed_hir_unprototyped_indirect_call_without_ast(
   printf("test_typed_hir_unprototyped_indirect_call_without_ast...\n");
   reset_test_translation_unit_state(test_suite_session);
   int program_resolved = resolve_program_input_hir(test_suite_session,
+      "struct small { int value; }; "
+      "struct wide { long long left; long long right; }; "
       "typedef int (*callback_t)(); "
       "int apply_unprototyped(callback_t callback) { "
       "float _Complex complex_value = {3.0f, 4.0f}; "
+      "struct small small_value = {5}; "
+      "struct wide wide_value = {6, 7}; "
       "return callback(7, (float)1.5, (signed char)-2, "
-      "(_Bool)1, complex_value); }");
+      "(_Bool)1, complex_value, small_value, wide_value); }");
   ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -6051,8 +6201,8 @@ static void test_typed_hir_unprototyped_indirect_call_without_ast(
   }
   ASSERT_TRUE(call != NULL);
   ASSERT_TRUE(call->sym == NULL);
-  ASSERT_EQ(5, call->nargs);
-  ASSERT_EQ(6, test_call_abi_value(test_suite_session, ir, call, 0, 0));
+  ASSERT_EQ(7, call->nargs);
+  ASSERT_EQ(8, test_call_abi_value(test_suite_session, ir, call, 0, 0));
   ASSERT_TRUE(call->has_function_type);
   ASSERT_TRUE(!call->function_type.has_prototype);
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 0));
@@ -6061,11 +6211,36 @@ static void test_typed_hir_unprototyped_indirect_call_without_ast(
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 3));
   ASSERT_EQ(IR_TY_F32, test_call_abi_value(test_suite_session, ir, call, 1, 4));
   ASSERT_EQ(IR_TY_F32, test_call_abi_value(test_suite_session, ir, call, 1, 5));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 6));
+  ASSERT_EQ(IR_TY_PTR, test_call_abi_value(test_suite_session, ir, call, 1, 7));
   ASSERT_EQ(IR_CALL_ARGUMENT_VALUE, call->args[0].representation);
   ASSERT_EQ(IR_CALL_ARGUMENT_VALUE, call->args[1].representation);
   ASSERT_EQ(IR_CALL_ARGUMENT_VALUE, call->args[2].representation);
   ASSERT_EQ(IR_CALL_ARGUMENT_VALUE, call->args[3].representation);
   ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS, call->args[4].representation);
+  ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS, call->args[5].representation);
+  ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS, call->args[6].representation);
+  ir_abi_module_t *call_abi =
+      test_lower_ir_abi(test_suite_session, ir);
+  const ir_abi_signature_t *signature =
+      ir_abi_call_signature(call_abi, call);
+  size_t physical_argument_count = 0;
+  const ir_abi_argument_t *physical_arguments =
+      ir_abi_call_arguments(
+          call_abi, call, &physical_argument_count);
+  ASSERT_TRUE(signature != NULL);
+  ASSERT_TRUE(physical_arguments != NULL);
+  ASSERT_EQ(8, signature->param_count);
+  ASSERT_EQ(8, physical_argument_count);
+  ASSERT_EQ(IR_ABI_PIECE_DIRECT,
+            signature->param_pieces[6].kind);
+  ASSERT_EQ(IR_ABI_PIECE_INDIRECT,
+            signature->param_pieces[7].kind);
+  ASSERT_EQ(IR_ABI_ARGUMENT_LOAD,
+            physical_arguments[6].access);
+  ASSERT_EQ(IR_ABI_ARGUMENT_DIRECT,
+            physical_arguments[7].access);
+  ir_abi_module_free(call_abi);
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
 }
@@ -22015,6 +22190,8 @@ int main() {
   test_typed_hir_direct_call_lowering_without_ast(test_suite_session);
   test_typed_hir_variadic_aggregate_call_without_ast(test_suite_session);
   test_typed_hir_variadic_complex_call_without_ast(test_suite_session);
+  test_typed_hir_atomic_variadic_value_promotion_without_ast(
+      test_suite_session);
   test_typed_hir_atomic_lowering_without_ast(test_suite_session);
   test_typed_hir_atomic_array_parameter_lowering_without_ast(
       test_suite_session);

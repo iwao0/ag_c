@@ -4390,6 +4390,53 @@ static psx_semantic_node_t *apply_direct_bitfield_promotion(
       children, edges, 1, NULL, syntax->kind);
 }
 
+static psx_semantic_node_t *apply_direct_default_argument_promotion(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_semantic_node_t *expression) {
+  expression = apply_direct_bitfield_promotion(
+      context, syntax, expression);
+  if (!expression) return NULL;
+
+  psx_qual_type_t source_type =
+      psx_semantic_node_expression_qual_type(expression);
+  psx_type_shape_t source_shape = {0};
+  if (!direct_describe_qual_type(
+          context, source_type, &source_shape))
+    return NULL;
+
+  psx_qual_type_t promoted_type = source_type;
+  if (source_shape.kind == PSX_TYPE_BOOL ||
+      source_shape.kind == PSX_TYPE_INTEGER) {
+    promoted_type =
+        psx_resolve_arithmetic_unary_result_qual_type_in(
+            context->semantic_context,
+            PSX_TYPE_UNARY_PLUS, source_type);
+  } else if (source_shape.kind == PSX_TYPE_FLOAT &&
+             source_shape.floating_kind ==
+                 PSX_FLOATING_KIND_FLOAT) {
+    promoted_type = ps_ctx_intern_floating_qual_type_in(
+        context->semantic_context,
+        PSX_FLOATING_KIND_DOUBLE, 0);
+  }
+  if (promoted_type.type_id == PSX_TYPE_ID_INVALID)
+    return NULL;
+  if (promoted_type.type_id == source_type.type_id &&
+      promoted_type.qualifiers == source_type.qualifiers)
+    return expression;
+
+  psx_semantic_node_t *children[] = {expression};
+  psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_CAST,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  return psx_semantic_node_builder_expression(
+      &context->builder, &spec, promoted_type,
+      children, edges, 1, NULL, syntax->kind);
+}
+
 static psx_semantic_node_t *build_direct_binary_node(
     direct_resolution_context_t *context,
     const node_t *syntax,
@@ -4627,7 +4674,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
       if (!function_shape.has_function_prototype ||
           i >= function_shape.parameter_count) {
         children[child_index - 1] =
-            apply_direct_bitfield_promotion(
+            apply_direct_default_argument_promotion(
                 context, call->arguments[i],
                 children[child_index - 1]);
         if (!children[child_index - 1]) return NULL;

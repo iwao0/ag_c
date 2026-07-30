@@ -313,7 +313,7 @@ static size_t count_symbol_references(const ir_module_t *module) {
 static size_t logical_variadic_piece_count(
     const ir_abi_type_context_t *context,
     const ir_call_argument_t *argument,
-    int pack_complex_for_variadic_call) {
+    int use_variadic_abi) {
   if (!context || !argument ||
       argument->type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
@@ -323,13 +323,14 @@ static size_t logical_variadic_piece_count(
       info.type == IR_TY_VOID)
     return 0;
   if (type_is_complex(context, argument->type.type_id)) {
-    if (!pack_complex_for_variadic_call) return 2;
+    if (!use_variadic_abi) return 2;
     const ir_abi_target_policy_t *policy =
         ir_abi_target_policy_for(context->target);
     return ir_abi_policy_variadic_aggregate_piece_count(
         policy, info.source_size);
   }
   if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
+    if (!use_variadic_abi) return 1;
     const ir_abi_target_policy_t *policy =
         ir_abi_target_policy_for(context->target);
     return ir_abi_policy_variadic_aggregate_piece_count(
@@ -410,6 +411,7 @@ static int lower_logical_call_arguments(
       int offset = 0;
       ir_type_t type = logical_argument->value.type;
       ir_abi_argument_access_t access = IR_ABI_ARGUMENT_DIRECT;
+      ir_abi_piece_kind_t kind = IR_ABI_PIECE_VARIADIC;
       if (type_is_complex(context, logical_argument->type.type_id) &&
           declared_variadic) {
         if (logical_argument->representation != IR_CALL_ARGUMENT_ADDRESS)
@@ -427,7 +429,11 @@ static int lower_logical_call_arguments(
         type = info.type;
         offset = (int)piece_index * abi_ir_type_size(context, type);
         access = IR_ABI_ARGUMENT_LOAD;
-      } else if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
+        kind = piece_index == 0
+                   ? IR_ABI_PIECE_COMPLEX_REAL
+                   : IR_ABI_PIECE_COMPLEX_IMAGINARY;
+      } else if (info.param_class == IR_ABI_PARAM_AGGREGATE &&
+                 declared_variadic) {
         if (logical_argument->representation != IR_CALL_ARGUMENT_ADDRESS)
           return 0;
         const ir_abi_target_policy_t *policy =
@@ -436,13 +442,26 @@ static int lower_logical_call_arguments(
                 policy, piece_index, &type, &offset))
           return 0;
         access = IR_ABI_ARGUMENT_LOAD;
+      } else if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
+        if (logical_argument->representation !=
+            IR_CALL_ARGUMENT_ADDRESS)
+          return 0;
+        type = info.type;
+        if (type == IR_TY_PTR) {
+          kind = IR_ABI_PIECE_INDIRECT;
+        } else {
+          access = IR_ABI_ARGUMENT_LOAD;
+          kind = IR_ABI_PIECE_DIRECT;
+        }
+      } else if (!declared_variadic) {
+        kind = IR_ABI_PIECE_DIRECT;
       }
       call->signature.param_pieces[physical_index] = (ir_abi_piece_t){
           .type = type,
           .source_index = i,
           .source_size = info.source_size,
           .byte_offset = offset,
-          .kind = IR_ABI_PIECE_VARIADIC,
+          .kind = kind,
       };
       call->arguments[physical_index] = (ir_abi_argument_t){
           .source = logical_argument->value,

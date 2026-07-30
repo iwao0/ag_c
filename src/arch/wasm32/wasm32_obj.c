@@ -766,6 +766,52 @@ static obj_sig_t func_sig_from_machine_callable(
   return copy_signature(context, &inst->reference_signature);
 }
 
+static int canonical_function_signature_parameter_list(
+    const char *signature, int signature_len,
+    int *parameter_list_offset, int *is_empty) {
+  if (!signature || signature_len < 2 ||
+      signature[signature_len - 1] != ')')
+    return 0;
+  int depth = 0;
+  for (int index = signature_len - 1; index >= 0; index--) {
+    if (signature[index] == ')') {
+      depth++;
+    } else if (signature[index] == '(') {
+      depth--;
+      if (depth == 0) {
+        if (parameter_list_offset)
+          *parameter_list_offset = index;
+        if (is_empty)
+          *is_empty = index + 1 == signature_len - 1;
+        return 1;
+      }
+      if (depth < 0) return 0;
+    }
+  }
+  return 0;
+}
+
+static int canonical_function_signatures_allow_unspecified_parameters(
+    const char *left, int left_len,
+    const char *right, int right_len,
+    int *left_is_empty, int *right_is_empty) {
+  int left_offset = 0;
+  int right_offset = 0;
+  int left_empty = 0;
+  int right_empty = 0;
+  if (!canonical_function_signature_parameter_list(
+          left, left_len, &left_offset, &left_empty) ||
+      !canonical_function_signature_parameter_list(
+          right, right_len, &right_offset, &right_empty) ||
+      (!left_empty && !right_empty) ||
+      left_offset != right_offset ||
+      memcmp(left, right, (size_t)left_offset) != 0)
+    return 0;
+  if (left_is_empty) *left_is_empty = left_empty;
+  if (right_is_empty) *right_is_empty = right_empty;
+  return 1;
+}
+
 static void set_func_c_signature(
     wasm32_obj_context_t *context, obj_func_t *function,
     const char *signature, int signature_len) {
@@ -775,12 +821,29 @@ static void set_func_c_signature(
     return;
   }
   if (function->c_signature) {
-    if (function->c_signature_len != signature_len ||
+    if (function->c_signature_len == signature_len &&
         memcmp(
             function->c_signature, signature,
-            (size_t)signature_len) != 0)
+            (size_t)signature_len) == 0)
+      return;
+    int existing_is_empty = 0;
+    int incoming_is_empty = 0;
+    if (!canonical_function_signatures_allow_unspecified_parameters(
+            function->c_signature, function->c_signature_len,
+            signature, signature_len,
+            &existing_is_empty, &incoming_is_empty))
       obj_unsupported_msg(
           context, "conflicting Wasm object C function signature");
+    if (existing_is_empty && !incoming_is_empty) {
+      function->c_signature = xrealloc(
+          context->diagnostic_context, function->c_signature,
+          (size_t)signature_len + 1);
+      memcpy(
+          function->c_signature, signature,
+          (size_t)signature_len);
+      function->c_signature[signature_len] = '\0';
+      function->c_signature_len = signature_len;
+    }
     return;
   }
   function->c_signature = xrealloc(

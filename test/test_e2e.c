@@ -1699,6 +1699,8 @@ static const test_case_t test_cases[] = {
     {"probes", "atomic_discarded_scalar_access_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_discarded_scalar_access_boundaries.c", 0, 0},
     {"probes", "atomic_cv_qualified_discarded_access_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_cv_qualified_discarded_access_boundaries.c", 0, 0},
     {"probes", "atomic_compound_literal_value_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_compound_literal_value_boundaries.c", 0, 0},
+    {"probes", "atomic_variadic_value_promotion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_variadic_value_promotion_boundaries.c", 0, 0},
+    {"probes", "atomic_unprototyped_value_promotion_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_unprototyped_value_promotion_boundaries.c", 0, 0},
     {"probes", "atomic_aggregate_member_array_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_aggregate_member_array_layout.c", 0, 0},
     {"probes", "atomic_union_member_array_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_union_member_array_layout.c", 0, 0},
     {"probes", "union_padded_struct_initializer_offsets", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/union_padded_struct_initializer_offsets.c", 0, 0},
