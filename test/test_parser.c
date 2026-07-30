@@ -3874,6 +3874,300 @@ static void test_typed_hir_atomic_aggregate_lowering_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void
+test_typed_hir_atomic_discarded_object_loads_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_atomic_discarded_object_loads_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "struct small { int value; };"
+      "struct wide { long long left; long long right; };"
+      "int run(_Atomic(struct small) *small_pointer,"
+      "        _Atomic(struct wide) *wide_pointer,"
+      "        _Atomic(float _Complex) *float_pointer,"
+      "        _Atomic(double _Complex) *double_pointer) {"
+      "  _Atomic(struct small) local_small = (struct small){1};"
+      "  _Atomic(struct wide) local_wide = (struct wide){2, 3};"
+      "  _Atomic(float _Complex) local_float = 4.0f;"
+      "  _Atomic(double _Complex) local_double = 5.0;"
+      "  (void)local_small;"
+      "  (void)local_wide;"
+      "  (void)local_float;"
+      "  (void)local_double;"
+      "  (void)*small_pointer;"
+      "  (void)*wide_pointer;"
+      "  (void)*float_pointer;"
+      "  (void)*double_pointer;"
+      "  return 0;"
+      "}"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  int loads_by_width[17] = {0};
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_ATOMIC &&
+          instruction->atomic_kind == IR_ATOMIC_LOAD &&
+          instruction->atomic_width <= 16)
+        loads_by_width[instruction->atomic_width]++;
+    }
+  }
+  /* Each local and pointer expression must perform one complete atomic
+   * lvalue conversion even though the resulting value is discarded. */
+  ASSERT_EQ(2, loads_by_width[4]);
+  ASSERT_EQ(2, loads_by_width[8]);
+  ASSERT_EQ(4, loads_by_width[16]);
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void
+test_typed_hir_atomic_discarded_scalar_loads_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_atomic_discarded_scalar_loads_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "typedef int callback_t(int);"
+      "int run(_Atomic unsigned char *byte_pointer,"
+      "        _Atomic unsigned short *short_pointer,"
+      "        _Atomic int *int_pointer,"
+      "        _Atomic unsigned long long *wide_pointer,"
+      "        _Atomic float *float_pointer,"
+      "        _Atomic double *double_pointer,"
+      "        _Atomic(int *) *data_pointer,"
+      "        _Atomic(callback_t *) *callback_pointer,"
+      "        int *data, callback_t *callback) {"
+      "  _Atomic unsigned char local_byte = 1;"
+      "  _Atomic unsigned short local_short = 2;"
+      "  _Atomic int local_int = 3;"
+      "  _Atomic unsigned long long local_wide = 4;"
+      "  _Atomic float local_float = 5.0f;"
+      "  _Atomic double local_double = 6.0;"
+      "  _Atomic(int *) local_data = data;"
+      "  _Atomic(callback_t *) local_callback = callback;"
+      "  (void)local_byte;"
+      "  (void)local_short;"
+      "  (void)local_int;"
+      "  (void)local_wide;"
+      "  (void)local_float;"
+      "  (void)local_double;"
+      "  (void)local_data;"
+      "  (void)local_callback;"
+      "  (void)*byte_pointer;"
+      "  (void)*short_pointer;"
+      "  (void)*int_pointer;"
+      "  (void)*wide_pointer;"
+      "  (void)*float_pointer;"
+      "  (void)*double_pointer;"
+      "  (void)*data_pointer;"
+      "  (void)*callback_pointer;"
+      "  return 0;"
+      "}"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  int loads_by_width[9] = {0};
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_ATOMIC &&
+          instruction->atomic_kind == IR_ATOMIC_LOAD &&
+          instruction->atomic_width <= 8)
+        loads_by_width[instruction->atomic_width]++;
+    }
+  }
+  /* Each scalar local and corresponding pointer expression performs one
+   * complete atomic read even when its converted value is unused. */
+  ASSERT_EQ(2, loads_by_width[1]);
+  ASSERT_EQ(2, loads_by_width[2]);
+  ASSERT_EQ(4, loads_by_width[4]);
+  ASSERT_EQ(8, loads_by_width[8]);
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void
+test_typed_hir_cv_atomic_discarded_loads_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_cv_atomic_discarded_loads_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "struct small { int value; };"
+      "struct wide { long long left; long long right; };"
+      "int run(const _Atomic int *constant_integer,"
+      "        volatile _Atomic double *volatile_real,"
+      "        const _Atomic(int *) *constant_pointer,"
+      "        volatile _Atomic(struct small) *volatile_small,"
+      "        const _Atomic(struct wide) *constant_wide,"
+      "        volatile _Atomic(float _Complex) *volatile_float_complex,"
+      "        const _Atomic(double _Complex) *constant_double_complex) {"
+      "  (void)*constant_integer;"
+      "  (void)*volatile_real;"
+      "  (void)*constant_pointer;"
+      "  (void)*volatile_small;"
+      "  (void)*constant_wide;"
+      "  (void)*volatile_float_complex;"
+      "  (void)*constant_double_complex;"
+      "  return 0;"
+      "}"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  int loads_by_width[17] = {0};
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_ATOMIC &&
+          instruction->atomic_kind == IR_ATOMIC_LOAD &&
+          instruction->atomic_width <= 16)
+        loads_by_width[instruction->atomic_width]++;
+    }
+  }
+  /* Const and volatile qualifiers do not suppress or split the complete
+   * atomic access for scalar, aggregate, or complex objects. */
+  ASSERT_EQ(2, loads_by_width[4]);
+  ASSERT_EQ(3, loads_by_width[8]);
+  ASSERT_EQ(2, loads_by_width[16]);
+  ASSERT_EQ(0, count_volatile_ir_load(ir->funcs));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void
+test_typed_hir_atomic_compound_literal_loads_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_atomic_compound_literal_loads_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "struct small { int value; };"
+      "struct wide { long long left; long long right; };"
+      "int run(void) {"
+      "  (void)(_Atomic int){1};"
+      "  (void)(_Atomic(struct small)){2};"
+      "  (void)(_Atomic(struct wide)){3, 4};"
+      "  (void)(_Atomic(float _Complex)){5.0f};"
+      "  (void)(_Atomic(double _Complex)){6.0};"
+      "  return 0;"
+      "}"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  int loads_by_width[17] = {0};
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_ATOMIC &&
+          instruction->atomic_kind == IR_ATOMIC_LOAD &&
+          instruction->atomic_width <= 16)
+        loads_by_width[instruction->atomic_width]++;
+    }
+  }
+  /* The ag_c extension still models each compound literal as an atomic
+   * object, so discarded lvalue conversion performs a complete read. */
+  ASSERT_EQ(2, loads_by_width[4]);
+  ASSERT_EQ(1, loads_by_width[8]);
+  ASSERT_EQ(2, loads_by_width[16]);
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_register_atomic_aggregate_parameter_lowering_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf(
@@ -21731,6 +22025,14 @@ int main() {
   test_typed_hir_atomic_wide_complex_lowering_without_ast(
       test_suite_session);
   test_typed_hir_atomic_aggregate_lowering_without_ast(test_suite_session);
+  test_typed_hir_atomic_discarded_object_loads_without_ast(
+      test_suite_session);
+  test_typed_hir_atomic_discarded_scalar_loads_without_ast(
+      test_suite_session);
+  test_typed_hir_cv_atomic_discarded_loads_without_ast(
+      test_suite_session);
+  test_typed_hir_atomic_compound_literal_loads_without_ast(
+      test_suite_session);
   test_typed_hir_register_atomic_aggregate_parameter_lowering_without_ast(
       test_suite_session);
   test_typed_hir_atomic_object_exchange_lowering_without_ast(

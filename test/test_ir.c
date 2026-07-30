@@ -280,6 +280,32 @@ static void test_volatile_load_dce(void) {
   ir_module_free(m);
 }
 
+static void test_atomic_load_dce(void) {
+  ir_module_t *m = ir_module_new();
+  ir_func_t *f = ir_func_new(m, "discarded_atomic_access", 23);
+  int atomic_vreg = ir_func_new_vreg(f);
+
+  ir_inst_t *atomic_load = ir_inst_new(IR_ATOMIC);
+  atomic_load->dst = ir_val_vreg(atomic_vreg, IR_TY_I64);
+  atomic_load->src1 = ir_val_imm(IR_TY_PTR, 0);
+  atomic_load->atomic_kind = IR_ATOMIC_LOAD;
+  atomic_load->atomic_width = 8;
+  ir_func_append_inst(f, atomic_load);
+
+  ir_inst_t *ret = ir_inst_new(IR_RET);
+  ret->src1 = ir_val_imm(IR_TY_I32, 0);
+  ir_func_append_inst(f, ret);
+
+  ir_opt_dce(m);
+  if (atomic_load->op != IR_ATOMIC ||
+      atomic_load->atomic_kind != IR_ATOMIC_LOAD ||
+      atomic_load->atomic_width != 8) {
+    failures++;
+    fprintf(stderr, "FAIL: discarded IR_ATOMIC load DCE retention\n");
+  }
+  ir_module_free(m);
+}
+
 /* ---- test 6: lower済みシンボル表の所有権と関数参照 ---- */
 static void test_resolved_symbols(void) {
   ir_module_t *m = ir_module_new();
@@ -488,6 +514,7 @@ static void test_allocation_stats_isolation(void) {
 int main(void) {
   test_helpers();
   test_volatile_load_dce();
+  test_atomic_load_dce();
   test_dynamic_function_signatures();
   test_allocation_stats_isolation();
   test_resolved_symbols();
