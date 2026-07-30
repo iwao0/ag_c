@@ -134,6 +134,10 @@ const wasmMultiTuProbeFixtures = [
   "unprototyped_funcptr_xtu_other.c",
   "unprototyped_funcptr_return_xtu_main.c",
   "unprototyped_funcptr_return_xtu_other.c",
+  "unprototyped_enum_funcptr_xtu_main.c",
+  "unprototyped_enum_funcptr_xtu_other.c",
+  "unprototyped_atomic_funcptr_xtu_main.c",
+  "unprototyped_atomic_funcptr_xtu_other.c",
   "inherited_static_linkage_xtu_main.c",
   "inherited_static_linkage_xtu_other.c",
   "static_internal_linkage_xtu_main.c",
@@ -13066,6 +13070,10 @@ const runtimeLinkerSource = await readFile(
   "tools/wasm_obj_linker/ag_wasm_link.c",
   "utf8",
 );
+const wasm32ObjectTestSource = await readFile(
+  "test/test_wasm32_object.c",
+  "utf8",
+);
 const runtimeImportsSource = await readFile(
   "tools/wasm_js_api/agc-runtime-imports.js",
   "utf8",
@@ -13082,6 +13090,23 @@ const runtimeCatalog = await readFile(
   "tools/wasm_obj_linker/runtime/generated/runtime-symbols.md",
   "utf8",
 );
+const unprototypedSignatureMismatchFixtures = [
+  "unprototyped_bool_signature_mismatch_main.c",
+  "unprototyped_bool_signature_mismatch_other.c",
+  "unprototyped_narrow_signature_mismatch_main.c",
+  "unprototyped_narrow_signature_mismatch_other.c",
+  "unprototyped_promotion_signature_mismatch_main.c",
+  "unprototyped_promotion_signature_mismatch_other.c",
+  "unprototyped_return_signature_mismatch_main.c",
+  "unprototyped_return_signature_mismatch_other.c",
+];
+const missingUnprototypedSignatureMismatchRegistrations =
+  unprototypedSignatureMismatchFixtures.filter(
+    (name) =>
+      !wasm32ObjectTestSource.includes(name) ||
+      !wasm32ObjectLinkFixtureScan.includes(name) ||
+      !wasm32WatFixtureScan.includes(name),
+  );
 if (!/emit_function_flags_section\s*\(/.test(
       wasmObjectSectionsSource,
     ) ||
@@ -13093,9 +13118,18 @@ if (!/emit_function_flags_section\s*\(/.test(
     ) ||
     !/canonical_parameters_unchanged_by_default_promotions\s*\(/.test(
       runtimeLinkerSource,
+    ) ||
+    !/if\s*\(\s*is_atomic\s*\)\s*return\s+1\s*;/.test(
+      runtimeLinkerSource,
     )) {
   throw new Error(
     "Wasm objects and the linker must preserve and safely match unspecified function parameter metadata across translation units",
+  );
+}
+if (missingUnprototypedSignatureMismatchRegistrations.length) {
+  throw new Error(
+    "unprototyped cross-TU signature mismatch fixtures must run in object tests and be excluded from standalone scans:\n" +
+      missingUnprototypedSignatureMismatchRegistrations.join("\n"),
   );
 }
 const runtimeManifestFields = [

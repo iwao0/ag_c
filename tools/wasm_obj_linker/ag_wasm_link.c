@@ -873,16 +873,20 @@ static int canonical_function_signature_parameter_list(
 static int canonical_parameter_unchanged_by_default_promotions(
     const char *parameter, int length) {
   int index = 0;
+  int is_atomic = 0;
   while (index < length &&
          (parameter[index] == 'k' || parameter[index] == 'V' ||
-          parameter[index] == 'A' || parameter[index] == 'R'))
+          parameter[index] == 'A' || parameter[index] == 'R')) {
+    if (parameter[index] == 'A') is_atomic = 1;
     index++;
+  }
   if (index >= length ||
       (length - index == 3 &&
        memcmp(parameter + index, "...", 3) == 0))
     return 0;
+  if (is_atomic) return 1;
   char kind = parameter[index++];
-  if (kind == 'b' || kind == 'c' || kind == 'e')
+  if (kind == 'b' || kind == 'c')
     return 0;
   if (kind != 'f' && kind != 'i' && kind != 'u')
     return 1;

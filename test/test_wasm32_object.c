@@ -404,6 +404,60 @@ static int run_unprototyped_function_pointer_xtu_case(void) {
   if (run_cmd(
           "./build/ag_c_wasm -c "
           "-o build/wasm32_obj/"
+          "unprototyped_narrow_signature_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_narrow_signature_mismatch_main.c",
+          "unprototyped narrow mismatch main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_narrow_signature_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_narrow_signature_mismatch_other.c",
+          "unprototyped narrow mismatch other") != 0)
+    return 1;
+  if (run_fail_case(
+          "unprototyped_narrow_signature_mismatch",
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "unprototyped_narrow_signature_mismatch.wasm "
+          "build/wasm32_obj/"
+          "unprototyped_narrow_signature_mismatch_main.o "
+          "build/wasm32_obj/"
+          "unprototyped_narrow_signature_mismatch_other.o",
+          "function signature mismatch: transform_narrow") != 0)
+    return 1;
+
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_bool_signature_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_bool_signature_mismatch_main.c",
+          "unprototyped bool mismatch main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_bool_signature_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_bool_signature_mismatch_other.c",
+          "unprototyped bool mismatch other") != 0)
+    return 1;
+  if (run_fail_case(
+          "unprototyped_bool_signature_mismatch",
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "unprototyped_bool_signature_mismatch.wasm "
+          "build/wasm32_obj/"
+          "unprototyped_bool_signature_mismatch_main.o "
+          "build/wasm32_obj/"
+          "unprototyped_bool_signature_mismatch_other.o",
+          "function signature mismatch: transform_bool") != 0)
+    return 1;
+
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
           "unprototyped_return_signature_mismatch_main.o "
           "test/fixtures/wasm32/"
           "unprototyped_return_signature_mismatch_main.c",

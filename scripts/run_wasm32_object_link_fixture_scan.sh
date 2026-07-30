@@ -87,6 +87,12 @@ skip_reason() {
     test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
+    test/fixtures/probes_found_bugs/unprototyped_enum_funcptr_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/unprototyped_atomic_funcptr_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
@@ -98,6 +104,10 @@ skip_reason() {
       ;;
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_main.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_other.c|\
+    test/fixtures/wasm32/unprototyped_bool_signature_mismatch_main.c|\
+    test/fixtures/wasm32/unprototyped_bool_signature_mismatch_other.c|\
+    test/fixtures/wasm32/unprototyped_narrow_signature_mismatch_main.c|\
+    test/fixtures/wasm32/unprototyped_narrow_signature_mismatch_other.c|\
     test/fixtures/wasm32/unprototyped_promotion_signature_mismatch_main.c|\
     test/fixtures/wasm32/unprototyped_promotion_signature_mismatch_other.c|\
     test/fixtures/wasm32/unprototyped_return_signature_mismatch_main.c|\
@@ -126,6 +136,12 @@ link_companion() {
       ;;
     test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/unprototyped_enum_funcptr_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/unprototyped_enum_funcptr_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/unprototyped_atomic_funcptr_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/unprototyped_atomic_funcptr_xtu_other.c"
       ;;
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c"
@@ -157,6 +173,12 @@ expected_result() {
       echo 42
       ;;
     test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/unprototyped_enum_funcptr_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/unprototyped_atomic_funcptr_xtu_main.c)
       echo 42
       ;;
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c)
