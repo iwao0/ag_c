@@ -118,6 +118,38 @@ skip_reason() {
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c|\
     test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_aligned_record_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_aligned_record_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_anonymous_union_data_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_anonymous_union_data_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_array_data_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_array_data_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_callback_data_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_callback_data_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_callback_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_callback_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_container_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_container_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_flexible_record_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_flexible_record_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_function_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_function_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_incomplete_record_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_incomplete_record_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_mutual_record_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_mutual_record_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_packed_record_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_packed_record_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_pointer_to_array_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_pointer_to_array_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_record_data_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_record_data_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_record_function_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_record_function_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_self_record_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_self_record_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_union_function_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_enum_union_function_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/atomic_function_pointer_data_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/atomic_function_pointer_data_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/atomic_function_pointer_signature_xtu_main.c|\
@@ -234,26 +266,60 @@ skip_reason() {
     test/fixtures/wasm32/function_parameter_atomic_pointee_type_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_atomic_pointer_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_atomic_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_distinct_enum_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_distinct_enum_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_callback_enum_parameter_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_callback_enum_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointee_distinct_enum_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointee_distinct_enum_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_atomic_function_pointer_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_atomic_function_pointer_type_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_atomic_pointer_to_array_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_atomic_pointer_to_array_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_to_enum_array_distinct_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_to_enum_array_distinct_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_pointer_to_atomic_array_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_pointer_to_atomic_array_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_pointer_to_atomic_enum_array_integer_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_pointer_to_atomic_enum_array_integer_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_atomic_pointer_record_member_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_atomic_pointer_record_member_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_record_distinct_enum_member_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_record_distinct_enum_member_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_union_distinct_enum_member_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_union_distinct_enum_member_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_flexible_distinct_enum_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_flexible_distinct_enum_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_packed_enum_layout_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_packed_enum_layout_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_aligned_enum_layout_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_pointer_aligned_enum_layout_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_atomic_pointer_record_layout_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_atomic_pointer_record_layout_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_self_record_atomic_pointer_qualifier_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_self_record_atomic_pointer_qualifier_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_self_record_atomic_member_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_self_record_atomic_member_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_self_record_distinct_enum_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_self_record_distinct_enum_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_atomic_mutual_record_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_atomic_mutual_record_enum_integer_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_atomic_array_element_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_atomic_array_element_type_mismatch_other.c|\
     test/fixtures/wasm32/function_return_atomic_type_mismatch_main.c|\
     test/fixtures/wasm32/function_return_atomic_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_atomic_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_atomic_enum_integer_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_atomic_callback_enum_result_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_atomic_callback_enum_result_mismatch_other.c|\
     test/fixtures/wasm32/function_return_atomic_pointer_type_mismatch_main.c|\
     test/fixtures/wasm32/function_return_atomic_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_atomic_pointer_record_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_atomic_pointer_record_enum_integer_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_atomic_union_pointee_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_atomic_union_pointee_enum_integer_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_atomic_pointer_flexible_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_atomic_pointer_flexible_enum_integer_mismatch_other.c|\
     test/fixtures/wasm32/function_return_atomic_pointee_type_mismatch_main.c|\
     test/fixtures/wasm32/function_return_atomic_pointee_type_mismatch_other.c|\
     test/fixtures/wasm32/function_return_atomic_function_pointer_type_mismatch_main.c|\
@@ -306,6 +372,18 @@ skip_reason() {
     test/fixtures/wasm32/global_volatile_qualifier_mismatch_other.c|\
     test/fixtures/wasm32/global_atomic_qualifier_mismatch_main.c|\
     test/fixtures/wasm32/global_atomic_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointer_anonymous_union_distinct_enum_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointer_anonymous_union_distinct_enum_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointer_flexible_distinct_enum_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointer_flexible_distinct_enum_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointer_packed_record_distinct_enum_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointer_packed_record_distinct_enum_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointer_aligned_record_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointer_aligned_record_enum_integer_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointer_anonymous_flexible_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointer_anonymous_flexible_enum_integer_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_anonymous_union_pointee_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_anonymous_union_pointee_enum_integer_mismatch_other.c|\
     test/fixtures/wasm32/global_atomic_pointee_type_mismatch_main.c|\
     test/fixtures/wasm32/global_atomic_pointee_type_mismatch_other.c|\
     test/fixtures/wasm32/global_atomic_pointer_type_mismatch_main.c|\
@@ -318,12 +396,20 @@ skip_reason() {
     test/fixtures/wasm32/global_atomic_pointer_to_record_type_mismatch_other.c|\
     test/fixtures/wasm32/global_atomic_record_pointee_type_mismatch_main.c|\
     test/fixtures/wasm32/global_atomic_record_pointee_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_record_pointee_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_record_pointee_enum_integer_mismatch_other.c|\
     test/fixtures/wasm32/global_atomic_pointer_record_member_type_mismatch_main.c|\
     test/fixtures/wasm32/global_atomic_pointer_record_member_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_pointer_record_distinct_enum_member_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_pointer_record_distinct_enum_member_mismatch_other.c|\
     test/fixtures/wasm32/global_atomic_pointer_record_layout_mismatch_main.c|\
     test/fixtures/wasm32/global_atomic_pointer_record_layout_mismatch_other.c|\
     test/fixtures/wasm32/global_mutual_atomic_record_member_type_mismatch_main.c|\
     test/fixtures/wasm32/global_mutual_atomic_record_member_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_self_record_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_self_record_enum_integer_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_mutual_record_distinct_enum_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_mutual_record_distinct_enum_mismatch_other.c|\
     test/fixtures/wasm32/global_mutual_atomic_record_layout_mismatch_main.c|\
     test/fixtures/wasm32/global_mutual_atomic_record_layout_mismatch_other.c|\
     test/fixtures/wasm32/global_array_atomic_pointer_type_mismatch_main.c|\
@@ -334,10 +420,14 @@ skip_reason() {
     test/fixtures/wasm32/global_multidimensional_array_atomic_pointer_type_mismatch_other.c|\
     test/fixtures/wasm32/global_multidimensional_array_atomic_pointee_type_mismatch_main.c|\
     test/fixtures/wasm32/global_multidimensional_array_atomic_pointee_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_multidimensional_atomic_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/global_multidimensional_atomic_enum_integer_mismatch_other.c|\
     test/fixtures/wasm32/record_member_atomic_pointer_type_mismatch_main.c|\
     test/fixtures/wasm32/record_member_atomic_pointer_type_mismatch_other.c|\
     test/fixtures/wasm32/record_member_atomic_pointee_type_mismatch_main.c|\
     test/fixtures/wasm32/record_member_atomic_pointee_type_mismatch_other.c|\
+    test/fixtures/wasm32/record_member_atomic_pointer_to_enum_array_distinct_mismatch_main.c|\
+    test/fixtures/wasm32/record_member_atomic_pointer_to_enum_array_distinct_mismatch_other.c|\
     test/fixtures/wasm32/global_pointee_const_qualifier_mismatch_main.c|\
     test/fixtures/wasm32/global_pointee_const_qualifier_mismatch_other.c|\
     test/fixtures/wasm32/global_restrict_pointer_qualifier_mismatch_main.c|\
@@ -352,6 +442,12 @@ skip_reason() {
     test/fixtures/wasm32/global_function_object_pointer_kind_mismatch_other.c|\
     test/fixtures/wasm32/global_distinct_enum_type_mismatch_main.c|\
     test/fixtures/wasm32/global_distinct_enum_type_mismatch_other.c|\
+    test/fixtures/wasm32/global_record_atomic_enum_integer_mismatch_main.c|\
+    test/fixtures/wasm32/global_record_atomic_enum_integer_mismatch_other.c|\
+    test/fixtures/wasm32/global_atomic_callback_enum_parameter_mismatch_main.c|\
+    test/fixtures/wasm32/global_atomic_callback_enum_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/record_member_atomic_callback_enum_result_mismatch_main.c|\
+    test/fixtures/wasm32/record_member_atomic_callback_enum_result_mismatch_other.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_main.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_other.c|\
     test/fixtures/wasm32/union_member_type_signature_mismatch_main.c|\

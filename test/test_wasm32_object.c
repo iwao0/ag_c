@@ -403,6 +403,30 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "function_parameter_atomic_pointer",
       },
       {
+          "function_parameter_atomic_pointer_distinct_enum_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_distinct_enum_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_distinct_enum_mismatch_other.c",
+          "read_atomic_pointer_distinct_enum",
+      },
+      {
+          "function_parameter_atomic_callback_enum_parameter_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_callback_enum_parameter_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_callback_enum_parameter_mismatch_other.c",
+          "apply_atomic_callback_enum_parameter",
+      },
+      {
+          "function_parameter_atomic_pointee_distinct_enum_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointee_distinct_enum_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointee_distinct_enum_mismatch_other.c",
+          "read_atomic_pointee_distinct_enum",
+      },
+      {
           "function_parameter_atomic_function_pointer_type_mismatch",
           "test/fixtures/wasm32/"
           "function_parameter_atomic_function_pointer_type_mismatch_main.c",
@@ -419,6 +443,14 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "function_parameter_atomic_pointer_to_array",
       },
       {
+          "function_parameter_atomic_pointer_to_enum_array_distinct_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_to_enum_array_distinct_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_to_enum_array_distinct_mismatch_other.c",
+          "read_atomic_pointer_to_enum_array",
+      },
+      {
           "function_parameter_pointer_to_atomic_array_type_mismatch",
           "test/fixtures/wasm32/"
           "function_parameter_pointer_to_atomic_array_type_mismatch_main.c",
@@ -427,12 +459,60 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "function_parameter_pointer_to_atomic_array",
       },
       {
+          "function_parameter_pointer_to_atomic_enum_array_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_pointer_to_atomic_enum_array_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_pointer_to_atomic_enum_array_integer_mismatch_other.c",
+          "read_pointer_to_atomic_enum_array",
+      },
+      {
           "function_parameter_atomic_pointer_record_member_type_mismatch",
           "test/fixtures/wasm32/"
           "function_parameter_atomic_pointer_record_member_type_mismatch_main.c",
           "test/fixtures/wasm32/"
           "function_parameter_atomic_pointer_record_member_type_mismatch_other.c",
           "function_parameter_atomic_pointer_record_member",
+      },
+      {
+          "function_parameter_atomic_pointer_record_distinct_enum_member_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_record_distinct_enum_member_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_record_distinct_enum_member_mismatch_other.c",
+          "read_atomic_pointer_record_enum_member",
+      },
+      {
+          "function_parameter_atomic_pointer_union_distinct_enum_member_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_union_distinct_enum_member_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_union_distinct_enum_member_mismatch_other.c",
+          "read_atomic_pointer_union_enum_member",
+      },
+      {
+          "function_parameter_atomic_pointer_flexible_distinct_enum_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_flexible_distinct_enum_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_flexible_distinct_enum_mismatch_other.c",
+          "read_atomic_pointer_flexible_enum",
+      },
+      {
+          "function_parameter_atomic_pointer_packed_enum_layout_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_packed_enum_layout_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_packed_enum_layout_mismatch_other.c",
+          "read_atomic_pointer_packed_enum_layout",
+      },
+      {
+          "function_parameter_atomic_pointer_aligned_enum_layout_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_aligned_enum_layout_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_pointer_aligned_enum_layout_mismatch_other.c",
+          "read_atomic_pointer_aligned_enum_layout",
       },
       {
           "function_parameter_atomic_pointer_record_layout_mismatch",
@@ -459,6 +539,22 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "function_parameter_self_record_atomic_member",
       },
       {
+          "function_parameter_atomic_self_record_distinct_enum_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_self_record_distinct_enum_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_self_record_distinct_enum_mismatch_other.c",
+          "read_atomic_self_record_enum",
+      },
+      {
+          "function_parameter_atomic_mutual_record_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_mutual_record_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_atomic_mutual_record_enum_integer_mismatch_other.c",
+          "read_atomic_mutual_record_enum",
+      },
+      {
           "function_parameter_atomic_array_element_type_mismatch",
           "test/fixtures/wasm32/"
           "function_parameter_atomic_array_element_type_mismatch_main.c",
@@ -475,12 +571,52 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "function_return_atomic_type",
       },
       {
+          "function_return_atomic_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_enum_integer_mismatch_other.c",
+          "make_atomic_enum_integer_mismatch",
+      },
+      {
+          "function_return_atomic_callback_enum_result_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_callback_enum_result_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_callback_enum_result_mismatch_other.c",
+          "get_atomic_callback_enum_result",
+      },
+      {
           "function_return_atomic_pointer_type_mismatch",
           "test/fixtures/wasm32/"
           "function_return_atomic_pointer_type_mismatch_main.c",
           "test/fixtures/wasm32/"
           "function_return_atomic_pointer_type_mismatch_other.c",
           "function_return_atomic_pointer",
+      },
+      {
+          "function_return_atomic_pointer_record_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_pointer_record_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_pointer_record_enum_integer_mismatch_other.c",
+          "get_atomic_pointer_record_enum_integer",
+      },
+      {
+          "function_return_atomic_union_pointee_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_union_pointee_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_union_pointee_enum_integer_mismatch_other.c",
+          "get_atomic_union_pointee_enum_integer",
+      },
+      {
+          "function_return_atomic_pointer_flexible_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_pointer_flexible_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_atomic_pointer_flexible_enum_integer_mismatch_other.c",
+          "get_atomic_pointer_flexible_enum_integer",
       },
       {
           "function_return_atomic_pointee_type_mismatch",
@@ -840,6 +976,54 @@ static int run_data_signature_mismatch_cases(void) {
     const char *symbol;
   } cases[] = {
       {
+          "global_atomic_pointer_packed_record_distinct_enum_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_packed_record_distinct_enum_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_packed_record_distinct_enum_mismatch_other.c",
+          "global_atomic_pointer_packed_enum",
+      },
+      {
+          "global_atomic_pointer_aligned_record_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_aligned_record_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_aligned_record_enum_integer_mismatch_other.c",
+          "global_atomic_pointer_aligned_enum",
+      },
+      {
+          "global_atomic_pointer_flexible_distinct_enum_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_flexible_distinct_enum_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_flexible_distinct_enum_mismatch_other.c",
+          "global_atomic_pointer_flexible_enum",
+      },
+      {
+          "global_atomic_pointer_anonymous_flexible_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_anonymous_flexible_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_anonymous_flexible_enum_integer_mismatch_other.c",
+          "global_atomic_pointer_anonymous_flexible_enum",
+      },
+      {
+          "global_atomic_pointer_anonymous_union_distinct_enum_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_anonymous_union_distinct_enum_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_anonymous_union_distinct_enum_mismatch_other.c",
+          "global_atomic_pointer_anonymous_union_enum",
+      },
+      {
+          "global_atomic_anonymous_union_pointee_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_anonymous_union_pointee_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_anonymous_union_pointee_enum_integer_mismatch_other.c",
+          "global_atomic_anonymous_union_pointee_enum",
+      },
+      {
           "anonymous_flexible_global_member_type_mismatch",
           "test/fixtures/wasm32/"
           "anonymous_flexible_global_member_type_mismatch_main.c",
@@ -1056,12 +1240,28 @@ static int run_data_signature_mismatch_cases(void) {
           "global_atomic_record_pointee",
       },
       {
+          "global_atomic_record_pointee_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_record_pointee_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_record_pointee_enum_integer_mismatch_other.c",
+          "global_atomic_record_pointee_enum_integer",
+      },
+      {
           "global_atomic_pointer_record_member_type_mismatch",
           "test/fixtures/wasm32/"
           "global_atomic_pointer_record_member_type_mismatch_main.c",
           "test/fixtures/wasm32/"
           "global_atomic_pointer_record_member_type_mismatch_other.c",
           "global_atomic_pointer_record_member",
+      },
+      {
+          "global_atomic_pointer_record_distinct_enum_member_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_record_distinct_enum_member_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_pointer_record_distinct_enum_member_mismatch_other.c",
+          "global_atomic_pointer_record_enum_member",
       },
       {
           "global_atomic_pointer_record_layout_mismatch",
@@ -1078,6 +1278,22 @@ static int run_data_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "global_mutual_atomic_record_member_type_mismatch_other.c",
           "global_mutual_atomic_record_member",
+      },
+      {
+          "global_atomic_self_record_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_self_record_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_self_record_enum_integer_mismatch_other.c",
+          "global_atomic_self_record_enum_integer",
+      },
+      {
+          "global_atomic_mutual_record_distinct_enum_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_mutual_record_distinct_enum_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_mutual_record_distinct_enum_mismatch_other.c",
+          "global_atomic_mutual_record_enum",
       },
       {
           "global_mutual_atomic_record_layout_mismatch",
@@ -1120,6 +1336,14 @@ static int run_data_signature_mismatch_cases(void) {
           "global_multidimensional_array_atomic_pointee",
       },
       {
+          "global_multidimensional_atomic_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "global_multidimensional_atomic_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_multidimensional_atomic_enum_integer_mismatch_other.c",
+          "global_atomic_enum_matrix",
+      },
+      {
           "record_member_atomic_pointer_type_mismatch",
           "test/fixtures/wasm32/"
           "record_member_atomic_pointer_type_mismatch_main.c",
@@ -1134,6 +1358,14 @@ static int run_data_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "record_member_atomic_pointee_type_mismatch_other.c",
           "record_member_atomic_pointee_value",
+      },
+      {
+          "record_member_atomic_pointer_to_enum_array_distinct_mismatch",
+          "test/fixtures/wasm32/"
+          "record_member_atomic_pointer_to_enum_array_distinct_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "record_member_atomic_pointer_to_enum_array_distinct_mismatch_other.c",
+          "record_atomic_enum_array_value",
       },
       {
           "global_pointee_const_qualifier_mismatch",
@@ -1190,6 +1422,30 @@ static int run_data_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "global_distinct_enum_type_mismatch_other.c",
           "global_distinct_enum_type_value",
+      },
+      {
+          "global_record_atomic_enum_integer_mismatch",
+          "test/fixtures/wasm32/"
+          "global_record_atomic_enum_integer_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_record_atomic_enum_integer_mismatch_other.c",
+          "global_atomic_enum_integer_mismatch",
+      },
+      {
+          "global_atomic_callback_enum_parameter_mismatch",
+          "test/fixtures/wasm32/"
+          "global_atomic_callback_enum_parameter_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_atomic_callback_enum_parameter_mismatch_other.c",
+          "global_atomic_callback_enum_parameter",
+      },
+      {
+          "record_member_atomic_callback_enum_result_mismatch",
+          "test/fixtures/wasm32/"
+          "record_member_atomic_callback_enum_result_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "record_member_atomic_callback_enum_result_mismatch_other.c",
+          "record_atomic_callback_enum_result",
       },
   };
   for (size_t index = 0;
