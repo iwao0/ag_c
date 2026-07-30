@@ -176,8 +176,10 @@ void ir_opt_const_fold(
 /* ------------------------------------------------------------------ */
 
 /* 副作用がある = 削除不可な命令か */
-static int has_side_effect(ir_op_t op) {
-  switch (op) {
+static int has_side_effect(const ir_inst_t *inst) {
+  if (!inst) return 0;
+  if (inst->op == IR_LOAD && inst->is_volatile) return 1;
+  switch (inst->op) {
     case IR_STORE:
     case IR_MEMCPY:
     case IR_CALL:
@@ -238,7 +240,7 @@ static int dce_pass_func(ir_func_t *f) {
   int removed = 0;
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *inst = b->head; inst; inst = inst->next) {
-      if (has_side_effect(inst->op)) continue;
+      if (has_side_effect(inst)) continue;
       if (inst->op == IR_NOP) continue;
       if (inst->dst.id < 0 || inst->dst.id >= nvregs) continue;
       if (use_cnt[inst->dst.id] == 0) {

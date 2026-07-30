@@ -269,6 +269,9 @@ typedef struct ir_inst_t {
    * unsigned value is held in a 64-bit register, its upper 32 bits must be
    * cleared or later LSR/UDIV/ULT operations will behave incorrectly. */
   unsigned char is_unsigned;
+  /* IR_LOAD: the source C lvalue is volatile-qualified.  The access remains
+   * observable even when dst has no uses, so optimization must retain it. */
+  unsigned char is_volatile;
   ir_function_type_t function_type;
   /* IR_LOAD_SYM linkage and symbol category. The selected backend decides the
    * concrete address materialization strategy. */

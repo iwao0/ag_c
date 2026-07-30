@@ -2102,6 +2102,19 @@ static int count_ir_op(const ir_func_t *function, ir_op_t op) {
   return count;
 }
 
+static int count_volatile_ir_load(const ir_func_t *function) {
+  int count = 0;
+  for (const ir_block_t *block = function ? function->entry : NULL;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_LOAD && instruction->is_volatile)
+        count++;
+    }
+  }
+  return count;
+}
+
 static int max_ir_alloca_size(const ir_func_t *function) {
   int maximum = 0;
   for (const ir_block_t *block = function ? function->entry : NULL;
@@ -2157,6 +2170,119 @@ static void test_typed_hir_local_lowering_without_ast(
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_ADD) >= 3);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_SUB) >= 1);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void test_typed_hir_volatile_load_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_hir_volatile_load_lowering_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "static volatile int global_value = 1;"
+      "struct volatile_fields {"
+      "  volatile unsigned int bits : 3;"
+      "  volatile double real;"
+      "};"
+      "int main(void) {"
+      "  volatile int local = 2;"
+      "  volatile int *pointer = &local;"
+      "  int plain = 3;"
+      "  int * volatile volatile_pointer = &plain;"
+      "  volatile short values[1] = {4};"
+      "  struct volatile_fields fields = {5, 6.0};"
+      "  (void)global_value;"
+      "  (void)local;"
+      "  (void)*pointer;"
+      "  (void)volatile_pointer;"
+      "  (void)values[0];"
+      "  (void)fields.bits;"
+      "  (void)fields.real;"
+      "  return 0;"
+      "}"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  /* Seven discarded scalar reads plus the volatile bit-field initializer's
+   * read-modify-write access must carry the IR volatility marker. */
+  ASSERT_EQ(8, count_volatile_ir_load(ir->funcs));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void test_typed_hir_volatile_complex_load_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_hir_volatile_complex_load_lowering_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "static volatile double _Complex global_values[2] = {1.0, 2.0};"
+      "struct complex_fields {"
+      "  volatile float _Complex member;"
+      "};"
+      "int main(void) {"
+      "  volatile float _Complex local = 3.0f;"
+      "  volatile float _Complex *pointer = &local;"
+      "  volatile double _Complex * volatile volatile_pointer ="
+      "      &global_values[0];"
+      "  struct complex_fields fields = {4.0f};"
+      "  local += 1.0f;"
+      "  (void)global_values[1];"
+      "  (void)local;"
+      "  (void)*pointer;"
+      "  (void)*volatile_pointer;"
+      "  (void)fields.member;"
+      "  (void)(volatile float _Complex){5.0f};"
+      "  return 0;"
+      "}"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  /* Seven complete complex lvalue conversions, including compound update,
+   * contribute fourteen component loads; dereferencing the top-level
+   * volatile pointer contributes one. */
+  ASSERT_EQ(15, count_volatile_ir_load(ir->funcs));
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
 }
@@ -21436,6 +21562,9 @@ int main() {
   test_parser_name_classifier_boundary(test_suite_session);
   test_typed_hir_ownership_and_type_boundary(test_suite_session);
   test_typed_hir_local_lowering_without_ast(test_suite_session);
+  test_typed_hir_volatile_load_lowering_without_ast(test_suite_session);
+  test_typed_hir_volatile_complex_load_lowering_without_ast(
+      test_suite_session);
   test_typed_hir_narrow_return_lowering_without_ast(test_suite_session);
   test_typed_hir_overaligned_local_without_ast(test_suite_session);
   test_typed_hir_parameter_lowering_without_ast(test_suite_session);

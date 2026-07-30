@@ -243,6 +243,43 @@ static void test_helpers(void) {
   if (none.id != IR_VAL_NONE) { failures++; fprintf(stderr, "FAIL: ir_val_none\n"); }
 }
 
+static void test_volatile_load_dce(void) {
+  ir_module_t *m = ir_module_new();
+  ir_func_t *f = ir_func_new(m, "volatile_access", 15);
+  int ordinary_vreg = ir_func_new_vreg(f);
+  int volatile_vreg = ir_func_new_vreg(f);
+
+  ir_inst_t *ordinary_load = ir_inst_new(IR_LOAD);
+  ordinary_load->dst = ir_val_vreg(ordinary_vreg, IR_TY_I32);
+  ordinary_load->src1 = ir_val_imm(IR_TY_PTR, 0);
+  ir_func_append_inst(f, ordinary_load);
+
+  ir_inst_t *volatile_load = ir_inst_new(IR_LOAD);
+  volatile_load->dst = ir_val_vreg(volatile_vreg, IR_TY_I32);
+  volatile_load->src1 = ir_val_imm(IR_TY_PTR, 0);
+  volatile_load->is_volatile = 1;
+  ir_func_append_inst(f, volatile_load);
+
+  ir_inst_t *ret = ir_inst_new(IR_RET);
+  ret->src1 = ir_val_imm(IR_TY_I32, 0);
+  ir_func_append_inst(f, ret);
+
+  ir_opt_dce(m);
+  if (ordinary_load->op != IR_NOP ||
+      volatile_load->op != IR_LOAD ||
+      !volatile_load->is_volatile) {
+    failures++;
+    fprintf(stderr, "FAIL: volatile IR_LOAD DCE retention\n");
+  }
+  char printed[512];
+  ir_print_module_to_buf(m, printed, sizeof(printed));
+  if (!strstr(printed, "load i32 volatile")) {
+    failures++;
+    fprintf(stderr, "FAIL: volatile IR_LOAD dump marker\n");
+  }
+  ir_module_free(m);
+}
+
 /* ---- test 6: lower済みシンボル表の所有権と関数参照 ---- */
 static void test_resolved_symbols(void) {
   ir_module_t *m = ir_module_new();
@@ -450,6 +487,7 @@ static void test_allocation_stats_isolation(void) {
 
 int main(void) {
   test_helpers();
+  test_volatile_load_dce();
   test_dynamic_function_signatures();
   test_allocation_stats_isolation();
   test_resolved_symbols();

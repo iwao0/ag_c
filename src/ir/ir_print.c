@@ -91,6 +91,7 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
       sink_printf(s, "@%.*s", i->sym_len, i->sym ? i->sym : "");
       break;
     case IR_LOAD:
+      if (i->is_volatile) sink_printf(s, "volatile ");
       print_val(s, i->src1);
       break;
     case IR_STORE:

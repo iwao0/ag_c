@@ -18,6 +18,10 @@ static ir_val_t build_atomic_inc_dec(
 static ir_val_t build_string_reference(
     hir_ir_context_t *context, const psx_hir_node_t *node);
 static int node_has_atomic_qualifier(const psx_hir_node_t *node);
+static int node_has_volatile_qualifier(const psx_hir_node_t *node);
+static ir_val_t load_direct_lvalue_value(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_val_t pointer, ir_mir_type_info_t type);
 static ir_val_t build_atomic_complex_compound_assignment(
     hir_ir_context_t *context, ir_val_t pointer,
     const psx_hir_node_t *rhs_node,
@@ -442,8 +446,9 @@ static ir_val_t build_complex_comparison(
       context, combine_op, comparisons[0], comparisons[1], IR_TY_I32);
 }
 
-static ir_val_t load_direct_value(
-    hir_ir_context_t *context, ir_val_t pointer, ir_type_t type) {
+static ir_val_t load_direct_value_with_volatility(
+    hir_ir_context_t *context, ir_val_t pointer, ir_type_t type,
+    int is_volatile) {
   if (pointer.type != IR_TY_PTR) return hir_ir_unsupported_expr(context);
   int value = hir_ir_new_vreg(context);
   if (value < 0) return ir_val_none();
@@ -454,8 +459,15 @@ static ir_val_t load_direct_value(
   }
   load->dst = ir_val_vreg(value, type);
   load->src1 = pointer;
+  load->is_volatile = is_volatile ? 1 : 0;
   if (!hir_ir_append_instruction(context, load)) return ir_val_none();
   return load->dst;
+}
+
+static ir_val_t load_direct_value(
+    hir_ir_context_t *context, ir_val_t pointer, ir_type_t type) {
+  return load_direct_value_with_volatility(
+      context, pointer, type, 0);
 }
 
 int hir_ir_store_direct_value(
@@ -472,6 +484,40 @@ int hir_ir_store_direct_value(
   store->src1 = pointer;
   store->src2 = value;
   return hir_ir_append_instruction(context, store);
+}
+
+static ir_val_t materialize_volatile_complex_lvalue(
+    hir_ir_context_t *context, ir_val_t source,
+    ir_mir_type_info_t type) {
+  int component_size = ir_type_fixed_size(type.type);
+  if (source.type != IR_TY_PTR ||
+      !hir_ir_is_complex_type(type) ||
+      component_size <= 0 ||
+      type.source_size != component_size * 2)
+    return hir_ir_unsupported_expr(context);
+  int slot = hir_ir_allocate_scalar_temp(
+      context, type.source_size, component_size >= 8 ? 8 : 4);
+  if (slot < 0) return ir_val_none();
+  ir_val_t destination = ir_val_vreg(slot, IR_TY_PTR);
+  for (int part = 0; part < 2; part++) {
+    ir_val_t source_pointer = source;
+    ir_val_t destination_pointer = destination;
+    if (part != 0) {
+      source_pointer = hir_ir_pointer_with_offset(
+          context, source, component_size);
+      destination_pointer = hir_ir_pointer_with_offset(
+          context, destination, component_size);
+    }
+    if (context->status != IR_HIR_BUILD_OK)
+      return ir_val_none();
+    ir_val_t component = load_direct_value_with_volatility(
+        context, source_pointer, type.type, 1);
+    if (context->status != IR_HIR_BUILD_OK ||
+        !hir_ir_store_direct_value(
+            context, destination_pointer, component))
+      return ir_val_none();
+  }
+  return destination;
 }
 
 static ir_val_t emit_float_binary(
@@ -973,7 +1019,7 @@ static int valid_bitfield_storage(
 static ir_val_t emit_bitfield_load(
     hir_ir_context_t *context, ir_val_t pointer, int bit_width,
     int bit_offset, int is_signed, ir_type_t memory_type,
-    ir_type_t result_type) {
+    ir_type_t result_type, int is_volatile) {
   if (!valid_bitfield_storage(memory_type, bit_width, bit_offset) ||
       !hir_ir_is_integer_type(result_type))
     return hir_ir_unsupported_expr(context);
@@ -989,6 +1035,7 @@ static ir_val_t emit_bitfield_load(
   load->dst = ir_val_vreg(loaded_vreg, memory_type);
   load->src1 = pointer;
   load->is_unsigned = 1;
+  load->is_volatile = is_volatile ? 1 : 0;
   if (!hir_ir_append_instruction(context, load)) return ir_val_none();
   ir_val_t current = hir_ir_emit_integer_width_conversion(
       context, load->dst, unit_type, 1);
@@ -1023,7 +1070,7 @@ static ir_val_t emit_bitfield_load(
 static ir_val_t emit_bitfield_store(
     hir_ir_context_t *context, ir_val_t pointer, ir_val_t value,
     int bit_width, int bit_offset, int is_signed,
-    ir_type_t memory_type) {
+    ir_type_t memory_type, int is_volatile) {
   if (!valid_bitfield_storage(memory_type, bit_width, bit_offset) ||
       !hir_ir_is_integer_type(value.type))
     return hir_ir_unsupported_expr(context);
@@ -1042,6 +1089,7 @@ static ir_val_t emit_bitfield_store(
   load->dst = ir_val_vreg(loaded_vreg, memory_type);
   load->src1 = pointer;
   load->is_unsigned = 1;
+  load->is_volatile = is_volatile ? 1 : 0;
   if (!hir_ir_append_instruction(context, load)) return ir_val_none();
   ir_val_t loaded_value = hir_ir_emit_integer_width_conversion(
       context, load->dst, unit_type, 1);
@@ -1281,7 +1329,7 @@ static ir_val_t build_inc_dec(
   if (is_bitfield) {
     old_value = emit_bitfield_load(
         context, pointer, bit_width, bit_offset, bit_is_signed,
-        value_type, value_type);
+        value_type, value_type, node_has_volatile_qualifier(target));
   } else {
     int old_vreg = hir_ir_new_vreg(context);
     if (old_vreg < 0) return ir_val_none();
@@ -1293,6 +1341,8 @@ static ir_val_t build_inc_dec(
     load->dst = ir_val_vreg(old_vreg, value_type);
     load->src1 = pointer;
     load->is_unsigned = type.is_unsigned ? 1 : 0;
+    load->is_volatile =
+        node_has_volatile_qualifier(target) ? 1 : 0;
     if (!hir_ir_append_instruction(context, load)) return ir_val_none();
     old_value = load->dst;
   }
@@ -1367,7 +1417,8 @@ static ir_val_t build_inc_dec(
   if (is_bitfield) {
     ir_val_t stored_value = emit_bitfield_store(
         context, pointer, new_value, bit_width, bit_offset,
-        bit_is_signed, value_type);
+        bit_is_signed, value_type,
+        node_has_volatile_qualifier(target));
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
     new_value = stored_value;
   } else {
@@ -3074,8 +3125,14 @@ static ir_val_t build_complex_compound_assignment(
       complex_compound_operation_type(target_type, rhs_type);
   ir_val_t left;
   if (hir_ir_is_complex_type(target_type)) {
+    ir_val_t source_value = pointer;
+    if (node_has_volatile_qualifier(target))
+      source_value = materialize_volatile_complex_lvalue(
+          context, pointer, target_type);
+    if (context->status != IR_HIR_BUILD_OK)
+      return ir_val_none();
     left = convert_complex_pointer(
-        context, pointer, target_type, operation_type);
+        context, source_value, target_type, operation_type);
   } else {
     ir_type_t target_storage_type =
         hir_ir_scalar_storage_type(target_type);
@@ -3083,10 +3140,11 @@ static ir_val_t build_complex_compound_assignment(
     if (is_bitfield) {
       old_value = emit_bitfield_load(
           context, pointer, bit_width, bit_offset, bit_is_signed,
-          target_storage_type, target_storage_type);
+          target_storage_type, target_storage_type,
+          node_has_volatile_qualifier(target));
     } else {
-      old_value = load_direct_value(
-          context, pointer, target_storage_type);
+      old_value = load_direct_lvalue_value(
+          context, target, pointer, target_type);
     }
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
     left = materialize_direct_value_as_complex(
@@ -3150,7 +3208,8 @@ static ir_val_t build_complex_compound_assignment(
   if (is_bitfield)
     return emit_bitfield_store(
         context, pointer, result, bit_width, bit_offset, bit_is_signed,
-        hir_ir_scalar_storage_type(target_type));
+        hir_ir_scalar_storage_type(target_type),
+        node_has_volatile_qualifier(target));
   if (!hir_ir_store_direct_value(context, pointer, result))
     return ir_val_none();
   return result;
@@ -3473,6 +3532,12 @@ static int node_has_atomic_qualifier(const psx_hir_node_t *node) {
           PSX_TYPE_QUALIFIER_ATOMIC) != 0;
 }
 
+static int node_has_volatile_qualifier(const psx_hir_node_t *node) {
+  return node &&
+         (psx_hir_node_qual_type(node).qualifiers &
+          PSX_TYPE_QUALIFIER_VOLATILE) != 0;
+}
+
 static ir_val_t load_direct_lvalue_value(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_val_t pointer, ir_mir_type_info_t type) {
@@ -3488,6 +3553,8 @@ static ir_val_t load_direct_lvalue_value(
   load->dst = ir_val_vreg(result, hir_ir_scalar_storage_type(type));
   load->src1 = pointer;
   load->is_unsigned = type.is_unsigned ? 1 : 0;
+  load->is_volatile =
+      node_has_volatile_qualifier(node) ? 1 : 0;
   if (!hir_ir_append_instruction(context, load)) return ir_val_none();
   return load->dst;
 }
@@ -3751,7 +3818,8 @@ static ir_val_t build_compound_assignment(
   if (is_bitfield) {
     old_value = emit_bitfield_load(
         context, pointer, bit_width, bit_offset, bit_is_signed,
-        target_storage_type, target_storage_type);
+        target_storage_type, target_storage_type,
+        node_has_volatile_qualifier(target));
   } else {
     int old_vreg = hir_ir_new_vreg(context);
     if (old_vreg < 0) return ir_val_none();
@@ -3763,6 +3831,8 @@ static ir_val_t build_compound_assignment(
     load->dst = ir_val_vreg(old_vreg, target_storage_type);
     load->src1 = pointer;
     load->is_unsigned = target_type.is_unsigned ? 1 : 0;
+    load->is_volatile =
+        node_has_volatile_qualifier(target) ? 1 : 0;
     if (!hir_ir_append_instruction(context, load)) return ir_val_none();
     old_value = load->dst;
   }
@@ -3935,7 +4005,7 @@ static ir_val_t build_compound_assignment(
   if (is_bitfield)
     return emit_bitfield_store(
         context, pointer, result, bit_width, bit_offset, bit_is_signed,
-        target_storage_type);
+        target_storage_type, node_has_volatile_qualifier(target));
   if (!hir_ir_store_direct_value(context, pointer, result))
     return ir_val_none();
   return result;
@@ -4246,10 +4316,13 @@ ir_val_t hir_ir_build_expr(
       if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
       int atomic_width = hir_ir_atomic_object_storage_width(
           context, node, type);
-      return atomic_width != 0
-                 ? hir_ir_load_atomic_object_value(
-                       context, pointer, atomic_width)
-                 : pointer;
+      if (atomic_width != 0)
+        return hir_ir_load_atomic_object_value(
+            context, pointer, atomic_width);
+      if (node_has_volatile_qualifier(node))
+        return materialize_volatile_complex_lvalue(
+            context, pointer, type);
+      return pointer;
     }
     if (kind == PSX_HIR_CALL)
       return hir_ir_build_call(context, node, type);
@@ -4358,7 +4431,8 @@ ir_val_t hir_ir_build_expr(
       return emit_bitfield_load(
           context, pointer, bit_width, bit_offset, bit_is_signed,
           hir_ir_scalar_storage_type(type),
-          hir_ir_scalar_storage_type(type));
+          hir_ir_scalar_storage_type(type),
+          node_has_volatile_qualifier(node));
     return load_direct_lvalue_value(context, node, pointer, type);
   }
 
@@ -4385,7 +4459,8 @@ ir_val_t hir_ir_build_expr(
       return emit_bitfield_load(
           context, pointer, bit_width, bit_offset, bit_is_signed,
           hir_ir_scalar_storage_type(type),
-          hir_ir_scalar_storage_type(type));
+          hir_ir_scalar_storage_type(type),
+          node_has_volatile_qualifier(node));
     return load_direct_lvalue_value(context, node, pointer, type);
   }
 
@@ -4414,7 +4489,8 @@ ir_val_t hir_ir_build_expr(
       return emit_bitfield_load(
           context, pointer, bit_width, bit_offset, bit_is_signed,
           hir_ir_scalar_storage_type(type),
-          hir_ir_scalar_storage_type(type));
+          hir_ir_scalar_storage_type(type),
+          node_has_volatile_qualifier(node));
     return load_direct_lvalue_value(context, node, pointer, type);
   }
 
@@ -4433,7 +4509,8 @@ ir_val_t hir_ir_build_expr(
       return emit_bitfield_load(
           context, ir_val_vreg(pointer, IR_TY_PTR), bit_width,
           bit_offset, bit_is_signed, hir_ir_scalar_storage_type(type),
-          hir_ir_scalar_storage_type(type));
+          hir_ir_scalar_storage_type(type),
+          node_has_volatile_qualifier(node));
     return load_direct_lvalue_value(
         context, node, ir_val_vreg(pointer, IR_TY_PTR), type);
   }
@@ -4505,7 +4582,8 @@ ir_val_t hir_ir_build_expr(
             target, &bit_width, &bit_offset, &bit_is_signed)) {
       return emit_bitfield_store(
           context, pointer, value, bit_width, bit_offset, bit_is_signed,
-          hir_ir_scalar_storage_type(target_type));
+          hir_ir_scalar_storage_type(target_type),
+          node_has_volatile_qualifier(target));
     }
     if (node_has_atomic_qualifier(target)) {
       if (!store_direct_atomic_value(
