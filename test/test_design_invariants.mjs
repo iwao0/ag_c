@@ -138,6 +138,8 @@ const wasmMultiTuProbeFixtures = [
   "named_record_signature_xtu_other.c",
   "packed_indirect_record_signature_xtu_main.c",
   "packed_indirect_record_signature_xtu_other.c",
+  "packed_pointer_record_signature_xtu_main.c",
+  "packed_pointer_record_signature_xtu_other.c",
   "record_member_alignment_signature_xtu_main.c",
   "record_member_alignment_signature_xtu_other.c",
   "union_member_order_signature_xtu_main.c",
@@ -13157,10 +13159,28 @@ if (!/\bchar\s*\*\s*layout_signature\s*;/.test(abiLoweringHeader) ||
     !/psx_record_layout_member\s*\(/.test(abiLoweringSource) ||
     !/member_layout->offset/.test(abiLoweringSource) ||
     !/\bqsort\s*\(\s*union_members/.test(abiLoweringSource) ||
+    !/abi_layout_record_is_active\s*\(/.test(abiLoweringSource) ||
+    !/pointee_shape\.kind\s*==\s*PSX_TYPE_STRUCT/.test(
+      abiLoweringSource,
+    ) ||
+    !/abi_layout_write_literal\s*\(\s*writer\s*,\s*"\?"\s*\)/.test(
+      abiLoweringSource,
+    ) ||
+    !/record_stack\s*,\s*nested_record_depth/.test(
+      abiLoweringSource,
+    ) ||
     !/copy_abi_layout_signature\s*\(/.test(wasmMachineAbiSource) ||
     !/emit_abi_layout_section\s*\(/.test(wasmObjectSectionsSource) ||
     !/agc\.abi_layout/.test(wasmObjectSectionsSource) ||
+    !/emit_abi_layout_section[^]*?wb_uleb\s*\(\s*&payload\s*,\s*2\s*\)/.test(
+      wasmObjectSectionsSource,
+    ) ||
     !/parse_abi_layout_section\s*\(/.test(runtimeLinkerSource) ||
+    !/version\s*!=\s*1\s*&&\s*version\s*!=\s*2/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/left_version\s*!=\s*right_version/.test(runtimeLinkerSource) ||
+    !/abi_layout_types_compatible\s*\(/.test(runtimeLinkerSource) ||
     !/abi_layout_signatures_compatible\s*\(/.test(
       runtimeLinkerSource,
     )) {
@@ -13187,6 +13207,12 @@ const crossTuSignatureMismatchFixtures = [
   "indirect_record_layout_signature_mismatch_other.c",
   "nested_record_layout_signature_mismatch_main.c",
   "nested_record_layout_signature_mismatch_other.c",
+  "pointer_record_layout_signature_mismatch_main.c",
+  "pointer_record_layout_signature_mismatch_other.c",
+  "nested_pointer_record_layout_signature_mismatch_main.c",
+  "nested_pointer_record_layout_signature_mismatch_other.c",
+  "incomplete_pointer_sibling_layout_mismatch_main.c",
+  "incomplete_pointer_sibling_layout_mismatch_other.c",
   "struct_member_order_signature_mismatch_main.c",
   "struct_member_order_signature_mismatch_other.c",
   "union_member_type_signature_mismatch_main.c",

@@ -152,6 +152,7 @@ typedef struct {
   int abi_layout_signature_count;
   int abi_layout_signature_cap;
   int has_abi_layout_section;
+  uint32_t abi_layout_version;
   function_flags_t *function_flags;
   int function_flag_count;
   int function_flag_cap;
@@ -692,7 +693,7 @@ static void parse_abi_layout_section(object_t *o, rd_t sec) {
   if (o->has_abi_layout_section)
     die("duplicate agc.abi_layout section");
   uint32_t version = rd_uleb(&sec);
-  if (version != 1)
+  if (version != 1 && version != 2)
     die("unsupported agc.abi_layout version");
   uint32_t count = rd_uleb(&sec);
   for (uint32_t i = 0; i < count; i++) {
@@ -719,6 +720,7 @@ static void parse_abi_layout_section(object_t *o, rd_t sec) {
   if (sec.pos != sec.len)
     die("trailing bytes in agc.abi_layout section");
   o->has_abi_layout_section = 1;
+  o->abi_layout_version = version;
 }
 
 static void parse_function_flags_section(object_t *o, rd_t sec) {
@@ -1568,41 +1570,405 @@ static int unspecified_function_signature_matches(
          wasm_type_result_valtype(specified_type);
 }
 
-static int abi_layout_parameter_offset(str_t signature) {
-  if (signature.len < 4 || signature.s[0] != 'F' ||
-      signature.s[signature.len - 1] != ')')
-    return -1;
-  for (int index = 1; index < signature.len - 1; index++) {
-    if (signature.s[index] == '(') return index;
-  }
-  return -1;
+static int abi_layout_decimal_equal(
+    str_t left, int *left_offset,
+    str_t right, int *right_offset) {
+  uint32_t left_value = 0;
+  uint32_t right_value = 0;
+  return canonical_decimal(
+             left, left_offset, &left_value) &&
+         canonical_decimal(
+             right, right_offset, &right_value) &&
+         left_value == right_value;
 }
 
-static int abi_layout_has_parameter_wildcard(
-    str_t signature, int parameter_offset) {
-  return parameter_offset >= 0 &&
-         parameter_offset + 2 == signature.len - 1 &&
-         signature.s[parameter_offset + 1] == '?';
+static int abi_layout_signed_decimal_equal(
+    str_t left, int *left_offset,
+    str_t right, int *right_offset) {
+  int left_negative =
+      *left_offset < left.len &&
+      left.s[*left_offset] == '-';
+  int right_negative =
+      *right_offset < right.len &&
+      right.s[*right_offset] == '-';
+  if (left_negative != right_negative) return 0;
+  if (left_negative) {
+    (*left_offset)++;
+    (*right_offset)++;
+  }
+  return abi_layout_decimal_equal(
+      left, left_offset, right, right_offset);
+}
+
+static int abi_layout_array_bound_compatible(
+    str_t left, int *left_offset,
+    str_t right, int *right_offset) {
+  uint32_t left_bound = 0;
+  uint32_t right_bound = 0;
+  return canonical_decimal(
+             left, left_offset, &left_bound) &&
+         canonical_decimal(
+             right, right_offset, &right_bound) &&
+         (left_bound == right_bound ||
+          left_bound == 0 || right_bound == 0);
+}
+
+static int abi_layout_skip_type(
+    str_t signature, int *offset) {
+  if (!offset || *offset < 0 ||
+      *offset >= signature.len)
+    return 0;
+  char kind = signature.s[(*offset)++];
+  if (kind == '?' || kind == 'v' || kind == 'r')
+    return 1;
+  uint32_t ignored = 0;
+  if (kind == 'x' || kind == 'f') {
+    return canonical_decimal(
+               signature, offset, &ignored) &&
+           *offset < signature.len &&
+           signature.s[(*offset)++] == ':' &&
+           canonical_decimal(
+               signature, offset, &ignored);
+  }
+  if (kind == 'p') {
+    if (!canonical_decimal(
+            signature, offset, &ignored) ||
+        *offset >= signature.len ||
+        signature.s[(*offset)++] != ':' ||
+        !canonical_decimal(
+            signature, offset, &ignored))
+      return 0;
+    if (*offset < signature.len &&
+        signature.s[*offset] == '[') {
+      (*offset)++;
+      if (!abi_layout_skip_type(signature, offset) ||
+          *offset >= signature.len ||
+          signature.s[(*offset)++] != ']')
+        return 0;
+    }
+    return 1;
+  }
+  if (kind == 'a') {
+    return canonical_decimal(
+               signature, offset, &ignored) &&
+           *offset < signature.len &&
+           signature.s[(*offset)++] == '[' &&
+           abi_layout_skip_type(signature, offset) &&
+           *offset < signature.len &&
+           signature.s[(*offset)++] == ']';
+  }
+  if (kind != 's' && kind != 'u') return 0;
+  for (int field = 0; field < 3; field++) {
+    if (!canonical_decimal(
+            signature, offset, &ignored))
+      return 0;
+    if (field < 2 &&
+        (*offset >= signature.len ||
+         signature.s[(*offset)++] != ':'))
+      return 0;
+  }
+  if (*offset >= signature.len ||
+      signature.s[(*offset)++] != '{')
+    return 0;
+  if (*offset < signature.len &&
+      signature.s[*offset] == '}') {
+    (*offset)++;
+    return 1;
+  }
+  for (;;) {
+    if (!canonical_decimal(
+            signature, offset, &ignored) ||
+        *offset >= signature.len ||
+        signature.s[(*offset)++] != ':' ||
+        !canonical_decimal(
+            signature, offset, &ignored) ||
+        *offset >= signature.len ||
+        signature.s[(*offset)++] != ':')
+      return 0;
+    if (*offset < signature.len &&
+        signature.s[*offset] == '-')
+      (*offset)++;
+    if (!canonical_decimal(
+            signature, offset, &ignored) ||
+        *offset >= signature.len ||
+        signature.s[(*offset)++] != ':' ||
+        !abi_layout_skip_type(signature, offset) ||
+        *offset >= signature.len)
+      return 0;
+    char delimiter = signature.s[(*offset)++];
+    if (delimiter == '}') return 1;
+    if (delimiter != '|') return 0;
+  }
+}
+
+static int abi_layout_types_compatible(
+    str_t left, int *left_offset,
+    str_t right, int *right_offset) {
+  if (!left_offset || !right_offset ||
+      *left_offset < 0 || *right_offset < 0 ||
+      *left_offset >= left.len ||
+      *right_offset >= right.len)
+    return 0;
+  if (left.s[*left_offset] == '?') {
+    (*left_offset)++;
+    return abi_layout_skip_type(right, right_offset);
+  }
+  if (right.s[*right_offset] == '?') {
+    (*right_offset)++;
+    return abi_layout_skip_type(left, left_offset);
+  }
+  char kind = left.s[(*left_offset)++];
+  if (kind != right.s[(*right_offset)++]) return 0;
+  if (kind == 'v' || kind == 'r') return 1;
+  if (kind == 'x' || kind == 'f') {
+    return abi_layout_decimal_equal(
+               left, left_offset,
+               right, right_offset) &&
+           *left_offset < left.len &&
+           *right_offset < right.len &&
+           left.s[(*left_offset)++] == ':' &&
+           right.s[(*right_offset)++] == ':' &&
+           abi_layout_decimal_equal(
+               left, left_offset,
+               right, right_offset);
+  }
+  if (kind == 'p') {
+    if (!abi_layout_decimal_equal(
+            left, left_offset,
+            right, right_offset) ||
+        *left_offset >= left.len ||
+        *right_offset >= right.len ||
+        left.s[(*left_offset)++] != ':' ||
+        right.s[(*right_offset)++] != ':' ||
+        !abi_layout_decimal_equal(
+            left, left_offset,
+            right, right_offset))
+      return 0;
+    int left_nested =
+        *left_offset < left.len &&
+        left.s[*left_offset] == '[';
+    int right_nested =
+        *right_offset < right.len &&
+        right.s[*right_offset] == '[';
+    if (left_nested != right_nested) return 0;
+    if (!left_nested) return 1;
+    (*left_offset)++;
+    (*right_offset)++;
+    return abi_layout_types_compatible(
+               left, left_offset,
+               right, right_offset) &&
+           *left_offset < left.len &&
+           *right_offset < right.len &&
+           left.s[(*left_offset)++] == ']' &&
+           right.s[(*right_offset)++] == ']';
+  }
+  if (kind == 'a') {
+    if (!abi_layout_array_bound_compatible(
+            left, left_offset,
+            right, right_offset) ||
+        *left_offset >= left.len ||
+        *right_offset >= right.len ||
+        left.s[(*left_offset)++] != '[' ||
+        right.s[(*right_offset)++] != '[' ||
+        !abi_layout_types_compatible(
+            left, left_offset,
+            right, right_offset) ||
+        *left_offset >= left.len ||
+        *right_offset >= right.len ||
+        left.s[(*left_offset)++] != ']' ||
+        right.s[(*right_offset)++] != ']')
+      return 0;
+    return 1;
+  }
+  if (kind != 's' && kind != 'u') return 0;
+  for (int field = 0; field < 3; field++) {
+    if (!abi_layout_decimal_equal(
+            left, left_offset,
+            right, right_offset))
+      return 0;
+    if (field < 2 &&
+        (*left_offset >= left.len ||
+         *right_offset >= right.len ||
+         left.s[(*left_offset)++] != ':' ||
+         right.s[(*right_offset)++] != ':'))
+      return 0;
+  }
+  if (*left_offset >= left.len ||
+      *right_offset >= right.len ||
+      left.s[(*left_offset)++] != '{' ||
+      right.s[(*right_offset)++] != '{')
+    return 0;
+  for (;;) {
+    int left_end =
+        *left_offset < left.len &&
+        left.s[*left_offset] == '}';
+    int right_end =
+        *right_offset < right.len &&
+        right.s[*right_offset] == '}';
+    if (left_end || right_end) {
+      if (left_end != right_end) return 0;
+      (*left_offset)++;
+      (*right_offset)++;
+      return 1;
+    }
+    if (!abi_layout_decimal_equal(
+            left, left_offset,
+            right, right_offset) ||
+        *left_offset >= left.len ||
+        *right_offset >= right.len ||
+        left.s[(*left_offset)++] != ':' ||
+        right.s[(*right_offset)++] != ':' ||
+        !abi_layout_decimal_equal(
+            left, left_offset,
+            right, right_offset) ||
+        *left_offset >= left.len ||
+        *right_offset >= right.len ||
+        left.s[(*left_offset)++] != ':' ||
+        right.s[(*right_offset)++] != ':' ||
+        !abi_layout_signed_decimal_equal(
+            left, left_offset,
+            right, right_offset) ||
+        *left_offset >= left.len ||
+        *right_offset >= right.len ||
+        left.s[(*left_offset)++] != ':' ||
+        right.s[(*right_offset)++] != ':' ||
+        !abi_layout_types_compatible(
+            left, left_offset,
+            right, right_offset) ||
+        *left_offset >= left.len ||
+        *right_offset >= right.len)
+      return 0;
+    char left_delimiter = left.s[(*left_offset)++];
+    char right_delimiter = right.s[(*right_offset)++];
+    if (left_delimiter != right_delimiter ||
+        (left_delimiter != '|' &&
+         left_delimiter != '}'))
+      return 0;
+    if (left_delimiter == '}') return 1;
+  }
+}
+
+static int abi_layout_whole_parameter_wildcard(
+    str_t signature, int offset) {
+  return offset >= 0 &&
+         offset + 1 < signature.len &&
+         signature.s[offset] == '?' &&
+         signature.s[offset + 1] == ')';
+}
+
+static int abi_layout_at_ellipsis(
+    str_t signature, int offset) {
+  return offset >= 0 && offset + 2 < signature.len &&
+         signature.s[offset] == '.' &&
+         signature.s[offset + 1] == '.' &&
+         signature.s[offset + 2] == '.';
+}
+
+static int abi_layout_skip_parameter_list(
+    str_t signature, int *offset) {
+  if (!offset || *offset < 0 ||
+      *offset >= signature.len)
+    return 0;
+  if (abi_layout_whole_parameter_wildcard(
+          signature, *offset)) {
+    *offset += 2;
+    return 1;
+  }
+  if (signature.s[*offset] == ')') {
+    (*offset)++;
+    return 1;
+  }
+  for (;;) {
+    if (abi_layout_at_ellipsis(signature, *offset)) {
+      *offset += 3;
+    } else if (!abi_layout_skip_type(
+                   signature, offset)) {
+      return 0;
+    }
+    if (*offset >= signature.len) return 0;
+    char delimiter = signature.s[(*offset)++];
+    if (delimiter == ')') return 1;
+    if (delimiter != ',') return 0;
+  }
 }
 
 static int abi_layout_signatures_compatible(
     const c_signature_t *left_entry,
-    const c_signature_t *right_entry) {
+    uint32_t left_version,
+    const c_signature_t *right_entry,
+    uint32_t right_version) {
   if (!left_entry || !right_entry) return 1;
   str_t left = left_entry->signature;
   str_t right = right_entry->signature;
   if (str_eq(left, right)) return 1;
-  int left_offset = abi_layout_parameter_offset(left);
-  int right_offset = abi_layout_parameter_offset(right);
-  return left_offset >= 0 &&
-         left_offset == right_offset &&
-         memcmp(
-             left.s, right.s,
-             (size_t)left_offset) == 0 &&
-         (abi_layout_has_parameter_wildcard(
-              left, left_offset) ||
-          abi_layout_has_parameter_wildcard(
-              right, right_offset));
+  if (left_version != right_version) return 1;
+  int left_offset = 0;
+  int right_offset = 0;
+  if (left.len < 4 || right.len < 4 ||
+      left.s[left_offset++] != 'F' ||
+      right.s[right_offset++] != 'F' ||
+      !abi_layout_types_compatible(
+          left, &left_offset,
+          right, &right_offset) ||
+      left_offset >= left.len ||
+      right_offset >= right.len ||
+      left.s[left_offset++] != '(' ||
+      right.s[right_offset++] != '(')
+    return 0;
+  if (abi_layout_whole_parameter_wildcard(
+          left, left_offset)) {
+    left_offset += 2;
+    return left_offset == left.len &&
+           abi_layout_skip_parameter_list(
+               right, &right_offset) &&
+           right_offset == right.len;
+  }
+  if (abi_layout_whole_parameter_wildcard(
+          right, right_offset)) {
+    right_offset += 2;
+    return right_offset == right.len &&
+           abi_layout_skip_parameter_list(
+               left, &left_offset) &&
+           left_offset == left.len;
+  }
+  for (;;) {
+    if (left_offset >= left.len ||
+        right_offset >= right.len)
+      return 0;
+    if (left.s[left_offset] == ')' ||
+        right.s[right_offset] == ')') {
+      if (left.s[left_offset++] != ')' ||
+          right.s[right_offset++] != ')')
+        return 0;
+      return left_offset == left.len &&
+             right_offset == right.len;
+    }
+    int left_ellipsis =
+        abi_layout_at_ellipsis(left, left_offset);
+    int right_ellipsis =
+        abi_layout_at_ellipsis(right, right_offset);
+    if (left_ellipsis || right_ellipsis) {
+      if (left_ellipsis != right_ellipsis) return 0;
+      left_offset += 3;
+      right_offset += 3;
+    } else if (!abi_layout_types_compatible(
+                   left, &left_offset,
+                   right, &right_offset)) {
+      return 0;
+    }
+    if (left_offset >= left.len ||
+        right_offset >= right.len)
+      return 0;
+    char left_delimiter = left.s[left_offset++];
+    char right_delimiter = right.s[right_offset++];
+    if (left_delimiter != right_delimiter ||
+        (left_delimiter != ',' &&
+         left_delimiter != ')'))
+      return 0;
+    if (left_delimiter == ')')
+      return left_offset == left.len &&
+             right_offset == right.len;
+  }
 }
 
 static int func_signature_matches(object_t *ref_obj, int ref_func,
@@ -1633,7 +1999,8 @@ static int func_signature_matches(object_t *ref_obj, int ref_func,
           def_obj, def_obj->funcs[def_func].name);
   int layouts_compatible =
       abi_layout_signatures_compatible(
-          reference_layout, definition_layout);
+          reference_layout, ref_obj->abi_layout_version,
+          definition_layout, def_obj->abi_layout_version);
   if (!reference || !definition)
     return wasm_types_equal && layouts_compatible;
   if (canonical_type_signatures_compatible(

@@ -451,6 +451,30 @@ static int run_record_layout_signature_mismatch_cases(void) {
           "nested_record_layout_signature_mismatch_other.c",
           "read_nested_layout_envelope",
       },
+      {
+          "pointer_record_layout_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "pointer_record_layout_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "pointer_record_layout_signature_mismatch_other.c",
+          "read_pointer_layout_payload",
+      },
+      {
+          "nested_pointer_record_layout_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "nested_pointer_record_layout_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "nested_pointer_record_layout_signature_mismatch_other.c",
+          "read_nested_pointer_envelope",
+      },
+      {
+          "incomplete_pointer_sibling_layout_mismatch",
+          "test/fixtures/wasm32/"
+          "incomplete_pointer_sibling_layout_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "incomplete_pointer_sibling_layout_mismatch_other.c",
+          "read_sibling_layout_payload",
+      },
   };
   for (size_t index = 0;
        index < sizeof(cases) / sizeof(cases[0]); index++) {

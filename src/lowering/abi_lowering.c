@@ -84,10 +84,23 @@ static int abi_layout_string_compare(
   return strcmp(*left_string, *right_string);
 }
 
+static int abi_layout_record_is_active(
+    const psx_record_id_t *record_stack,
+    int record_depth, psx_record_id_t record_id) {
+  if (!record_stack || record_depth < 0 ||
+      record_id == PSX_RECORD_ID_INVALID)
+    return 0;
+  for (int index = 0; index < record_depth; index++) {
+    if (record_stack[index] == record_id) return 1;
+  }
+  return 0;
+}
+
 static void abi_layout_write_type(
     abi_layout_writer_t *writer,
     const ir_abi_type_context_t *context,
-    psx_qual_type_t type, int depth) {
+    psx_qual_type_t type, int depth,
+    psx_record_id_t *record_stack, int record_depth) {
   if (!writer || writer->failed || !context ||
       !context->semantic_types || !context->record_layouts ||
       !context->target ||
@@ -128,6 +141,29 @@ static void abi_layout_write_type(
     abi_layout_write_unsigned(writer, (unsigned int)size);
     abi_layout_write_literal(writer, ":");
     abi_layout_write_unsigned(writer, (unsigned int)alignment);
+    if (shape.kind == PSX_TYPE_POINTER) {
+      psx_qual_type_t pointee =
+          psx_semantic_type_table_base(
+              context->semantic_types, type.type_id);
+      psx_type_shape_t pointee_shape = {0};
+      if (pointee.type_id == PSX_TYPE_ID_INVALID ||
+          !psx_semantic_type_table_describe(
+              context->semantic_types, pointee.type_id,
+              &pointee_shape)) {
+        writer->failed = 1;
+        return;
+      }
+      if (pointee_shape.kind == PSX_TYPE_POINTER ||
+          pointee_shape.kind == PSX_TYPE_ARRAY ||
+          pointee_shape.kind == PSX_TYPE_STRUCT ||
+          pointee_shape.kind == PSX_TYPE_UNION) {
+        abi_layout_write_literal(writer, "[");
+        abi_layout_write_type(
+            writer, context, pointee, depth + 1,
+            record_stack, record_depth);
+        abi_layout_write_literal(writer, "]");
+      }
+    }
     return;
   }
   if (shape.kind == PSX_TYPE_ARRAY) {
@@ -144,28 +180,40 @@ static void abi_layout_write_type(
         writer, (unsigned int)shape.array_len);
     abi_layout_write_literal(writer, "[");
     abi_layout_write_type(
-        writer, context, element, depth + 1);
+        writer, context, element, depth + 1,
+        record_stack, record_depth);
     abi_layout_write_literal(writer, "]");
     return;
   }
   if (shape.kind == PSX_TYPE_STRUCT ||
       shape.kind == PSX_TYPE_UNION) {
+    if (abi_layout_record_is_active(
+            record_stack, record_depth, shape.record_id)) {
+      abi_layout_write_literal(writer, "r");
+      return;
+    }
     const psx_record_decl_t *record =
         psx_semantic_type_table_record_decl(
             context->semantic_types, type.type_id);
+    if (!record || !record->is_complete) {
+      abi_layout_write_literal(writer, "?");
+      return;
+    }
     const psx_record_layout_t *layout =
         psx_record_layout_table_lookup(
             context->record_layouts, shape.record_id,
             data_layout);
-    if (!record || !record->is_complete ||
-        !layout || layout->size < 0 ||
+    if (!layout || layout->size < 0 ||
         layout->alignment <= 0 ||
         record->member_count < 0 ||
         layout->member_count < record->member_count ||
-        (record->member_count > 0 && !record->members)) {
+        (record->member_count > 0 && !record->members) ||
+        !record_stack || record_depth >= 128) {
       writer->failed = 1;
       return;
     }
+    record_stack[record_depth] = shape.record_id;
+    int nested_record_depth = record_depth + 1;
     abi_layout_write_literal(
         writer, shape.kind == PSX_TYPE_STRUCT ? "s" : "u");
     abi_layout_write_unsigned(
@@ -220,7 +268,8 @@ static void abi_layout_write_type(
           destination, record->members[index].bit_width);
       abi_layout_write_literal(destination, ":");
       abi_layout_write_type(
-          destination, context, member_type, depth + 1);
+          destination, context, member_type, depth + 1,
+          record_stack, nested_record_depth);
       if (union_members) {
         if (member_writer.failed || !member_writer.data) {
           free(member_writer.data);
@@ -264,6 +313,15 @@ static void abi_layout_write_type(
   abi_layout_write_unsigned(writer, (unsigned int)alignment);
 }
 
+static void abi_layout_write_root_type(
+    abi_layout_writer_t *writer,
+    const ir_abi_type_context_t *context,
+    psx_qual_type_t type) {
+  psx_record_id_t record_stack[129];
+  abi_layout_write_type(
+      writer, context, type, 0, record_stack, 0);
+}
+
 static int set_abi_layout_signature(
     const ir_abi_type_context_t *context,
     const ir_function_type_t *function_type,
@@ -285,8 +343,8 @@ static int set_abi_layout_signature(
 
   abi_layout_writer_t writer = {0};
   abi_layout_write_literal(&writer, "F");
-  abi_layout_write_type(
-      &writer, context, function_type->result, 0);
+  abi_layout_write_root_type(
+      &writer, context, function_type->result);
   abi_layout_write_literal(&writer, "(");
   if (!function_type->has_prototype &&
       parameter_count == 0) {
@@ -298,8 +356,8 @@ static int set_abi_layout_signature(
               ? actual_arguments[index].type
               : function_type->params[index];
       if (index > 0) abi_layout_write_literal(&writer, ",");
-      abi_layout_write_type(
-          &writer, context, parameter, 0);
+      abi_layout_write_root_type(
+          &writer, context, parameter);
     }
     if (function_type->is_variadic) {
       if (parameter_count > 0)

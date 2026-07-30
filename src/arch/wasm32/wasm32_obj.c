@@ -1117,13 +1117,89 @@ static int abi_layout_signature_has_wildcard(
          signature[offset + 1] == '?';
 }
 
+static int abi_layout_signature_has_any_wildcard(
+    const char *signature, int signature_len) {
+  return signature && signature_len > 0 &&
+         memchr(signature, '?', (size_t)signature_len) != NULL;
+}
+
+static int abi_layout_signatures_allow_array_refinement(
+    const char *left, int left_len,
+    const char *right, int right_len,
+    int *right_refinement) {
+  if (!left || !right || left_len <= 0 || right_len <= 0)
+    return 0;
+  int left_offset = 0;
+  int right_offset = 0;
+  int refinement = 0;
+  while (left_offset < left_len &&
+         right_offset < right_len) {
+    if (left[left_offset] == 'a' &&
+        right[right_offset] == 'a') {
+      left_offset++;
+      right_offset++;
+      int left_bound_start = left_offset;
+      int right_bound_start = right_offset;
+      while (left_offset < left_len &&
+             left[left_offset] >= '0' &&
+             left[left_offset] <= '9')
+        left_offset++;
+      while (right_offset < right_len &&
+             right[right_offset] >= '0' &&
+             right[right_offset] <= '9')
+        right_offset++;
+      int left_bound_len = left_offset - left_bound_start;
+      int right_bound_len = right_offset - right_bound_start;
+      if (left_bound_len <= 0 || right_bound_len <= 0)
+        return 0;
+      int bounds_equal =
+          left_bound_len == right_bound_len &&
+          memcmp(
+              left + left_bound_start,
+              right + right_bound_start,
+              (size_t)left_bound_len) == 0;
+      if (!bounds_equal) {
+        int left_incomplete =
+            left_bound_len == 1 &&
+            left[left_bound_start] == '0';
+        int right_incomplete =
+            right_bound_len == 1 &&
+            right[right_bound_start] == '0';
+        if (!left_incomplete && !right_incomplete)
+          return 0;
+        refinement += left_incomplete ? 1 : -1;
+      }
+      continue;
+    }
+    if (left[left_offset++] != right[right_offset++])
+      return 0;
+  }
+  if (left_offset != left_len ||
+      right_offset != right_len)
+    return 0;
+  if (right_refinement)
+    *right_refinement = refinement;
+  return 1;
+}
+
 static int abi_layout_signatures_compatible(
     const char *left, int left_len,
-    const char *right, int right_len) {
+    const char *right, int right_len,
+    int *right_refinement) {
+  if (right_refinement) *right_refinement = 0;
   if (!left || !right || left_len <= 0 || right_len <= 0)
     return 0;
   if (left_len == right_len &&
       memcmp(left, right, (size_t)left_len) == 0)
+    return 1;
+  if (abi_layout_signature_has_any_wildcard(
+          left, left_len) ||
+      abi_layout_signature_has_any_wildcard(
+          right, right_len))
+    return 1;
+  if (abi_layout_signatures_allow_array_refinement(
+          left, left_len, right, right_len,
+          right_refinement))
     return 1;
   int left_offset = abi_layout_signature_parameter_offset(
       left, left_len);
@@ -1160,18 +1236,23 @@ static void set_func_abi_layout_signature(
         context, function, signature, signature_len);
     return;
   }
+  int right_refinement = 0;
   if (!abi_layout_signatures_compatible(
           function->abi_layout_signature,
           function->abi_layout_signature_len,
-          signature, signature_len))
+          signature, signature_len,
+          &right_refinement))
     obj_unsupported_msg(
         context,
         "conflicting Wasm object ABI layout signature");
-  if (abi_layout_signature_has_wildcard(
+  if (abi_layout_signature_has_any_wildcard(
           function->abi_layout_signature,
           function->abi_layout_signature_len) &&
-      !abi_layout_signature_has_wildcard(
+      !abi_layout_signature_has_any_wildcard(
           signature, signature_len))
+    replace_func_abi_layout_signature(
+        context, function, signature, signature_len);
+  else if (right_refinement > 0)
     replace_func_abi_layout_signature(
         context, function, signature, signature_len);
 }

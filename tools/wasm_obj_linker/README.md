@@ -105,13 +105,16 @@ Within one object, an earlier function-reference signature containing an
 incomplete array bound or record is refined to the more complete signature
 when its compatible definition becomes available.
 
-The separate `agc.abi_layout` section records the target ABI layout used for
-each function result and parameter. Its recursive fingerprint includes
-aggregate size, alignment, member offsets, bit offsets, and nested member
-layouts. This catches cross-object layout differences such as `#pragma pack`
-that remain invisible when a large aggregate is passed indirectly as a Wasm
-pointer. Union member fingerprints are compared independently of declaration
-order. Objects without this section remain linkable for backward
+The separate version 2 `agc.abi_layout` section records the target ABI layout
+used for each function result and parameter. Its recursive fingerprint
+includes aggregate size, alignment, member offsets, bit offsets, nested member
+layouts, and complete aggregate layouts reachable through pointers. Recursive
+record pointers use a cycle marker, while an incomplete pointee uses a
+type-local wildcard so known result and parameter layouts remain checked.
+This catches cross-object `#pragma pack` differences both for large aggregates
+passed indirectly by the ABI and for aggregates dereferenced through
+pointers. Union member fingerprints are compared independently of declaration
+order. Version 1 and objects without this section remain linkable for backward
 compatibility.
 
 ## Usage

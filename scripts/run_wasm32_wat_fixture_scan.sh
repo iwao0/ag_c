@@ -64,6 +64,8 @@ skip_reason() {
     test/fixtures/probes_found_bugs/named_record_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/packed_indirect_record_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/packed_indirect_record_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/packed_pointer_record_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/packed_pointer_record_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/record_member_alignment_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/record_member_alignment_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/union_member_order_signature_xtu_main.c|\
@@ -102,6 +104,12 @@ skip_reason() {
     test/fixtures/wasm32/indirect_record_layout_signature_mismatch_other.c|\
     test/fixtures/wasm32/nested_record_layout_signature_mismatch_main.c|\
     test/fixtures/wasm32/nested_record_layout_signature_mismatch_other.c|\
+    test/fixtures/wasm32/pointer_record_layout_signature_mismatch_main.c|\
+    test/fixtures/wasm32/pointer_record_layout_signature_mismatch_other.c|\
+    test/fixtures/wasm32/nested_pointer_record_layout_signature_mismatch_main.c|\
+    test/fixtures/wasm32/nested_pointer_record_layout_signature_mismatch_other.c|\
+    test/fixtures/wasm32/incomplete_pointer_sibling_layout_mismatch_main.c|\
+    test/fixtures/wasm32/incomplete_pointer_sibling_layout_mismatch_other.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_main.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_other.c|\
     test/fixtures/wasm32/union_member_type_signature_mismatch_main.c|\
