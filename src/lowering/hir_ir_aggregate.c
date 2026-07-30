@@ -287,6 +287,35 @@ static int copy_aggregate_value_to(
   return hir_ir_append_instruction(context, copy);
 }
 
+static ir_val_t materialize_volatile_aggregate_lvalue(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_val_t source, ir_mir_type_info_t type) {
+  if (source.type != IR_TY_PTR ||
+      type.type_class != IR_MIR_TYPE_AGGREGATE ||
+      type.source_size <= 0)
+    return hir_ir_unsupported_expr(context);
+  int alignment = psx_qual_type_layout_alignof(
+      context->options->semantic_types,
+      context->options->record_layouts,
+      psx_hir_node_qual_type(node),
+      ag_target_info_data_layout(context->options->target));
+  if (alignment > 16) alignment = 16;
+  int temporary = hir_ir_allocate_scalar_temp(
+      context, type.source_size, alignment);
+  if (temporary < 0) return ir_val_none();
+  ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+  if (!copy) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  copy->src1 = ir_val_vreg(temporary, IR_TY_PTR);
+  copy->src2 = source;
+  copy->alloca_size = type.source_size;
+  if (!hir_ir_append_instruction(context, copy))
+    return ir_val_none();
+  return copy->src1;
+}
+
 static ir_val_t build_aggregate_ternary_address(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_mir_type_info_t result_type) {
@@ -339,10 +368,14 @@ ir_val_t hir_ir_aggregate_value_address(
     int atomic_width =
         hir_ir_atomic_object_storage_width(
             context, node, type);
-    return atomic_width != 0
-               ? hir_ir_load_atomic_object_value(
-                     context, pointer, atomic_width)
-               : pointer;
+    if (atomic_width != 0)
+      return hir_ir_load_atomic_object_value(
+          context, pointer, atomic_width);
+    if ((psx_hir_node_qual_type(node).qualifiers &
+         PSX_TYPE_QUALIFIER_VOLATILE) != 0)
+      return materialize_volatile_aggregate_lvalue(
+          context, node, pointer, type);
+    return pointer;
   }
   if (kind == PSX_HIR_STMT_EXPR) {
     const psx_hir_node_t *prefix = hir_ir_child_for_edge(

@@ -4766,7 +4766,11 @@ static psx_semantic_node_t *build_direct_expression_impl(
     const node_member_access_t *access =
         (const node_member_access_t *)syntax;
     psx_semantic_node_t *base =
-        build_direct_expression(context, syntax->lhs);
+        !access->from_pointer &&
+                direct_syntax_designates_lvalue(
+                    context, syntax->lhs)
+            ? build_direct_lvalue(context, syntax->lhs)
+            : build_direct_expression(context, syntax->lhs);
     if (!base) return NULL;
     psx_hir_member_resolution_t resolution;
     if (!psx_resolve_member_hir_node_spec_in(

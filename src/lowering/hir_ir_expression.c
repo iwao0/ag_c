@@ -29,6 +29,10 @@ static ir_val_t build_atomic_complex_compound_assignment(
     ir_mir_type_info_t rhs_type,
     psx_hir_compound_operator_t compound_op,
     int atomic_width);
+static ir_val_t materialize_direct_value_as_complex(
+    hir_ir_context_t *context, ir_val_t real,
+    ir_mir_type_info_t source_type,
+    ir_mir_type_info_t target_type);
 
 static ir_val_t global_address(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
@@ -248,7 +252,9 @@ static ir_val_t member_address(
   ir_val_t base_address =
       psx_hir_node_member_from_pointer(node)
           ? hir_ir_build_expr(context, base)
-          : hir_ir_aggregate_value_address(context, base);
+          : hir_ir_node_is_lvalue(base)
+                ? hir_ir_lvalue_address(context, base)
+                : hir_ir_aggregate_value_address(context, base);
   if (context->status != IR_HIR_BUILD_OK ||
       base_address.type != IR_TY_PTR)
     return hir_ir_unsupported_expr(context);
@@ -353,11 +359,31 @@ static ir_val_t build_complex_assignment(
     copy->src2 = source;
     copy->alloca_size = target_type.source_size;
     if (!hir_ir_append_instruction(context, copy)) return ir_val_none();
-    return destination;
+    return node_has_volatile_qualifier(target)
+               ? source : destination;
   }
   if (!hir_ir_is_scalar_value_type(source_type))
     return hir_ir_unsupported_expr(context);
   ir_val_t real = hir_ir_build_expr(context, source_node);
+  if (context->status == IR_HIR_BUILD_OK &&
+      node_has_volatile_qualifier(target)) {
+    ir_val_t source = materialize_direct_value_as_complex(
+        context, real, source_type, target_type);
+    if (context->status != IR_HIR_BUILD_OK ||
+        source.type != IR_TY_PTR)
+      return ir_val_none();
+    ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+    if (!copy) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    copy->src1 = destination;
+    copy->src2 = source;
+    copy->alloca_size = target_type.source_size;
+    if (!hir_ir_append_instruction(context, copy))
+      return ir_val_none();
+    return source;
+  }
   ir_mir_type_info_t component_type = {
       .type = target_type.type,
       .type_class = IR_MIR_TYPE_FLOAT,
@@ -3172,7 +3198,8 @@ static ir_val_t build_complex_compound_assignment(
     copy->src2 = result;
     copy->alloca_size = target_type.source_size;
     if (!hir_ir_append_instruction(context, copy)) return ir_val_none();
-    return pointer;
+    return node_has_volatile_qualifier(target)
+               ? result : pointer;
   }
 
   psx_type_shape_t target_semantic_type = {0};

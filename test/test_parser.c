@@ -2287,6 +2287,142 @@ static void test_typed_hir_volatile_complex_load_lowering_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_typed_hir_volatile_aggregate_load_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_volatile_aggregate_load_lowering_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "struct pair { int left; int right; };"
+      "struct packet { long values[5]; };"
+      "union choice { unsigned long long bits; double real; };"
+      "struct container { volatile struct pair member; int tail; };"
+      "static volatile struct pair global_pairs[2] = {{1, 2}, {3, 4}};"
+      "static volatile struct packet global_packet = {{5, 6, 7, 8, 9}};"
+      "static volatile union choice global_choice = {.bits = 10};"
+      "static volatile struct pair * volatile volatile_pointer ="
+      "    &global_pairs[0];"
+      "int main(void) {"
+      "  volatile struct pair local = {11, 12};"
+      "  volatile struct pair *pointer = &local;"
+      "  struct container container = {{13, 14}, 15};"
+      "  (void)global_pairs[1];"
+      "  (void)local;"
+      "  (void)*pointer;"
+      "  (void)*volatile_pointer;"
+      "  (void)container.member;"
+      "  (void)global_packet;"
+      "  (void)global_choice;"
+      "  (void)(volatile struct pair){16, 17};"
+      "  (void)(1, global_pairs[0]);"
+      "  container.member.left = 18;"
+      "  return 0;"
+      "}"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  /* Nine discarded aggregate lvalue conversions each materialize one
+   * complete value.  The top-level volatile pointer is also read once.
+   * Updating a nested member must address the original object and therefore
+   * must not add a tenth aggregate copy. */
+  ASSERT_EQ(9, count_ir_op(ir->funcs, IR_MEMCPY));
+  ASSERT_EQ(1, count_volatile_ir_load(ir->funcs));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void
+test_typed_hir_volatile_complex_assignment_result_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_volatile_complex_assignment_result_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "static volatile double _Complex source = 1.0;"
+      "static volatile double _Complex target;"
+      "static volatile double _Complex compound_source = 2.0;"
+      "static volatile double _Complex compound_target = 3.0;"
+      "static volatile double _Complex scalar_target;"
+      "int main(void) {"
+      "  double _Complex assigned = (target = source);"
+      "  double _Complex converted = (scalar_target = 4.0);"
+      "  double _Complex updated ="
+      "      (compound_target += compound_source);"
+      "  (void)assigned;"
+      "  (void)converted;"
+      "  (void)updated;"
+      "  return 0;"
+      "}"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  int copy_sources[6] = {0};
+  int copy_count = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op != IR_MEMCPY) continue;
+      ASSERT_TRUE(copy_count < 6);
+      copy_sources[copy_count++] = instruction->src2.id;
+    }
+  }
+  /* Each volatile-target operation first copies its computed snapshot to the
+   * target and then copies that same snapshot to the result object.  Returning
+   * the target address would make the second source differ and reread the
+   * volatile destination after the store. */
+  ASSERT_EQ(6, copy_count);
+  ASSERT_EQ(copy_sources[0], copy_sources[1]);
+  ASSERT_EQ(copy_sources[2], copy_sources[3]);
+  ASSERT_EQ(copy_sources[4], copy_sources[5]);
+  ASSERT_EQ(6, count_volatile_ir_load(ir->funcs));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_narrow_return_lowering_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_narrow_return_lowering_without_ast...\n");
@@ -21564,6 +21700,10 @@ int main() {
   test_typed_hir_local_lowering_without_ast(test_suite_session);
   test_typed_hir_volatile_load_lowering_without_ast(test_suite_session);
   test_typed_hir_volatile_complex_load_lowering_without_ast(
+      test_suite_session);
+  test_typed_hir_volatile_aggregate_load_lowering_without_ast(
+      test_suite_session);
+  test_typed_hir_volatile_complex_assignment_result_without_ast(
       test_suite_session);
   test_typed_hir_narrow_return_lowering_without_ast(test_suite_session);
   test_typed_hir_overaligned_local_without_ast(test_suite_session);

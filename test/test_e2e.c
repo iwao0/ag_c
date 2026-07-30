@@ -1621,6 +1621,8 @@ static const test_case_t test_cases[] = {
     {"probes", "volatile_member_aggregate_value_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/volatile_member_aggregate_value_abi_boundaries.c", 0, 0},
     {"probes", "volatile_discarded_access_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/volatile_discarded_access_boundaries.c", 0, 0},
     {"probes", "volatile_complex_discarded_access_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/volatile_complex_discarded_access_boundaries.c", 0, 0},
+    {"probes", "volatile_aggregate_discarded_access_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/volatile_aggregate_discarded_access_boundaries.c", 0, 0},
+    {"probes", "volatile_complex_assignment_result_snapshots", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/volatile_complex_assignment_result_snapshots.c", 0, 0},
     {"probes", "compound_literal_scalar_lvalue", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_literal_scalar_lvalue.c", 0, 0},
     {"probes", "compound_literal_block_identity", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_literal_block_identity.c", 0, 0},
     {"probes", "compound_literal_recursive_frame_identity", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_literal_recursive_frame_identity.c", 0, 0},
