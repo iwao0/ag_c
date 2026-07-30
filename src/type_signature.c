@@ -96,6 +96,14 @@ static ag_target_scalar_kind_t floating_target_kind(
                     : AG_TARGET_SCALAR_DOUBLE;
 }
 
+static void write_record_body(
+    signature_writer_t *writer,
+    const psx_semantic_type_table_t *types,
+    psx_type_id_t record_type_id,
+    const psx_record_decl_t *record,
+    const signature_path_t *path,
+    const ag_data_layout_t *data_layout);
+
 static void write_type(signature_writer_t *writer,
                        const psx_semantic_type_table_t *types,
                        psx_qual_type_t type, const signature_path_t *path,
@@ -223,43 +231,11 @@ static void write_type(signature_writer_t *writer,
       const psx_record_decl_t *record =
           psx_semantic_type_table_record_decl(types, type.type_id);
       if (record && record->is_anonymous) {
-        if (record->member_count < 0 ||
-            (record->member_count > 0 && !record->members)) {
-          writer->failed = 1;
-          return;
-        }
         write_literal(
             writer, shape.kind == PSX_TYPE_STRUCT ? "s[" : "u[");
-        write_unsigned(writer, record->is_complete ? 1u : 0u);
-        write_literal(writer, ":");
-        write_unsigned(
-            writer,
-            (unsigned int)(
-                record->member_count > 0 ? record->member_count : 0));
-        for (int i = 0; i < record->member_count; i++) {
-          const psx_record_member_decl_t *member = &record->members[i];
-          if (member->len < 0 ||
-              (member->len > 0 && !member->name)) {
-            writer->failed = 1;
-            return;
-          }
-          write_literal(writer, "|");
-          write_unsigned(
-              writer,
-              (unsigned int)(member->len > 0 ? member->len : 0));
-          write_literal(writer, ":");
-          if (member->len > 0)
-            write_bytes(
-                writer, member->name, (size_t)member->len);
-          write_literal(writer, ":");
-          write_signed(writer, member->bit_width);
-          write_literal(writer, member->bit_is_signed ? "s:" : "u:");
-          write_type(
-              writer, types,
-              psx_semantic_type_table_record_member(
-                  types, type.type_id, i),
-              &current, data_layout);
-        }
+        write_record_body(
+            writer, types, type.type_id, record,
+            &current, data_layout);
         write_literal(writer, "]");
         return;
       }
@@ -271,11 +247,62 @@ static void write_type(signature_writer_t *writer,
         write_bytes(writer, shape.record_tag_name,
                     (size_t)shape.record_tag_length);
       write_literal(writer, "}");
+      if (record) {
+        write_literal(writer, "[");
+        write_record_body(
+            writer, types, type.type_id, record,
+            &current, data_layout);
+        write_literal(writer, "]");
+      }
       return;
     }
     default:
       writer->failed = 1;
       return;
+  }
+}
+
+static void write_record_body(
+    signature_writer_t *writer,
+    const psx_semantic_type_table_t *types,
+    psx_type_id_t record_type_id,
+    const psx_record_decl_t *record,
+    const signature_path_t *path,
+    const ag_data_layout_t *data_layout) {
+  if (!record || record->member_count < 0 ||
+      (record->member_count > 0 && !record->members)) {
+    writer->failed = 1;
+    return;
+  }
+  write_unsigned(writer, record->is_complete ? 1u : 0u);
+  write_literal(writer, ":");
+  write_unsigned(
+      writer,
+      (unsigned int)(
+          record->member_count > 0 ? record->member_count : 0));
+  for (int i = 0; i < record->member_count; i++) {
+    const psx_record_member_decl_t *member = &record->members[i];
+    if (member->len < 0 ||
+        (member->len > 0 && !member->name)) {
+      writer->failed = 1;
+      return;
+    }
+    write_literal(writer, "|");
+    write_unsigned(
+        writer,
+        (unsigned int)(member->len > 0 ? member->len : 0));
+    write_literal(writer, ":");
+    if (member->len > 0)
+      write_bytes(
+          writer, member->name, (size_t)member->len);
+    write_literal(writer, ":");
+    write_signed(writer, member->bit_width);
+    write_literal(writer, member->bit_is_signed ? "s:" : "u:");
+    write_type(
+        writer, types,
+        psx_semantic_type_table_record_member(
+            types, record_type_id, i),
+        path, data_layout);
   }
 }
 

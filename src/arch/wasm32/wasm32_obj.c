@@ -777,6 +777,176 @@ static obj_sig_t func_sig_from_machine_callable(
   return copy_signature(context, &inst->reference_signature);
 }
 
+typedef struct {
+  char kind;
+  const char *tag;
+  int tag_len;
+  int end;
+  int has_shape;
+  int is_complete;
+  int body_start;
+  int body_len;
+} obj_canonical_record_t;
+
+static int obj_canonical_decimal(
+    const char *signature, int signature_len,
+    int *offset, uint32_t *value) {
+  if (!signature || !offset || !value ||
+      *offset < 0 || *offset >= signature_len ||
+      signature[*offset] < '0' ||
+      signature[*offset] > '9')
+    return 0;
+  uint32_t result = 0;
+  do {
+    uint32_t digit =
+        (uint32_t)(signature[*offset] - '0');
+    if (result > (UINT32_MAX - digit) / 10u)
+      return 0;
+    result = result * 10u + digit;
+    (*offset)++;
+  } while (
+      *offset < signature_len &&
+      signature[*offset] >= '0' &&
+      signature[*offset] <= '9');
+  *value = result;
+  return 1;
+}
+
+static int obj_canonical_record_at(
+    const char *signature, int signature_len,
+    int offset, obj_canonical_record_t *parsed) {
+  if (!signature || !parsed || offset < 0 ||
+      offset + 2 > signature_len ||
+      (signature[offset] != 's' &&
+       signature[offset] != 'u') ||
+      signature[offset + 1] != '{')
+    return 0;
+  obj_canonical_record_t result = {
+      .kind = signature[offset],
+  };
+  int index = offset + 2;
+  uint32_t tag_len = 0;
+  if (!obj_canonical_decimal(
+          signature, signature_len,
+          &index, &tag_len) ||
+      index >= signature_len ||
+      signature[index++] != ':' ||
+      tag_len > (uint32_t)(signature_len - index))
+    return 0;
+  result.tag = signature + index;
+  result.tag_len = (int)tag_len;
+  index += result.tag_len;
+  if (index >= signature_len ||
+      signature[index++] != '}')
+    return 0;
+  result.end = index;
+  if (index >= signature_len ||
+      signature[index] != '[') {
+    *parsed = result;
+    return 1;
+  }
+
+  int body_start = index + 1;
+  int header_index = body_start;
+  uint32_t complete = 0;
+  uint32_t member_count = 0;
+  if (!obj_canonical_decimal(
+          signature, signature_len,
+          &header_index, &complete) ||
+      complete > 1 ||
+      header_index >= signature_len ||
+      signature[header_index++] != ':' ||
+      !obj_canonical_decimal(
+          signature, signature_len,
+          &header_index, &member_count))
+    return 0;
+  (void)member_count;
+
+  int depth = 1;
+  int body_end = -1;
+  for (int cursor = body_start;
+       cursor < signature_len; cursor++) {
+    if (signature[cursor] == '[') {
+      depth++;
+    } else if (signature[cursor] == ']') {
+      depth--;
+      if (depth == 0) {
+        body_end = cursor;
+        break;
+      }
+    }
+  }
+  if (body_end < 0) return 0;
+  result.has_shape = 1;
+  result.is_complete = complete != 0;
+  result.body_start = body_start;
+  result.body_len = body_end - body_start;
+  result.end = body_end + 1;
+  *parsed = result;
+  return 1;
+}
+
+static int update_record_refinement(
+    int *refinement, int candidate) {
+  if (!refinement || candidate == 0) return 0;
+  if (*refinement != 0 && *refinement != candidate)
+    return 0;
+  *refinement = candidate;
+  return 1;
+}
+
+static int canonical_signatures_allow_record_refinement(
+    const char *left, int left_len,
+    const char *right, int right_len,
+    int *refinement) {
+  int left_offset = 0;
+  int right_offset = 0;
+  while (left_offset < left_len &&
+         right_offset < right_len) {
+    obj_canonical_record_t left_record = {0};
+    obj_canonical_record_t right_record = {0};
+    int left_is_record = obj_canonical_record_at(
+        left, left_len, left_offset, &left_record);
+    int right_is_record = obj_canonical_record_at(
+        right, right_len, right_offset, &right_record);
+    if (left_is_record || right_is_record) {
+      if (!left_is_record || !right_is_record ||
+          left_record.kind != right_record.kind ||
+          !name_eq(
+              left_record.tag, left_record.tag_len,
+              right_record.tag, right_record.tag_len))
+        return 0;
+      if (left_record.has_shape &&
+          right_record.has_shape &&
+          left_record.is_complete &&
+          right_record.is_complete) {
+        if (!canonical_signatures_allow_record_refinement(
+                left + left_record.body_start,
+                left_record.body_len,
+                right + right_record.body_start,
+                right_record.body_len,
+                refinement))
+          return 0;
+      } else if (left_record.is_complete !=
+                 right_record.is_complete) {
+        if (!update_record_refinement(
+                refinement,
+                right_record.is_complete ? 1 : -1))
+          return 0;
+      }
+      left_offset = left_record.end;
+      right_offset = right_record.end;
+      continue;
+    }
+    if (left[left_offset] != right[right_offset])
+      return 0;
+    left_offset++;
+    right_offset++;
+  }
+  return left_offset == left_len &&
+         right_offset == right_len;
+}
+
 static int canonical_function_signature_parameter_list(
     const char *signature, int signature_len,
     int *parameter_list_offset, int *is_empty) {
@@ -823,6 +993,19 @@ static int canonical_function_signatures_allow_unspecified_parameters(
   return 1;
 }
 
+static void replace_func_c_signature(
+    wasm32_obj_context_t *context, obj_func_t *function,
+    const char *signature, int signature_len) {
+  function->c_signature = xrealloc(
+      context->diagnostic_context, function->c_signature,
+      (size_t)signature_len + 1);
+  memcpy(
+      function->c_signature, signature,
+      (size_t)signature_len);
+  function->c_signature[signature_len] = '\0';
+  function->c_signature_len = signature_len;
+}
+
 static void set_func_c_signature(
     wasm32_obj_context_t *context, obj_func_t *function,
     const char *signature, int signature_len) {
@@ -837,6 +1020,16 @@ static void set_func_c_signature(
             function->c_signature, signature,
             (size_t)signature_len) == 0)
       return;
+    int record_refinement = 0;
+    if (canonical_signatures_allow_record_refinement(
+            function->c_signature, function->c_signature_len,
+            signature, signature_len,
+            &record_refinement)) {
+      if (record_refinement > 0)
+        replace_func_c_signature(
+            context, function, signature, signature_len);
+      return;
+    }
     int existing_is_empty = 0;
     int incoming_is_empty = 0;
     if (!canonical_function_signatures_allow_unspecified_parameters(
@@ -845,26 +1038,13 @@ static void set_func_c_signature(
             &existing_is_empty, &incoming_is_empty))
       obj_unsupported_msg(
           context, "conflicting Wasm object C function signature");
-    if (existing_is_empty && !incoming_is_empty) {
-      function->c_signature = xrealloc(
-          context->diagnostic_context, function->c_signature,
-          (size_t)signature_len + 1);
-      memcpy(
-          function->c_signature, signature,
-          (size_t)signature_len);
-      function->c_signature[signature_len] = '\0';
-      function->c_signature_len = signature_len;
-    }
+    if (existing_is_empty && !incoming_is_empty)
+      replace_func_c_signature(
+          context, function, signature, signature_len);
     return;
   }
-  function->c_signature = xrealloc(
-      context->diagnostic_context, function->c_signature,
-      (size_t)signature_len + 1);
-  memcpy(
-      function->c_signature, signature,
-      (size_t)signature_len);
-  function->c_signature[signature_len] = '\0';
-  function->c_signature_len = signature_len;
+  replace_func_c_signature(
+      context, function, signature, signature_len);
 }
 
 static void ensure_func_sig_for_address(

@@ -89,7 +89,16 @@ for example `p<i32(i32)>`. A named enumeration records both its tag identity
 and compatible integer type, for example `e{6:status:u32}`. Cross-object
 signature comparison accepts that enumeration wherever the corresponding
 `u32` occurs recursively, while distinct enumeration tags and `i32` remain
-different types.
+different types. Array types use `aN<type>`. An incomplete or variable bound
+is `a0<type>` and is compatible with a specified bound when the element types
+are compatible; two different non-zero constant bounds remain incompatible.
+Named records retain their tag atom and append a structural suffix, for
+example `s{6:packet}[1:1|5:value:0u:i32]`. Complete records with the same tag
+must have compatible corresponding members. An incomplete record suffix such
+as `s{8:envelope}[0:0]` remains compatible with its completed definition.
+Within one object, an earlier incomplete function-reference signature is
+refined to the completed structural signature when the tag definition becomes
+available.
 
 ## Usage
 

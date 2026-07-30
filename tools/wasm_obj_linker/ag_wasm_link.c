@@ -854,6 +854,21 @@ typedef struct {
   uint32_t integer_bits;
 } canonical_enum_type_t;
 
+typedef struct {
+  uint32_t bound;
+  int element_start;
+} canonical_array_type_t;
+
+typedef struct {
+  char kind;
+  str_t tag;
+  int end;
+  int has_shape;
+  int is_complete;
+  int body_start;
+  int body_length;
+} canonical_record_type_t;
+
 static int canonical_decimal(
     str_t signature, int *offset, uint32_t *value) {
   if (!offset || !value || *offset < 0 ||
@@ -944,12 +959,129 @@ static int canonical_enum_type_at(
   return 1;
 }
 
+static int canonical_array_type_at(
+    str_t signature, int offset,
+    canonical_array_type_t *parsed) {
+  if (!parsed || offset < 0 ||
+      offset >= signature.len ||
+      signature.s[offset] != 'a')
+    return 0;
+  canonical_array_type_t result = {0};
+  int index = offset + 1;
+  if (!canonical_decimal(
+          signature, &index, &result.bound) ||
+      index >= signature.len ||
+      signature.s[index++] != '<')
+    return 0;
+  result.element_start = index;
+  *parsed = result;
+  return 1;
+}
+
+static int canonical_record_type_at(
+    str_t signature, int offset,
+    canonical_record_type_t *parsed) {
+  if (!parsed || offset < 0 ||
+      offset + 2 > signature.len ||
+      (signature.s[offset] != 's' &&
+       signature.s[offset] != 'u') ||
+      signature.s[offset + 1] != '{')
+    return 0;
+  canonical_record_type_t result = {
+      .kind = signature.s[offset],
+  };
+  int index = offset + 2;
+  uint32_t tag_length = 0;
+  if (!canonical_decimal(
+          signature, &index, &tag_length) ||
+      index >= signature.len ||
+      signature.s[index++] != ':' ||
+      tag_length > (uint32_t)(signature.len - index))
+    return 0;
+  result.tag = (str_t){
+      signature.s + index, (int)tag_length};
+  index += (int)tag_length;
+  if (index >= signature.len ||
+      signature.s[index++] != '}')
+    return 0;
+  result.end = index;
+  if (index >= signature.len ||
+      signature.s[index] != '[') {
+    *parsed = result;
+    return 1;
+  }
+
+  int body_start = index + 1;
+  int header_index = body_start;
+  uint32_t complete = 0;
+  uint32_t member_count = 0;
+  if (!canonical_decimal(
+          signature, &header_index, &complete) ||
+      complete > 1 ||
+      header_index >= signature.len ||
+      signature.s[header_index++] != ':' ||
+      !canonical_decimal(
+          signature, &header_index, &member_count))
+    return 0;
+  (void)member_count;
+
+  int depth = 1;
+  int body_end = -1;
+  for (int cursor = body_start;
+       cursor < signature.len; cursor++) {
+    if (signature.s[cursor] == '[') {
+      depth++;
+    } else if (signature.s[cursor] == ']') {
+      depth--;
+      if (depth == 0) {
+        body_end = cursor;
+        break;
+      }
+    }
+  }
+  if (body_end < 0) return 0;
+  result.has_shape = 1;
+  result.is_complete = complete != 0;
+  result.body_start = body_start;
+  result.body_length = body_end - body_start;
+  result.end = body_end + 1;
+  *parsed = result;
+  return 1;
+}
+
 static int canonical_type_signatures_compatible(
     str_t left, str_t right) {
   int left_offset = 0;
   int right_offset = 0;
   while (left_offset < left.len &&
          right_offset < right.len) {
+    canonical_record_type_t left_record = {0};
+    canonical_record_type_t right_record = {0};
+    int left_is_record = canonical_record_type_at(
+        left, left_offset, &left_record);
+    int right_is_record = canonical_record_type_at(
+        right, right_offset, &right_record);
+    if (left_is_record || right_is_record) {
+      if (!left_is_record || !right_is_record ||
+          left_record.kind != right_record.kind ||
+          !str_eq(left_record.tag, right_record.tag))
+        return 0;
+      if (left_record.has_shape &&
+          right_record.has_shape &&
+          left_record.is_complete &&
+          right_record.is_complete &&
+          !canonical_type_signatures_compatible(
+              (str_t){
+                  left.s + left_record.body_start,
+                  left_record.body_length},
+              (str_t){
+                  right.s + right_record.body_start,
+                  right_record.body_length}))
+        return 0;
+      left_offset = left_record.end;
+      right_offset = right_record.end;
+      continue;
+    }
     canonical_enum_type_t left_enum = {0};
     canonical_enum_type_t right_enum = {0};
     int left_is_enum = canonical_enum_type_at(
@@ -993,6 +1125,22 @@ static int canonical_type_signatures_compatible(
         left_offset = integer_end;
         right_offset = right_enum.end;
       }
+      continue;
+    }
+    canonical_array_type_t left_array = {0};
+    canonical_array_type_t right_array = {0};
+    int left_is_array = canonical_array_type_at(
+        left, left_offset, &left_array);
+    int right_is_array = canonical_array_type_at(
+        right, right_offset, &right_array);
+    if (left_is_array || right_is_array) {
+      if (!left_is_array || !right_is_array ||
+          (left_array.bound != 0 &&
+           right_array.bound != 0 &&
+           left_array.bound != right_array.bound))
+        return 0;
+      left_offset = left_array.element_start;
+      right_offset = right_array.element_start;
       continue;
     }
     if (left.s[left_offset] != right.s[right_offset])

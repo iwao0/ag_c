@@ -132,6 +132,10 @@ const wasmMultiTuProbeFixtures = [
   "extern_funcptr_xtu_other.c",
   "enum_compatible_function_signature_xtu_main.c",
   "enum_compatible_function_signature_xtu_other.c",
+  "incomplete_array_bound_signature_xtu_main.c",
+  "incomplete_array_bound_signature_xtu_other.c",
+  "named_record_signature_xtu_main.c",
+  "named_record_signature_xtu_other.c",
   "unprototyped_funcptr_xtu_main.c",
   "unprototyped_funcptr_xtu_other.c",
   "unprototyped_funcptr_return_xtu_main.c",
@@ -13097,10 +13101,14 @@ const runtimeCatalog = await readFile(
 const crossTuSignatureMismatchFixtures = [
   "atomic_aggregate_signature_mismatch_main.c",
   "atomic_aggregate_signature_mismatch_other.c",
+  "array_bound_signature_mismatch_main.c",
+  "array_bound_signature_mismatch_other.c",
   "enum_distinct_return_signature_mismatch_main.c",
   "enum_distinct_return_signature_mismatch_other.c",
   "enum_incompatible_return_signature_mismatch_main.c",
   "enum_incompatible_return_signature_mismatch_other.c",
+  "record_member_signature_mismatch_main.c",
+  "record_member_signature_mismatch_other.c",
   "unprototyped_bool_signature_mismatch_main.c",
   "unprototyped_bool_signature_mismatch_other.c",
   "unprototyped_narrow_signature_mismatch_main.c",
@@ -13136,6 +13144,15 @@ if (!/emit_function_flags_section\s*\(/.test(
     ) ||
     !/canonical_enum_type_at\s*\(/.test(
       runtimeLinkerSource,
+    ) ||
+    !/canonical_array_type_at\s*\(/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/canonical_record_type_at\s*\(/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/canonical_signatures_allow_record_refinement\s*\(/.test(
+      wasmObjSource,
     ) ||
     !/shape\.is_unsigned\s*\?\s*":u"\s*:\s*":i"/.test(
       typeIdCanonicalSignatureSource,

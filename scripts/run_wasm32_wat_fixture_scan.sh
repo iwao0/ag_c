@@ -58,6 +58,10 @@ skip_reason() {
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c|\
     test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/incomplete_array_bound_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/incomplete_array_bound_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/named_record_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/named_record_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_main.c|\
     test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_other.c|\
     test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_main.c|\
@@ -76,10 +80,14 @@ skip_reason() {
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_main.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_other.c|\
+    test/fixtures/wasm32/array_bound_signature_mismatch_main.c|\
+    test/fixtures/wasm32/array_bound_signature_mismatch_other.c|\
     test/fixtures/wasm32/enum_distinct_return_signature_mismatch_main.c|\
     test/fixtures/wasm32/enum_distinct_return_signature_mismatch_other.c|\
     test/fixtures/wasm32/enum_incompatible_return_signature_mismatch_main.c|\
     test/fixtures/wasm32/enum_incompatible_return_signature_mismatch_other.c|\
+    test/fixtures/wasm32/record_member_signature_mismatch_main.c|\
+    test/fixtures/wasm32/record_member_signature_mismatch_other.c|\
     test/fixtures/wasm32/unprototyped_bool_signature_mismatch_main.c|\
     test/fixtures/wasm32/unprototyped_bool_signature_mismatch_other.c|\
     test/fixtures/wasm32/unprototyped_narrow_signature_mismatch_main.c|\

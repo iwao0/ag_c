@@ -20751,6 +20751,72 @@ static void test_named_enum_canonical_signature_compatible_integer(
   psx_semantic_type_table_destroy(types);
 }
 
+static void test_named_record_canonical_signature_structure(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_named_record_canonical_signature_structure...\n");
+  psx_semantic_type_table_t *types =
+      psx_semantic_type_table_create();
+  psx_record_decl_table_t *records =
+      psx_record_decl_table_create();
+  ASSERT_TRUE(types != NULL);
+  ASSERT_TRUE(records != NULL);
+  psx_semantic_type_table_bind_record_decls(types, records);
+
+  psx_qual_type_t int_type =
+      psx_semantic_type_table_intern_integer(
+          types, PSX_INTEGER_KIND_INT, 0, 0);
+  psx_record_member_decl_t member = {
+      .name = "value",
+      .len = 5,
+      .decl_qual_type = int_type,
+  };
+  psx_record_decl_t complete = {
+      .record_id = 1,
+      .record_kind = PSX_TYPE_STRUCT,
+      .tag_name = "packet",
+      .tag_len = 6,
+      .is_complete = 1,
+      .member_count = 1,
+      .members = &member,
+  };
+  ASSERT_TRUE(psx_record_decl_table_define(records, &complete));
+  psx_qual_type_t packet =
+      psx_semantic_type_table_intern_record(
+          types, complete.record_id);
+
+  psx_record_decl_t incomplete = {
+      .record_id = 2,
+      .record_kind = PSX_TYPE_STRUCT,
+      .tag_name = "envelope",
+      .tag_len = 8,
+  };
+  ASSERT_TRUE(psx_record_decl_table_define(records, &incomplete));
+  psx_qual_type_t envelope =
+      psx_semantic_type_table_intern_record(
+          types, incomplete.record_id);
+
+  char signature[128];
+  ASSERT_TRUE(psx_format_canonical_type_signature(
+      types, packet,
+      ag_target_info_data_layout(
+          ag_compilation_session_target(test_suite_session)),
+      signature, sizeof(signature)) > 0);
+  ASSERT_TRUE(
+      strcmp(
+          signature,
+          "s{6:packet}[1:1|5:value:0u:i32]") == 0);
+  ASSERT_TRUE(psx_format_canonical_type_signature(
+      types, envelope,
+      ag_target_info_data_layout(
+          ag_compilation_session_target(test_suite_session)),
+      signature, sizeof(signature)) > 0);
+  ASSERT_TRUE(
+      strcmp(signature, "s{8:envelope}[0:0]") == 0);
+
+  psx_semantic_type_table_destroy(types);
+  psx_record_decl_table_destroy(records);
+}
+
 static void test_semantic_type_identity(
     ag_compilation_session_t *test_suite_session) {
   printf("test_semantic_type_identity...\n");
@@ -22356,6 +22422,8 @@ int main() {
   test_noreturn_cfg_reachability_boundary();
   test_anonymous_canonical_signature_stability(test_suite_session);
   test_named_enum_canonical_signature_compatible_integer(
+      test_suite_session);
+  test_named_record_canonical_signature_structure(
       test_suite_session);
   test_semantic_type_identity(test_suite_session);
   test_semantic_context_isolation(test_suite_session);
