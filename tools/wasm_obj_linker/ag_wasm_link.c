@@ -119,10 +119,17 @@ typedef struct {
   str_t signature;
 } c_signature_t;
 
+enum {
+  AGC_DATA_FLAG_THREAD_LOCAL = 1u << 0,
+};
+
 typedef struct {
   str_t name;
   str_t c_signature;
   str_t layout_signature;
+  uint32_t flags;
+  uint32_t requested_alignment;
+  int has_object_properties;
 } data_signature_t;
 
 typedef struct {
@@ -738,7 +745,7 @@ static void parse_data_signature_section(object_t *o, rd_t sec) {
   if (o->has_data_signature_section)
     die("duplicate agc.data_signature section");
   uint32_t version = rd_uleb(&sec);
-  if (version != 1)
+  if (version != 1 && version != 2)
     die("unsupported agc.data_signature version");
   uint32_t layout_version = rd_uleb(&sec);
   if (layout_version != 3)
@@ -746,11 +753,22 @@ static void parse_data_signature_section(object_t *o, rd_t sec) {
   uint32_t count = rd_uleb(&sec);
   for (uint32_t index = 0; index < count; index++) {
     data_signature_t entry = {
-        rd_str_dup(&sec), rd_str_dup(&sec),
-        rd_str_dup(&sec)};
+        .name = rd_str_dup(&sec),
+        .c_signature = rd_str_dup(&sec),
+        .layout_signature = rd_str_dup(&sec),
+    };
+    if (version >= 2) {
+      entry.flags = rd_uleb(&sec);
+      entry.requested_alignment = rd_uleb(&sec);
+      entry.has_object_properties = 1;
+    }
     if (str_empty(entry.name) ||
         str_empty(entry.c_signature) ||
-        str_empty(entry.layout_signature))
+        str_empty(entry.layout_signature) ||
+        (entry.flags & ~AGC_DATA_FLAG_THREAD_LOCAL) ||
+        (entry.requested_alignment != 0 &&
+         (entry.requested_alignment &
+          (entry.requested_alignment - 1)) != 0))
       die("invalid agc.data_signature entry");
     for (int previous = 0;
          previous < o->data_signature_count; previous++) {
@@ -2267,6 +2285,17 @@ static int data_signatures_compatible(
     const data_signature_t *right_entry,
     uint32_t right_layout_version) {
   if (!left_entry || !right_entry) return 1;
+  if (left_entry->has_object_properties &&
+      right_entry->has_object_properties &&
+      ((left_entry->flags ^ right_entry->flags) &
+       AGC_DATA_FLAG_THREAD_LOCAL))
+    return 0;
+  if (left_entry->has_object_properties &&
+      right_entry->has_object_properties &&
+      left_entry->requested_alignment != 0 &&
+      left_entry->requested_alignment !=
+          right_entry->requested_alignment)
+    return 0;
   if (!data_c_signatures_compatible(
           left_entry, right_entry))
     return 0;

@@ -2745,6 +2745,9 @@ static obj_data_t *intern_lowered_data_object(
       is_string ? 1 : object->is_static,
       is_string ? 0 : object->is_extern);
   if (!data || is_string) return data;
+  data->is_thread_local = object->is_thread_local ? 1 : 0;
+  data->requested_alignment =
+      object->requested_alignment;
   if (!object->c_signature ||
       object->c_signature_len <= 0 ||
       !object->abi_layout_signature ||

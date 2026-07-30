@@ -118,14 +118,20 @@ pointers or passed through callbacks. Union member fingerprints are compared
 independently of declaration order. Versions 1 and 2 and objects without this
 section remain linkable for backward compatibility.
 
-The version 1 `agc.data_signature` section records both the canonical C type
-and version 3 target layout fingerprint of each externally visible data
-symbol. When both the reference and definition provide this metadata, the
-linker rejects incompatible scalar types and aggregate layout differences
-before applying memory relocations. Subobject symbols with a non-zero segment
-offset and manifest-declared runtime data bridges are excluded because their
-symbol-level type intentionally differs from the owning storage object.
-Objects without this section remain linkable for backward compatibility.
+The version 2 `agc.data_signature` section records the canonical C type,
+version 3 target layout fingerprint, thread-local storage flag, and explicit
+object alignment requirement of each externally visible data symbol. When
+both the reference and definition provide this metadata, the linker rejects
+incompatible scalar types, aggregate layout differences,
+`_Thread_local`/ordinary-storage mismatches, and a reference whose `_Alignas`
+requirement is absent or different on the definition before applying memory
+relocations. A reference without `_Alignas` remains compatible with a more
+strictly aligned definition. Version 1 entries remain readable; their absent
+object properties are treated as unknown so old objects stay linkable.
+Subobject symbols with a non-zero segment offset and manifest-declared runtime
+data bridges are excluded because their symbol-level type intentionally
+differs from the owning storage object. Objects without this section remain
+linkable for backward compatibility.
 Function-pointer data objects also preserve C11 compatibility between an
 unprototyped callback and a prototype whose parameters are unchanged by the
 default argument promotions. This comparison follows pointer and array

@@ -593,6 +593,30 @@ static int run_data_signature_mismatch_cases(void) {
           "global_unprototyped_callback_promotion_mismatch_other.c",
           "global_unprototyped_narrow_callback",
       },
+      {
+          "global_thread_local_storage_mismatch",
+          "test/fixtures/wasm32/"
+          "global_thread_local_storage_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_thread_local_storage_mismatch_other.c",
+          "global_storage_kind_value",
+      },
+      {
+          "global_alignment_requirement_mismatch",
+          "test/fixtures/wasm32/"
+          "global_alignment_requirement_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_alignment_requirement_mismatch_other.c",
+          "global_alignment_requirement_value",
+      },
+      {
+          "global_alignment_value_mismatch",
+          "test/fixtures/wasm32/"
+          "global_alignment_value_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_alignment_value_mismatch_other.c",
+          "global_alignment_value",
+      },
   };
   for (size_t index = 0;
        index < sizeof(cases) / sizeof(cases[0]); index++) {

@@ -1145,7 +1145,9 @@ int main(void) {
       .bytes = target_bytes,
       .byte_size = 4,
       .alignment = 4,
+      .requested_alignment = 64,
       .kind = IR_DATA_OBJECT,
+      .is_thread_local = 1,
       .has_explicit_initializer = 1,
   };
   ir_data_module_t source_data_module = {
@@ -1238,6 +1240,8 @@ int main(void) {
       module_function->instructions[14].resolved_symbol != machine_symbol ||
       !machine_target || machine_target->bytes == source_target_bytes ||
       machine_target->bytes[0] != 1 || machine_target->bytes[3] != 4 ||
+      machine_target->requested_alignment != 64 ||
+      !machine_target->is_thread_local ||
       !machine_holder || machine_holder->bytes == source_holder_bytes ||
       machine_holder->relocation_count != 2 ||
       machine_holder->relocations[0].kind !=

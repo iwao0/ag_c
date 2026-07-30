@@ -13213,8 +13213,35 @@ if (!/\bchar\s*\*\s*layout_signature\s*;/.test(abiLoweringHeader) ||
       wasmObjectSectionsSource,
     ) ||
     !/agc\.data_signature/.test(wasmObjectSectionsSource) ||
+    !/emit_data_signature_section[^]*?wb_uleb\s*\(\s*&payload\s*,\s*2\s*\)/.test(
+      wasmObjectSectionsSource,
+    ) ||
+    !/AGC_DATA_FLAG_THREAD_LOCAL/.test(
+      wasmObjectSectionsSource,
+    ) ||
+    !/object->requested_alignment\s*=\s*requested_alignment/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    !/destination->requested_alignment\s*=\s*source->requested_alignment/.test(
+      wasmMachineModuleSource,
+    ) ||
+    !/data->requested_alignment\s*=\s*object->requested_alignment/.test(
+      wasmObjSource,
+    ) ||
+    !/wb_uleb\s*\([^]*?data->requested_alignment\s*\)/.test(
+      wasmObjectSectionsSource,
+    ) ||
     !/parse_data_signature_section\s*\(/.test(runtimeLinkerSource) ||
+    !/version\s*!=\s*1\s*&&\s*version\s*!=\s*2/.test(
+      runtimeLinkerSource,
+    ) ||
     !/data_signatures_compatible\s*\(/.test(runtimeLinkerSource) ||
+    !/left_entry->has_object_properties[^]*?AGC_DATA_FLAG_THREAD_LOCAL/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/left_entry->requested_alignment[^]*?right_entry->requested_alignment/.test(
+      runtimeLinkerSource,
+    ) ||
     !/data_c_signatures_compatible\s*\(/.test(runtimeLinkerSource) ||
     !/canonical_callback_object_function_types\s*\(/.test(
       runtimeLinkerSource,
@@ -13274,6 +13301,12 @@ const crossTuSignatureMismatchFixtures = [
   "global_array_bound_signature_mismatch_other.c",
   "global_unprototyped_callback_promotion_mismatch_main.c",
   "global_unprototyped_callback_promotion_mismatch_other.c",
+  "global_thread_local_storage_mismatch_main.c",
+  "global_thread_local_storage_mismatch_other.c",
+  "global_alignment_requirement_mismatch_main.c",
+  "global_alignment_requirement_mismatch_other.c",
+  "global_alignment_value_mismatch_main.c",
+  "global_alignment_value_mismatch_other.c",
   "struct_member_order_signature_mismatch_main.c",
   "struct_member_order_signature_mismatch_other.c",
   "union_member_type_signature_mismatch_main.c",
@@ -13352,6 +13385,13 @@ if (missingCrossTuSignatureMismatchRegistrations.length) {
   throw new Error(
     "cross-TU signature mismatch fixtures must run in object tests and be excluded from standalone scans:\n" +
       missingCrossTuSignatureMismatchRegistrations.join("\n"),
+  );
+}
+if (!/test_count\s*=\s*\(int\)\([^;]*sizeof\s*\(\s*link2_cases\s*\)/.test(
+      nativeE2ESource,
+    )) {
+  throw new Error(
+    "native E2E totals must include the cross-TU link2 fixtures they execute",
   );
 }
 const runtimeManifestFields = [

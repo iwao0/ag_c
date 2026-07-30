@@ -35,6 +35,7 @@ typedef struct ir_data_object_t {
   unsigned char *bytes;
   int byte_size;
   int alignment;
+  int requested_alignment;
   int element_size;
   psx_qual_type_t qual_type;
   ir_data_object_kind_t kind;

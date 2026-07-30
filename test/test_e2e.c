@@ -1769,6 +1769,9 @@ static const link2_case_t link2_cases[] = {
     {"probes", "incomplete_global_record_object_signature_xtu",
      "test/fixtures/probes_found_bugs/incomplete_global_record_object_signature_xtu_main.c",
      "test/fixtures/probes_found_bugs/incomplete_global_record_object_signature_xtu_other.c", 0},
+    {"probes", "aligned_global_definition_xtu",
+     "test/fixtures/probes_found_bugs/aligned_global_definition_xtu_main.c",
+     "test/fixtures/probes_found_bugs/aligned_global_definition_xtu_other.c", 0},
     {"probes", "named_record_signature_xtu",
      "test/fixtures/probes_found_bugs/named_record_signature_xtu_main.c",
      "test/fixtures/probes_found_bugs/named_record_signature_xtu_other.c", 42},
@@ -6047,7 +6050,11 @@ int main(int argc, char **argv) {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 14);
+                     (sizeof(compile_fail_cases) /
+                      sizeof(compile_fail_cases[0])) +
+                     (sizeof(link2_cases) /
+                      sizeof(link2_cases[0])) +
+                     14);
   pass_count = failed ? 0 : test_count;
 
   free(categories);

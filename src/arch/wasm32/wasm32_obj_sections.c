@@ -399,7 +399,7 @@ static void emit_data_signature_section(
   if (count == 0) return;
   wb_t payload = {
       .diagnostic_context = context->diagnostic_context};
-  wb_uleb(&payload, 1);
+  wb_uleb(&payload, 2);
   wb_uleb(&payload, 3);
   wb_uleb(&payload, (uint32_t)count);
   for (int index = 0; index < g_obj.data_count; index++) {
@@ -415,6 +415,21 @@ static void emit_data_signature_section(
     wb_str(
         &payload, data->abi_layout_signature,
         data->abi_layout_signature_len);
+    if (data->requested_alignment < 0 ||
+        (data->requested_alignment != 0 &&
+         (data->requested_alignment &
+          (data->requested_alignment - 1)) != 0))
+      section_unsupported(
+          context,
+          "invalid Wasm object data alignment requirement");
+    wb_uleb(
+        &payload,
+        data->is_thread_local
+            ? AGC_DATA_FLAG_THREAD_LOCAL
+            : 0);
+    wb_uleb(
+        &payload,
+        (uint32_t)data->requested_alignment);
   }
   emit_custom_section(output, "agc.data_signature", &payload);
   free(payload.data);

@@ -62,6 +62,7 @@ struct wasm32_machine_data_object_t {
   int name_len;
   int byte_size;
   int alignment;
+  int requested_alignment;
   int element_size;
   int c_signature_len;
   int abi_layout_signature_len;

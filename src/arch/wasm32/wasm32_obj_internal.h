@@ -65,6 +65,10 @@ enum {
   AGC_FUNCTION_FLAG_PARAMETERS_UNSPECIFIED = 1u << 0,
 };
 
+enum {
+  AGC_DATA_FLAG_THREAD_LOCAL = 1u << 0,
+};
+
 typedef struct {
   char *name;
   int name_len;
@@ -100,6 +104,8 @@ typedef struct {
   int symbol_index;
   int is_static;
   int is_undefined;
+  int is_thread_local;
+  int requested_alignment;
   int is_emitted;
   obj_reloc_t *relocs;
   int reloc_count;

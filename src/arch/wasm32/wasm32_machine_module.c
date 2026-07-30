@@ -112,6 +112,8 @@ static int copy_data_object(
   destination->name_len = source->name_len;
   destination->byte_size = source->byte_size;
   destination->alignment = source->alignment;
+  destination->requested_alignment =
+      source->requested_alignment;
   destination->element_size = source->element_size;
   destination->kind = machine_data_kind(source->kind);
   destination->is_extern = source->is_extern;

@@ -102,6 +102,8 @@ skip_reason() {
     test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_other.c|\
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_main.c|\
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c|\
+    test/fixtures/probes_found_bugs/aligned_global_definition_xtu_main.c|\
+    test/fixtures/probes_found_bugs/aligned_global_definition_xtu_other.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_main.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_other.c|\
     test/fixtures/wasm32/array_bound_signature_mismatch_main.c|\
@@ -144,6 +146,12 @@ skip_reason() {
     test/fixtures/wasm32/global_array_bound_signature_mismatch_other.c|\
     test/fixtures/wasm32/global_unprototyped_callback_promotion_mismatch_main.c|\
     test/fixtures/wasm32/global_unprototyped_callback_promotion_mismatch_other.c|\
+    test/fixtures/wasm32/global_thread_local_storage_mismatch_main.c|\
+    test/fixtures/wasm32/global_thread_local_storage_mismatch_other.c|\
+    test/fixtures/wasm32/global_alignment_requirement_mismatch_main.c|\
+    test/fixtures/wasm32/global_alignment_requirement_mismatch_other.c|\
+    test/fixtures/wasm32/global_alignment_value_mismatch_main.c|\
+    test/fixtures/wasm32/global_alignment_value_mismatch_other.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_main.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_other.c|\
     test/fixtures/wasm32/union_member_type_signature_mismatch_main.c|\
