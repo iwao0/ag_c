@@ -366,6 +366,74 @@ static int run_record_member_signature_mismatch_case(void) {
       "function signature mismatch: consume_payload");
 }
 
+static int run_struct_member_order_signature_mismatch_case(void) {
+  const char *main_source =
+      "test/fixtures/wasm32/"
+      "struct_member_order_signature_mismatch_main.c";
+  const char *other_source =
+      "test/fixtures/wasm32/"
+      "struct_member_order_signature_mismatch_other.c";
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "struct_member_order_signature_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "struct_member_order_signature_mismatch_main.c",
+          main_source) != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "struct_member_order_signature_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "struct_member_order_signature_mismatch_other.c",
+          other_source) != 0)
+    return 1;
+  return run_fail_case(
+      "struct_member_order_signature_mismatch",
+      "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+      "-o build/wasm32_obj/"
+      "struct_member_order_signature_mismatch.wasm "
+      "build/wasm32_obj/"
+      "struct_member_order_signature_mismatch_main.o "
+      "build/wasm32_obj/"
+      "struct_member_order_signature_mismatch_other.o",
+      "function signature mismatch: sum_ordered_pair");
+}
+
+static int run_union_member_type_signature_mismatch_case(void) {
+  const char *main_source =
+      "test/fixtures/wasm32/"
+      "union_member_type_signature_mismatch_main.c";
+  const char *other_source =
+      "test/fixtures/wasm32/"
+      "union_member_type_signature_mismatch_other.c";
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "union_member_type_signature_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "union_member_type_signature_mismatch_main.c",
+          main_source) != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "union_member_type_signature_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "union_member_type_signature_mismatch_other.c",
+          other_source) != 0)
+    return 1;
+  return run_fail_case(
+      "union_member_type_signature_mismatch",
+      "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+      "-o build/wasm32_obj/"
+      "union_member_type_signature_mismatch.wasm "
+      "build/wasm32_obj/"
+      "union_member_type_signature_mismatch_main.o "
+      "build/wasm32_obj/"
+      "union_member_type_signature_mismatch_other.o",
+      "function signature mismatch: consume_qualified_payload");
+}
+
 static int run_unprototyped_function_pointer_xtu_case(void) {
   const char *main_source =
       "test/fixtures/probes_found_bugs/"
@@ -3005,6 +3073,10 @@ int main(void) {
       run_enum_return_signature_mismatch_cases();
   failures += run_array_bound_signature_mismatch_case();
   failures += run_record_member_signature_mismatch_case();
+  failures +=
+      run_struct_member_order_signature_mismatch_case();
+  failures +=
+      run_union_member_type_signature_mismatch_case();
   failures += run_unprototyped_function_pointer_xtu_case();
   failures += run_linker_layout_option_cases();
   failures += run_optional_link_case();

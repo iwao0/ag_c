@@ -867,7 +867,14 @@ typedef struct {
   int is_complete;
   int body_start;
   int body_length;
+  uint32_t member_count;
 } canonical_record_type_t;
+
+typedef struct {
+  str_t name;
+  str_t bit_descriptor;
+  str_t type;
+} canonical_record_member_t;
 
 static int canonical_decimal(
     str_t signature, int *offset, uint32_t *value) {
@@ -1023,7 +1030,6 @@ static int canonical_record_type_at(
       !canonical_decimal(
           signature, &header_index, &member_count))
     return 0;
-  (void)member_count;
 
   int depth = 1;
   int body_end = -1;
@@ -1044,9 +1050,193 @@ static int canonical_record_type_at(
   result.is_complete = complete != 0;
   result.body_start = body_start;
   result.body_length = body_end - body_start;
+  result.member_count = member_count;
   result.end = body_end + 1;
   *parsed = result;
   return 1;
+}
+
+static int canonical_type_signatures_compatible(
+    str_t left, str_t right);
+
+static int canonical_record_body_members(
+    str_t body, uint32_t expected_count,
+    canonical_record_member_t **members_out) {
+  if (!members_out) return 0;
+  *members_out = NULL;
+  int offset = 0;
+  uint32_t complete = 0;
+  uint32_t member_count = 0;
+  if (!canonical_decimal(body, &offset, &complete) ||
+      complete != 1 ||
+      offset >= body.len ||
+      body.s[offset++] != ':' ||
+      !canonical_decimal(body, &offset, &member_count) ||
+      member_count != expected_count ||
+      member_count > (uint32_t)body.len ||
+      (size_t)member_count >
+          SIZE_MAX / sizeof(canonical_record_member_t))
+    return 0;
+
+  canonical_record_member_t *members = NULL;
+  if (member_count > 0)
+    members = xmalloc(
+        (size_t)member_count * sizeof(*members));
+  for (uint32_t index = 0; index < member_count; index++) {
+    if (offset >= body.len || body.s[offset++] != '|') {
+      free(members);
+      return 0;
+    }
+    uint32_t name_length = 0;
+    if (!canonical_decimal(
+            body, &offset, &name_length) ||
+        offset >= body.len ||
+        body.s[offset++] != ':' ||
+        name_length > (uint32_t)(body.len - offset)) {
+      free(members);
+      return 0;
+    }
+    members[index].name = (str_t){
+        body.s + offset, (int)name_length};
+    offset += (int)name_length;
+    if (offset >= body.len || body.s[offset++] != ':') {
+      free(members);
+      return 0;
+    }
+
+    int bit_start = offset;
+    if (offset < body.len && body.s[offset] == '-')
+      offset++;
+    int digit_start = offset;
+    while (offset < body.len &&
+           body.s[offset] >= '0' &&
+           body.s[offset] <= '9')
+      offset++;
+    if (offset == digit_start ||
+        offset >= body.len ||
+        (body.s[offset] != 's' &&
+         body.s[offset] != 'u')) {
+      free(members);
+      return 0;
+    }
+    offset++;
+    members[index].bit_descriptor = (str_t){
+        body.s + bit_start, offset - bit_start};
+    if (offset >= body.len || body.s[offset++] != ':') {
+      free(members);
+      return 0;
+    }
+
+    int type_start = offset;
+    int record_depth = 0;
+    while (offset < body.len) {
+      if (body.s[offset] == '[') {
+        record_depth++;
+      } else if (body.s[offset] == ']') {
+        if (record_depth == 0) {
+          free(members);
+          return 0;
+        }
+        record_depth--;
+      } else if (body.s[offset] == '|' &&
+                 record_depth == 0) {
+        break;
+      }
+      offset++;
+    }
+    if (record_depth != 0 || offset == type_start) {
+      free(members);
+      return 0;
+    }
+    members[index].type = (str_t){
+        body.s + type_start, offset - type_start};
+  }
+  if (offset != body.len) {
+    free(members);
+    return 0;
+  }
+  *members_out = members;
+  return 1;
+}
+
+static int canonical_union_members_correspond(
+    const canonical_record_member_t *left,
+    const canonical_record_member_t *right) {
+  return left && right &&
+         str_eq(left->name, right->name) &&
+         str_eq(
+             left->bit_descriptor,
+             right->bit_descriptor) &&
+         canonical_type_signatures_compatible(
+             left->type, right->type);
+}
+
+static int canonical_union_augment_matching(
+    uint32_t left_index,
+    const canonical_record_member_t *left_members,
+    uint32_t right_count,
+    const canonical_record_member_t *right_members,
+    int *right_to_left, unsigned char *visited) {
+  for (uint32_t right_index = 0;
+       right_index < right_count; right_index++) {
+    if (visited[right_index] ||
+        !canonical_union_members_correspond(
+            &left_members[left_index],
+            &right_members[right_index]))
+      continue;
+    visited[right_index] = 1;
+    if (right_to_left[right_index] < 0 ||
+        canonical_union_augment_matching(
+            (uint32_t)right_to_left[right_index],
+            left_members, right_count, right_members,
+            right_to_left, visited)) {
+      right_to_left[right_index] = (int)left_index;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int canonical_union_bodies_compatible(
+    str_t left, uint32_t left_count,
+    str_t right, uint32_t right_count) {
+  if (left_count != right_count ||
+      (size_t)right_count > SIZE_MAX / sizeof(int))
+    return 0;
+  canonical_record_member_t *left_members = NULL;
+  canonical_record_member_t *right_members = NULL;
+  if (!canonical_record_body_members(
+          left, left_count, &left_members) ||
+      !canonical_record_body_members(
+          right, right_count, &right_members)) {
+    free(left_members);
+    free(right_members);
+    return 0;
+  }
+  int *right_to_left = NULL;
+  unsigned char *visited = NULL;
+  if (right_count > 0) {
+    right_to_left = xmalloc(
+        (size_t)right_count * sizeof(*right_to_left));
+    visited = xmalloc((size_t)right_count);
+    for (uint32_t index = 0; index < right_count; index++)
+      right_to_left[index] = -1;
+  }
+  int compatible = 1;
+  for (uint32_t left_index = 0;
+       left_index < left_count && compatible;
+       left_index++) {
+    memset(visited, 0, (size_t)right_count);
+    compatible = canonical_union_augment_matching(
+        left_index, left_members,
+        right_count, right_members,
+        right_to_left, visited);
+  }
+  free(visited);
+  free(right_to_left);
+  free(left_members);
+  free(right_members);
+  return compatible;
 }
 
 static int canonical_type_signatures_compatible(
@@ -1069,15 +1259,23 @@ static int canonical_type_signatures_compatible(
       if (left_record.has_shape &&
           right_record.has_shape &&
           left_record.is_complete &&
-          right_record.is_complete &&
-          !canonical_type_signatures_compatible(
-              (str_t){
-                  left.s + left_record.body_start,
-                  left_record.body_length},
-              (str_t){
-                  right.s + right_record.body_start,
-                  right_record.body_length}))
-        return 0;
+          right_record.is_complete) {
+        str_t left_body = {
+            left.s + left_record.body_start,
+            left_record.body_length};
+        str_t right_body = {
+            right.s + right_record.body_start,
+            right_record.body_length};
+        if (left_record.kind == 'u') {
+          if (!canonical_union_bodies_compatible(
+                  left_body, left_record.member_count,
+                  right_body, right_record.member_count))
+            return 0;
+        } else if (!canonical_type_signatures_compatible(
+                       left_body, right_body)) {
+          return 0;
+        }
+      }
       left_offset = left_record.end;
       right_offset = right_record.end;
       continue;

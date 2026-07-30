@@ -94,11 +94,14 @@ is `a0<type>` and is compatible with a specified bound when the element types
 are compatible; two different non-zero constant bounds remain incompatible.
 Named records retain their tag atom and append a structural suffix, for
 example `s{6:packet}[1:1|5:value:0u:i32]`. Complete records with the same tag
-must have compatible corresponding members. An incomplete record suffix such
-as `s{8:envelope}[0:0]` remains compatible with its completed definition.
-Within one object, an earlier incomplete function-reference signature is
-refined to the completed structural signature when the tag definition becomes
-available.
+must have compatible corresponding members. Structure members correspond in
+declaration order, while union members are matched by name, bit-field
+attributes, and compatible type regardless of declaration order. An incomplete
+record suffix such as `s{8:envelope}[0:0]` remains compatible with its completed
+definition.
+Within one object, an earlier function-reference signature containing an
+incomplete array bound or record is refined to the more complete signature
+when its compatible definition becomes available.
 
 ## Usage
 

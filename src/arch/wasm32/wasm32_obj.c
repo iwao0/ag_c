@@ -788,6 +788,11 @@ typedef struct {
   int body_len;
 } obj_canonical_record_t;
 
+typedef struct {
+  uint32_t bound;
+  int element_start;
+} obj_canonical_array_t;
+
 static int obj_canonical_decimal(
     const char *signature, int signature_len,
     int *offset, uint32_t *value) {
@@ -809,6 +814,26 @@ static int obj_canonical_decimal(
       signature[*offset] >= '0' &&
       signature[*offset] <= '9');
   *value = result;
+  return 1;
+}
+
+static int obj_canonical_array_at(
+    const char *signature, int signature_len,
+    int offset, obj_canonical_array_t *parsed) {
+  if (!signature || !parsed || offset < 0 ||
+      offset >= signature_len ||
+      signature[offset] != 'a')
+    return 0;
+  obj_canonical_array_t result = {0};
+  int index = offset + 1;
+  if (!obj_canonical_decimal(
+          signature, signature_len,
+          &index, &result.bound) ||
+      index >= signature_len ||
+      signature[index++] != '<')
+    return 0;
+  result.element_start = index;
+  *parsed = result;
   return 1;
 }
 
@@ -886,7 +911,7 @@ static int obj_canonical_record_at(
   return 1;
 }
 
-static int update_record_refinement(
+static int update_type_refinement(
     int *refinement, int candidate) {
   if (!refinement || candidate == 0) return 0;
   if (*refinement != 0 && *refinement != candidate)
@@ -895,7 +920,7 @@ static int update_record_refinement(
   return 1;
 }
 
-static int canonical_signatures_allow_record_refinement(
+static int canonical_signatures_allow_type_refinement(
     const char *left, int left_len,
     const char *right, int right_len,
     int *refinement) {
@@ -920,7 +945,7 @@ static int canonical_signatures_allow_record_refinement(
           right_record.has_shape &&
           left_record.is_complete &&
           right_record.is_complete) {
-        if (!canonical_signatures_allow_record_refinement(
+        if (!canonical_signatures_allow_type_refinement(
                 left + left_record.body_start,
                 left_record.body_len,
                 right + right_record.body_start,
@@ -929,13 +954,34 @@ static int canonical_signatures_allow_record_refinement(
           return 0;
       } else if (left_record.is_complete !=
                  right_record.is_complete) {
-        if (!update_record_refinement(
+        if (!update_type_refinement(
                 refinement,
                 right_record.is_complete ? 1 : -1))
           return 0;
       }
       left_offset = left_record.end;
       right_offset = right_record.end;
+      continue;
+    }
+    obj_canonical_array_t left_array = {0};
+    obj_canonical_array_t right_array = {0};
+    int left_is_array = obj_canonical_array_at(
+        left, left_len, left_offset, &left_array);
+    int right_is_array = obj_canonical_array_at(
+        right, right_len, right_offset, &right_array);
+    if (left_is_array || right_is_array) {
+      if (!left_is_array || !right_is_array ||
+          (left_array.bound != 0 &&
+           right_array.bound != 0 &&
+           left_array.bound != right_array.bound))
+        return 0;
+      if (left_array.bound != right_array.bound &&
+          !update_type_refinement(
+              refinement,
+              right_array.bound != 0 ? 1 : -1))
+        return 0;
+      left_offset = left_array.element_start;
+      right_offset = right_array.element_start;
       continue;
     }
     if (left[left_offset] != right[right_offset])
@@ -1020,12 +1066,12 @@ static void set_func_c_signature(
             function->c_signature, signature,
             (size_t)signature_len) == 0)
       return;
-    int record_refinement = 0;
-    if (canonical_signatures_allow_record_refinement(
+    int type_refinement = 0;
+    if (canonical_signatures_allow_type_refinement(
             function->c_signature, function->c_signature_len,
             signature, signature_len,
-            &record_refinement)) {
-      if (record_refinement > 0)
+            &type_refinement)) {
+      if (type_refinement > 0)
         replace_func_c_signature(
             context, function, signature, signature_len);
       return;
