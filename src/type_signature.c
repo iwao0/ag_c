@@ -283,7 +283,12 @@ static void write_record_body(
   for (int i = 0; i < record->member_count; i++) {
     const psx_record_member_decl_t *member = &record->members[i];
     if (member->len < 0 ||
-        (member->len > 0 && !member->name)) {
+        (member->len > 0 && !member->name) ||
+        (member->has_alignment_specifier != 0 &&
+         member->has_alignment_specifier != 1) ||
+        member->requested_alignment < 0 ||
+        (!member->has_alignment_specifier &&
+         member->requested_alignment != 0)) {
       writer->failed = 1;
       return;
     }
@@ -298,6 +303,14 @@ static void write_record_body(
     write_literal(writer, ":");
     write_signed(writer, member->bit_width);
     write_literal(writer, member->bit_is_signed ? "s:" : "u:");
+    write_literal(writer, "m");
+    write_unsigned(
+        writer,
+        member->has_alignment_specifier ? 1u : 0u);
+    write_literal(writer, ":");
+    write_unsigned(
+        writer, (unsigned int)member->requested_alignment);
+    write_literal(writer, ":");
     write_type(
         writer, types,
         psx_semantic_type_table_record_member(

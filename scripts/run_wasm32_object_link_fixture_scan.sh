@@ -90,6 +90,12 @@ skip_reason() {
     test/fixtures/probes_found_bugs/named_record_signature_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
+    test/fixtures/probes_found_bugs/packed_indirect_record_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/record_member_alignment_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     test/fixtures/probes_found_bugs/union_member_order_signature_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
@@ -127,6 +133,14 @@ skip_reason() {
     test/fixtures/wasm32/enum_incompatible_return_signature_mismatch_other.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_main.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_other.c|\
+    test/fixtures/wasm32/record_member_alignment_presence_mismatch_main.c|\
+    test/fixtures/wasm32/record_member_alignment_presence_mismatch_other.c|\
+    test/fixtures/wasm32/record_member_alignment_value_mismatch_main.c|\
+    test/fixtures/wasm32/record_member_alignment_value_mismatch_other.c|\
+    test/fixtures/wasm32/indirect_record_layout_signature_mismatch_main.c|\
+    test/fixtures/wasm32/indirect_record_layout_signature_mismatch_other.c|\
+    test/fixtures/wasm32/nested_record_layout_signature_mismatch_main.c|\
+    test/fixtures/wasm32/nested_record_layout_signature_mismatch_other.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_main.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_other.c|\
     test/fixtures/wasm32/union_member_type_signature_mismatch_main.c|\
@@ -168,6 +182,12 @@ link_companion() {
       ;;
     test/fixtures/probes_found_bugs/named_record_signature_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/named_record_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/packed_indirect_record_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/packed_indirect_record_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/record_member_alignment_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/record_member_alignment_signature_xtu_other.c"
       ;;
     test/fixtures/probes_found_bugs/union_member_order_signature_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/union_member_order_signature_xtu_other.c"

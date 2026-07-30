@@ -148,6 +148,10 @@ typedef struct {
   c_signature_t *c_signatures;
   int c_signature_count;
   int c_signature_cap;
+  c_signature_t *abi_layout_signatures;
+  int abi_layout_signature_count;
+  int abi_layout_signature_cap;
+  int has_abi_layout_section;
   function_flags_t *function_flags;
   int function_flag_count;
   int function_flag_cap;
@@ -684,6 +688,39 @@ static void parse_c_signature_section(object_t *o, rd_t sec) {
   if (sec.pos != sec.len) die("trailing bytes in agc.c_signature section");
 }
 
+static void parse_abi_layout_section(object_t *o, rd_t sec) {
+  if (o->has_abi_layout_section)
+    die("duplicate agc.abi_layout section");
+  uint32_t version = rd_uleb(&sec);
+  if (version != 1)
+    die("unsupported agc.abi_layout version");
+  uint32_t count = rd_uleb(&sec);
+  for (uint32_t i = 0; i < count; i++) {
+    c_signature_t entry = {
+        rd_str_dup(&sec), rd_str_dup(&sec)};
+    if (str_empty(entry.name) ||
+        str_empty(entry.signature))
+      die("invalid agc.abi_layout entry");
+    for (int previous = 0;
+         previous < o->abi_layout_signature_count;
+         previous++) {
+      if (str_eq(
+              o->abi_layout_signatures[previous].name,
+              entry.name))
+        dief(
+            "duplicate ABI layout metadata: %s",
+            entry.name.s);
+    }
+    PUSH(
+        o->abi_layout_signatures,
+        o->abi_layout_signature_count,
+        o->abi_layout_signature_cap, entry);
+  }
+  if (sec.pos != sec.len)
+    die("trailing bytes in agc.abi_layout section");
+  o->has_abi_layout_section = 1;
+}
+
 static void parse_function_flags_section(object_t *o, rd_t sec) {
   if (o->has_function_flags)
     die("duplicate agc.function_flags section");
@@ -733,6 +770,33 @@ static void validate_function_flags_metadata(const object_t *o) {
     }
     if (!has_function || !has_c_signature)
       dief("orphan function flags metadata: %s", name.s);
+  }
+}
+
+static void validate_abi_layout_metadata(const object_t *o) {
+  for (int layout_index = 0;
+       layout_index < o->abi_layout_signature_count;
+       layout_index++) {
+    str_t name = o->abi_layout_signatures[layout_index].name;
+    int has_function = 0;
+    int has_c_signature = 0;
+    for (int function_index = 0;
+         function_index < o->func_count; function_index++) {
+      if (str_eq(o->funcs[function_index].name, name)) {
+        has_function = 1;
+        break;
+      }
+    }
+    for (int signature_index = 0;
+         signature_index < o->c_signature_count;
+         signature_index++) {
+      if (str_eq(o->c_signatures[signature_index].name, name)) {
+        has_c_signature = 1;
+        break;
+      }
+    }
+    if (!has_function || !has_c_signature)
+      dief("orphan ABI layout metadata: %s", name.s);
   }
 }
 
@@ -792,6 +856,9 @@ static object_t parse_object_bytes(const char *path, const unsigned char *file, 
         parse_reloc_section(&o, sec, 0);
       } else if (name.len == 15 && memcmp(name.s, "agc.c_signature", 15) == 0) {
         parse_c_signature_section(&o, sec);
+      } else if (name.len == 14 &&
+                 memcmp(name.s, "agc.abi_layout", 14) == 0) {
+        parse_abi_layout_section(&o, sec);
       } else if (name.len == 18 && memcmp(name.s, "agc.function_flags", 18) == 0) {
         parse_function_flags_section(&o, sec);
       } else if (name.len == 16 && memcmp(name.s, "agc.continuation", 16) == 0) {
@@ -800,6 +867,7 @@ static object_t parse_object_bytes(const char *path, const unsigned char *file, 
     }
   }
   validate_function_flags_metadata(&o);
+  validate_abi_layout_metadata(&o);
   return o;
 }
 
@@ -837,6 +905,8 @@ static unsigned char wasm_type_result_valtype(const type_t *t);
 
 static const c_signature_t *find_c_signature(
     const object_t *obj, str_t name);
+static const c_signature_t *find_abi_layout_signature(
+    const object_t *obj, str_t name);
 
 static uint32_t find_function_flags(
     const object_t *obj, str_t name) {
@@ -873,6 +943,8 @@ typedef struct {
 typedef struct {
   str_t name;
   str_t bit_descriptor;
+  int has_alignment_specifier;
+  uint32_t requested_alignment;
   str_t type;
 } canonical_record_member_t;
 
@@ -1127,6 +1199,31 @@ static int canonical_record_body_members(
       return 0;
     }
 
+    if (offset >= body.len || body.s[offset++] != 'm') {
+      free(members);
+      return 0;
+    }
+    uint32_t has_alignment_specifier = 0;
+    uint32_t requested_alignment = 0;
+    if (!canonical_decimal(
+            body, &offset, &has_alignment_specifier) ||
+        has_alignment_specifier > 1 ||
+        offset >= body.len ||
+        body.s[offset++] != ':' ||
+        !canonical_decimal(
+            body, &offset, &requested_alignment) ||
+        (!has_alignment_specifier &&
+         requested_alignment != 0) ||
+        offset >= body.len ||
+        body.s[offset++] != ':') {
+      free(members);
+      return 0;
+    }
+    members[index].has_alignment_specifier =
+        has_alignment_specifier != 0;
+    members[index].requested_alignment =
+        requested_alignment;
+
     int type_start = offset;
     int record_depth = 0;
     while (offset < body.len) {
@@ -1167,6 +1264,10 @@ static int canonical_union_members_correspond(
          str_eq(
              left->bit_descriptor,
              right->bit_descriptor) &&
+         left->has_alignment_specifier ==
+             right->has_alignment_specifier &&
+         left->requested_alignment ==
+             right->requested_alignment &&
          canonical_type_signatures_compatible(
              left->type, right->type);
 }
@@ -1467,6 +1568,43 @@ static int unspecified_function_signature_matches(
          wasm_type_result_valtype(specified_type);
 }
 
+static int abi_layout_parameter_offset(str_t signature) {
+  if (signature.len < 4 || signature.s[0] != 'F' ||
+      signature.s[signature.len - 1] != ')')
+    return -1;
+  for (int index = 1; index < signature.len - 1; index++) {
+    if (signature.s[index] == '(') return index;
+  }
+  return -1;
+}
+
+static int abi_layout_has_parameter_wildcard(
+    str_t signature, int parameter_offset) {
+  return parameter_offset >= 0 &&
+         parameter_offset + 2 == signature.len - 1 &&
+         signature.s[parameter_offset + 1] == '?';
+}
+
+static int abi_layout_signatures_compatible(
+    const c_signature_t *left_entry,
+    const c_signature_t *right_entry) {
+  if (!left_entry || !right_entry) return 1;
+  str_t left = left_entry->signature;
+  str_t right = right_entry->signature;
+  if (str_eq(left, right)) return 1;
+  int left_offset = abi_layout_parameter_offset(left);
+  int right_offset = abi_layout_parameter_offset(right);
+  return left_offset >= 0 &&
+         left_offset == right_offset &&
+         memcmp(
+             left.s, right.s,
+             (size_t)left_offset) == 0 &&
+         (abi_layout_has_parameter_wildcard(
+              left, left_offset) ||
+          abi_layout_has_parameter_wildcard(
+              right, right_offset));
+}
+
 static int func_signature_matches(object_t *ref_obj, int ref_func,
                                   object_t *def_obj, int def_func) {
   if (ref_func < 0 || ref_func >= ref_obj->func_count ||
@@ -1487,20 +1625,31 @@ static int func_signature_matches(object_t *ref_obj, int ref_func,
       ref_obj, ref_obj->funcs[ref_func].name);
   const c_signature_t *definition = find_c_signature(
       def_obj, def_obj->funcs[def_func].name);
-  if (!reference || !definition) return wasm_types_equal;
+  const c_signature_t *reference_layout =
+      find_abi_layout_signature(
+          ref_obj, ref_obj->funcs[ref_func].name);
+  const c_signature_t *definition_layout =
+      find_abi_layout_signature(
+          def_obj, def_obj->funcs[def_func].name);
+  int layouts_compatible =
+      abi_layout_signatures_compatible(
+          reference_layout, definition_layout);
+  if (!reference || !definition)
+    return wasm_types_equal && layouts_compatible;
   if (canonical_type_signatures_compatible(
           reference->signature, definition->signature))
-    return wasm_types_equal;
+    return wasm_types_equal && layouts_compatible;
   uint32_t reference_flags = find_function_flags(
       ref_obj, ref_obj->funcs[ref_func].name);
   uint32_t definition_flags = find_function_flags(
       def_obj, def_obj->funcs[def_func].name);
-  return unspecified_function_signature_matches(
-             reference, reference_flags, reference_type,
-             definition, definition_type) ||
-         unspecified_function_signature_matches(
-             definition, definition_flags, definition_type,
-             reference, reference_type);
+  return layouts_compatible &&
+         (unspecified_function_signature_matches(
+              reference, reference_flags, reference_type,
+              definition, definition_type) ||
+          unspecified_function_signature_matches(
+              definition, definition_flags, definition_type,
+              reference, reference_type));
 }
 
 static void check_duplicate_definitions(object_t *objs, int obj_count) {
@@ -3859,6 +4008,18 @@ static int export_list_contains(const export_spec_t *exports, int export_count,
 static const c_signature_t *find_c_signature(const object_t *obj, str_t name) {
   for (int i = 0; i < obj->c_signature_count; i++) {
     if (str_eq(obj->c_signatures[i].name, name)) return &obj->c_signatures[i];
+  }
+  return NULL;
+}
+
+static const c_signature_t *find_abi_layout_signature(
+    const object_t *obj, str_t name) {
+  for (int index = 0;
+       index < obj->abi_layout_signature_count;
+       index++) {
+    if (str_eq(
+            obj->abi_layout_signatures[index].name, name))
+      return &obj->abi_layout_signatures[index];
   }
   return NULL;
 }

@@ -46,6 +46,8 @@ typedef struct tag_member_decl_t {
   int len;
   int bit_width;
   int bit_is_signed;
+  int has_alignment_specifier;
+  int requested_alignment;
   const psx_semantic_type_table_t *type_table;
   psx_qual_type_t qual_type;
 } tag_member_decl_t;
@@ -105,6 +107,10 @@ static void refresh_cached_record_decl(
           .len = member->declaration.len,
           .bit_width = member->declaration.bit_width,
           .bit_is_signed = member->declaration.bit_is_signed,
+          .has_alignment_specifier =
+              member->declaration.has_alignment_specifier,
+          .requested_alignment =
+              member->declaration.requested_alignment,
           .decl_qual_type = member->declaration.qual_type,
       };
     }
@@ -541,6 +547,10 @@ static int initialize_tag_member_record(
     return 0;
   m->declaration.bit_width = declaration->bit_width;
   m->declaration.bit_is_signed = declaration->bit_is_signed;
+  m->declaration.has_alignment_specifier =
+      declaration->has_alignment_specifier;
+  m->declaration.requested_alignment =
+      declaration->requested_alignment;
   psx_qual_type_t identity = declaration->decl_qual_type;
   if (!psx_semantic_type_table_qual_type_is_valid(
           context->semantic_types, identity))
@@ -1166,6 +1176,10 @@ bool ps_ctx_find_record_member_in(
         .len = member->declaration.len,
         .bit_width = member->declaration.bit_width,
         .bit_is_signed = member->declaration.bit_is_signed,
+        .has_alignment_specifier =
+            member->declaration.has_alignment_specifier,
+        .requested_alignment =
+            member->declaration.requested_alignment,
         .decl_qual_type = member->declaration.qual_type,
     };
   }

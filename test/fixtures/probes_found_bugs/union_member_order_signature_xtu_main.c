@@ -5,7 +5,7 @@
 #ifndef AG_C_UNION_MEMBER_ORDER_SIGNATURE_XTU_TYPES
 #define AG_C_UNION_MEMBER_ORDER_SIGNATURE_XTU_TYPES
 union payload {
-  int integer;
+  _Alignas(4) int integer;
   unsigned int bits;
   const int *pointer;
   unsigned int low : 7;

@@ -45,6 +45,7 @@ typedef struct {
   int has_bitfield;
   int bit_width;
   int pack_alignment;
+  int has_alignment_specifier;
   int requested_alignment;
 } psx_aggregate_member_declaration_request_t;
 

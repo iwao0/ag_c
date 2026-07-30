@@ -70,6 +70,8 @@ typedef struct {
   int name_len;
   char *c_signature;
   int c_signature_len;
+  char *abi_layout_signature;
+  int abi_layout_signature_len;
   obj_sig_t sig;
   int imported;
   int defined;

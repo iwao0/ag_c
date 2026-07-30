@@ -49,6 +49,8 @@ typedef struct {
   ir_abi_piece_t *param_pieces;
   size_t param_count;
   size_t fixed_param_count;
+  char *layout_signature;
+  int layout_signature_len;
   ir_val_t result_area;
   unsigned char is_variadic;
 } ir_abi_signature_t;

@@ -6,7 +6,7 @@ union payload {
   unsigned int low : 7;
   const int *pointer;
   unsigned int bits;
-  int integer;
+  _Alignas(4) int integer;
 };
 #endif
 

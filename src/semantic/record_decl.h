@@ -11,6 +11,8 @@ typedef struct psx_record_member_decl_t {
   int len;
   int bit_width;
   int bit_is_signed;
+  int has_alignment_specifier;
+  int requested_alignment;
   psx_qual_type_t decl_qual_type;
 } psx_record_member_decl_t;
 

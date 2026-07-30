@@ -32,10 +32,34 @@ static int allocate_parameters(
   return signature->params != NULL;
 }
 
+static int copy_abi_layout_signature(
+    wasm32_machine_signature_t *signature,
+    const ir_abi_signature_t *abi) {
+  if (!signature || !abi ||
+      abi->layout_signature_len < 0 ||
+      (abi->layout_signature_len > 0 &&
+       !abi->layout_signature))
+    return 0;
+  if (abi->layout_signature_len == 0) return 1;
+  signature->abi_layout_signature = malloc(
+      (size_t)abi->layout_signature_len + 1);
+  if (!signature->abi_layout_signature) return 0;
+  memcpy(
+      signature->abi_layout_signature,
+      abi->layout_signature,
+      (size_t)abi->layout_signature_len);
+  signature->abi_layout_signature[
+      abi->layout_signature_len] = '\0';
+  signature->abi_layout_signature_len =
+      abi->layout_signature_len;
+  return 1;
+}
+
 void wasm32_machine_signature_dispose(
     wasm32_machine_signature_t *signature) {
   if (!signature) return;
   free(signature->params);
+  free(signature->abi_layout_signature);
   memset(signature, 0, sizeof(*signature));
 }
 
@@ -63,6 +87,10 @@ int wasm32_machine_signature_from_abi(
   for (size_t i = 0; i < abi->param_count; i++) {
     signature->params[i + (size_t)hidden_parameter] =
         wasm32_machine_value_type(abi->param_pieces[i].type);
+  }
+  if (!copy_abi_layout_signature(signature, abi)) {
+    wasm32_machine_signature_dispose(signature);
+    return 0;
   }
   return 1;
 }
@@ -97,6 +125,10 @@ int wasm32_machine_call_signature(
     signature->result = direct_result_type(abi);
   } else {
     signature->result = wasm32_machine_value_type(call->dst.type);
+  }
+  if (!copy_abi_layout_signature(signature, abi)) {
+    wasm32_machine_signature_dispose(signature);
+    return 0;
   }
   return 1;
 }

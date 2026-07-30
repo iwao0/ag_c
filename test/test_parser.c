@@ -20768,6 +20768,8 @@ static void test_named_record_canonical_signature_structure(
   psx_record_member_decl_t member = {
       .name = "value",
       .len = 5,
+      .has_alignment_specifier = 1,
+      .requested_alignment = 16,
       .decl_qual_type = int_type,
   };
   psx_record_decl_t complete = {
@@ -20804,7 +20806,7 @@ static void test_named_record_canonical_signature_structure(
   ASSERT_TRUE(
       strcmp(
           signature,
-          "s{6:packet}[1:1|5:value:0u:i32]") == 0);
+          "s{6:packet}[1:1|5:value:0u:m1:16:i32]") == 0);
   ASSERT_TRUE(psx_format_canonical_type_signature(
       types, envelope,
       ag_target_info_data_layout(

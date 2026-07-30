@@ -136,6 +136,10 @@ const wasmMultiTuProbeFixtures = [
   "incomplete_array_bound_signature_xtu_other.c",
   "named_record_signature_xtu_main.c",
   "named_record_signature_xtu_other.c",
+  "packed_indirect_record_signature_xtu_main.c",
+  "packed_indirect_record_signature_xtu_other.c",
+  "record_member_alignment_signature_xtu_main.c",
+  "record_member_alignment_signature_xtu_other.c",
   "union_member_order_signature_xtu_main.c",
   "union_member_order_signature_xtu_other.c",
   "unprototyped_funcptr_xtu_main.c",
@@ -3530,6 +3534,12 @@ if (!aggregateMemberResolutionType ||
     !/\bpsx_qual_type_t\s+base_qual_type\s*;/.test(
       aggregateMemberRequestType[1],
     ) ||
+    !/\bint\s+has_alignment_specifier\s*;/.test(
+      aggregateMemberRequestType[1],
+    ) ||
+    !/\bint\s+requested_alignment\s*;/.test(
+      aggregateMemberRequestType[1],
+    ) ||
     /\bpsx_type_t\b/.test(aggregateMemberRequestType[1]) ||
     /\btarget_tag_(?:kind|name|name_len)\b/.test(
       aggregateMemberRequestType[1],
@@ -3551,6 +3561,12 @@ if (!aggregateMemberResolutionType ||
       aggregateMemberResolutionSource,
     ) ||
     !/\bpsx_record_layout_member\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/has_alignment_specifier\s*=\s*request->has_alignment_specifier/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/requested_alignment\s*=\s*request->requested_alignment/.test(
       aggregateMemberResolutionSource,
     ) ||
     !/ps_ctx_register_record_members_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*\s*declarations\s*,[^;]*const\s+psx_record_member_layout_t\s*\*\s*layouts/s.test(
@@ -3621,6 +3637,16 @@ const declarationSpecifierResolutionSource = await readFile(
   "src/semantic/declaration_specifier_resolution.c",
   "utf8",
 );
+if (!/has_alignment_specifier\s*=\s*declaration->specifier\.alignas_specifier_count\s*>\s*0/.test(
+      declarationApplicationSource,
+    ) ||
+    !/has_alignment_specifier\s*=\s*declaration->specifier\.alignas_specifier_count\s*>\s*0/.test(
+      declarationSpecifierResolutionSource,
+    )) {
+  throw new Error(
+    "aggregate member resolution must preserve alignment-specifier presence from both semantic entry paths",
+  );
+}
 const declarationSpecifierResolutionHeader = await readFile(
   "src/semantic/declaration_specifier_resolution.h",
   "utf8",
@@ -7417,6 +7443,12 @@ if (/#include\s+"\.\.\/parser\//.test(
     !/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(
       recordMemberDeclStruct[1],
     ) ||
+    !/\bint\s+has_alignment_specifier\s*;/.test(
+      recordMemberDeclStruct[1],
+    ) ||
+    !/\bint\s+requested_alignment\s*;/.test(
+      recordMemberDeclStruct[1],
+    ) ||
     /\bconst\s+psx_type_t\s*\*/.test(recordMemberDeclStruct[1]) ||
     !/\bint\s+bit_width\s*;/.test(recordMemberDeclStruct[1]) ||
     /\b(?:offset|bit_offset)\s*;/.test(recordMemberDeclStruct[1]) ||
@@ -7453,6 +7485,12 @@ if (!tagMemberStruct ||
       tagMemberDeclStruct[1],
     ) ||
     !/\bpsx_qual_type_t\s+qual_type\s*;/.test(tagMemberDeclStruct[1]) ||
+    !/\bint\s+has_alignment_specifier\s*;/.test(
+      tagMemberDeclStruct[1],
+    ) ||
+    !/\bint\s+requested_alignment\s*;/.test(
+      tagMemberDeclStruct[1],
+    ) ||
     /\bpsx_type_t\s*\*/.test(tagMemberDeclStruct[1]) ||
     /\b(?:offset|bit_offset)\s*;/.test(tagMemberDeclStruct[1]) ||
     !tagMemberLayoutDraftStruct ||
@@ -8039,6 +8077,19 @@ if (/parser\/type\.h|\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
     )) {
   throw new Error(
     "canonical C signatures must derive widths from explicit DataLayout without depending on TargetInfo",
+  );
+}
+if (!/member->has_alignment_specifier/.test(
+      typeIdCanonicalSignatureSource,
+    ) ||
+    !/member->requested_alignment/.test(
+      typeIdCanonicalSignatureSource,
+    ) ||
+    !/write_literal\s*\(\s*writer\s*,\s*"m"\s*\)/.test(
+      typeIdCanonicalSignatureSource,
+    )) {
+  throw new Error(
+    "canonical record signatures must retain member alignment-specifier presence and value",
   );
 }
 const semanticTypeIdentityHeader = await readFile(
@@ -13100,6 +13151,23 @@ const runtimeCatalog = await readFile(
   "tools/wasm_obj_linker/runtime/generated/runtime-symbols.md",
   "utf8",
 );
+if (!/\bchar\s*\*\s*layout_signature\s*;/.test(abiLoweringHeader) ||
+    !/\bint\s+layout_signature_len\s*;/.test(abiLoweringHeader) ||
+    !/set_abi_layout_signature\s*\(/.test(abiLoweringSource) ||
+    !/psx_record_layout_member\s*\(/.test(abiLoweringSource) ||
+    !/member_layout->offset/.test(abiLoweringSource) ||
+    !/\bqsort\s*\(\s*union_members/.test(abiLoweringSource) ||
+    !/copy_abi_layout_signature\s*\(/.test(wasmMachineAbiSource) ||
+    !/emit_abi_layout_section\s*\(/.test(wasmObjectSectionsSource) ||
+    !/agc\.abi_layout/.test(wasmObjectSectionsSource) ||
+    !/parse_abi_layout_section\s*\(/.test(runtimeLinkerSource) ||
+    !/abi_layout_signatures_compatible\s*\(/.test(
+      runtimeLinkerSource,
+    )) {
+  throw new Error(
+    "Wasm objects must preserve a target ABI aggregate-layout fingerprint separately from canonical C type signatures",
+  );
+}
 const crossTuSignatureMismatchFixtures = [
   "atomic_aggregate_signature_mismatch_main.c",
   "atomic_aggregate_signature_mismatch_other.c",
@@ -13111,6 +13179,14 @@ const crossTuSignatureMismatchFixtures = [
   "enum_incompatible_return_signature_mismatch_other.c",
   "record_member_signature_mismatch_main.c",
   "record_member_signature_mismatch_other.c",
+  "record_member_alignment_presence_mismatch_main.c",
+  "record_member_alignment_presence_mismatch_other.c",
+  "record_member_alignment_value_mismatch_main.c",
+  "record_member_alignment_value_mismatch_other.c",
+  "indirect_record_layout_signature_mismatch_main.c",
+  "indirect_record_layout_signature_mismatch_other.c",
+  "nested_record_layout_signature_mismatch_main.c",
+  "nested_record_layout_signature_mismatch_other.c",
   "struct_member_order_signature_mismatch_main.c",
   "struct_member_order_signature_mismatch_other.c",
   "union_member_type_signature_mismatch_main.c",
@@ -13155,6 +13231,15 @@ if (!/emit_function_flags_section\s*\(/.test(
       runtimeLinkerSource,
     ) ||
     !/canonical_record_type_at\s*\(/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/canonical_record_body_members\s*\(/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/left->has_alignment_specifier\s*==\s*right->has_alignment_specifier/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/left->requested_alignment\s*==\s*right->requested_alignment/.test(
       runtimeLinkerSource,
     ) ||
     !/canonical_union_bodies_compatible\s*\(/.test(

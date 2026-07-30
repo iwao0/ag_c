@@ -1,9 +1,323 @@
 #include "abi_lowering.h"
 #include "abi_target_policy.h"
+#include "../semantic/record_decl.h"
 #include "../type_layout.h"
 
+#include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+typedef struct {
+  char *data;
+  size_t length;
+  size_t capacity;
+  int failed;
+} abi_layout_writer_t;
+
+static void abi_layout_write_bytes(
+    abi_layout_writer_t *writer,
+    const char *bytes, size_t length) {
+  if (!writer || writer->failed || (!bytes && length > 0)) return;
+  if (length > SIZE_MAX - writer->length - 1) {
+    writer->failed = 1;
+    return;
+  }
+  size_t required = writer->length + length + 1;
+  if (required > writer->capacity) {
+    size_t capacity = writer->capacity ? writer->capacity : 128;
+    while (capacity < required) {
+      if (capacity > SIZE_MAX / 2) {
+        capacity = required;
+        break;
+      }
+      capacity *= 2;
+    }
+    char *grown = realloc(writer->data, capacity);
+    if (!grown) {
+      writer->failed = 1;
+      return;
+    }
+    writer->data = grown;
+    writer->capacity = capacity;
+  }
+  if (length > 0)
+    memcpy(writer->data + writer->length, bytes, length);
+  writer->length += length;
+  writer->data[writer->length] = '\0';
+}
+
+static void abi_layout_write_literal(
+    abi_layout_writer_t *writer, const char *literal) {
+  abi_layout_write_bytes(
+      writer, literal, literal ? strlen(literal) : 0);
+}
+
+static void abi_layout_write_unsigned(
+    abi_layout_writer_t *writer, unsigned long long value) {
+  char digits[64];
+  int length = snprintf(
+      digits, sizeof(digits), "%llu", value);
+  if (length <= 0 || (size_t)length >= sizeof(digits)) {
+    if (writer) writer->failed = 1;
+    return;
+  }
+  abi_layout_write_bytes(writer, digits, (size_t)length);
+}
+
+static void abi_layout_write_signed(
+    abi_layout_writer_t *writer, long long value) {
+  char digits[64];
+  int length = snprintf(
+      digits, sizeof(digits), "%lld", value);
+  if (length <= 0 || (size_t)length >= sizeof(digits)) {
+    if (writer) writer->failed = 1;
+    return;
+  }
+  abi_layout_write_bytes(writer, digits, (size_t)length);
+}
+
+static int abi_layout_string_compare(
+    const void *left, const void *right) {
+  const char *const *left_string = left;
+  const char *const *right_string = right;
+  return strcmp(*left_string, *right_string);
+}
+
+static void abi_layout_write_type(
+    abi_layout_writer_t *writer,
+    const ir_abi_type_context_t *context,
+    psx_qual_type_t type, int depth) {
+  if (!writer || writer->failed || !context ||
+      !context->semantic_types || !context->record_layouts ||
+      !context->target ||
+      type.type_id == PSX_TYPE_ID_INVALID || depth > 128) {
+    if (writer) writer->failed = 1;
+    return;
+  }
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          context->semantic_types, type.type_id, &shape)) {
+    writer->failed = 1;
+    return;
+  }
+  const ag_data_layout_t *data_layout =
+      ag_target_info_data_layout(context->target);
+  if (!data_layout) {
+    writer->failed = 1;
+    return;
+  }
+  if (shape.kind == PSX_TYPE_VOID) {
+    abi_layout_write_literal(writer, "v");
+    return;
+  }
+  if (shape.kind == PSX_TYPE_POINTER ||
+      shape.kind == PSX_TYPE_FUNCTION) {
+    int size = psx_qual_type_layout_sizeof(
+        context->semantic_types, context->record_layouts,
+        type, data_layout);
+    int alignment = psx_qual_type_layout_alignof(
+        context->semantic_types, context->record_layouts,
+        type, data_layout);
+    if (size <= 0 || alignment <= 0) {
+      writer->failed = 1;
+      return;
+    }
+    abi_layout_write_literal(
+        writer, shape.kind == PSX_TYPE_POINTER ? "p" : "f");
+    abi_layout_write_unsigned(writer, (unsigned int)size);
+    abi_layout_write_literal(writer, ":");
+    abi_layout_write_unsigned(writer, (unsigned int)alignment);
+    return;
+  }
+  if (shape.kind == PSX_TYPE_ARRAY) {
+    psx_qual_type_t element =
+        psx_semantic_type_table_base(
+            context->semantic_types, type.type_id);
+    if (element.type_id == PSX_TYPE_ID_INVALID ||
+        shape.array_len < 0) {
+      writer->failed = 1;
+      return;
+    }
+    abi_layout_write_literal(writer, "a");
+    abi_layout_write_unsigned(
+        writer, (unsigned int)shape.array_len);
+    abi_layout_write_literal(writer, "[");
+    abi_layout_write_type(
+        writer, context, element, depth + 1);
+    abi_layout_write_literal(writer, "]");
+    return;
+  }
+  if (shape.kind == PSX_TYPE_STRUCT ||
+      shape.kind == PSX_TYPE_UNION) {
+    const psx_record_decl_t *record =
+        psx_semantic_type_table_record_decl(
+            context->semantic_types, type.type_id);
+    const psx_record_layout_t *layout =
+        psx_record_layout_table_lookup(
+            context->record_layouts, shape.record_id,
+            data_layout);
+    if (!record || !record->is_complete ||
+        !layout || layout->size < 0 ||
+        layout->alignment <= 0 ||
+        record->member_count < 0 ||
+        layout->member_count < record->member_count ||
+        (record->member_count > 0 && !record->members)) {
+      writer->failed = 1;
+      return;
+    }
+    abi_layout_write_literal(
+        writer, shape.kind == PSX_TYPE_STRUCT ? "s" : "u");
+    abi_layout_write_unsigned(
+        writer, (unsigned int)layout->size);
+    abi_layout_write_literal(writer, ":");
+    abi_layout_write_unsigned(
+        writer, (unsigned int)layout->alignment);
+    abi_layout_write_literal(writer, ":");
+    abi_layout_write_unsigned(
+        writer, (unsigned int)record->member_count);
+    abi_layout_write_literal(writer, "{");
+    char **union_members = NULL;
+    if (shape.kind == PSX_TYPE_UNION &&
+        record->member_count > 0) {
+      union_members = calloc(
+          (size_t)record->member_count,
+          sizeof(*union_members));
+      if (!union_members) {
+        writer->failed = 1;
+        return;
+      }
+    }
+    for (int index = 0; index < record->member_count; index++) {
+      const psx_record_member_layout_t *member_layout =
+          psx_record_layout_member(layout, index);
+      psx_qual_type_t member_type =
+          psx_semantic_type_table_record_member(
+              context->semantic_types, type.type_id, index);
+      if (!member_layout || member_layout->offset < 0 ||
+          member_layout->bit_offset < 0 ||
+          member_type.type_id == PSX_TYPE_ID_INVALID) {
+        if (union_members) {
+          for (int member = 0; member < index; member++)
+            free(union_members[member]);
+          free(union_members);
+        }
+        writer->failed = 1;
+        return;
+      }
+      abi_layout_writer_t member_writer = {0};
+      abi_layout_writer_t *destination =
+          union_members ? &member_writer : writer;
+      if (!union_members && index > 0)
+        abi_layout_write_literal(destination, "|");
+      abi_layout_write_unsigned(
+          destination, (unsigned int)member_layout->offset);
+      abi_layout_write_literal(destination, ":");
+      abi_layout_write_unsigned(
+          destination, (unsigned int)member_layout->bit_offset);
+      abi_layout_write_literal(destination, ":");
+      abi_layout_write_signed(
+          destination, record->members[index].bit_width);
+      abi_layout_write_literal(destination, ":");
+      abi_layout_write_type(
+          destination, context, member_type, depth + 1);
+      if (union_members) {
+        if (member_writer.failed || !member_writer.data) {
+          free(member_writer.data);
+          for (int member = 0; member < index; member++)
+            free(union_members[member]);
+          free(union_members);
+          writer->failed = 1;
+          return;
+        }
+        union_members[index] = member_writer.data;
+      }
+    }
+    if (union_members) {
+      qsort(
+          union_members, (size_t)record->member_count,
+          sizeof(*union_members), abi_layout_string_compare);
+      for (int index = 0; index < record->member_count; index++) {
+        if (index > 0) abi_layout_write_literal(writer, "|");
+        abi_layout_write_literal(writer, union_members[index]);
+        free(union_members[index]);
+      }
+      free(union_members);
+    }
+    abi_layout_write_literal(writer, "}");
+    return;
+  }
+
+  int size = psx_qual_type_layout_sizeof(
+      context->semantic_types, context->record_layouts,
+      type, data_layout);
+  int alignment = psx_qual_type_layout_alignof(
+      context->semantic_types, context->record_layouts,
+      type, data_layout);
+  if (size <= 0 || alignment <= 0) {
+    writer->failed = 1;
+    return;
+  }
+  abi_layout_write_literal(writer, "x");
+  abi_layout_write_unsigned(writer, (unsigned int)size);
+  abi_layout_write_literal(writer, ":");
+  abi_layout_write_unsigned(writer, (unsigned int)alignment);
+}
+
+static int set_abi_layout_signature(
+    const ir_abi_type_context_t *context,
+    const ir_function_type_t *function_type,
+    const ir_call_argument_t *actual_arguments,
+    size_t actual_count,
+    ir_abi_signature_t *signature) {
+  if (!context || !function_type || !signature ||
+      function_type->result.type_id == PSX_TYPE_ID_INVALID ||
+      (actual_count > 0 && !actual_arguments))
+    return 0;
+  int use_actual_arguments =
+      !function_type->has_prototype && actual_count > 0;
+  size_t parameter_count =
+      use_actual_arguments
+          ? actual_count : function_type->param_count;
+  if ((!use_actual_arguments && parameter_count > 0 &&
+       !function_type->params))
+    return 0;
+
+  abi_layout_writer_t writer = {0};
+  abi_layout_write_literal(&writer, "F");
+  abi_layout_write_type(
+      &writer, context, function_type->result, 0);
+  abi_layout_write_literal(&writer, "(");
+  if (!function_type->has_prototype &&
+      parameter_count == 0) {
+    abi_layout_write_literal(&writer, "?");
+  } else {
+    for (size_t index = 0; index < parameter_count; index++) {
+      psx_qual_type_t parameter =
+          use_actual_arguments
+              ? actual_arguments[index].type
+              : function_type->params[index];
+      if (index > 0) abi_layout_write_literal(&writer, ",");
+      abi_layout_write_type(
+          &writer, context, parameter, 0);
+    }
+    if (function_type->is_variadic) {
+      if (parameter_count > 0)
+        abi_layout_write_literal(&writer, ",");
+      abi_layout_write_literal(&writer, "...");
+    }
+  }
+  abi_layout_write_literal(&writer, ")");
+  if (writer.failed || writer.length > INT_MAX) {
+    free(writer.data);
+    return 0;
+  }
+  char *previous = signature->layout_signature;
+  signature->layout_signature = writer.data;
+  signature->layout_signature_len = (int)writer.length;
+  free(previous);
+  return 1;
+}
 
 typedef enum {
   IR_ABI_PARAM_UNKNOWN = 0,
@@ -256,13 +570,15 @@ static int lower_function_type_signature(
   }
   out->param_count = piece_count;
   out->fixed_param_count = piece_count;
-  return 1;
+  return set_abi_layout_signature(
+      context, function_type, NULL, 0, out);
 }
 
 static void dispose_signature(ir_abi_signature_t *signature) {
   if (!signature) return;
   free(signature->result_pieces);
   free(signature->param_pieces);
+  free(signature->layout_signature);
   memset(signature, 0, sizeof(*signature));
 }
 
@@ -477,7 +793,10 @@ static int lower_logical_call_arguments(
       declared_variadic ? declared_piece_count : physical_count;
   call->signature.is_variadic =
       declared_variadic && physical_count > declared_piece_count;
-  return 1;
+  return set_abi_layout_signature(
+      context, &instruction->function_type,
+      instruction->args, source_count,
+      &call->signature);
 }
 
 ir_abi_module_t *ir_abi_lower_module(

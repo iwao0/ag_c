@@ -366,6 +366,130 @@ static int run_record_member_signature_mismatch_case(void) {
       "function signature mismatch: consume_payload");
 }
 
+static int run_record_member_alignment_signature_mismatch_cases(void) {
+  static const struct {
+    const char *name;
+    const char *main_source;
+    const char *other_source;
+    const char *symbol;
+  } cases[] = {
+      {
+          "record_member_alignment_presence_mismatch",
+          "test/fixtures/wasm32/"
+          "record_member_alignment_presence_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "record_member_alignment_presence_mismatch_other.c",
+          "consume_alignment_presence",
+      },
+      {
+          "record_member_alignment_value_mismatch",
+          "test/fixtures/wasm32/"
+          "record_member_alignment_value_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "record_member_alignment_value_mismatch_other.c",
+          "consume_alignment_value",
+      },
+  };
+  for (size_t index = 0;
+       index < sizeof(cases) / sizeof(cases[0]); index++) {
+    char command[1024];
+    char expected[160];
+    snprintf(
+        command, sizeof(command),
+        "./build/ag_c_wasm -c "
+        "-o build/wasm32_obj/%s_main.o %s",
+        cases[index].name, cases[index].main_source);
+    if (run_cmd(command, cases[index].main_source) != 0) return 1;
+    snprintf(
+        command, sizeof(command),
+        "./build/ag_c_wasm -c "
+        "-o build/wasm32_obj/%s_other.o %s",
+        cases[index].name, cases[index].other_source);
+    if (run_cmd(command, cases[index].other_source) != 0) return 1;
+    snprintf(
+        command, sizeof(command),
+        "./build/ag_wasm_link --nostdlib --no-entry "
+        "--export=main "
+        "-o build/wasm32_obj/%s.wasm "
+        "build/wasm32_obj/%s_main.o "
+        "build/wasm32_obj/%s_other.o",
+        cases[index].name,
+        cases[index].name,
+        cases[index].name);
+    snprintf(
+        expected, sizeof(expected),
+        "function signature mismatch: %s",
+        cases[index].symbol);
+    if (run_fail_case(
+            cases[index].name,
+            command, expected) != 0)
+      return 1;
+  }
+  return 0;
+}
+
+static int run_record_layout_signature_mismatch_cases(void) {
+  static const struct {
+    const char *name;
+    const char *main_source;
+    const char *other_source;
+    const char *symbol;
+  } cases[] = {
+      {
+          "indirect_record_layout_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "indirect_record_layout_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "indirect_record_layout_signature_mismatch_other.c",
+          "read_indirect_layout_payload",
+      },
+      {
+          "nested_record_layout_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "nested_record_layout_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "nested_record_layout_signature_mismatch_other.c",
+          "read_nested_layout_envelope",
+      },
+  };
+  for (size_t index = 0;
+       index < sizeof(cases) / sizeof(cases[0]); index++) {
+    char command[1024];
+    char expected[160];
+    snprintf(
+        command, sizeof(command),
+        "./build/ag_c_wasm -c "
+        "-o build/wasm32_obj/%s_main.o %s",
+        cases[index].name, cases[index].main_source);
+    if (run_cmd(command, cases[index].main_source) != 0) return 1;
+    snprintf(
+        command, sizeof(command),
+        "./build/ag_c_wasm -c "
+        "-o build/wasm32_obj/%s_other.o %s",
+        cases[index].name, cases[index].other_source);
+    if (run_cmd(command, cases[index].other_source) != 0) return 1;
+    snprintf(
+        command, sizeof(command),
+        "./build/ag_wasm_link --nostdlib --no-entry "
+        "--export=main "
+        "-o build/wasm32_obj/%s.wasm "
+        "build/wasm32_obj/%s_main.o "
+        "build/wasm32_obj/%s_other.o",
+        cases[index].name,
+        cases[index].name,
+        cases[index].name);
+    snprintf(
+        expected, sizeof(expected),
+        "function signature mismatch: %s",
+        cases[index].symbol);
+    if (run_fail_case(
+            cases[index].name,
+            command, expected) != 0)
+      return 1;
+  }
+  return 0;
+}
+
 static int run_struct_member_order_signature_mismatch_case(void) {
   const char *main_source =
       "test/fixtures/wasm32/"
@@ -3073,6 +3197,9 @@ int main(void) {
       run_enum_return_signature_mismatch_cases();
   failures += run_array_bound_signature_mismatch_case();
   failures += run_record_member_signature_mismatch_case();
+  failures +=
+      run_record_member_alignment_signature_mismatch_cases();
+  failures += run_record_layout_signature_mismatch_cases();
   failures +=
       run_struct_member_order_signature_mismatch_case();
   failures +=

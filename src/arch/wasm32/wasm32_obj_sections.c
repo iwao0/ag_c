@@ -359,6 +359,33 @@ static void emit_c_signature_section(
   free(payload.data);
 }
 
+static void emit_abi_layout_section(
+    wasm32_obj_context_t *context, wb_t *output) {
+  int count = 0;
+  for (int index = 0; index < g_obj.func_count; index++) {
+    if (g_obj.funcs[index].c_signature &&
+        g_obj.funcs[index].abi_layout_signature)
+      count++;
+  }
+  if (count == 0) return;
+  wb_t payload = {
+      .diagnostic_context = context->diagnostic_context};
+  wb_uleb(&payload, 1);
+  wb_uleb(&payload, (uint32_t)count);
+  for (int index = 0; index < g_obj.func_count; index++) {
+    const obj_func_t *function = &g_obj.funcs[index];
+    if (!function->c_signature ||
+        !function->abi_layout_signature)
+      continue;
+    wb_str(&payload, function->name, function->name_len);
+    wb_str(
+        &payload, function->abi_layout_signature,
+        function->abi_layout_signature_len);
+  }
+  emit_custom_section(output, "agc.abi_layout", &payload);
+  free(payload.data);
+}
+
 static void emit_function_flags_section(
     wasm32_obj_context_t *context, wb_t *output) {
   int count = 0;
@@ -446,6 +473,7 @@ void wasm32_obj_serialize_sections(
   emit_code_section(context, output);
   emit_data_section(context, output);
   emit_c_signature_section(context, output);
+  emit_abi_layout_section(context, output);
   emit_function_flags_section(context, output);
   emit_continuation_section(context, output);
   emit_linking_section(context, output);

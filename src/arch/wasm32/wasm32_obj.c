@@ -15,6 +15,7 @@ static void wasm32_obj_clear_module(obj_ctx_t *obj) {
   for (int i = 0; i < obj->func_count; i++) {
     free(obj->funcs[i].name);
     free(obj->funcs[i].c_signature);
+    free(obj->funcs[i].abi_layout_signature);
     free(obj->funcs[i].sig.params);
     free(obj->funcs[i].body.data);
     free(obj->funcs[i].relocs);
@@ -235,6 +236,8 @@ static obj_sig_t copy_signature(
     wasm32_obj_context_t *context, const obj_sig_t *source) {
   obj_sig_t copy = *source;
   copy.params = NULL;
+  copy.abi_layout_signature = NULL;
+  copy.abi_layout_signature_len = 0;
   if (source->nparams > 0) {
     copy.params = xrealloc(
         context->diagnostic_context, NULL,
@@ -1093,6 +1096,86 @@ static void set_func_c_signature(
       context, function, signature, signature_len);
 }
 
+static int abi_layout_signature_parameter_offset(
+    const char *signature, int signature_len) {
+  if (!signature || signature_len < 4 ||
+      signature[0] != 'F' ||
+      signature[signature_len - 1] != ')')
+    return -1;
+  for (int index = 1; index < signature_len - 1; index++) {
+    if (signature[index] == '(') return index;
+  }
+  return -1;
+}
+
+static int abi_layout_signature_has_wildcard(
+    const char *signature, int signature_len) {
+  int offset = abi_layout_signature_parameter_offset(
+      signature, signature_len);
+  return offset >= 0 &&
+         offset + 2 == signature_len - 1 &&
+         signature[offset + 1] == '?';
+}
+
+static int abi_layout_signatures_compatible(
+    const char *left, int left_len,
+    const char *right, int right_len) {
+  if (!left || !right || left_len <= 0 || right_len <= 0)
+    return 0;
+  if (left_len == right_len &&
+      memcmp(left, right, (size_t)left_len) == 0)
+    return 1;
+  int left_offset = abi_layout_signature_parameter_offset(
+      left, left_len);
+  int right_offset = abi_layout_signature_parameter_offset(
+      right, right_len);
+  if (left_offset < 0 || right_offset < 0 ||
+      left_offset != right_offset ||
+      memcmp(left, right, (size_t)left_offset) != 0)
+    return 0;
+  return abi_layout_signature_has_wildcard(left, left_len) ||
+         abi_layout_signature_has_wildcard(right, right_len);
+}
+
+static void replace_func_abi_layout_signature(
+    wasm32_obj_context_t *context, obj_func_t *function,
+    const char *signature, int signature_len) {
+  function->abi_layout_signature = xrealloc(
+      context->diagnostic_context,
+      function->abi_layout_signature,
+      (size_t)signature_len + 1);
+  memcpy(
+      function->abi_layout_signature, signature,
+      (size_t)signature_len);
+  function->abi_layout_signature[signature_len] = '\0';
+  function->abi_layout_signature_len = signature_len;
+}
+
+static void set_func_abi_layout_signature(
+    wasm32_obj_context_t *context, obj_func_t *function,
+    const char *signature, int signature_len) {
+  if (!function || !signature || signature_len <= 0) return;
+  if (!function->abi_layout_signature) {
+    replace_func_abi_layout_signature(
+        context, function, signature, signature_len);
+    return;
+  }
+  if (!abi_layout_signatures_compatible(
+          function->abi_layout_signature,
+          function->abi_layout_signature_len,
+          signature, signature_len))
+    obj_unsupported_msg(
+        context,
+        "conflicting Wasm object ABI layout signature");
+  if (abi_layout_signature_has_wildcard(
+          function->abi_layout_signature,
+          function->abi_layout_signature_len) &&
+      !abi_layout_signature_has_wildcard(
+          signature, signature_len))
+    replace_func_abi_layout_signature(
+        context, function, signature, signature_len);
+}
+
 static void ensure_func_sig_for_address(
     wasm32_obj_context_t *context,
     char *sym, int sym_len, obj_sig_t sig,
@@ -1767,6 +1850,10 @@ static void gen_func_body(
             set_func_c_signature(
                 context, target, i->reference_c_signature,
                 i->reference_c_signature_len);
+            set_func_abi_layout_signature(
+                context, target,
+                i->reference_signature.abi_layout_signature,
+                i->reference_signature.abi_layout_signature_len);
             of = &g_obj.funcs[of_index];
             wb_u8(&body, 0x41);
             uint32_t imm_off = wb_uleb5(&body, 0);
@@ -2070,6 +2157,10 @@ static void gen_func_body(
           set_func_c_signature(
               context, target, i->reference_c_signature,
               i->reference_c_signature_len);
+          set_func_abi_layout_signature(
+              context, target,
+              csig->abi_layout_signature,
+              csig->abi_layout_signature_len);
           of = &g_obj.funcs[of_index];
           obj_sig_t *emit_sig = &target->sig;
           if (target->sig.nparams == 0 && target->sig.result == IR_TY_VOID && !target->defined) {
@@ -2502,6 +2593,10 @@ void wasm32_obj_gen_machine_module_in(
       set_func_c_signature(
           context, of, function->c_signature,
           function->c_signature_len);
+    set_func_abi_layout_signature(
+        context, of,
+        function->signature.abi_layout_signature,
+        function->signature.abi_layout_signature_len);
     of->defined = 1;
     of->is_static = function->is_static;
     gen_func_body(context, of, function);
@@ -2595,6 +2690,10 @@ static void emit_obj_data_reloc(
     set_func_c_signature(
         context, target, reloc->reference_c_signature,
         reloc->reference_c_signature_len);
+    set_func_abi_layout_signature(
+        context, target,
+        reloc->function_signature.abi_layout_signature,
+        reloc->function_signature.abi_layout_signature_len);
     data_add_reloc(
                    context,
                    data, R_WASM_TABLE_INDEX_I32, (uint32_t)reloc->offset,

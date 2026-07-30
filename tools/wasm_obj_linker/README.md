@@ -93,15 +93,26 @@ different types. Array types use `aN<type>`. An incomplete or variable bound
 is `a0<type>` and is compatible with a specified bound when the element types
 are compatible; two different non-zero constant bounds remain incompatible.
 Named records retain their tag atom and append a structural suffix, for
-example `s{6:packet}[1:1|5:value:0u:i32]`. Complete records with the same tag
-must have compatible corresponding members. Structure members correspond in
-declaration order, while union members are matched by name, bit-field
-attributes, and compatible type regardless of declaration order. An incomplete
-record suffix such as `s{8:envelope}[0:0]` remains compatible with its completed
-definition.
+example `s{6:packet}[1:1|5:value:0u:m1:16:i32]`. The `m` fields retain whether
+the member declaration had an alignment specifier and its resolved requested
+alignment. Complete records with the same tag must have compatible
+corresponding members, including equivalent member alignment specifiers.
+Structure members correspond in declaration order, while union members are
+matched by name, bit-field attributes, alignment specifier, and compatible
+type regardless of declaration order. An incomplete record suffix such as
+`s{8:envelope}[0:0]` remains compatible with its completed definition.
 Within one object, an earlier function-reference signature containing an
 incomplete array bound or record is refined to the more complete signature
 when its compatible definition becomes available.
+
+The separate `agc.abi_layout` section records the target ABI layout used for
+each function result and parameter. Its recursive fingerprint includes
+aggregate size, alignment, member offsets, bit offsets, and nested member
+layouts. This catches cross-object layout differences such as `#pragma pack`
+that remain invisible when a large aggregate is passed indirectly as a Wasm
+pointer. Union member fingerprints are compared independently of declaration
+order. Objects without this section remain linkable for backward
+compatibility.
 
 ## Usage
 

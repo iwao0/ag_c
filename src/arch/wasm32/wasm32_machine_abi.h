@@ -5,7 +5,9 @@
 
 typedef struct {
   ir_type_t *params;
+  char *abi_layout_signature;
   int nparams;
+  int abi_layout_signature_len;
   ir_type_t result;
   unsigned char has_hidden_result;
   unsigned char has_direct_aggregate_result;

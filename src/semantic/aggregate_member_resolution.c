@@ -371,7 +371,11 @@ void psx_resolve_aggregate_member_declaration(
       request->base_qual_type.type_id == PSX_TYPE_ID_INVALID ||
       !request->declarator_shape ||
       request->member_name_len < 0 || request->pack_alignment < 0 ||
-      request->requested_alignment < 0) {
+      (request->has_alignment_specifier != 0 &&
+       request->has_alignment_specifier != 1) ||
+      request->requested_alignment < 0 ||
+      (!request->has_alignment_specifier &&
+       request->requested_alignment != 0)) {
     return;
   }
   psx_semantic_context_t *semantic_context = request->semantic_context;
@@ -556,6 +560,8 @@ void psx_resolve_aggregate_member_declaration(
         .len = has_name ? request->member_name_len : 0,
         .bit_width = request->has_bitfield ? request->bit_width : 0,
         .bit_is_signed = resolution->bit_is_signed,
+        .has_alignment_specifier = request->has_alignment_specifier,
+        .requested_alignment = request->requested_alignment,
         .decl_qual_type = identity,
     };
     batch_layouts[0] = (psx_record_member_layout_t){

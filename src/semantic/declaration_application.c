@@ -134,6 +134,8 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
               .has_bitfield = head->has_bitfield,
               .bit_width = resolved_bit_width,
               .pack_alignment = declaration->pack_alignment,
+              .has_alignment_specifier =
+                  declaration->specifier.alignas_specifier_count > 0,
               .requested_alignment = requested_alignment,
           },
           head->diagnostic_token);

@@ -233,6 +233,8 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
               .has_bitfield = declarator->has_bitfield,
               .bit_width = bit_width,
               .pack_alignment = declaration->pack_alignment,
+              .has_alignment_specifier =
+                  declaration->specifier.alignas_specifier_count > 0,
               .requested_alignment = requested_alignment,
           },
           declarator->diagnostic_token);
