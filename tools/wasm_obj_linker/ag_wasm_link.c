@@ -1029,6 +1029,7 @@ typedef struct {
   char kind;
   str_t tag;
   int end;
+  int is_anonymous;
   int has_shape;
   int is_complete;
   int body_start;
@@ -1159,26 +1160,30 @@ static int canonical_record_type_at(
   if (!parsed || offset < 0 ||
       offset + 2 > signature.len ||
       (signature.s[offset] != 's' &&
-       signature.s[offset] != 'u') ||
-      signature.s[offset + 1] != '{')
+       signature.s[offset] != 'u'))
     return 0;
   canonical_record_type_t result = {
       .kind = signature.s[offset],
   };
-  int index = offset + 2;
-  uint32_t tag_length = 0;
-  if (!canonical_decimal(
-          signature, &index, &tag_length) ||
-      index >= signature.len ||
-      signature.s[index++] != ':' ||
-      tag_length > (uint32_t)(signature.len - index))
-    return 0;
-  result.tag = (str_t){
-      signature.s + index, (int)tag_length};
-  index += (int)tag_length;
-  if (index >= signature.len ||
-      signature.s[index++] != '}')
-    return 0;
+  int index = offset + 1;
+  if (signature.s[index] == '[') {
+    result.is_anonymous = 1;
+  } else {
+    if (signature.s[index++] != '{') return 0;
+    uint32_t tag_length = 0;
+    if (!canonical_decimal(
+            signature, &index, &tag_length) ||
+        index >= signature.len ||
+        signature.s[index++] != ':' ||
+        tag_length > (uint32_t)(signature.len - index))
+      return 0;
+    result.tag = (str_t){
+        signature.s + index, (int)tag_length};
+    index += (int)tag_length;
+    if (index >= signature.len ||
+        signature.s[index++] != '}')
+      return 0;
+  }
   result.end = index;
   if (index >= signature.len ||
       signature.s[index] != '[') {
@@ -1451,7 +1456,10 @@ static int canonical_type_signatures_compatible(
     if (left_is_record || right_is_record) {
       if (!left_is_record || !right_is_record ||
           left_record.kind != right_record.kind ||
-          !str_eq(left_record.tag, right_record.tag))
+          left_record.is_anonymous !=
+              right_record.is_anonymous ||
+          (!left_record.is_anonymous &&
+           !str_eq(left_record.tag, right_record.tag)))
         return 0;
       if (left_record.has_shape &&
           right_record.has_shape &&

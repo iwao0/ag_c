@@ -97,21 +97,43 @@ const wasm32E2EStaticCaseList = [
     .slice(staticCaseStart, staticCaseEnd)
     .matchAll(/"test\/fixtures\/([^"]+\.c)"/g),
 ].map((match) => match[1]);
+const link2CaseMarker =
+  "static const wasm_link2_case_t link2_cases[] = {";
+const link2CaseStart = wasm32E2ESource.indexOf(link2CaseMarker);
+const link2CaseEnd = wasm32E2ESource.indexOf("\n};", link2CaseStart);
+if (link2CaseStart < 0 || link2CaseEnd < 0) {
+  throw new Error("cannot locate Wasm E2E multi-TU fixture table");
+}
+const wasm32E2ELink2CaseList = [
+  ...wasm32E2ESource
+    .slice(link2CaseStart, link2CaseEnd)
+    .matchAll(/"test\/fixtures\/([^"]+\.c)"/g),
+].map((match) => match[1]);
 const duplicateExtraCases = wasm32E2EExtraCaseList.filter(
   (path, index) => wasm32E2EExtraCaseList.indexOf(path) !== index,
 );
 const duplicateStaticCases = wasm32E2EStaticCaseList.filter(
   (path, index) => wasm32E2EStaticCaseList.indexOf(path) !== index,
 );
+const duplicateLink2Cases = wasm32E2ELink2CaseList.filter(
+  (path, index) => wasm32E2ELink2CaseList.indexOf(path) !== index,
+);
 const staticCaseSet = new Set(wasm32E2EStaticCaseList);
+const link2CaseSet = new Set(wasm32E2ELink2CaseList);
 const staticExtraOverlap = wasm32E2EExtraCaseList.filter((path) =>
   staticCaseSet.has(path)
 );
+const link2RegisteredElsewhere = [
+  ...wasm32E2ELink2CaseList.filter((path) => staticCaseSet.has(path)),
+  ...wasm32E2EExtraCaseList.filter((path) => link2CaseSet.has(path)),
+];
 const duplicateWasmE2ECases = [
   ...new Set([
     ...duplicateStaticCases,
     ...duplicateExtraCases,
+    ...duplicateLink2Cases,
     ...staticExtraOverlap,
+    ...link2RegisteredElsewhere,
   ]),
 ].sort();
 if (duplicateWasmE2ECases.length) {
@@ -125,7 +147,27 @@ const expectedNativeProbeRegistrationExclusions = [
   "gnu_statement_expression.c",
   "unsupported_gnu_extensions_warn_skip.c",
 ];
+const expectedWasmProbeRegistrationExclusions = [
+  "anonymous_flexible_global_signature_xtu_main.c",
+  "anonymous_flexible_global_signature_xtu_other.c",
+  "anonymous_global_record_signature_xtu_main.c",
+  "anonymous_global_record_signature_xtu_other.c",
+  "anonymous_global_union_signature_xtu_main.c",
+  "anonymous_global_union_signature_xtu_other.c",
+  "nested_anonymous_global_union_signature_xtu_main.c",
+  "nested_anonymous_global_union_signature_xtu_other.c",
+];
 const wasmMultiTuProbeFixtures = [
+  "aligned_global_data_reloc_xtu_main.c",
+  "aligned_global_data_reloc_xtu_other.c",
+  "aligned_global_definition_xtu_main.c",
+  "aligned_global_definition_xtu_other.c",
+  "anonymous_flexible_global_signature_xtu_main.c",
+  "anonymous_flexible_global_signature_xtu_other.c",
+  "anonymous_global_record_signature_xtu_main.c",
+  "anonymous_global_record_signature_xtu_other.c",
+  "anonymous_global_union_signature_xtu_main.c",
+  "anonymous_global_union_signature_xtu_other.c",
   "atomic_aggregate_callback_xtu_main.c",
   "atomic_aggregate_callback_xtu_other.c",
   "extern_funcptr_xtu_main.c",
@@ -140,8 +182,14 @@ const wasmMultiTuProbeFixtures = [
   "incomplete_global_record_pointer_signature_xtu_other.c",
   "incomplete_global_record_object_signature_xtu_main.c",
   "incomplete_global_record_object_signature_xtu_other.c",
+  "global_callback_parameter_qualifier_xtu_main.c",
+  "global_callback_parameter_qualifier_xtu_other.c",
+  "global_enum_integer_compatible_xtu_main.c",
+  "global_enum_integer_compatible_xtu_other.c",
   "named_record_signature_xtu_main.c",
   "named_record_signature_xtu_other.c",
+  "nested_anonymous_global_union_signature_xtu_main.c",
+  "nested_anonymous_global_union_signature_xtu_other.c",
   "packed_indirect_record_signature_xtu_main.c",
   "packed_indirect_record_signature_xtu_other.c",
   "packed_pointer_record_signature_xtu_main.c",
@@ -180,9 +228,12 @@ const missingNativeProbeRegistrations = probeFixtureNames.filter(
     !nativeE2ESource.includes(`"${probeFixtureDirectory}/${name}"`),
 );
 const missingWasmProbeRegistrations = probeFixtureNames.filter(
-  (name) =>
-    !wasm32E2ESource.includes(`"${probeFixtureDirectory}/${name}"`) &&
-    !wasm32E2EExtraCases.has(`probes_found_bugs/${name}`),
+  (name) => {
+    const path = `probes_found_bugs/${name}`;
+    return !staticCaseSet.has(path) &&
+           !link2CaseSet.has(path) &&
+           !wasm32E2EExtraCases.has(path);
+  },
 );
 const wasm32ObjectLinkFixtureScan = await readFile(
   "scripts/run_wasm32_object_link_fixture_scan.sh",
@@ -199,7 +250,8 @@ if (JSON.stringify(missingNativeProbeRegistrations) !==
       missingNativeProbeRegistrations.join("\n"),
   );
 }
-if (missingWasmProbeRegistrations.length) {
+if (JSON.stringify(missingWasmProbeRegistrations) !==
+      JSON.stringify(expectedWasmProbeRegistrationExclusions)) {
   throw new Error(
     "Wasm E2E probe fixture registration drift:\n" +
       missingWasmProbeRegistrations.join("\n"),
@@ -13259,10 +13311,26 @@ if (!/\bchar\s*\*\s*layout_signature\s*;/.test(abiLoweringHeader) ||
   );
 }
 const crossTuSignatureMismatchFixtures = [
+  "anonymous_flexible_global_member_type_mismatch_main.c",
+  "anonymous_flexible_global_member_type_mismatch_other.c",
+  "anonymous_global_union_bitfield_width_mismatch_main.c",
+  "anonymous_global_union_bitfield_width_mismatch_other.c",
+  "anonymous_global_record_member_name_mismatch_main.c",
+  "anonymous_global_record_member_name_mismatch_other.c",
+  "anonymous_global_record_member_type_mismatch_main.c",
+  "anonymous_global_record_member_type_mismatch_other.c",
+  "anonymous_global_union_member_type_mismatch_main.c",
+  "anonymous_global_union_member_type_mismatch_other.c",
+  "anonymous_global_union_member_name_mismatch_main.c",
+  "anonymous_global_union_member_name_mismatch_other.c",
   "atomic_aggregate_signature_mismatch_main.c",
   "atomic_aggregate_signature_mismatch_other.c",
   "array_bound_signature_mismatch_main.c",
   "array_bound_signature_mismatch_other.c",
+  "global_anonymous_tagged_union_mismatch_main.c",
+  "global_anonymous_tagged_union_mismatch_other.c",
+  "nested_anonymous_global_union_member_type_mismatch_main.c",
+  "nested_anonymous_global_union_member_type_mismatch_other.c",
   "enum_distinct_return_signature_mismatch_main.c",
   "enum_distinct_return_signature_mismatch_other.c",
   "enum_incompatible_return_signature_mismatch_main.c",
@@ -13307,6 +13375,28 @@ const crossTuSignatureMismatchFixtures = [
   "global_alignment_requirement_mismatch_other.c",
   "global_alignment_value_mismatch_main.c",
   "global_alignment_value_mismatch_other.c",
+  "global_alignment_data_reloc_mismatch_main.c",
+  "global_alignment_data_reloc_mismatch_other.c",
+  "global_const_qualifier_mismatch_main.c",
+  "global_const_qualifier_mismatch_other.c",
+  "global_volatile_qualifier_mismatch_main.c",
+  "global_volatile_qualifier_mismatch_other.c",
+  "global_atomic_qualifier_mismatch_main.c",
+  "global_atomic_qualifier_mismatch_other.c",
+  "global_pointee_const_qualifier_mismatch_main.c",
+  "global_pointee_const_qualifier_mismatch_other.c",
+  "global_restrict_pointer_qualifier_mismatch_main.c",
+  "global_restrict_pointer_qualifier_mismatch_other.c",
+  "global_callback_pointee_const_qualifier_mismatch_main.c",
+  "global_callback_pointee_const_qualifier_mismatch_other.c",
+  "global_void_pointer_type_mismatch_main.c",
+  "global_void_pointer_type_mismatch_other.c",
+  "global_pointer_array_shape_mismatch_main.c",
+  "global_pointer_array_shape_mismatch_other.c",
+  "global_function_object_pointer_kind_mismatch_main.c",
+  "global_function_object_pointer_kind_mismatch_other.c",
+  "global_distinct_enum_type_mismatch_main.c",
+  "global_distinct_enum_type_mismatch_other.c",
   "struct_member_order_signature_mismatch_main.c",
   "struct_member_order_signature_mismatch_other.c",
   "union_member_type_signature_mismatch_main.c",
@@ -13351,6 +13441,9 @@ if (!/emit_function_flags_section\s*\(/.test(
       runtimeLinkerSource,
     ) ||
     !/canonical_record_type_at\s*\(/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/left_record\.is_anonymous\s*!=\s*right_record\.is_anonymous/.test(
       runtimeLinkerSource,
     ) ||
     !/canonical_record_body_members\s*\(/.test(

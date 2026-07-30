@@ -99,7 +99,9 @@ alignment. Complete records with the same tag must have compatible
 corresponding members, including equivalent member alignment specifiers.
 Structure members correspond in declaration order, while union members are
 matched by name, bit-field attributes, alignment specifier, and compatible
-type regardless of declaration order. An incomplete record suffix such as
+type regardless of declaration order. Independently declared anonymous
+records use the same structural comparison without being conflated with a
+tagged record. An incomplete record suffix such as
 `s{8:envelope}[0:0]` remains compatible with its completed definition.
 Within one object, an earlier function-reference signature containing an
 incomplete array bound or record is refined to the more complete signature
