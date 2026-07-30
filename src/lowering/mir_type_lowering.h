@@ -34,6 +34,9 @@ ir_mir_type_info_t ir_mir_classify_type_id(
     const ir_mir_type_context_t *context, psx_type_id_t type_id);
 int ir_mir_integer_promotion_is_unsigned(
     ir_mir_type_info_t type, const struct ag_data_layout_t *data_layout);
+ir_mir_type_info_t ir_mir_usual_arithmetic_type(
+    ir_mir_type_info_t left, ir_mir_type_info_t right,
+    const struct ag_data_layout_t *data_layout);
 int ir_mir_usual_arithmetic_result_is_unsigned(
     ir_mir_type_info_t left, ir_mir_type_info_t right,
     const struct ag_data_layout_t *data_layout);

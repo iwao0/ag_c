@@ -83,11 +83,29 @@ int ir_mir_integer_promotion_is_unsigned(ir_mir_type_info_t type,
       .is_unsigned;
 }
 
+ir_mir_type_info_t ir_mir_usual_arithmetic_type(
+    ir_mir_type_info_t left, ir_mir_type_info_t right,
+    const ag_data_layout_t *data_layout) {
+  psx_integer_conversion_t result =
+      psx_usual_integer_conversion_for_data_layout(
+          integer_conversion_type(left), integer_conversion_type(right),
+          data_layout);
+  int size = psx_integer_conversion_size_for_data_layout(
+      result, data_layout);
+  if (!result.is_integer || size <= 0) return unknown_type();
+  return (ir_mir_type_info_t){
+      .type = size > 4 ? IR_TY_I64 : IR_TY_I32,
+      .type_class = IR_MIR_TYPE_INTEGER,
+      .source_size = size,
+      .integer_rank = result.rank,
+      .is_unsigned = result.is_unsigned,
+  };
+}
+
 int ir_mir_usual_arithmetic_result_is_unsigned(
     ir_mir_type_info_t left, ir_mir_type_info_t right,
     const ag_data_layout_t *data_layout) {
-  return psx_usual_integer_conversion_for_data_layout(
-             integer_conversion_type(left), integer_conversion_type(right),
-             data_layout)
+  return ir_mir_usual_arithmetic_type(
+             left, right, data_layout)
       .is_unsigned;
 }

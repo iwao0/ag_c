@@ -12067,9 +12067,28 @@ static void test_target_type_layout_boundary(
   ir_mir_type_info_t unsigned_short_mir =
       ir_mir_classify_type_id(
           &mir_type_context, unsigned_short.type_id);
+  ir_mir_type_info_t signed_long_unsigned_int_type =
+      ir_mir_usual_arithmetic_type(
+          signed_long_mir, unsigned_int_mir,
+          ag_target_info_data_layout(&host));
+  ASSERT_EQ(IR_MIR_TYPE_INTEGER,
+            signed_long_unsigned_int_type.type_class);
+  ASSERT_EQ(IR_TY_I64, signed_long_unsigned_int_type.type);
+  ASSERT_EQ(8, signed_long_unsigned_int_type.source_size);
+  ASSERT_TRUE(!signed_long_unsigned_int_type.is_unsigned);
   ASSERT_TRUE(!ir_mir_usual_arithmetic_result_is_unsigned(
       signed_long_mir, unsigned_int_mir,
       ag_target_info_data_layout(&host)));
+  signed_long_unsigned_int_type =
+      ir_mir_usual_arithmetic_type(
+          signed_long_mir, unsigned_int_mir,
+          ag_target_info_data_layout(
+              &equal_width_integer_target));
+  ASSERT_EQ(IR_MIR_TYPE_INTEGER,
+            signed_long_unsigned_int_type.type_class);
+  ASSERT_EQ(IR_TY_I32, signed_long_unsigned_int_type.type);
+  ASSERT_EQ(4, signed_long_unsigned_int_type.source_size);
+  ASSERT_TRUE(signed_long_unsigned_int_type.is_unsigned);
   ASSERT_TRUE(ir_mir_usual_arithmetic_result_is_unsigned(
       signed_long_mir, unsigned_int_mir,
       ag_target_info_data_layout(

@@ -4608,11 +4608,30 @@ ir_val_t hir_ir_build_expr(
     if (!hir_ir_append_instruction(context, instruction)) return ir_val_none();
     return instruction->dst;
   }
+  const ag_data_layout_t *data_layout =
+      ag_target_info_data_layout(context->options->target);
   int uac_is_unsigned = ir_mir_usual_arithmetic_result_is_unsigned(
-      left_type, right_type,
-      ag_target_info_data_layout(context->options->target));
+      left_type, right_type, data_layout);
   int shift_is_unsigned = ir_mir_integer_promotion_is_unsigned(
-      left_type, ag_target_info_data_layout(context->options->target));
+      left_type, data_layout);
+  if (left_type.type_class == IR_MIR_TYPE_INTEGER &&
+      right_type.type_class == IR_MIR_TYPE_INTEGER &&
+      kind != PSX_HIR_SHL && kind != PSX_HIR_SHR) {
+    ir_mir_type_info_t operation_type =
+        ir_mir_usual_arithmetic_type(
+            left_type, right_type, data_layout);
+    if (operation_type.type_class != IR_MIR_TYPE_INTEGER)
+      return hir_ir_unsupported_expr(context);
+    left = hir_ir_coerce_direct_value(
+        context, left, left_type, operation_type);
+    if (context->status == IR_HIR_BUILD_OK)
+      right = hir_ir_coerce_direct_value(
+          context, right, right_type, operation_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    left_type = operation_type;
+    right_type = operation_type;
+    uac_is_unsigned = operation_type.is_unsigned;
+  }
   ir_op_t op;
   switch (kind) {
     case PSX_HIR_ADD: op = IR_ADD; break;
