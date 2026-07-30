@@ -72,6 +72,12 @@ skip_reason() {
     test/fixtures/wasm32/stdio_file_state_ops.c)
       echo "WAT-only unavailable-file stub contract; object runtime has real in-memory files"
       ;;
+    test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/anonymous_flexible_function_signature_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     test/fixtures/probes_found_bugs/anonymous_flexible_global_signature_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
@@ -91,6 +97,18 @@ skip_reason() {
       echo "multi-TU link fixture component without main"
       ;;
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/function_return_pointee_qualifier_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/function_parameter_qualifier_adjustment_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/function_parameter_multidimensional_qualifier_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/function_parameter_function_adjustment_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
     test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_other.c)
@@ -176,6 +194,10 @@ skip_reason() {
       ;;
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_main.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_other.c|\
+    test/fixtures/wasm32/anonymous_flexible_callback_member_type_mismatch_main.c|\
+    test/fixtures/wasm32/anonymous_flexible_callback_member_type_mismatch_other.c|\
+    test/fixtures/wasm32/anonymous_flexible_function_member_type_mismatch_main.c|\
+    test/fixtures/wasm32/anonymous_flexible_function_member_type_mismatch_other.c|\
     test/fixtures/wasm32/anonymous_flexible_global_member_type_mismatch_main.c|\
     test/fixtures/wasm32/anonymous_flexible_global_member_type_mismatch_other.c|\
     test/fixtures/wasm32/anonymous_global_union_bitfield_width_mismatch_main.c|\
@@ -198,6 +220,18 @@ skip_reason() {
     test/fixtures/wasm32/enum_distinct_return_signature_mismatch_other.c|\
     test/fixtures/wasm32/enum_incompatible_return_signature_mismatch_main.c|\
     test/fixtures/wasm32/enum_incompatible_return_signature_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_pointee_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_pointee_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_pointer_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_pointer_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_pointee_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_pointee_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_array_element_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_array_element_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_signedness_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_signedness_mismatch_other.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_main.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_other.c|\
     test/fixtures/wasm32/record_member_alignment_presence_mismatch_main.c|\
@@ -284,6 +318,12 @@ skip_reason() {
 
 link_companion() {
   case "$1" in
+    test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/anonymous_flexible_function_signature_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/anonymous_flexible_function_signature_xtu_other.c"
+      ;;
     test/fixtures/probes_found_bugs/anonymous_flexible_global_signature_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/anonymous_flexible_global_signature_xtu_other.c"
       ;;
@@ -304,6 +344,18 @@ link_companion() {
       ;;
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/function_return_pointee_qualifier_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/function_return_pointee_qualifier_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/function_parameter_qualifier_adjustment_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/function_parameter_qualifier_adjustment_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/function_parameter_multidimensional_qualifier_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/function_parameter_multidimensional_qualifier_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/function_parameter_function_adjustment_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/function_parameter_function_adjustment_xtu_other.c"
       ;;
     test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_other.c"
@@ -394,6 +446,12 @@ link_companion() {
 
 expected_result() {
   case "$1" in
+    test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/anonymous_flexible_function_signature_xtu_main.c)
+      echo 42
+      ;;
     test/fixtures/probes_found_bugs/anonymous_flexible_global_signature_xtu_main.c)
       echo 42
       ;;
@@ -413,6 +471,18 @@ expected_result() {
       echo 42
       ;;
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/function_return_pointee_qualifier_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/function_parameter_qualifier_adjustment_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/function_parameter_multidimensional_qualifier_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/function_parameter_function_adjustment_xtu_main.c)
       echo 42
       ;;
     test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_main.c)

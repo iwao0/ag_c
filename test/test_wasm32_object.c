@@ -243,6 +243,116 @@ static int run_atomic_aggregate_signature_mismatch_case(void) {
       "function signature mismatch: transform_words");
 }
 
+static int run_recursive_function_signature_mismatch_cases(void) {
+  static const struct {
+    const char *name;
+    const char *main_source;
+    const char *other_source;
+    const char *symbol;
+  } cases[] = {
+      {
+          "anonymous_flexible_function_member_type_mismatch",
+          "test/fixtures/wasm32/"
+          "anonymous_flexible_function_member_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "anonymous_flexible_function_member_type_mismatch_other.c",
+          "transform_anonymous_flexible_member_type",
+      },
+      {
+          "anonymous_flexible_callback_member_type_mismatch",
+          "test/fixtures/wasm32/"
+          "anonymous_flexible_callback_member_type_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "anonymous_flexible_callback_member_type_mismatch_other.c",
+          "invoke_anonymous_flexible_callback_member_type",
+      },
+      {
+          "function_return_pointee_const_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_pointee_const_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_pointee_const_qualifier_mismatch_other.c",
+          "function_return_pointee_const_qualifier",
+      },
+      {
+          "function_return_const_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_const_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_const_qualifier_mismatch_other.c",
+          "function_return_const_qualifier",
+      },
+      {
+          "function_return_pointer_const_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_pointer_const_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_pointer_const_qualifier_mismatch_other.c",
+          "function_return_pointer_const_qualifier",
+      },
+      {
+          "function_parameter_pointee_const_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_pointee_const_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_pointee_const_qualifier_mismatch_other.c",
+          "function_parameter_pointee_const_qualifier",
+      },
+      {
+          "function_parameter_array_element_const_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_array_element_const_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_array_element_const_qualifier_mismatch_other.c",
+          "function_parameter_array_element_const_qualifier",
+      },
+      {
+          "function_parameter_callback_signedness_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_signedness_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_signedness_mismatch_other.c",
+          "function_parameter_callback_signedness",
+      },
+  };
+  for (size_t index = 0;
+       index < sizeof(cases) / sizeof(cases[0]); index++) {
+    char command[1024];
+    char expected[192];
+    snprintf(
+        command, sizeof(command),
+        "./build/ag_c_wasm -c "
+        "-o build/wasm32_obj/%s_main.o %s",
+        cases[index].name, cases[index].main_source);
+    if (run_cmd(command, cases[index].main_source) != 0) return 1;
+    snprintf(
+        command, sizeof(command),
+        "./build/ag_c_wasm -c "
+        "-o build/wasm32_obj/%s_other.o %s",
+        cases[index].name, cases[index].other_source);
+    if (run_cmd(command, cases[index].other_source) != 0) return 1;
+    snprintf(
+        command, sizeof(command),
+        "./build/ag_wasm_link --nostdlib --no-entry "
+        "--export=main "
+        "-o build/wasm32_obj/%s.wasm "
+        "build/wasm32_obj/%s_main.o "
+        "build/wasm32_obj/%s_other.o",
+        cases[index].name,
+        cases[index].name,
+        cases[index].name);
+    snprintf(
+        expected, sizeof(expected),
+        "function signature mismatch: %s",
+        cases[index].symbol);
+    if (run_fail_case(
+            cases[index].name,
+            command, expected) != 0)
+      return 1;
+  }
+  return 0;
+}
+
 static int run_enum_return_signature_mismatch_cases(void) {
   if (run_cmd(
           "./build/ag_c_wasm -c "
@@ -3513,6 +3623,7 @@ int main(void) {
   failures += run_e2e_fixture_object_scan();
   failures += run_linked_import_abi_case();
   failures += run_atomic_aggregate_signature_mismatch_case();
+  failures += run_recursive_function_signature_mismatch_cases();
   failures +=
       run_enum_return_signature_mismatch_cases();
   failures += run_array_bound_signature_mismatch_case();

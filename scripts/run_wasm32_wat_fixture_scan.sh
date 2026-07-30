@@ -56,6 +56,14 @@ skip_reason() {
     test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_other.c|\
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c|\
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c|\
+    test/fixtures/probes_found_bugs/function_return_pointee_qualifier_xtu_main.c|\
+    test/fixtures/probes_found_bugs/function_return_pointee_qualifier_xtu_other.c|\
+    test/fixtures/probes_found_bugs/function_parameter_qualifier_adjustment_xtu_main.c|\
+    test/fixtures/probes_found_bugs/function_parameter_qualifier_adjustment_xtu_other.c|\
+    test/fixtures/probes_found_bugs/function_parameter_multidimensional_qualifier_xtu_main.c|\
+    test/fixtures/probes_found_bugs/function_parameter_multidimensional_qualifier_xtu_other.c|\
+    test/fixtures/probes_found_bugs/function_parameter_function_adjustment_xtu_main.c|\
+    test/fixtures/probes_found_bugs/function_parameter_function_adjustment_xtu_other.c|\
     test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/incomplete_array_bound_signature_xtu_main.c|\
@@ -98,6 +106,10 @@ skip_reason() {
     test/fixtures/probes_found_bugs/unprototyped_parameter_categories_xtu_other.c|\
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c|\
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c|\
+    test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/anonymous_flexible_callback_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/anonymous_flexible_function_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/anonymous_flexible_function_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/anonymous_flexible_global_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/anonymous_flexible_global_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/anonymous_global_record_signature_xtu_main.c|\
@@ -120,6 +132,10 @@ skip_reason() {
     test/fixtures/probes_found_bugs/global_enum_integer_compatible_xtu_other.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_main.c|\
     test/fixtures/wasm32/atomic_aggregate_signature_mismatch_other.c|\
+    test/fixtures/wasm32/anonymous_flexible_callback_member_type_mismatch_main.c|\
+    test/fixtures/wasm32/anonymous_flexible_callback_member_type_mismatch_other.c|\
+    test/fixtures/wasm32/anonymous_flexible_function_member_type_mismatch_main.c|\
+    test/fixtures/wasm32/anonymous_flexible_function_member_type_mismatch_other.c|\
     test/fixtures/wasm32/anonymous_flexible_global_member_type_mismatch_main.c|\
     test/fixtures/wasm32/anonymous_flexible_global_member_type_mismatch_other.c|\
     test/fixtures/wasm32/anonymous_global_union_bitfield_width_mismatch_main.c|\
@@ -142,6 +158,18 @@ skip_reason() {
     test/fixtures/wasm32/enum_distinct_return_signature_mismatch_other.c|\
     test/fixtures/wasm32/enum_incompatible_return_signature_mismatch_main.c|\
     test/fixtures/wasm32/enum_incompatible_return_signature_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_pointee_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_pointee_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_pointer_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_pointer_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_pointee_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_pointee_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_array_element_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_array_element_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_signedness_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_signedness_mismatch_other.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_main.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_other.c|\
     test/fixtures/wasm32/record_member_alignment_presence_mismatch_main.c|\

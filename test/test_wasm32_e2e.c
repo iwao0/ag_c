@@ -40,6 +40,18 @@ static const wasm_link2_case_t link2_cases[] = {
     {"probes_found_bugs", "extern_funcptr_xtu",
      "test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c",
      "test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c", 42, NULL},
+    {"probes_found_bugs", "function_return_pointee_qualifier_xtu",
+     "test/fixtures/probes_found_bugs/function_return_pointee_qualifier_xtu_main.c",
+     "test/fixtures/probes_found_bugs/function_return_pointee_qualifier_xtu_other.c", 42, NULL},
+    {"probes_found_bugs", "function_parameter_qualifier_adjustment_xtu",
+     "test/fixtures/probes_found_bugs/function_parameter_qualifier_adjustment_xtu_main.c",
+     "test/fixtures/probes_found_bugs/function_parameter_qualifier_adjustment_xtu_other.c", 42, NULL},
+    {"probes_found_bugs", "function_parameter_multidimensional_qualifier_xtu",
+     "test/fixtures/probes_found_bugs/function_parameter_multidimensional_qualifier_xtu_main.c",
+     "test/fixtures/probes_found_bugs/function_parameter_multidimensional_qualifier_xtu_other.c", 42, NULL},
+    {"probes_found_bugs", "function_parameter_function_adjustment_xtu",
+     "test/fixtures/probes_found_bugs/function_parameter_function_adjustment_xtu_main.c",
+     "test/fixtures/probes_found_bugs/function_parameter_function_adjustment_xtu_other.c", 42, NULL},
     {"probes_found_bugs", "enum_compatible_function_signature_xtu",
      "test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_main.c",
      "test/fixtures/probes_found_bugs/enum_compatible_function_signature_xtu_other.c", 42, NULL},
@@ -1125,6 +1137,22 @@ static int has_wasm_e2e_fixture_path(const char *path, size_t nextra) {
 
 static int is_wasm_e2e_fixture_parity_exclusion(const char *path) {
   return strcmp(
+             path,
+             "test/fixtures/probes_found_bugs/"
+             "anonymous_flexible_callback_signature_xtu_main.c") == 0 ||
+         strcmp(
+             path,
+             "test/fixtures/probes_found_bugs/"
+             "anonymous_flexible_callback_signature_xtu_other.c") == 0 ||
+         strcmp(
+             path,
+             "test/fixtures/probes_found_bugs/"
+             "anonymous_flexible_function_signature_xtu_main.c") == 0 ||
+         strcmp(
+             path,
+             "test/fixtures/probes_found_bugs/"
+             "anonymous_flexible_function_signature_xtu_other.c") == 0 ||
+         strcmp(
              path,
              "test/fixtures/probes_found_bugs/"
              "anonymous_flexible_global_signature_xtu_main.c") == 0 ||
