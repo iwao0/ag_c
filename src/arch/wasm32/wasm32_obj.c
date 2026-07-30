@@ -220,6 +220,17 @@ static int sig_integer_width_compatible(const obj_sig_t *a, const obj_sig_t *b) 
   return 1;
 }
 
+static int sig_result_equal(
+    const obj_sig_t *left, const obj_sig_t *right) {
+  return left && right &&
+         wasm_ir_type(left->result) ==
+             wasm_ir_type(right->result) &&
+         left->has_hidden_result ==
+             right->has_hidden_result &&
+         left->has_direct_aggregate_result ==
+             right->has_direct_aggregate_result;
+}
+
 static obj_sig_t copy_signature(
     wasm32_obj_context_t *context, const obj_sig_t *source) {
   obj_sig_t copy = *source;
@@ -858,15 +869,27 @@ static void set_func_c_signature(
 
 static void ensure_func_sig_for_address(
     wasm32_obj_context_t *context,
-    char *sym, int sym_len, obj_sig_t sig) {
+    char *sym, int sym_len, obj_sig_t sig,
+    int parameters_unspecified) {
   obj_func_t *target = find_func(context, sym, sym_len);
   if (!target) {
     target = intern_func(context, sym, sym_len);
     target->sig = sig;
+    target->signature_parameters_unspecified =
+        parameters_unspecified;
     return;
   }
   if (!target->defined && target->sig.nparams == 0 && target->sig.result == IR_TY_VOID) {
     target->sig = sig;
+    target->signature_parameters_unspecified =
+        parameters_unspecified;
+  } else if (!target->defined &&
+             target->signature_parameters_unspecified &&
+             !parameters_unspecified &&
+             sig_result_equal(&target->sig, &sig)) {
+    free(target->sig.params);
+    target->sig = sig;
+    target->signature_parameters_unspecified = 0;
   } else {
     free(sig.params);
   }
@@ -1504,11 +1527,17 @@ static void gen_func_body(
           if (!i->sym) obj_unsupported_inst(context, i);
           if (planned->kind == WASM32_MACHINE_INST_SYMBOL_ADDRESS &&
               i->is_function_symbol) {
-            obj_func_t *target = intern_func(context, i->sym, i->sym_len);
-            if (!target->defined && target->sig.nparams == 0 && target->sig.result == IR_TY_VOID) {
-              target->sig = func_sig_from_machine_callable(
-                  context, i, i->sym, i->sym_len);
-            }
+            ensure_func_sig_for_address(
+                context, i->sym, i->sym_len,
+                func_sig_from_machine_callable(
+                    context, i, i->sym, i->sym_len),
+                i->reference_parameters_unspecified);
+            obj_func_t *target =
+                find_func(context, i->sym, i->sym_len);
+            if (!target)
+              obj_unsupported_msg(
+                  context,
+                  "missing function-reference target");
             set_func_c_signature(
                 context, target, i->reference_c_signature,
                 i->reference_c_signature_len);
@@ -2221,14 +2250,25 @@ void wasm32_obj_gen_machine_module_in(
     obj_sig_t def_sig = {0};
     collect_func_sig(context, function, &def_sig);
     if (of->sig.nparams > 0 || of->sig.result != IR_TY_VOID) {
-      if (!sig_equal(&of->sig, &def_sig) &&
+      if (of->signature_parameters_unspecified) {
+        if (!sig_result_equal(&of->sig, &def_sig)) {
+          char msg[160];
+          snprintf(msg, sizeof(msg), "conflicting Wasm object function signature: %.*s",
+                   function->name_len, function->name);
+          obj_unsupported_msg(context, msg);
+        }
+        free(of->sig.params);
+        of->sig = def_sig;
+        of->signature_parameters_unspecified = 0;
+      } else if (!sig_equal(&of->sig, &def_sig) &&
           !sig_integer_width_compatible(&of->sig, &def_sig)) {
         char msg[160];
         snprintf(msg, sizeof(msg), "conflicting Wasm object function signature: %.*s",
                  function->name_len, function->name);
         obj_unsupported_msg(context, msg);
+      } else {
+        free(def_sig.params);
       }
-      free(def_sig.params);
     } else {
       of->sig = def_sig;
     }
@@ -2320,7 +2360,8 @@ static void emit_obj_data_reloc(
     ensure_func_sig_for_address(
         context,
         reloc->target, reloc->target_len,
-        copy_signature(context, &reloc->function_signature));
+        copy_signature(context, &reloc->function_signature),
+        reloc->reference_parameters_unspecified);
     obj_func_t *target = find_func(
         context, reloc->target, reloc->target_len);
     if (!target)

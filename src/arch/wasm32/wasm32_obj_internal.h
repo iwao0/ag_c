@@ -70,6 +70,7 @@ typedef struct {
   int imported;
   int defined;
   int is_static;
+  int signature_parameters_unspecified;
   int type_index;
   int func_index;
   int symbol_index;

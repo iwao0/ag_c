@@ -167,6 +167,7 @@ typedef struct {
   unsigned char is_function_symbol;
   unsigned char is_implicit_call;
   unsigned char has_reference_signature;
+  unsigned char reference_parameters_unspecified;
   wasm32_machine_inst_kind_t kind;
   wasm32_machine_binary_t binary;
   wasm32_machine_unary_t unary;

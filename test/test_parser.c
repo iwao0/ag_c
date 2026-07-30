@@ -5704,6 +5704,80 @@ static void test_typed_hir_atomic_aggregate_callback_relocation_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_typed_hir_unprototyped_callback_relocation_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_unprototyped_callback_relocation_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "typedef int callback_t(); "
+      "static int target(); "
+      "static callback_t *global_callback = target; "
+      "static int target(value) int value; { return value; }"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_data_module_t *data =
+      lower_ir_translation_unit_data_in_session(
+          test_suite_session);
+  ASSERT_TRUE(data != NULL);
+  ir_data_object_t *global_callback =
+      ir_data_module_find_object(
+          data, "global_callback", 15);
+  ASSERT_TRUE(global_callback != NULL);
+  ASSERT_TRUE(global_callback->is_static);
+  ASSERT_TRUE(global_callback->has_explicit_initializer);
+  const ir_data_reloc_t *relocation =
+      global_callback->relocs;
+  ASSERT_TRUE(relocation != NULL);
+  ASSERT_TRUE(relocation->next == NULL);
+  ASSERT_EQ(IR_DATA_RELOC_FUNCTION, relocation->kind);
+  ASSERT_EQ(6, relocation->target_len);
+  ASSERT_TRUE(memcmp(
+      relocation->target, "target", 6) == 0);
+  ASSERT_TRUE(relocation->has_function_type);
+  ASSERT_TRUE(
+      relocation->function_type.type_id !=
+      PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(
+      !relocation->function_type.has_prototype);
+  ASSERT_EQ(0, relocation->function_type.param_count);
+  ASSERT_TRUE(
+      relocation->reference_c_signature != NULL);
+  ASSERT_TRUE(
+      relocation->reference_c_signature_len > 0);
+
+  ir_abi_type_context_t abi_context = {
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .target =
+          ag_compilation_session_target(test_suite_session),
+  };
+  ir_abi_data_module_t *data_abi =
+      ir_abi_lower_data_module(&abi_context, data);
+  ASSERT_TRUE(data_abi != NULL);
+  ASSERT_EQ(1, data_abi->relocation_count);
+  const ir_abi_signature_t *signature =
+      ir_abi_data_relocation_signature(
+          data_abi, relocation);
+  ASSERT_TRUE(signature != NULL);
+  ASSERT_EQ(0, signature->fixed_param_count);
+  ASSERT_EQ(0, signature->param_count);
+  ASSERT_EQ(
+      IR_TY_I32,
+      ir_abi_signature_direct_result_type(signature));
+
+  ir_abi_data_module_free(data_abi);
+  ir_data_module_free(data);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_atomic_aggregate_callback_expression_lowering_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf(
@@ -22232,6 +22306,8 @@ int main() {
   test_typed_hir_returned_atomic_aggregate_callback_lowering_without_ast(
       test_suite_session);
   test_typed_hir_atomic_aggregate_callback_relocation_without_ast(
+      test_suite_session);
+  test_typed_hir_unprototyped_callback_relocation_without_ast(
       test_suite_session);
   test_typed_hir_atomic_aggregate_callback_expression_lowering_without_ast(
       test_suite_session);

@@ -626,6 +626,8 @@ int main(void) {
       reference_c_signature;
   function_instructions[5].reference_c_signature_len = 8;
   function_instructions[5].is_function_symbol = 1;
+  function_instructions[5].function_type.has_prototype = 1;
+  function_instructions[5].function_type.param_count = 1;
   function_instructions[6].op = IR_VLA_ALLOC;
   function_instructions[6].dst =
       (ir_val_t){.id = 5, .type = IR_TY_PTR};
@@ -937,6 +939,7 @@ int main(void) {
           selected_reference->reference_c_signature,
           reference_c_signature) != 0 ||
       !selected_reference->has_reference_signature ||
+      selected_reference->reference_parameters_unspecified ||
       selected_reference->reference_signature.result != IR_TY_I32 ||
       selected_reference->reference_signature.nparams != 1 ||
       selected_reference->reference_signature.params[0] != IR_TY_I64 ||
@@ -1217,6 +1220,8 @@ int main(void) {
           machine_holder->relocations[1].reference_c_signature,
           "i32(i64)") != 0 ||
       !machine_holder->relocations[1].has_function_signature ||
+      !machine_holder->relocations[1]
+           .reference_parameters_unspecified ||
       machine_holder->relocations[1].function_signature.nparams != 1 ||
       machine_holder->relocations[1].function_signature.params[0] !=
           IR_TY_I64 ||

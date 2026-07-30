@@ -702,6 +702,9 @@ static int initialize_instructions(
           return 0;
         if (reference_abi)
           machine_instruction->has_reference_signature = 1;
+        machine_instruction->reference_parameters_unspecified =
+            !instruction->function_type.has_prototype &&
+            instruction->function_type.param_count == 0;
       }
       if (instruction->op == IR_CALL) {
         machine_instruction->kind = WASM32_MACHINE_INST_CALL;

@@ -167,6 +167,9 @@ static int copy_data_object(
               abi, 1, &machine->function_signature))
         return 0;
       machine->has_function_signature = 1;
+      machine->reference_parameters_unspecified =
+          !relocation->function_type.has_prototype &&
+          relocation->function_type.param_count == 0;
     }
   }
   return 1;

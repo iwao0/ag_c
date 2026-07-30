@@ -50,6 +50,7 @@ typedef struct {
   int width;
   wasm32_machine_data_reloc_kind_t kind;
   unsigned char has_function_signature;
+  unsigned char reference_parameters_unspecified;
 } wasm32_machine_data_reloc_t;
 
 struct wasm32_machine_data_object_t {
