@@ -1,3 +1,4 @@
+// A case label cannot bypass a variably modified pointer declaration.
 int f(int n, int selector) {
   switch (selector) {
     int (*pointer)[n];

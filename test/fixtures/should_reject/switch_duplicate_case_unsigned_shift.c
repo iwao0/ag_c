@@ -1,3 +1,4 @@
+// Unsigned bitwise and shift evaluation makes both case values 0x7fffffff.
 int select_value(unsigned value) {
   switch (value) {
     case 0x7fffffffu:

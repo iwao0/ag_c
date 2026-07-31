@@ -1,8 +1,7 @@
-// Nesting the case label in a block does not make entering a VLA scope valid.
+// A case label cannot enter a loop by bypassing its variably modified initializer.
 int f(int n, int selector) {
   switch (selector) {
-    {
-      int values[n];
+    for (int values[n];;) {
       case 1:
         return sizeof(values);
     }

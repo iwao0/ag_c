@@ -1,3 +1,4 @@
+// The unsigned comparison is false, so its case value duplicates zero.
 int select_value(int value) {
   switch (value) {
     case 0:

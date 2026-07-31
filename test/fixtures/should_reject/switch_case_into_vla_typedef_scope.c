@@ -1,3 +1,4 @@
+// A case label cannot enter the scope of a variably modified typedef name.
 int f(int n, int selector) {
   switch (selector) {
     typedef int row[n];

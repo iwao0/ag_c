@@ -1,3 +1,4 @@
+// Unsigned constant-expression wrapping makes the second case equal to 1.
 int select_value(unsigned value) {
   switch (value) {
     case 1:

@@ -1,3 +1,4 @@
+// Both case values become UINT_MAX in the unsigned controlling type.
 int select_value(unsigned value) {
   switch (value) {
     case -1:

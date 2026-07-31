@@ -1,3 +1,4 @@
+// Entering a nested block does not permit a goto to bypass its VLA declaration.
 int f(int n) {
   goto target;
   {

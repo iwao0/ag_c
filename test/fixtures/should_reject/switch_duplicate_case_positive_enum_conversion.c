@@ -1,3 +1,4 @@
+// A nonnegative enum uses an unsigned compatible type for case conversion.
 enum Positive {
   POSITIVE_ZERO,
   POSITIVE_ONE

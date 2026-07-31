@@ -1,3 +1,4 @@
+// A negative-valued enum uses a signed compatible type for case conversion.
 enum Negative {
   NEGATIVE_ONE = -1,
   NEGATIVE_ZERO

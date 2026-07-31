@@ -1,3 +1,4 @@
+// A default label cannot enter the scope of a VLA declared inside its switch.
 int f(int n, int selector) {
   switch (selector) {
     int values[n];

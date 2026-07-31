@@ -1,3 +1,4 @@
+// Converting the unsigned case value to the signed controlling type duplicates -2.
 int select_value(int value) {
   switch (value) {
     case -2:

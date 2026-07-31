@@ -1,3 +1,4 @@
+// A goto from a sibling block cannot enter the scope of a VLA.
 int f(int n) {
   {
     goto target;
