@@ -1,5 +1,6 @@
 #include <stdatomic.h>
 
+// Pointer atomic objects support add/subtract, but not bitwise fetch operations.
 int main(void) {
   int values[2] = {0};
   _Atomic(int *) pointer = values;
