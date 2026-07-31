@@ -18,9 +18,9 @@ make check-should-reject
 出力例:
 
 ```
-should_reject summary: total=305 host_accepted=0
-native: rejected=305 missed=0 internal=0
-wasm:   rejected=305 missed=0 internal=0
+should_reject summary: total=N host_accepted=0
+native: rejected=N missed=0 internal=0
+wasm:   rejected=N missed=0 internal=0
 ```
 
 host compilerが受理するfixture、ag_cのどちらかのmodeが受理するfixture、
@@ -32,6 +32,8 @@ host compilerが受理するfixture、ag_cのどちらかのmodeが受理するf
 
 | カテゴリ | fixture |
 |---|---|
+| tokenizerの不正token・literal・escape | `tokenizer_hex_missing_digits`, `tokenizer_octal_invalid_digit`, `tokenizer_binary_invalid_digit`, `tokenizer_int_suffix_duplicate`, `tokenizer_int_suffix_excess_long`, `tokenizer_integer_too_large`, `tokenizer_numeric_suffix_concatenated`, `tokenizer_numeric_multiple_decimal_points`, `tokenizer_unterminated_comment`, `tokenizer_unexpected_character`, `tokenizer_unterminated_string`, `tokenizer_unterminated_character`, `tokenizer_unterminated_empty_character`, `tokenizer_empty_character`, `tokenizer_invalid_escape`, `tokenizer_hex_escape_missing_digits_string`, `tokenizer_hex_escape_nonhex_string`, `tokenizer_hex_escape_missing_digits_character`, `tokenizer_ucn_short_string`, `tokenizer_ucn_out_of_range_string`, `tokenizer_ucn_surrogate_string`, `tokenizer_ucn_control_string`, `tokenizer_ucn_control_identifier` |
+| parser/semanticの基本制約 | `parser_dot_on_scalar`, `parser_arrow_on_scalar_pointer`, `parser_unknown_member`, `parser_generic_no_matching_association`, `parser_generic_duplicate_default`, `parser_struct_control_condition`, `parser_cast_target_array`, `parser_function_type_member`, `parser_incomplete_type_member`, `parser_variadic_parameter_not_last`, `parser_alignof_expression`, `parser_atomic_missing_type`, `parser_alignas_missing_parenthesis`, `parser_invalid_type_specifier_combination` |
 | 型不整合 (init/assign) | `assign_string_to_int`, `assign_int_to_ptr_implicit`, `assign_struct_to_int`, `assign_void_func_to_int`, `function_pointer_from_nonzero_void_pointer`, `function_pointer_from_object_pointer_cast` |
 | 戻り値型 | `return_wrong_type_ptr`, `func_redef_different_ret` |
 | 関数呼び出し引数数 | `too_many_args`, `too_few_args` |
