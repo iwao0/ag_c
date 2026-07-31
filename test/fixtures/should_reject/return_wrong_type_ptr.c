@@ -1,4 +1,8 @@
-// ポインタを返す関数が整数を返している (型不整合)。
-// 期待: ag_c は戻り値型エラー
-int *f(void) { return 5; }
-int main(void) { return 0; }
+/* A nonzero integer is not implicitly convertible to a pointer return type. */
+static int *get(void) {
+  return 5;
+}
+
+int main(void) {
+  return get() != 0;
+}
