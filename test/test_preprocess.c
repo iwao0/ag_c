@@ -689,14 +689,19 @@ static void expect_macro_expansion_limit_fail(void) {
     len += (size_t)n;
   }
 
-  n = snprintf(input + len, cap - len, "int main() { return X%d; }\n", levels);
+  n = snprintf(
+      input + len, cap - len,
+      "#line 91 \"macro_expansion_limit.c\"\n"
+      "int main() { return X%d; }\n",
+      levels);
   if (n < 0 || (size_t)n >= cap - len) {
     fprintf(stderr, "  FAIL: macro expansion input overflow\n");
     free(input);
     exit(1);
   }
 
-  expect_preprocess_fail_with_stderr_substr(input, "E1029");
+  expect_preprocess_fail_with_stderr_substr(
+      input, "macro_expansion_limit.c:91: E1029");
   free(input);
 }
 
@@ -728,6 +733,7 @@ static void expect_macro_arg_nesting_limit_fail(void) {
   }
   n = snprintf(input + len, cap - len,
                "#define USE(x) x\n"
+               "#line 93 \"macro_arg_expansion_limit.c\"\n"
                "int main() { return USE(X%d); }\n", levels);
   if (n < 0 || (size_t)n >= cap - len) {
     fprintf(stderr, "  FAIL: macro arg nesting input overflow\n");
@@ -735,7 +741,8 @@ static void expect_macro_arg_nesting_limit_fail(void) {
     exit(1);
   }
 
-  expect_preprocess_fail_with_stderr_substr(input, "E1029");
+  expect_preprocess_fail_with_stderr_substr(
+      input, "macro_arg_expansion_limit.c:93: E1029");
   free(input);
 }
 
@@ -748,7 +755,9 @@ static void expect_if_expr_token_limit_fail(void) {
     exit(1);
   }
   size_t len = 0;
-  int n = snprintf(input + len, cap - len, "#if ");
+  int n = snprintf(
+      input + len, cap - len,
+      "#line 66 \"if_token_limit.c\"\n#if ");
   if (n < 0 || (size_t)n >= cap - len) {
     fprintf(stderr, "  FAIL: #if token-limit input overflow\n");
     free(input);
@@ -770,44 +779,56 @@ static void expect_if_expr_token_limit_fail(void) {
     free(input);
     exit(1);
   }
-  expect_preprocess_fail_with_stderr_substr(input, "E1037");
+  expect_preprocess_fail_with_stderr_substr(
+      input, "if_token_limit.c:66: E1037");
   free(input);
 }
 
 static void expect_if_expr_eval_limit_fail(void) {
-  const int terms = 1200;
-  size_t cap = (size_t)terms * 4 + 128;
+  const int depth = 760;
+  size_t cap = (size_t)depth * 2 + 256;
   char *input = calloc(cap, 1);
   if (!input) {
     fprintf(stderr, "  FAIL: cannot allocate #if eval-limit test input\n");
     exit(1);
   }
   size_t len = 0;
-  int n = snprintf(input + len, cap - len, "#if ");
+  int n = snprintf(
+      input + len, cap - len,
+      "#line 77 \"if_eval_limit.c\"\n#if ");
   if (n < 0 || (size_t)n >= cap - len) {
     fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
     free(input);
     exit(1);
   }
   len += (size_t)n;
-  input[len++] = '1';
-  for (int i = 0; i < terms; i++) {
-    if (len + 3 >= cap) {
+  for (int i = 0; i < depth; i++) {
+    if (len + 1 >= cap) {
       fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
       free(input);
       exit(1);
     }
-    input[len++] = '&';
-    input[len++] = '&';
-    input[len++] = '1';
+    input[len++] = '(';
   }
-  n = snprintf(input + len, cap - len, "1\nint main() { return 0; }\n#endif\n");
+  input[len++] = '1';
+  for (int i = 0; i < depth; i++) {
+    if (len + 1 >= cap) {
+      fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
+      free(input);
+      exit(1);
+    }
+    input[len++] = ')';
+  }
+  n = snprintf(
+      input + len, cap - len,
+      "\nint main() { return 0; }\n#endif\n");
   if (n < 0 || (size_t)n >= cap - len) {
     fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
     free(input);
     exit(1);
   }
-  expect_preprocess_fail_with_stderr_substr(input, "E1038");
+  expect_preprocess_fail_with_stderr_substr(
+      input, "if_eval_limit.c:77: E1038");
   free(input);
 }
 
@@ -1152,19 +1173,19 @@ int main(void) {
   expect_preprocess_fail_with_stderr_substr(
       "#define FLAG 1\n#ifdef FLAG extra\n"
       "int main(void) { return 0; }\n#endif\n",
-      "E1051");
+      ":2: E1051");
   expect_preprocess_fail_with_stderr_substr(
       "#ifndef MISSING extra\n"
       "int main(void) { return 0; }\n#endif\n",
-      "E1051");
+      ":1: E1051");
   expect_preprocess_fail_with_stderr_substr(
       "#if 0\nint value;\n#else extra\n"
       "int main(void) { return 0; }\n#endif\n",
-      "E1051");
+      ":3: E1051");
   expect_preprocess_fail_with_stderr_substr(
       "#if 1\nint value;\n#endif extra\n"
       "int main(void) { return 0; }\n",
-      "E1051");
+      ":3: E1051");
   expect_preprocess_fail_with_stderr_substr(
       "#unknown tokens\nint main(void) { return 0; }\n",
       "E1052");
@@ -1173,10 +1194,10 @@ int main(void) {
       "E1052");
   expect_preprocess_fail_with_stderr_substr(
       "#if 1\nint main(void) { return 0; }\n",
-      "E1053");
+      ":1: E1053");
   expect_preprocess_fail_with_stderr_substr(
       "#if 0\nint hidden;\n",
-      "E1053");
+      ":1: E1053");
   expect_preprocess_fail_with_stderr_substr(
       "#if\n"
       "int main(void) { return 0; }\n"
@@ -1286,15 +1307,15 @@ int main(void) {
   expect_preprocess_fail_with_stderr_substr(
       "#else\n"
       "int main(void) { return 0; }\n",
-      "E1019");
+      ":1: E1019");
   expect_preprocess_fail_with_stderr_substr(
       "#elif 1\n"
       "int main(void) { return 0; }\n",
-      "E1021");
+      ":1: E1021");
   expect_preprocess_fail_with_stderr_substr(
       "#endif\n"
       "int main(void) { return 0; }\n",
-      "E1023");
+      ":1: E1023");
   expect_preprocess_fail_with_stderr_substr(
       "#if 1\n"
       "int selected;\n"
@@ -1304,7 +1325,7 @@ int main(void) {
       "int also_not_selected;\n"
       "#endif\n"
       "int main(void) { return 0; }\n",
-      "E1020");
+      ":5: E1020");
   expect_preprocess_fail_with_stderr_substr(
       "#if 0\n"
       "int not_selected;\n"
@@ -1314,27 +1335,27 @@ int main(void) {
       "int also_selected;\n"
       "#endif\n"
       "int main(void) { return 0; }\n",
-      "E1022");
+      ":5: E1022");
   expect_preprocess_fail_with_stderr_substr(
       "#ifdef\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1018");
+      ":1: E1018");
   expect_preprocess_fail_with_stderr_substr(
       "#ifdef 123\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1018");
+      ":1: E1018");
   expect_preprocess_fail_with_stderr_substr(
       "#ifndef\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1018");
+      ":1: E1018");
   expect_preprocess_fail_with_stderr_substr(
       "#ifndef 123\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1018");
+      ":1: E1018");
   expect_preprocess_fail_with_stderr_substr(
       "#include\n"
       "int main(void) { return 0; }\n",

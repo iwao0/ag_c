@@ -16,6 +16,7 @@ Compiles fixtures in Wasm object mode, links each single-TU object or known
 multi-TU fixture pair with ag_wasm_link, validates the linked wasm when
 wasm-validate is available, and runs it when wasm-interp is available and the
 linked wasm has no imports.
+Compiler-limit and should-reject fixtures are excluded from positive scans.
 By default, scans fixture paths registered in test/test_e2e.c.
 Set AG_C_WASM / AG_WASM_LINK to override tool paths.
 Set WASM32_OBJECT_LINK_SCAN_DIR to override the output directory.
@@ -1201,7 +1202,7 @@ skipped_run_tools=0
 
 while IFS= read -r src; do
   case "$src" in
-    */should_reject/*)
+    */should_reject/*|*/compiler_limits/*)
       continue
       ;;
   esac

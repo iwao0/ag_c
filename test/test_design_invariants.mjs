@@ -560,10 +560,28 @@ const wasm32ObjectLinkFixtureScan = await readFile(
   "scripts/run_wasm32_object_link_fixture_scan.sh",
   "utf8",
 );
+const wasm32ObjectFixtureScan = await readFile(
+  "scripts/run_wasm32_object_fixture_scan.sh",
+  "utf8",
+);
 const wasm32WatFixtureScan = await readFile(
   "scripts/run_wasm32_wat_fixture_scan.sh",
   "utf8",
 );
+for (const [path, source] of [
+  ["scripts/run_wasm32_object_fixture_scan.sh", wasm32ObjectFixtureScan],
+  [
+    "scripts/run_wasm32_object_link_fixture_scan.sh",
+    wasm32ObjectLinkFixtureScan,
+  ],
+  ["scripts/run_wasm32_wat_fixture_scan.sh", wasm32WatFixtureScan],
+]) {
+  if (!source.includes("*/compiler_limits/*")) {
+    throw new Error(
+      `${path} must exclude compiler-limit fixtures from positive scans`,
+    );
+  }
+}
 if (JSON.stringify(missingNativeProbeRegistrations) !==
       JSON.stringify(expectedNativeProbeRegistrationExclusions)) {
   throw new Error(

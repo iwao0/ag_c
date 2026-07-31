@@ -3933,6 +3933,22 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "macro_invalid_paste_header.h\"\n"
      "int main(void) { return HEADER_BAD_PASTE 1; }\n",
      "macro_invalid_paste_header.h:1: E1030"},
+    {"preprocess_if_token_limit_location_rejected",
+     "fixture:test/fixtures/compiler_limits/"
+     "preprocess_if_token_limit_location.c",
+     "if_token_limit.c:66: E1037"},
+    {"preprocess_if_eval_limit_location_rejected",
+     "fixture:test/fixtures/compiler_limits/"
+     "preprocess_if_eval_limit_location.c",
+     "if_eval_limit.c:77: E1038"},
+    {"macro_expansion_limit_location_rejected",
+     "fixture:test/fixtures/compiler_limits/"
+     "macro_expansion_limit_location.c",
+     "macro_expansion_limit.c:91: E1029"},
+    {"macro_arg_expansion_limit_location_rejected",
+     "fixture:test/fixtures/compiler_limits/"
+     "macro_arg_expansion_limit_location.c",
+     "macro_arg_expansion_limit.c:93: E1029"},
     {"predefined_macro_define_stdc_rejected",
      "#define __STDC__ 1\n"
      "int main(void) { return 0; }\n",
@@ -4032,25 +4048,25 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#ifdef FLAG extra\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1051"},
+     ":2: E1051"},
     {"preprocess_ifndef_extra_tokens_rejected",
      "#ifndef MISSING extra\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1051"},
+     ":1: E1051"},
     {"preprocess_else_extra_tokens_rejected",
      "#if 0\n"
      "int value;\n"
      "#else extra\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1051"},
+     ":3: E1051"},
     {"preprocess_endif_extra_tokens_rejected",
      "#if 1\n"
      "int value;\n"
      "#endif extra\n"
      "int main(void) { return 0; }\n",
-     "E1051"},
+     ":3: E1051"},
     {"preprocess_unknown_directive_rejected",
      "#unknown tokens\n"
      "int main(void) { return 0; }\n",
@@ -4062,11 +4078,11 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"preprocess_unterminated_true_conditional_rejected",
      "#if 1\n"
      "int main(void) { return 0; }\n",
-     "E1053"},
+     ":1: E1053"},
     {"preprocess_unterminated_false_conditional_rejected",
      "#if 0\n"
      "int hidden;\n",
-     "E1053"},
+     ":1: E1053"},
     {"preprocess_if_empty_expression_rejected",
      "#if\n"
      "int main(void) { return 0; }\n"
@@ -4176,15 +4192,15 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"preprocess_stray_else_rejected",
      "#else\n"
      "int main(void) { return 0; }\n",
-     "E1019"},
+     ":1: E1019"},
     {"preprocess_stray_elif_rejected",
      "#elif 1\n"
      "int main(void) { return 0; }\n",
-     "E1021"},
+     ":1: E1021"},
     {"preprocess_stray_endif_rejected",
      "#endif\n"
      "int main(void) { return 0; }\n",
-     "E1023"},
+     ":1: E1023"},
     {"preprocess_duplicate_else_rejected",
      "#if 1\n"
      "int selected;\n"
@@ -4194,7 +4210,7 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "int also_not_selected;\n"
      "#endif\n"
      "int main(void) { return 0; }\n",
-     "E1020"},
+     ":5: E1020"},
     {"preprocess_elif_after_else_rejected",
      "#if 0\n"
      "int not_selected;\n"
@@ -4204,27 +4220,27 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "int also_selected;\n"
      "#endif\n"
      "int main(void) { return 0; }\n",
-     "E1022"},
+     ":5: E1022"},
     {"preprocess_ifdef_missing_name_rejected",
      "#ifdef\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1018"},
+     ":1: E1018"},
     {"preprocess_ifdef_nonidentifier_name_rejected",
      "#ifdef 123\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1018"},
+     ":1: E1018"},
     {"preprocess_ifndef_missing_name_rejected",
      "#ifndef\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1018"},
+     ":1: E1018"},
     {"preprocess_ifndef_nonidentifier_name_rejected",
      "#ifndef 123\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1018"},
+     ":1: E1018"},
     {"preprocess_error_empty_rejected",
      "#error\n"
      "int main(void) { return 0; }\n",
@@ -4311,25 +4327,25 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"preprocess_header_unterminated_conditional_rejected",
      "#include \"test/fixtures/should_reject/preprocess_conditional_open.h\"\n"
      "int main(void) { return 0; }\n",
-     "E1053"},
+     "preprocess_conditional_open.h:1: E1053"},
     {"preprocess_header_cross_file_endif_rejected",
      "#if 1\n"
      "#include \"test/fixtures/should_reject/preprocess_conditional_close.h\"\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1023"},
+     "preprocess_conditional_close.h:1: E1023"},
     {"preprocess_header_cross_file_else_rejected",
      "#if 1\n"
      "#include \"test/fixtures/should_reject/preprocess_conditional_else.h\"\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1019"},
+     "preprocess_conditional_else.h:1: E1019"},
     {"preprocess_header_cross_file_elif_rejected",
      "#if 1\n"
      "#include \"test/fixtures/should_reject/preprocess_conditional_elif.h\"\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1021"},
+     "preprocess_conditional_elif.h:1: E1021"},
     {"line_directive_missing_number_rejected",
      "#line\n"
      "int main(void) { return 0; }\n",
@@ -5142,8 +5158,17 @@ static int run_registered_compile_fail_cases(
       continue;
     }
 
+    static const char fixture_prefix[] = "fixture:";
+    const char *fixture_path =
+        strncmp(
+            tc->input, fixture_prefix,
+            sizeof(fixture_prefix) - 1) == 0
+            ? tc->input + sizeof(fixture_prefix) - 1
+            : NULL;
     int failed =
-        write_source_file(src_path, tc->input) != 0 ||
+        (fixture_path
+             ? copy_source_file(fixture_path, src_path)
+             : write_source_file(src_path, tc->input)) != 0 ||
         run_compiler_expect_fail_with_diag(
             program, object_mode ? object_path : NULL, src_path,
             tc->expected_diag, log_path) != 0;
@@ -5221,7 +5246,11 @@ static int write_macro_expansion_limit_source(const char *path, int levels) {
       return -1;
     }
   }
-  if (fprintf(fp, "int main() { return X%d; }\n", levels) < 0) {
+  if (fprintf(
+          fp,
+          "#line 91 \"macro_expansion_limit.c\"\n"
+          "int main() { return X%d; }\n",
+          levels) < 0) {
     fclose(fp);
     return -1;
   }
@@ -5233,12 +5262,50 @@ static int write_pp_if_token_limit_source(const char *path, int terms) {
   if (terms < 1) return -1;
   FILE *fp = fopen(path, "w");
   if (!fp) return -1;
-  if (fprintf(fp, "#if ") < 0) {
+  if (fprintf(
+          fp,
+          "#line 66 \"if_token_limit.c\"\n"
+          "#if ") < 0) {
     fclose(fp);
     return -1;
   }
   for (int i = 0; i < terms; i++) {
     if (fprintf(fp, "%s1", i == 0 ? "" : " + ") < 0) {
+      fclose(fp);
+      return -1;
+    }
+  }
+  if (fprintf(fp, "\nint main(){return 0;}\n#endif\n") < 0) {
+    fclose(fp);
+    return -1;
+  }
+  fclose(fp);
+  return 0;
+}
+
+static int write_pp_if_eval_limit_source(const char *path, int depth) {
+  if (depth < 1) return -1;
+  FILE *fp = fopen(path, "w");
+  if (!fp) return -1;
+  if (fprintf(
+          fp,
+          "#line 77 \"if_eval_limit.c\"\n"
+          "#if ") < 0) {
+    fclose(fp);
+    return -1;
+  }
+  for (int i = 0; i < depth; i++) {
+    if (fputc('(', fp) == EOF) {
+      fclose(fp);
+      return -1;
+    }
+  }
+  if (fputc('1', fp) == EOF) {
+    fclose(fp);
+    return -1;
+  }
+  for (int i = 0; i < depth; i++) {
+    if (fputc(')', fp) == EOF) {
       fclose(fp);
       return -1;
     }
@@ -6436,8 +6503,27 @@ int main(int argc, char **argv) {
     const char *log_path = "build/e2e/logs/compile_fail_preprocess_if_token_limit.log";
     if (mkdir_p("build/e2e/compile_fail") != 0 ||
         write_pp_if_token_limit_source(pp_if_limit_path, 4200) != 0 ||
-        run_ag_c_expect_fail_profiled(pp_if_limit_path, "E1037", log_path, 1024) != 0) {
+        run_ag_c_expect_fail_profiled(
+            pp_if_limit_path, "if_token_limit.c:66: E1037",
+            log_path, 1024) != 0) {
       fprintf(stderr, "Compile-fail case failed: preprocess_if_token_limit (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *pp_if_limit_path =
+        "build/e2e/compile_fail/preprocess_if_eval_limit.c";
+    const char *log_path =
+        "build/e2e/logs/compile_fail_preprocess_if_eval_limit.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_pp_if_eval_limit_source(pp_if_limit_path, 760) != 0 ||
+        run_ag_c_expect_fail_profiled(
+            pp_if_limit_path, "if_eval_limit.c:77: E1038",
+            log_path, 1024) != 0) {
+      fprintf(
+          stderr,
+          "Compile-fail case failed: preprocess_if_eval_limit (see %s)\n",
+          log_path);
       return 1;
     }
   }
@@ -6446,7 +6532,9 @@ int main(int argc, char **argv) {
     const char *log_path = "build/e2e/logs/compile_fail_macro_expansion_limit.log";
     if (mkdir_p("build/e2e/compile_fail") != 0 ||
         write_macro_expansion_limit_source(pp_limit_path, 19) != 0 ||
-        run_ag_c_expect_fail_with_diag(pp_limit_path, "E1029", log_path) != 0) {
+        run_ag_c_expect_fail_with_diag(
+            pp_limit_path, "macro_expansion_limit.c:91: E1029",
+            log_path) != 0) {
       fprintf(stderr, "Compile-fail case failed: macro_expansion_limit (see %s)\n", log_path);
       return 1;
     }

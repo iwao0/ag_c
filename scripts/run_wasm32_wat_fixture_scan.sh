@@ -12,9 +12,9 @@ usage() {
   cat <<'EOF'
 usage: scripts/run_wasm32_wat_fixture_scan.sh [--list-fail] [--verbose] [--no-validate] [--e2e-fixtures]
 
-Compiles test/fixtures/**/*.c with the Wasm WAT backend, excluding should_reject
-and fixtures that require multi-TU linking. With --e2e-fixtures, compiles the
-fixture paths registered in test/test_e2e.c. If wat2wasm is available, converts
+Compiles test/fixtures/**/*.c with the Wasm WAT backend, excluding should_reject,
+compiler_limits, and fixtures that require multi-TU linking. With --e2e-fixtures,
+compiles the fixture paths registered in test/test_e2e.c. If wat2wasm is available, converts
 WAT to a binary wasm module. If wasm-validate is available, validates the module.
 Set AG_C_WASM to override the compiler path.
 Set WASM32_WAT_SCAN_DIR to override the output directory.
@@ -581,7 +581,7 @@ fi
 
 while IFS= read -r src; do
   case "$src" in
-    */should_reject/*)
+    */should_reject/*|*/compiler_limits/*)
       continue
       ;;
   esac

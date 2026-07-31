@@ -178,15 +178,21 @@ static token_t *preprocess_tokens(
 static _Noreturn void pp_error(
     ag_preprocessor_context_t *context,
     diag_error_id_t id, const char *arg);
+static _Noreturn void pp_error_tok(
+    ag_preprocessor_context_t *context,
+    diag_error_id_t id, const token_t *token, const char *arg);
 static const char *const k_pp_month_names[] = {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 };
 
-static void if_expr_step_or_die(ag_preprocessor_context_t *context) {
+static void if_expr_step_or_die(
+    ag_preprocessor_context_t *context, const token_t *token) {
   if_expr_eval_steps++;
   if (if_expr_eval_steps > PP_MAX_IF_EXPR_EVAL_STEPS) {
-    pp_error(context, DIAG_ERR_PREPROCESS_IF_EXPR_EVAL_LIMIT_EXCEEDED, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_IF_EXPR_EVAL_LIMIT_EXCEEDED,
+        token, NULL);
   }
 }
 
@@ -834,10 +840,12 @@ static void pop_include(ag_preprocessor_context_t *context) {
 }
 
 static void count_macro_expansion_or_die(
-    ag_preprocessor_context_t *context) {
+    ag_preprocessor_context_t *context, const token_t *macro_tok) {
   macro_expand_steps++;
   if (macro_expand_steps > PP_MAX_MACRO_EXPANSIONS) {
-    pp_error(context, DIAG_ERR_PREPROCESS_MACRO_EXPANSION_LIMIT_EXCEEDED, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_MACRO_EXPANSION_LIMIT_EXCEEDED,
+        macro_tok, NULL);
   }
 }
 
@@ -1411,6 +1419,7 @@ struct pp_cond_incl {
   cond_incl_t *next;
   cond_incl_ctx_t ctx;
   bool included;
+  const token_t *directive_tok;
 };
 
 static bool is_dir(token_t *tok, const char *name) {
@@ -1480,7 +1489,7 @@ static pp_integer_t add(
 
 static pp_integer_t primary(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   if (tok->kind == TK_LPAREN) {
     pp_integer_t val = const_expr(context, &tok, tok->next);
     if (!(tok->kind == TK_RPAREN)) {
@@ -1514,7 +1523,7 @@ static pp_integer_t primary(
 
 static pp_integer_t unary(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   if (tok->kind == TK_PLUS) {
     return unary(context, rest, tok->next);
   }
@@ -1537,16 +1546,16 @@ static pp_integer_t unary(
 
 static pp_integer_t mul(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t val = unary(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_MUL) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       pp_integer_t rhs = unary(context, &tok, tok->next);
       val = pp_integer_with_type(
           val.bits * rhs.bits, pp_integer_common_unsigned(val, rhs));
     } else if (tok->kind == TK_DIV) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       token_t *rhs_tok = tok->next;
       pp_integer_t rhs = unary(context, &tok, rhs_tok);
       bool is_unsigned = pp_integer_common_unsigned(val, rhs);
@@ -1571,7 +1580,7 @@ static pp_integer_t mul(
         val = pp_integer_with_type(0, is_unsigned);
       }
     } else if (tok->kind == TK_MOD) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       token_t *rhs_tok = tok->next;
       pp_integer_t rhs = unary(context, &tok, rhs_tok);
       bool is_unsigned = pp_integer_common_unsigned(val, rhs);
@@ -1605,15 +1614,15 @@ static pp_integer_t mul(
 /* シフト `<<` `>>` (加減算より低く、関係演算より高い)。 */
 static pp_integer_t shift(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t val = add(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_SHL) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       pp_integer_t rhs = add(context, &tok, tok->next);
       val.bits = rhs.bits < 64 ? val.bits << rhs.bits : 0;
     } else if (tok->kind == TK_SHR) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       pp_integer_t rhs = add(context, &tok, tok->next);
       if (rhs.bits >= 64) {
         val.bits = 0;
@@ -1631,16 +1640,16 @@ static pp_integer_t shift(
 
 static pp_integer_t add(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t val = mul(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_PLUS) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       pp_integer_t rhs = mul(context, &tok, tok->next);
       val = pp_integer_with_type(
           val.bits + rhs.bits, pp_integer_common_unsigned(val, rhs));
     } else if (tok->kind == TK_MINUS) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       pp_integer_t rhs = mul(context, &tok, tok->next);
       val = pp_integer_with_type(
           val.bits - rhs.bits, pp_integer_common_unsigned(val, rhs));
@@ -1653,7 +1662,7 @@ static pp_integer_t add(
 
 static pp_integer_t relational(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t val = shift(context, &tok, tok);
   for (;;) {
     token_kind_t operation = (token_kind_t)tok->kind;
@@ -1662,7 +1671,7 @@ static pp_integer_t relational(
       *rest = tok;
       return val;
     }
-    if_expr_step_or_die(context);
+    if_expr_step_or_die(context, tok);
     pp_integer_t rhs = shift(context, &tok, tok->next);
     bool result;
     if (pp_integer_common_unsigned(val, rhs)) {
@@ -1684,15 +1693,15 @@ static pp_integer_t relational(
 
 static pp_integer_t equality(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t val = relational(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_EQEQ) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       pp_integer_t rhs = relational(context, &tok, tok->next);
       val = pp_signed_integer(val.bits == rhs.bits);
     } else if (tok->kind == TK_NEQ) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       pp_integer_t rhs = relational(context, &tok, tok->next);
       val = pp_signed_integer(val.bits != rhs.bits);
     } else {
@@ -1705,11 +1714,11 @@ static pp_integer_t equality(
 /* ビット AND `&` (等価演算より低く、ビット XOR より高い)。 */
 static pp_integer_t bitand(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t val = equality(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_AMP) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       pp_integer_t rhs = equality(context, &tok, tok->next);
       val = pp_integer_with_type(
           val.bits & rhs.bits, pp_integer_common_unsigned(val, rhs));
@@ -1723,11 +1732,11 @@ static pp_integer_t bitand(
 /* ビット XOR `^`。 */
 static pp_integer_t bitxor(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t val = bitand(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_CARET) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       pp_integer_t rhs = bitand(context, &tok, tok->next);
       val = pp_integer_with_type(
           val.bits ^ rhs.bits, pp_integer_common_unsigned(val, rhs));
@@ -1741,11 +1750,11 @@ static pp_integer_t bitxor(
 /* ビット OR `|`。 */
 static pp_integer_t bitor(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t val = bitxor(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_PIPE) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       pp_integer_t rhs = bitxor(context, &tok, tok->next);
       val = pp_integer_with_type(
           val.bits | rhs.bits, pp_integer_common_unsigned(val, rhs));
@@ -1758,11 +1767,11 @@ static pp_integer_t bitor(
 
 static pp_integer_t logand(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t val = bitor(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_ANDAND) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       bool saved_evaluation = g_if_expr_eval;
       g_if_expr_eval = saved_evaluation && pp_integer_truth(val);
       pp_integer_t rhs = bitor(context, &tok, tok->next);
@@ -1778,11 +1787,11 @@ static pp_integer_t logand(
 
 static pp_integer_t logor(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t val = logand(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_OROR) {
-      if_expr_step_or_die(context);
+      if_expr_step_or_die(context, tok);
       bool saved_evaluation = g_if_expr_eval;
       g_if_expr_eval = saved_evaluation && !pp_integer_truth(val);
       pp_integer_t rhs = logand(context, &tok, tok->next);
@@ -1800,13 +1809,13 @@ static pp_integer_t logor(
  * ゼロ除算等を避けるため C と同様に選択側のみ評価する。 */
 static pp_integer_t conditional(
     ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
   pp_integer_t cond = logor(context, &tok, tok);
   if (tok->kind != TK_QUESTION) {
     *rest = tok;
     return cond;
   }
-  if_expr_step_or_die(context);
+  if_expr_step_or_die(context, tok);
 
   bool saved_evaluation = g_if_expr_eval;
   bool choose_then = pp_integer_truth(cond);
@@ -2171,8 +2180,9 @@ static token_t *skip_to_next_line(token_t *tok) {
 static void require_conditional_directive_line_end(
     ag_preprocessor_context_t *context, token_t *tok) {
   if (tok->kind != TK_EOF && !tok->at_bol) {
-    pp_error(
-        context, DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS,
+        tok, NULL);
   }
 }
 
@@ -2180,7 +2190,10 @@ static void require_conditional_directive_line_end(
 // 失敗時は pp_error で中断。
 static char *consume_required_macro_name(
     ag_preprocessor_context_t *context, token_t **ptok) {
-  if ((*ptok)->kind != TK_IDENT) pp_error(context, DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
+  if ((*ptok)->kind != TK_IDENT)
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED,
+        *ptok, NULL);
   token_ident_t *id = as_ident(*ptok);
   char *name = my_strndup(id->str, id->len);
   *ptok = (*ptok)->next;
@@ -2189,10 +2202,12 @@ static char *consume_required_macro_name(
 
 // 条件分岐スタックに新しいエントリを push。
 static void push_cond_incl(
-    ag_preprocessor_context_t *context, bool included) {
+    ag_preprocessor_context_t *context, bool included,
+    const token_t *directive_tok) {
   cond_incl_t *ci = calloc(1, sizeof(cond_incl_t));
   ci->ctx = IN_THEN;
   ci->included = included;
+  ci->directive_tok = directive_tok;
   ci->next = cond_incl;
   cond_incl = ci;
 }
@@ -2200,17 +2215,19 @@ static void push_cond_incl(
 // #ifdef / #ifndef: マクロ定義の有無で then/else を選択。negated=true で #ifndef。
 static token_t *handle_ifdef_or_ifndef(
     ag_preprocessor_context_t *context, token_t *tok, bool negated) {
+  token_t *directive_tok = tok;
   tok = tok->next; // skip directive name
   char *name = consume_required_macro_name(context, &tok);
   if (tok->kind != TK_EOF && !tok->at_bol) {
     free(name);
-    pp_error(
-        context, DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS,
+        tok, NULL);
   }
   bool defined = find_macro(context, name) != NULL;
   free(name);
   bool is_true = negated ? !defined : defined;
-  push_cond_incl(context, is_true);
+  push_cond_incl(context, is_true, directive_tok);
   tok = skip_to_next_line(tok);
   if (!is_true) tok = skip_cond_incl(tok);
   return tok;
@@ -2218,8 +2235,12 @@ static token_t *handle_ifdef_or_ifndef(
 
 static token_t *handle_else(
     ag_preprocessor_context_t *context, token_t *tok) {
-  if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
-  if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
+  if (!cond_incl)
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, tok, NULL);
+  if (cond_incl->ctx == IN_ELSE)
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, tok, NULL);
   require_conditional_directive_line_end(context, tok->next);
   cond_incl->ctx = IN_ELSE;
   tok = skip_to_next_line(tok->next);
@@ -2233,8 +2254,12 @@ static token_t *handle_else(
 
 static token_t *handle_elif(
     ag_preprocessor_context_t *context, token_t *tok) {
-  if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
-  if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
+  if (!cond_incl)
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, tok, NULL);
+  if (cond_incl->ctx == IN_ELSE)
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, tok, NULL);
   cond_incl->ctx = IN_ELIF;
   token_t *directive_tok = tok;
   tok = tok->next;
@@ -2255,14 +2280,16 @@ static token_t *handle_if(
   tok = tok->next;
   bool is_true = evaluate_constexpr(
       context, &tok, tok, directive_tok);
-  push_cond_incl(context, is_true);
+  push_cond_incl(context, is_true, directive_tok);
   if (!is_true) tok = skip_cond_incl(tok);
   return tok;
 }
 
 static token_t *handle_endif(
     ag_preprocessor_context_t *context, token_t *tok) {
-  if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF, NULL);
+  if (!cond_incl)
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF, tok, NULL);
   require_conditional_directive_line_end(context, tok->next);
   cond_incl_t *ci = cond_incl;
   cond_incl = cond_incl->next;
@@ -2917,7 +2944,7 @@ static token_t *pp_expand_objlike(
   body_copy = paste_tokens(context, body_copy);
   hideset_t *hs = new_hideset(context, name);
   for (token_t *t = body_copy; t; t = t->next) {
-    count_macro_expansion_or_die(context);
+    count_macro_expansion_or_die(context, macro_tok);
     as_pp(t)->hideset = hideset_union(context, as_pp(t)->hideset, hs);
     copy_source_location(t, macro_tok);
   }
@@ -3116,7 +3143,7 @@ static token_t *pp_expand_funclike(
   token_t *body_copy = paste_tokens(context, body_head.next);
   hideset_t *hs = new_hideset(context, name);
   for (token_t *t = body_copy; t; t = t->next) {
-    count_macro_expansion_or_die(context);
+    count_macro_expansion_or_die(context, macro_tok);
     as_pp(t)->hideset = hideset_union(context, as_pp(t)->hideset, hs);
     copy_source_location(t, macro_tok);
   }
@@ -3198,7 +3225,7 @@ static token_t *preprocess_tokens(
       macro_t *m = find_macro(context, name);
       
       if (m && !hideset_contains(as_pp(tok)->hideset, name)) {
-        count_macro_expansion_or_die(context);
+        count_macro_expansion_or_die(context, tok);
         if (m->is_funclike) {
            if (tok->next && tok->next->kind == TK_LPAREN) {
              token_t *macro_tok = tok;
@@ -3314,8 +3341,9 @@ static cond_incl_t *pps_conditional_boundary(const pp_stream_t *s) {
 static void pps_require_conditional_balance(pp_stream_t *s) {
   ag_preprocessor_context_t *context = s->context;
   if (cond_incl != pps_conditional_boundary(s)) {
-    pp_error(
-        context, DIAG_ERR_PREPROCESS_UNTERMINATED_CONDITIONAL, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_UNTERMINATED_CONDITIONAL,
+        cond_incl->directive_tok, NULL);
   }
 }
 
@@ -3633,7 +3661,7 @@ static void pps_handle_if(pp_stream_t *s, token_t *after_hash) {
   token_t *tok = after_hash->next;
   bool is_true = evaluate_constexpr(
       context, &tok, tok, after_hash);
-  push_cond_incl(context, is_true);
+  push_cond_incl(context, is_true, after_hash);
   if (!is_true) pps_skip_cond_incl(s);
 }
 static void pps_handle_ifdef(pp_stream_t *s, token_t *after_hash, bool negated) {
@@ -3642,20 +3670,26 @@ static void pps_handle_ifdef(pp_stream_t *s, token_t *after_hash, bool negated) 
   char *name = consume_required_macro_name(context, &tok);
   if (tok->kind != TK_EOF && !tok->at_bol) {
     free(name);
-    pp_error(
-        context, DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_CONDITIONAL_EXTRA_TOKENS,
+        tok, NULL);
   }
   bool defined = find_macro(context, name) != NULL;
   free(name);
   bool is_true = negated ? !defined : defined;
-  push_cond_incl(context, is_true);
+  push_cond_incl(context, is_true, after_hash);
   if (!is_true) pps_skip_cond_incl(s);
 }
 static void pps_handle_elif(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
   if (cond_incl == pps_conditional_boundary(s))
-    pp_error(context, DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
-  if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF,
+        after_hash, NULL);
+  if (cond_incl->ctx == IN_ELSE)
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE,
+        after_hash, NULL);
   cond_incl->ctx = IN_ELIF;
   token_t *tok = after_hash->next;
   if (cond_incl->included) { pps_skip_cond_incl(s); return; }
@@ -3667,8 +3701,13 @@ static void pps_handle_elif(pp_stream_t *s, token_t *after_hash) {
 static void pps_handle_else(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
   if (cond_incl == pps_conditional_boundary(s))
-    pp_error(context, DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
-  if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF,
+        after_hash, NULL);
+  if (cond_incl->ctx == IN_ELSE)
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_DUPLICATE_ELSE,
+        after_hash, NULL);
   require_conditional_directive_line_end(context, after_hash->next);
   cond_incl->ctx = IN_ELSE;
   if (cond_incl->included) pps_skip_cond_incl(s);
@@ -3678,8 +3717,9 @@ static void pps_handle_else(pp_stream_t *s, token_t *after_hash) {
 static void pps_handle_endif(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
   if (cond_incl == pps_conditional_boundary(s)) {
-    pp_error(
-        context, DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF,
+        after_hash, NULL);
   }
   handle_endif(context, after_hash);
 }
@@ -3919,7 +3959,8 @@ static int pps_step(pp_stream_t *s) {
     char *name = my_strndup(id->str, id->len);
     macro_t *m = find_macro(context, name);
     if (m && !hideset_contains(as_pp(tok)->hideset, name)) {
-      count_macro_expansion_or_die(s->context);  // batch と同じ展開ステップ上限 (E1029)。無いと深い再帰展開でクラッシュ
+      count_macro_expansion_or_die(
+          s->context, tok);  // batch と同じ展開ステップ上限 (E1029)。無いと深い再帰展開でクラッシュ
       /* マクロ展開は batch と同じ pp_expand_objlike / pp_expand_funclike を使い、結果を
        * pushback して rescan する (= batch の splice + continue 相当)。展開中は paste_tokens
        * (tk_tokenize_ctx) / pp_expand_arg (preprocess_tokens) がネスト session でカーソルフックを

@@ -12,8 +12,9 @@ usage() {
   cat <<'EOF'
 usage: scripts/run_wasm32_object_fixture_scan.sh [--list-fail] [--verbose] [--no-validate] [--e2e-fixtures]
 
-Compiles test/fixtures/**/*.c in Wasm object mode, excluding should_reject
-and fixtures that intentionally exercise unsupported strict-C extensions.
+Compiles test/fixtures/**/*.c in Wasm object mode, excluding should_reject,
+compiler_limits, and fixtures that intentionally exercise unsupported strict-C
+extensions.
 With --e2e-fixtures, compiles the fixture paths registered in test/test_e2e.c.
 If wasm-validate is available, validates each generated object too.
 Set AG_C_WASM to override the compiler path.
@@ -92,7 +93,7 @@ fi
 
 while IFS= read -r src; do
   case "$src" in
-    */should_reject/*)
+    */should_reject/*|*/compiler_limits/*)
       continue
       ;;
   esac
