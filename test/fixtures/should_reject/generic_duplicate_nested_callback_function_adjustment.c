@@ -1,3 +1,4 @@
+/* Function parameter adjustment also applies inside nested callback types. */
 typedef int unary_function(int value);
 typedef int function_parameter_callback_function(unary_function transform);
 typedef int function_pointer_callback_function(unary_function *transform);

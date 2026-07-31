@@ -1,3 +1,4 @@
+/* Array parameter adjustment also applies inside nested callback types. */
 typedef int array_callback_function(int values[const static 2]);
 typedef int pointer_callback_function(int *values);
 typedef int array_consumer_function(array_callback_function *callback);

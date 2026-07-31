@@ -1,3 +1,4 @@
+/* An atomic register parameter object is not addressable. */
 static int read(register _Atomic int value) {
   int *pointer = &value;
   return *pointer;

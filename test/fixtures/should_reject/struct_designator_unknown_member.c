@@ -1,3 +1,4 @@
+/* A member designator must name a member of the initialized aggregate. */
 struct pair {
   int first;
   int second;

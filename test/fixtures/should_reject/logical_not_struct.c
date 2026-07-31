@@ -1,3 +1,4 @@
+/* Logical negation requires a scalar operand. */
 struct value {
   int member;
 };

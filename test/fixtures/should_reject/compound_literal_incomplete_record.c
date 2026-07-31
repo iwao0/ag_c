@@ -1,3 +1,4 @@
+/* A compound literal requires a complete object type. */
 struct incomplete;
 
 int main(void) {

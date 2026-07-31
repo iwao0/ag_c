@@ -1,3 +1,4 @@
+/* A parameter's top-level const qualifier does not distinguish a function type. */
 typedef int (*plain_callback)(int);
 typedef int (*qualified_parameter_callback)(const int);
 

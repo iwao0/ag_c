@@ -1,3 +1,4 @@
+/* Object-pointer compatibility with void pointers does not extend to void **. */
 int main(void) {
   int value = 7;
   int *pointer = &value;

@@ -1,3 +1,4 @@
+/* Default promotions make the nested unprototyped and int callback types compatible. */
 typedef int unprototyped_callback_function();
 typedef int prototyped_callback_function(int value);
 typedef int unprototyped_consumer_function(

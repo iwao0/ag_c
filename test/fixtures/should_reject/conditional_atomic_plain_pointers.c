@@ -1,3 +1,4 @@
+/* Conditional pointer operands cannot mix atomic and plain pointee types. */
 #include <stdatomic.h>
 
 int main(void) {

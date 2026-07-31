@@ -1,3 +1,4 @@
+/* An array designator index must be an integer constant expression. */
 static const int index_value = 1;
 int values[3] = {[index_value] = 7};
 

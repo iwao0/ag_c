@@ -1,3 +1,4 @@
+/* A case label value must be an integer constant expression. */
 static int runtime_value(void) {
   return 1;
 }

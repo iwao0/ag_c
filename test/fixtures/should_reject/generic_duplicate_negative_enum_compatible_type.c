@@ -1,3 +1,4 @@
+/* An enum and its compatible integer type cannot both be generic associations. */
 enum Negative {
   NEGATIVE_ONE = -1,
   NEGATIVE_ZERO

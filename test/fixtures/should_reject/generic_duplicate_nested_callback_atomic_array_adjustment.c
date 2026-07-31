@@ -1,3 +1,4 @@
+/* Atomic array-declarator qualifiers are removed by nested parameter adjustment. */
 typedef int atomic_array_callback_function(int values[_Atomic 1]);
 typedef int pointer_callback_function(int *values);
 typedef int atomic_consumer_function(

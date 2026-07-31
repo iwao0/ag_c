@@ -1,3 +1,4 @@
+/* A pointer to an atomic object is not implicitly compatible with a plain pointer. */
 #include <stdatomic.h>
 
 int main(void) {

@@ -1,3 +1,4 @@
+/* Function parameters adjust to function pointers in compatible function types. */
 typedef int unary_function(int);
 typedef int function_parameter_function(unary_function callback);
 typedef int pointer_parameter_function(unary_function *callback);

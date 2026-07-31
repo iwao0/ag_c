@@ -1,3 +1,4 @@
+/* A switch statement cannot contain duplicate case values. */
 int main(int argc, char **argv) {
   (void)argv;
   switch (argc) {

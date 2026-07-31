@@ -1,3 +1,4 @@
+/* A static assertion condition must be an integer constant expression. */
 _Static_assert(1.0, "floating condition is not an integer constant expression");
 
 int main(void) {

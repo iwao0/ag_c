@@ -1,3 +1,4 @@
+/* A function-pointer parameter's top-level qualifier is ignored in function compatibility. */
 typedef int target_function(int value);
 typedef int plain_callback_function(target_function *target);
 typedef int qualified_callback_function(target_function *const target);

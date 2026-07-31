@@ -1,3 +1,4 @@
+/* A nested callback parameter's top-level pointer qualifier does not distinguish its type. */
 typedef int callback_function(void);
 typedef int plain_consumer_function(callback_function *callback);
 typedef int qualified_consumer_function(callback_function *const callback);

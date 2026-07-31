@@ -1,3 +1,4 @@
+/* A compound literal cannot have a variable length array type. */
 int main(int argc, char **argv) {
   (void)argv;
   int count = argc + 1;

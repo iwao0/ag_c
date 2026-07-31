@@ -1,3 +1,4 @@
+/* Restrict array-parameter qualifiers are removed by nested parameter adjustment. */
 typedef int restrict_array_callback_function(
     int values[static const restrict 1]);
 typedef int pointer_callback_function(int *values);

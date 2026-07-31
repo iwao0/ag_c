@@ -1,3 +1,4 @@
+/* An atomic aggregate register parameter object is not addressable. */
 struct pair {
   int left;
   int right;

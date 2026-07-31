@@ -1,3 +1,4 @@
+/* Array parameters adjust to pointers, making these function associations compatible. */
 typedef int array_parameter_function(int values[const static 1]);
 typedef int pointer_parameter_function(int *values);
 

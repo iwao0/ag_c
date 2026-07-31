@@ -1,3 +1,4 @@
+/* Even an unevaluated logical operand containing a call is not ICE-compatible. */
 static int runtime_value(void) {
   return 1;
 }

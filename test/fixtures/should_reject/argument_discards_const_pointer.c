@@ -1,3 +1,4 @@
+/* Function argument conversion cannot discard a pointee const qualifier. */
 static int read_mutable(int *value) {
   return *value;
 }

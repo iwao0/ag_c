@@ -1,2 +1,2 @@
 /* _Alignof cannot be applied to a function type. */
-_Static_assert(_Alignof(int(void)) > 0, "function alignment");
+int main(void) { return (int)_Alignof(int(void)); }

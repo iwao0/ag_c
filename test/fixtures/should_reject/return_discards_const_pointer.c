@@ -1,3 +1,4 @@
+/* Return conversion cannot discard a pointee const qualifier. */
 static const int value = 7;
 
 static int *invalid_return(void) {
