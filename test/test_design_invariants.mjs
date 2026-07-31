@@ -226,6 +226,21 @@ const documentedFunctionPointerCompileFailCases = [
   "nested_callback_const_aggregate_return_redeclaration_mismatch",
   "nested_callback_atomic_aggregate_return_pointer_mismatch",
   "nested_callback_atomic_aggregate_return_redeclaration_mismatch",
+  "nested_callback_large_atomic_aggregate_return_pointer_mismatch",
+  "nested_callback_large_atomic_aggregate_return_redeclaration_mismatch",
+  "nested_callback_atomic_complex_return_pointer_mismatch",
+  "nested_callback_atomic_complex_return_redeclaration_mismatch",
+  "nested_callback_atomic_union_return_pointer_mismatch",
+  "nested_callback_atomic_union_return_redeclaration_mismatch",
+  "nested_callback_atomic_distinct_enum_return_pointer_mismatch",
+  "nested_callback_atomic_enum_signedness_return_redeclaration_mismatch",
+  "nested_callback_atomic_subinteger_return_pointer_mismatch",
+  "nested_callback_atomic_subinteger_signedness_return_redeclaration_mismatch",
+  "nested_callback_atomic_floating_return_pointer_mismatch",
+  "nested_callback_atomic_floating_rank_return_redeclaration_mismatch",
+  "nested_callback_atomic_long_return_pointer_mismatch",
+  "nested_callback_atomic_long_rank_return_redeclaration_mismatch",
+  "nested_callback_atomic_long_signedness_return_pointer_mismatch",
 ];
 for (const caseName of documentedFunctionPointerCompileFailCases) {
   if (!nativeE2ESource.includes(`{"${caseName}",`)) {
