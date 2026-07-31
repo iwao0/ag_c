@@ -3808,113 +3808,117 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "int block_scope(void) { static local; return 0; }",
      "E3088"},
     {"include_macro_invalid_rejected",
-     "#define INVALID_HEADER 123\n"
-     "#include INVALID_HEADER\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_macro_invalid.c",
+     ":2: E1001"},
     {"include_wide_string_filename_rejected",
-     "#include L\"stddef.h\"\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_wide_string.c",
+     ":1: E1001"},
     {"include_utf16_string_filename_rejected",
-     "#include u\"stddef.h\"\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_utf16_string.c",
+     ":1: E1001"},
     {"include_utf32_string_filename_rejected",
-     "#include U\"stddef.h\"\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_utf32_string.c",
+     ":1: E1001"},
     {"include_utf8_string_filename_rejected",
-     "#include u8\"stddef.h\"\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_utf8_string.c",
+     ":1: E1001"},
     {"include_macro_wide_string_filename_rejected",
-     "#define HEADER L\"stddef.h\"\n"
-     "#include HEADER\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_macro_wide_string.c",
+     ":2: E1001"},
     {"include_macro_utf8_string_filename_rejected",
-     "#define HEADER u8\"stddef.h\"\n"
-     "#include HEADER\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_macro_utf8_string.c",
+     ":2: E1001"},
     {"pragma_operator_invalid_rejected",
      "#define INVALID_PRAGMA_OPERAND 1\n"
      "_Pragma(INVALID_PRAGMA_OPERAND)\n"
      "int main(void) { return 0; }\n",
      "E1043"},
+    {"macro_define_missing_name_location_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_macro_define_missing_name.c",
+     ":1: E1018"},
+    {"macro_undef_missing_name_location_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_macro_undef_missing_name.c",
+     ":1: E1018"},
     {"macro_redefinition_replacement_rejected",
-     "#define VALUE 1\n"
-     "#define VALUE 2\n"
-     "int main(void) { return VALUE; }\n",
-     "E1044"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_macro_redefinition.c",
+     ":2: E1044"},
     {"macro_redefinition_form_rejected",
      "#define VALUE 1\n"
      "#define VALUE() 1\n"
      "int main(void) { return VALUE(); }\n",
-     "E1044"},
+     ":2: E1044"},
     {"macro_redefinition_parameter_rejected",
      "#define PICK(left) (left)\n"
      "#define PICK(right) (right)\n"
      "int main(void) { return PICK(1); }\n",
-     "E1044"},
+     ":2: E1044"},
     {"macro_redefinition_whitespace_rejected",
      "#define SUM (1 + 2)\n"
      "#define SUM (1+ 2)\n"
      "int main(void) { return SUM; }\n",
-     "E1044"},
+     ":2: E1044"},
     {"macro_duplicate_parameter_rejected",
-     "#define PICK(value, value) (value)\n"
-     "int main(void) { return PICK(1, 2); }\n",
-     "E1045"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_macro_duplicate_parameter.c",
+     ":1: E1045"},
     {"macro_parameter_missing_comma_rejected",
      "#define ADD(left right) ((left) + (right))\n"
      "int main(void) { return ADD(20, 22); }\n",
-     "E1046"},
+     ":1: E1046"},
     {"macro_parameter_trailing_comma_rejected",
      "#define ID(value,) (value)\n"
      "int main(void) { return ID(42); }\n",
-     "E1046"},
+     ":1: E1046"},
     {"macro_parameter_list_unclosed_rejected",
-     "#define ID(value\n"
-     "int main(void) { return 0; }\n",
-     "E1046"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_macro_parameter_list_unclosed.c",
+     ":1: E1046"},
     {"macro_va_args_parameter_rejected",
      "#define ID(__VA_ARGS__) (__VA_ARGS__)\n"
      "int main(void) { return ID(42); }\n",
-     "E1047"},
+     ":1: E1047"},
     {"macro_va_args_nonvariadic_body_rejected",
-     "#define ID(value) (__VA_ARGS__)\n"
-     "int main(void) { return ID(42); }\n",
-     "E1047"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_macro_va_args_nonvariadic.c",
+     ":1: E1047"},
     {"macro_va_args_name_rejected",
      "#define __VA_ARGS__ 42\n"
      "int main(void) { return __VA_ARGS__; }\n",
-     "E1047"},
+     ":1: E1047"},
     {"macro_stringize_nonparameter_unused_rejected",
-     "#define BAD(value) # 1\n"
-     "int main(void) { return 0; }\n",
-     "E1048"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_macro_stringize_nonparameter.c",
+     ":1: E1048"},
     {"macro_stringize_missing_parameter_unused_rejected",
      "#define BAD(value) #\n"
      "int main(void) { return 0; }\n",
-     "E1048"},
+     ":1: E1048"},
     {"macro_function_paste_leading_unused_rejected",
      "#define BAD(value) ## value\n"
      "int main(void) { return 0; }\n",
-     "E1031"},
+     ":1: E1031"},
     {"macro_function_paste_trailing_unused_rejected",
-     "#define BAD(value) value ##\n"
-     "int main(void) { return 0; }\n",
-     "E1031"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_macro_paste_trailing.c",
+     ":1: E1031"},
     {"macro_object_paste_leading_unused_rejected",
      "#define BAD ## value\n"
      "int main(void) { return 0; }\n",
-     "E1031"},
+     ":1: E1031"},
     {"macro_object_paste_trailing_unused_rejected",
      "#define BAD value ##\n"
      "int main(void) { return 0; }\n",
-     "E1031"},
+     ":1: E1031"},
     {"macro_invalid_paste_result_location_rejected",
      "#define PASTE(left, right) left ## right\n"
      "int main(void) { return PASTE(+, *) 1; }\n",
@@ -3950,99 +3954,98 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "macro_arg_expansion_limit_location.c",
      "macro_arg_expansion_limit.c:93: E1029"},
     {"predefined_macro_define_stdc_rejected",
-     "#define __STDC__ 1\n"
-     "int main(void) { return 0; }\n",
-     "E1049"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_predefined_macro_define.c",
+     ":1: E1049"},
     {"predefined_macro_define_stdc_version_rejected",
      "#define __STDC_VERSION__ 201112L\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_define_stdc_hosted_rejected",
      "#define __STDC_HOSTED__ 1\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_define_stdc_no_threads_rejected",
      "#define __STDC_NO_THREADS__ 1\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_define_stdc_utf_16_rejected",
      "#define __STDC_UTF_16__ 1\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_define_stdc_utf_32_rejected",
      "#define __STDC_UTF_32__ 1\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_define_line_rejected",
      "#define __LINE__ 42\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_define_file_rejected",
      "#define __FILE__ \"overridden.c\"\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_define_date_rejected",
      "#define __DATE__ \"Jan  1 1970\"\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_define_time_rejected",
      "#define __TIME__ \"00:00:00\"\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_undef_stdc_rejected",
      "#undef __STDC__\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_undef_stdc_version_rejected",
      "#undef __STDC_VERSION__\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_undef_stdc_hosted_rejected",
      "#undef __STDC_HOSTED__\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_undef_line_rejected",
      "#undef __LINE__\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_undef_file_rejected",
      "#undef __FILE__\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_undef_date_rejected",
      "#undef __DATE__\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_undef_time_rejected",
      "#undef __TIME__\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_undef_conditional_feature_rejected",
      "#undef __STDC_NO_THREADS__\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_undef_stdc_utf_16_rejected",
      "#undef __STDC_UTF_16__\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"predefined_macro_undef_stdc_utf_32_rejected",
      "#undef __STDC_UTF_32__\n"
      "int main(void) { return 0; }\n",
-     "E1049"},
+     ":1: E1049"},
     {"macro_undef_va_args_rejected",
      "#undef __VA_ARGS__\n"
      "int main(void) { return 0; }\n",
-     "E1047"},
+     ":1: E1047"},
     {"macro_undef_extra_identifier_rejected",
-     "#define VALUE 42\n"
-     "#undef VALUE extra\n"
-     "int main(void) { return 0; }\n",
-     "E1050"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_macro_undef_extra_tokens.c",
+     ":2: E1050"},
     {"macro_undef_extra_parens_rejected",
      "#define VALUE 42\n"
      "#undef VALUE()\n"
      "int main(void) { return 0; }\n",
-     "E1050"},
+     ":2: E1050"},
     {"preprocess_ifdef_extra_tokens_rejected",
      "#define FLAG 1\n"
      "#ifdef FLAG extra\n"
@@ -4068,13 +4071,13 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "int main(void) { return 0; }\n",
      ":3: E1051"},
     {"preprocess_unknown_directive_rejected",
-     "#unknown tokens\n"
-     "int main(void) { return 0; }\n",
-     "E1052"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_unknown_directive.c",
+     ":1: E1052"},
     {"preprocess_nonidentifier_directive_rejected",
-     "# 123\n"
-     "int main(void) { return 0; }\n",
-     "E1052"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_nonidentifier_directive.c",
+     ":1: E1052"},
     {"preprocess_unterminated_true_conditional_rejected",
      "#if 1\n"
      "int main(void) { return 0; }\n",
@@ -4244,7 +4247,11 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"preprocess_error_empty_rejected",
      "#error\n"
      "int main(void) { return 0; }\n",
-     "E1033"},
+     ":1: E1033"},
+    {"preprocess_error_location_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_error_location.c",
+     ":1: E1033"},
     {"preprocess_error_token_spelling_rejected",
      "#error alpha+beta 0x2a L\"wide\" '\\n'\n"
      "int main(void) { return 0; }\n",
@@ -4259,39 +4266,49 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "int main(void) { return 0; }\n",
      "error: alpha beta"},
     {"include_missing_filename_rejected",
-     "#include\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_missing_filename.c",
+     ":1: E1001"},
     {"include_empty_quoted_filename_rejected",
-     "#include \"\"\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_empty_quoted_filename.c",
+     ":1: E1001"},
     {"include_empty_angle_filename_rejected",
-     "#include <>\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_empty_angle_filename.c",
+     ":1: E1001"},
     {"include_angle_missing_gt_rejected",
-     "#include <stddef.h\n"
-     "int main(void) { return 0; }\n",
-     "E1017"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_missing_gt.c",
+     ":1: E1017"},
     {"include_extra_tokens_rejected",
-     "#include <stddef.h> extra\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_extra_tokens.c",
+     ":1: E1001"},
     {"include_concatenated_filename_rejected",
-     "#include \"stddef.h\" \"extra\"\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_concatenated_filename.c",
+     ":1: E1001"},
     {"include_macro_extra_tokens_rejected",
-     "#define HEADER <stddef.h> extra\n"
-     "#include HEADER\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_macro_extra_tokens.c",
+     ":2: E1001"},
     {"include_macro_concatenated_filename_rejected",
-     "#define HEADER \"stddef.h\" \"extra\"\n"
-     "#include HEADER\n"
-     "int main(void) { return 0; }\n",
-     "E1001"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_macro_concatenated_filename.c",
+     ":2: E1001"},
+    {"include_not_found_location_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_not_found.c",
+     ":1: E1034"},
+    {"include_parent_directory_location_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_parent_directory.c",
+     ":1: E1003"},
+    {"include_absolute_path_location_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_include_absolute_path.c",
+     ":1: E1002"},
     {"macro_invocation_zero_parameter_extra_argument_rejected",
      "#define ZERO() 0\n"
      "int main(void) { return ZERO(1); }\n",
@@ -4347,66 +4364,65 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#endif\n",
      "preprocess_conditional_elif.h:1: E1021"},
     {"line_directive_missing_number_rejected",
-     "#line\n"
-     "int main(void) { return 0; }\n",
-     "E1027"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_missing_number.c",
+     ":1: E1027"},
     {"line_directive_zero_number_rejected",
-     "#line 0\n"
-     "int main(void) { return 0; }\n",
-     "E1027"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_zero_number.c",
+     ":1: E1027"},
     {"line_directive_above_maximum_number_rejected",
-     "#line 2147483648\n"
-     "int main(void) { return 0; }\n",
-     "E1027"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_above_maximum_number.c",
+     ":1: E1027"},
     {"line_directive_identifier_number_rejected",
-     "#line NOT_DEFINED\n"
-     "int main(void) { return 0; }\n",
-     "E1027"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_identifier_number.c",
+     ":1: E1027"},
     {"line_directive_hex_number_rejected",
-     "#line 0x10\n"
-     "int main(void) { return 0; }\n",
-     "E1027"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_hex_number.c",
+     ":1: E1027"},
     {"line_directive_suffixed_number_rejected",
-     "#line 10U\n"
-     "int main(void) { return 0; }\n",
-     "E1027"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_suffixed_number.c",
+     ":1: E1027"},
     {"line_directive_signed_number_rejected",
-     "#line +10\n"
-     "int main(void) { return 0; }\n",
-     "E1027"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_signed_number.c",
+     ":1: E1027"},
     {"line_directive_character_number_rejected",
-     "#line 'A'\n"
-     "int main(void) { return 0; }\n",
-     "E1027"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_character_number.c",
+     ":1: E1027"},
     {"line_directive_floating_number_rejected",
-     "#line 10.0\n"
-     "int main(void) { return 0; }\n",
-     "E1027"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_floating_number.c",
+     ":1: E1027"},
     {"line_directive_identifier_filename_rejected",
-     "#line 10 filename\n"
-     "int main(void) { return 0; }\n",
-     "E1028"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_identifier_filename.c",
+     ":1: E1028"},
     {"line_directive_wide_filename_rejected",
-     "#line 10 L\"mapped.c\"\n"
-     "int main(void) { return 0; }\n",
-     "E1028"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_wide_filename.c",
+     ":1: E1028"},
     {"line_directive_u8_filename_rejected",
-     "#line 10 u8\"mapped.c\"\n"
-     "int main(void) { return 0; }\n",
-     "E1028"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_u8_filename.c",
+     ":1: E1028"},
     {"line_directive_extra_tokens_rejected",
-     "#line 10 \"mapped.c\" extra\n"
-     "int main(void) { return 0; }\n",
-     "E1054"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_extra_tokens.c",
+     ":1: E1054"},
     {"line_directive_concatenated_filename_rejected",
-     "#line 10 \"mapped\" \".c\"\n"
-     "int main(void) { return 0; }\n",
-     "E1054"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_concatenated_filename.c",
+     ":1: E1054"},
     {"line_directive_macro_extra_tokens_rejected",
-     "#define LOCATION 10 \"mapped.c\" extra\n"
-     "#line LOCATION\n"
-     "int main(void) { return 0; }\n",
-     "E1054"},
+     "fixture:test/fixtures/should_reject/"
+     "preprocess_line_macro_extra_tokens.c",
+     ":2: E1054"},
     {"different_encoded_string_prefixes_rejected",
      "int main(void) { return u\"a\" U\"b\"[0]; }\n",
      "E3058"},
@@ -4613,6 +4629,46 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "const char *name = __func__;\n"
      "int main(void) { return name != 0; }\n",
      "E3066"},
+    {"tokenizer_hex_missing_digits_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_hex_missing_digits.c",
+     "E2017"},
+    {"tokenizer_octal_invalid_digit_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_octal_invalid_digit.c",
+     "E2023"},
+    {"tokenizer_int_suffix_duplicate_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_int_suffix_duplicate.c",
+     "E2016"},
+    {"tokenizer_unterminated_comment_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_unterminated_comment.c",
+     "E2009"},
+    {"tokenizer_unexpected_character_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_unexpected_character.c",
+     "E2028"},
+    {"tokenizer_unterminated_string_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_unterminated_string.c",
+     "E2026"},
+    {"tokenizer_invalid_escape_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_invalid_escape.c",
+     "E2013"},
+    {"tokenizer_empty_character_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_empty_character.c",
+     "E2024"},
+    {"tokenizer_unterminated_character_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_unterminated_character.c",
+     "E2025"},
+    {"tokenizer_integer_too_large_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_integer_too_large.c",
+     "E2015"},
     {"char16_supplementary_character_rejected",
      "unsigned short value = u'\\U0001F600'; "
      "int main(void) { return value != 0; }\n",
@@ -6492,7 +6548,9 @@ int main(int argc, char **argv) {
     const char *tok_limit_path = "build/e2e/compile_fail/tokenizer_int_too_large.c";
     const char *log_path = "build/e2e/logs/compile_fail_tokenizer_int_too_large.log";
     if (mkdir_p("build/e2e/compile_fail") != 0 ||
-        write_source_file(tok_limit_path, "int main() { return 18446744073709551616; }\n") != 0 ||
+        copy_source_file(
+            "test/fixtures/should_reject/tokenizer_integer_too_large.c",
+            tok_limit_path) != 0 ||
         run_ag_c_expect_fail_profiled(tok_limit_path, "E2015", log_path, 1024) != 0) {
       fprintf(stderr, "Compile-fail case failed: tokenizer_int_too_large (see %s)\n", log_path);
       return 1;

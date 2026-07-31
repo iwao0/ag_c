@@ -839,7 +839,8 @@ static void expect_line_filename_invalid_utf8_fail(void) {
       'i', 'n', 't', ' ', 'm', 'a', 'i', 'n', '(', ')', ' ', '{', ' ',
       'r', 'e', 't', 'u', 'r', 'n', ' ', '0', ';', ' ', '}', '\n', '\0',
   };
-  expect_preprocess_fail_with_stderr_substr((const char *)input_bytes, "E1028");
+  expect_preprocess_fail_with_stderr_substr(
+      (const char *)input_bytes, ":1: E1028");
 }
 
 static void expect_line_filename_too_long_fail(void) {
@@ -866,7 +867,7 @@ static void expect_line_filename_too_long_fail(void) {
     exit(1);
   }
 
-  expect_preprocess_fail_with_stderr_substr(input, "E1028");
+  expect_preprocess_fail_with_stderr_substr(input, ":1: E1028");
   free(input);
 }
 
@@ -1012,60 +1013,68 @@ int main(void) {
   for (size_t i = 0; i < sizeof(fail_cases) / sizeof(fail_cases[0]); i++) {
     expect_preprocess_fail(fail_cases[i]);
   }
-  expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
-  expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\x1fname.c\"\nint main() { return 0; }\n", "E1028");
   expect_preprocess_fail_with_stderr_substr(
-      "#line\nint main(void) { return 0; }\n", "E1027");
+      "#line 2147483648\nint main() { return 0; }\n", ":1: E1027");
   expect_preprocess_fail_with_stderr_substr(
-      "#line NOT_DEFINED\nint main(void) { return 0; }\n", "E1027");
+      "#line 1 \"bad\x1fname.c\"\nint main() { return 0; }\n", ":1: E1028");
   expect_preprocess_fail_with_stderr_substr(
-      "#line 0x10\nint main(void) { return 0; }\n", "E1027");
+      "#line\nint main(void) { return 0; }\n", ":1: E1027");
   expect_preprocess_fail_with_stderr_substr(
-      "#line 10U\nint main(void) { return 0; }\n", "E1027");
+      "#line NOT_DEFINED\nint main(void) { return 0; }\n", ":1: E1027");
   expect_preprocess_fail_with_stderr_substr(
-      "#line +10\nint main(void) { return 0; }\n", "E1027");
+      "#line 0x10\nint main(void) { return 0; }\n", ":1: E1027");
   expect_preprocess_fail_with_stderr_substr(
-      "#line 'A'\nint main(void) { return 0; }\n", "E1027");
+      "#line 10U\nint main(void) { return 0; }\n", ":1: E1027");
   expect_preprocess_fail_with_stderr_substr(
-      "#line 10.0\nint main(void) { return 0; }\n", "E1027");
+      "#line +10\nint main(void) { return 0; }\n", ":1: E1027");
   expect_preprocess_fail_with_stderr_substr(
-      "#line 10 filename\nint main(void) { return 0; }\n", "E1028");
+      "#line 'A'\nint main(void) { return 0; }\n", ":1: E1027");
   expect_preprocess_fail_with_stderr_substr(
-      "#line 10 L\"mapped.c\"\nint main(void) { return 0; }\n", "E1028");
+      "#line 10.0\nint main(void) { return 0; }\n", ":1: E1027");
   expect_preprocess_fail_with_stderr_substr(
-      "#line 10 u8\"mapped.c\"\nint main(void) { return 0; }\n", "E1028");
+      "#line 10 filename\nint main(void) { return 0; }\n", ":1: E1028");
   expect_preprocess_fail_with_stderr_substr(
-      "#line 10 \"mapped.c\" extra\nint main(void) { return 0; }\n", "E1054");
+      "#line 10 L\"mapped.c\"\nint main(void) { return 0; }\n", ":1: E1028");
   expect_preprocess_fail_with_stderr_substr(
-      "#line 10 \"mapped\" \".c\"\nint main(void) { return 0; }\n", "E1054");
+      "#line 10 u8\"mapped.c\"\nint main(void) { return 0; }\n", ":1: E1028");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 10 \"mapped.c\" extra\nint main(void) { return 0; }\n", ":1: E1054");
+  expect_preprocess_fail_with_stderr_substr(
+      "#line 10 \"mapped\" \".c\"\nint main(void) { return 0; }\n", ":1: E1054");
   expect_preprocess_fail_with_stderr_substr(
       "#define LOCATION 10 \"mapped.c\" extra\n"
       "#line LOCATION\nint main(void) { return 0; }\n",
-      "E1054");
+      ":2: E1054");
   expect_line_filename_invalid_utf8_fail();
-  expect_preprocess_fail_with_stderr_substr("#include \"build/realpath_loop_a.h\"\nint main() { return 0; }\n", "E1036");
-  expect_preprocess_fail_with_stderr_substr("#include \"build/depth_00.h\"\nint main() { return 0; }\n", "E1004");
-  expect_preprocess_fail_with_stderr_substr("#include \"build/not_found.h\"\nint main() { return 0; }\n", "E1034");
+  expect_preprocess_fail_with_stderr_substr(
+      "#include \"build/realpath_loop_a.h\"\nint main() { return 0; }\n",
+      ":1: E1036");
+  expect_preprocess_fail_with_stderr_substr(
+      "#include \"build/depth_00.h\"\nint main() { return 0; }\n",
+      ":1: E1004");
+  expect_preprocess_fail_with_stderr_substr(
+      "#include \"build/not_found.h\"\nint main() { return 0; }\n",
+      ":1: E1034");
   expect_preprocess_fail_with_stderr_substr(
       "#include L\"stddef.h\"\nint main(void) { return 0; }\n",
-      "E1001");
+      ":1: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#include u\"stddef.h\"\nint main(void) { return 0; }\n",
-      "E1001");
+      ":1: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#include U\"stddef.h\"\nint main(void) { return 0; }\n",
-      "E1001");
+      ":1: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#include u8\"stddef.h\"\nint main(void) { return 0; }\n",
-      "E1001");
+      ":1: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#define HEADER L\"stddef.h\"\n"
       "#include HEADER\nint main(void) { return 0; }\n",
-      "E1001");
+      ":2: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#define HEADER u8\"stddef.h\"\n"
       "#include HEADER\nint main(void) { return 0; }\n",
-      "E1001");
+      ":2: E1001");
   char cwd[PATH_MAX];
   if (!getcwd(cwd, sizeof(cwd))) {
     fprintf(stderr, "  FAIL: cannot get cwd for leak check\n");
@@ -1073,7 +1082,7 @@ int main(void) {
   }
   expect_preprocess_fail_with_stderr_substr_no_leak(
       "#include \"build/escape_tmp_symlink.h\"\nint main() { return 0; }\n",
-      "E1002", "/tmp/ag_c_escape_preprocess_", cwd);
+      ":1: E1002", "/tmp/ag_c_escape_preprocess_", cwd);
   FILE *huge = fopen("build/huge_include.h", "w");
   if (!huge) {
     fprintf(stderr, "  FAIL: cannot create build/huge_include.h\n");
@@ -1085,8 +1094,11 @@ int main(void) {
     return 1;
   }
   fclose(huge);
-  expect_preprocess_fail_with_stderr_substr("#include \"build/huge_include.h\"\nint main() { return 0; }\n", "E1032");
-  expect_preprocess_fail_with_stderr_substr("#error \"forced\"\nint main() { return 0; }\n", "E1033");
+  expect_preprocess_fail_with_stderr_substr(
+      "#include \"build/huge_include.h\"\nint main() { return 0; }\n",
+      ":1: E1032");
+  expect_preprocess_fail_with_stderr_substr(
+      "#error \"forced\"\nint main() { return 0; }\n", ":1: E1033");
   expect_preprocess_fail_with_stderr_substr(
       "#error alpha+beta 0x2a L\"wide\" '\\n'\n"
       "int main(void) { return 0; }\n",
@@ -1105,71 +1117,79 @@ int main(void) {
   expect_preprocess_fail_with_stderr_sanitized(
       "#error \"attack\x1f\xe2\x80\xaetext\"\nint main() { return 0; }\n",
       "E1033", "\\x1F", "\\u202E", "\x1f", "\xe2\x80\xae");
-  expect_preprocess_fail_with_stderr_substr("#define BAD1(a) ##a\nint main() { return BAD1(42); }\n", "E1031");
-  expect_preprocess_fail_with_stderr_substr("#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n", "E1031");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define BAD1(a) ##a\nint main() { return BAD1(42); }\n",
+      ":1: E1031");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n",
+      ":1: E1031");
   expect_preprocess_fail_with_stderr_substr(
       "#define BAD5(a,b) a##b\n"
       "int main() { return BAD5(1,+2); }\n",
       ":2: E1030");
   expect_preprocess_fail_with_stderr_substr(
       "#define VALUE 1\n#define VALUE 2\nint main(void) { return VALUE; }\n",
-      "E1044");
+      ":2: E1044");
   expect_preprocess_fail_with_stderr_substr(
       "#define PICK(left) (left)\n#define PICK(right) (right)\n"
       "int main(void) { return PICK(1); }\n",
-      "E1044");
+      ":2: E1044");
   expect_preprocess_fail_with_stderr_substr(
       "#define PICK(value, value) (value)\n"
       "int main(void) { return PICK(1, 2); }\n",
-      "E1045");
+      ":1: E1045");
   expect_preprocess_fail_with_stderr_substr(
       "#define ADD(left right) ((left) + (right))\n"
       "int main(void) { return ADD(20, 22); }\n",
-      "E1046");
+      ":1: E1046");
   expect_preprocess_fail_with_stderr_substr(
       "#define ID(value) (__VA_ARGS__)\n"
       "int main(void) { return ID(42); }\n",
-      "E1047");
+      ":1: E1047");
   expect_preprocess_fail_with_stderr_substr(
       "#define BAD(value) # 1\n"
       "int main(void) { return 0; }\n",
-      "E1048");
+      ":1: E1048");
   expect_preprocess_fail_with_stderr_substr(
       "#define BAD value ##\n"
       "int main(void) { return 0; }\n",
-      "E1031");
+      ":1: E1031");
   expect_preprocess_fail_with_stderr_substr(
       "#define __LINE__ 42\n"
       "int main(void) { return 0; }\n",
-      "E1049");
+      ":1: E1049");
   expect_preprocess_fail_with_stderr_substr(
       "#define __DATE__ \"Jan  1 1970\"\n"
       "int main(void) { return 0; }\n",
-      "E1049");
+      ":1: E1049");
   expect_preprocess_fail_with_stderr_substr(
       "#define __TIME__ \"00:00:00\"\n"
       "int main(void) { return 0; }\n",
-      "E1049");
+      ":1: E1049");
   expect_preprocess_fail_with_stderr_substr(
       "#undef __STDC__\n"
       "int main(void) { return 0; }\n",
-      "E1049");
+      ":1: E1049");
   expect_preprocess_fail_with_stderr_substr(
       "#undef __DATE__\n"
       "int main(void) { return 0; }\n",
-      "E1049");
+      ":1: E1049");
   expect_preprocess_fail_with_stderr_substr(
       "#undef __TIME__\n"
       "int main(void) { return 0; }\n",
-      "E1049");
+      ":1: E1049");
   expect_preprocess_fail_with_stderr_substr(
       "#undef __VA_ARGS__\n"
       "int main(void) { return 0; }\n",
-      "E1047");
+      ":1: E1047");
   expect_preprocess_fail_with_stderr_substr(
       "#define VALUE 42\n#undef VALUE extra\n"
       "int main(void) { return 0; }\n",
-      "E1050");
+      ":2: E1050");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define\nint main(void) { return 0; }\n", ":1: E1018");
+  expect_preprocess_fail_with_stderr_substr(
+      "#undef\nint main(void) { return 0; }\n", ":1: E1018");
   expect_preprocess_fail_with_stderr_substr(
       "#define FLAG 1\n#ifdef FLAG extra\n"
       "int main(void) { return 0; }\n#endif\n",
@@ -1359,37 +1379,37 @@ int main(void) {
   expect_preprocess_fail_with_stderr_substr(
       "#include\n"
       "int main(void) { return 0; }\n",
-      "E1001");
+      ":1: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#include \"\"\n"
       "int main(void) { return 0; }\n",
-      "E1001");
+      ":1: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#include <>\n"
       "int main(void) { return 0; }\n",
-      "E1001");
+      ":1: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#include <stddef.h\n"
       "int main(void) { return 0; }\n",
-      "E1017");
+      ":1: E1017");
   expect_preprocess_fail_with_stderr_substr(
       "#include <stddef.h> extra\n"
       "int main(void) { return 0; }\n",
-      "E1001");
+      ":1: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#include \"stddef.h\" \"extra\"\n"
       "int main(void) { return 0; }\n",
-      "E1001");
+      ":1: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#define HEADER <stddef.h> extra\n"
       "#include HEADER\n"
       "int main(void) { return 0; }\n",
-      "E1001");
+      ":2: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#define HEADER \"stddef.h\" \"extra\"\n"
       "#include HEADER\n"
       "int main(void) { return 0; }\n",
-      "E1001");
+      ":2: E1001");
   expect_preprocess_fail_with_stderr_substr(
       "#define ZERO() 0\n"
       "int main(void) { return ZERO(1); }\n",
@@ -1444,11 +1464,11 @@ int main(void) {
   expect_preprocess_fail_with_stderr_substr(
       "#line 0\n"
       "int main(void) { return 0; }\n",
-      "E1027");
+      ":1: E1027");
   expect_preprocess_fail_with_stderr_substr(
       "#line 2147483648\n"
       "int main(void) { return 0; }\n",
-      "E1027");
+      ":1: E1027");
   expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
   expect_macro_arg_nesting_limit_fail();
