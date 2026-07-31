@@ -128,6 +128,16 @@ skip_reason() {
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c|\
     test/fixtures/probes_found_bugs/nested_atomic_aggregate_callback_parameter_xtu_main.c|\
     test/fixtures/probes_found_bugs/nested_atomic_aggregate_callback_parameter_xtu_other.c|\
+    test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_parameter_xtu_main.c|\
+    test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_parameter_xtu_other.c|\
+    test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_result_xtu_main.c|\
+    test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_result_xtu_other.c|\
+    test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_factory_xtu_main.c|\
+    test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_factory_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_union_complex_callback_factory_data_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_union_complex_callback_factory_data_xtu_other.c|\
+    test/fixtures/probes_found_bugs/atomic_union_complex_callback_factory_container_xtu_main.c|\
+    test/fixtures/probes_found_bugs/atomic_union_complex_callback_factory_container_xtu_other.c|\
     test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/atomic_enum_aligned_record_signature_xtu_main.c|\
@@ -260,6 +270,30 @@ skip_reason() {
     test/fixtures/wasm32/function_parameter_callback_atomic_parameter_type_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_callback_atomic_aggregate_parameter_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_callback_atomic_aggregate_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_union_parameter_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_union_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_small_union_parameter_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_small_union_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_complex_parameter_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_complex_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_float_complex_parameter_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_float_complex_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_union_result_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_union_result_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_small_union_result_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_small_union_result_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_complex_result_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_complex_result_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_float_complex_result_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_float_complex_result_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_union_result_const_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_union_result_const_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_complex_result_volatile_qualifier_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_complex_result_volatile_qualifier_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_factory_atomic_union_parameter_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_factory_atomic_union_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_factory_atomic_complex_result_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_factory_atomic_complex_result_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_callback_atomic_result_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_callback_atomic_result_type_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_callback_return_pointee_const_qualifier_mismatch_main.c|\
@@ -460,6 +494,14 @@ skip_reason() {
     test/fixtures/wasm32/global_record_atomic_enum_integer_mismatch_other.c|\
     test/fixtures/wasm32/global_atomic_callback_enum_parameter_mismatch_main.c|\
     test/fixtures/wasm32/global_atomic_callback_enum_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/global_callback_factory_atomic_union_parameter_mismatch_main.c|\
+    test/fixtures/wasm32/global_callback_factory_atomic_union_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/global_callback_factory_atomic_complex_result_mismatch_main.c|\
+    test/fixtures/wasm32/global_callback_factory_atomic_complex_result_mismatch_other.c|\
+    test/fixtures/wasm32/record_member_callback_factory_atomic_union_parameter_mismatch_main.c|\
+    test/fixtures/wasm32/record_member_callback_factory_atomic_union_parameter_mismatch_other.c|\
+    test/fixtures/wasm32/global_array_callback_factory_atomic_complex_result_mismatch_main.c|\
+    test/fixtures/wasm32/global_array_callback_factory_atomic_complex_result_mismatch_other.c|\
     test/fixtures/wasm32/record_member_atomic_callback_enum_result_mismatch_main.c|\
     test/fixtures/wasm32/record_member_atomic_callback_enum_result_mismatch_other.c|\
     test/fixtures/wasm32/struct_member_order_signature_mismatch_main.c|\

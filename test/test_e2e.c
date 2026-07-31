@@ -1369,6 +1369,8 @@ static const test_case_t test_cases[] = {
     {"probes", "macro_nested_paste_call", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_nested_paste_call.c", 0, 0},
     {"probes", "macro_nested_paste_call_arg", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_nested_paste_call_arg.c", 0, 0},
     {"probes", "macro_paste_empty_operand", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_paste_empty_operand.c", 0, 0},
+    {"probes", "macro_generated_declarator_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_generated_declarator_boundaries.c", 0, 0},
+    {"probes", "macro_generated_initializer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_generated_initializer_boundaries.c", 0, 0},
     {"probes", "incomplete_tag_and_nested_func_param", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_tag_and_nested_func_param.c", 0, 0},
     {"probes", "builtin_expect_fold", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/builtin_expect_fold.c", 0, 0},
     {"probes", "sizeof_string_and_addr_of_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_string_and_addr_of_array.c", 0, 0},
@@ -2026,6 +2028,21 @@ static const link2_case_t link2_cases[] = {
     {"probes", "nested_atomic_aggregate_callback_parameter_xtu",
      "test/fixtures/probes_found_bugs/nested_atomic_aggregate_callback_parameter_xtu_main.c",
      "test/fixtures/probes_found_bugs/nested_atomic_aggregate_callback_parameter_xtu_other.c", 42},
+    {"probes", "nested_atomic_union_complex_callback_parameter_xtu",
+     "test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_parameter_xtu_main.c",
+     "test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_parameter_xtu_other.c", 42},
+    {"probes", "nested_atomic_union_complex_callback_result_xtu",
+     "test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_result_xtu_main.c",
+     "test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_result_xtu_other.c", 42},
+    {"probes", "nested_atomic_union_complex_callback_factory_xtu",
+     "test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_factory_xtu_main.c",
+     "test/fixtures/probes_found_bugs/nested_atomic_union_complex_callback_factory_xtu_other.c", 42},
+    {"probes", "atomic_union_complex_callback_factory_data_xtu",
+     "test/fixtures/probes_found_bugs/atomic_union_complex_callback_factory_data_xtu_main.c",
+     "test/fixtures/probes_found_bugs/atomic_union_complex_callback_factory_data_xtu_other.c", 42},
+    {"probes", "atomic_union_complex_callback_factory_container_xtu",
+     "test/fixtures/probes_found_bugs/atomic_union_complex_callback_factory_container_xtu_main.c",
+     "test/fixtures/probes_found_bugs/atomic_union_complex_callback_factory_container_xtu_other.c", 42},
     {"probes", "aggregate_value_abi_xtu_boundaries",
      "test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_main.c",
      "test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_other.c", 42},
@@ -3898,6 +3915,24 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#define BAD value ##\n"
      "int main(void) { return 0; }\n",
      "E1031"},
+    {"macro_invalid_paste_result_location_rejected",
+     "#define PASTE(left, right) left ## right\n"
+     "int main(void) { return PASTE(+, *) 1; }\n",
+     ":2: E1030"},
+    {"macro_object_invalid_paste_definition_location_rejected",
+     "#define BAD_PASTE + ## *\n"
+     "int main(void) { return BAD_PASTE 1; }\n",
+     ":1: E1030"},
+    {"macro_mapped_invalid_paste_invocation_location_rejected",
+     "#define PASTE(left, right) left ## right\n"
+     "#line 70 \"mapped_invocation.c\"\n"
+     "int main(void) { return PASTE(+, *) 1; }\n",
+     "mapped_invocation.c:70: E1030"},
+    {"macro_header_invalid_paste_definition_location_rejected",
+     "#include \"test/fixtures/should_reject/"
+     "macro_invalid_paste_header.h\"\n"
+     "int main(void) { return HEADER_BAD_PASTE 1; }\n",
+     "macro_invalid_paste_header.h:1: E1030"},
     {"predefined_macro_define_stdc_rejected",
      "#define __STDC__ 1\n"
      "int main(void) { return 0; }\n",
@@ -4036,98 +4071,108 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "#if\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1008"},
+     ":1: E1008"},
     {"preprocess_if_comment_only_expression_rejected",
      "#if /* only a comment */\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1008"},
+     ":1: E1008"},
     {"preprocess_if_macro_empty_expression_rejected",
      "#define EMPTY\n"
      "#if EMPTY\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1008"},
+     ":2: E1008"},
     {"preprocess_elif_empty_expression_rejected",
      "#if 0\n"
      "int hidden;\n"
      "#elif\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1008"},
+     ":3: E1008"},
     {"preprocess_if_floating_literal_rejected",
      "#if 1.0\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1007"},
+     ":1: E1007"},
     {"preprocess_if_string_literal_rejected",
      "#if \"text\"\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1008"},
+     ":1: E1008"},
     {"preprocess_if_cast_rejected",
      "#if (int)1\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1008"},
+     ":1: E1008"},
     {"preprocess_if_comma_expression_rejected",
      "#if 1, 0\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1012"},
+     ":1: E1012"},
     {"preprocess_if_sizeof_rejected",
      "#if sizeof(int)\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1008"},
+     ":1: E1008"},
     {"preprocess_if_incomplete_logical_and_rejected",
      "#if 0 &&\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1008"},
+     ":1: E1008"},
     {"preprocess_if_incomplete_logical_or_rejected",
      "#if 1 ||\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1008"},
+     ":1: E1008"},
     {"preprocess_if_incomplete_conditional_rejected",
      "#if 1 ? 1 :\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1008"},
+     ":1: E1008"},
+    {"preprocess_if_division_by_zero_rejected",
+     "#if 1 / 0\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     ":1: E1009"},
+    {"preprocess_if_modulo_by_zero_rejected",
+     "#if 1 % 0\n"
+     "int main(void) { return 0; }\n"
+     "#endif\n",
+     ":1: E1009"},
     {"preprocess_defined_missing_operand_rejected",
      "#if defined\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1010"},
+     ":1: E1010"},
     {"preprocess_defined_empty_operand_rejected",
      "#if defined()\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1010"},
+     ":1: E1010"},
     {"preprocess_defined_numeric_operand_rejected",
      "#if defined(123)\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1010"},
+     ":1: E1010"},
     {"preprocess_defined_nested_parentheses_rejected",
      "#define FLAG 1\n"
      "#if defined((FLAG))\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1010"},
+     ":2: E1010"},
     {"preprocess_defined_missing_rparen_rejected",
      "#define FLAG 1\n"
      "#if defined(FLAG\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1011"},
+     ":2: E1011"},
     {"preprocess_defined_extra_tokens_rejected",
      "#define FLAG 1\n"
      "#if defined FLAG extra\n"
      "int main(void) { return 0; }\n"
      "#endif\n",
-     "E1012"},
+     ":2: E1012"},
     {"preprocess_stray_else_rejected",
      "#else\n"
      "int main(void) { return 0; }\n",
@@ -4234,35 +4279,35 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"macro_invocation_zero_parameter_extra_argument_rejected",
      "#define ZERO() 0\n"
      "int main(void) { return ZERO(1); }\n",
-     "E1024"},
+     ":2: E1024"},
     {"macro_invocation_zero_parameter_comma_argument_rejected",
      "#define ZERO() 0\n"
      "int main(void) { return ZERO(,); }\n",
-     "E1024"},
+     ":2: E1024"},
     {"macro_invocation_single_parameter_extra_argument_rejected",
      "#define ONE(value) (value)\n"
      "int main(void) { return ONE(1, 2); }\n",
-     "E1024"},
+     ":2: E1024"},
     {"macro_invocation_two_parameter_missing_argument_rejected",
      "#define TWO(left, right) ((left) + (right))\n"
      "int main(void) { return TWO(1); }\n",
-     "E1024"},
+     ":2: E1024"},
     {"macro_invocation_two_parameter_empty_call_rejected",
      "#define TWO(left, right) ((left) + (right))\n"
      "int main(void) { return TWO(); }\n",
-     "E1024"},
+     ":2: E1024"},
     {"macro_invocation_missing_rparen_rejected",
      "#define ONE(value) (value)\n"
      "int main(void) { return ONE(1; }\n",
-     "E1026"},
+     ":2: E1026"},
     {"macro_invocation_nested_missing_rparen_rejected",
      "#define TWO(left, right) ((left) + (right))\n"
      "int main(void) { return TWO((1 + 2), (3 + 4); }\n",
-     "E1026"},
+     ":2: E1026"},
     {"macro_invocation_variadic_named_argument_missing_rejected",
      "#define VARIADIC(first, second, ...) ((first) + (second))\n"
      "int main(void) { return VARIADIC(1); }\n",
-     "E1024"},
+     ":2: E1024"},
     {"preprocess_header_unterminated_conditional_rejected",
      "#include \"test/fixtures/should_reject/preprocess_conditional_open.h\"\n"
      "int main(void) { return 0; }\n",

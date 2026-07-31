@@ -304,6 +304,311 @@ static int run_nested_atomic_aggregate_callback_parameter_xtu_case(void) {
   return 0;
 }
 
+static int run_nested_atomic_union_complex_callback_parameter_xtu_case(void) {
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_parameter_xtu_main.o "
+          "test/fixtures/probes_found_bugs/"
+          "nested_atomic_union_complex_callback_parameter_xtu_main.c",
+          "nested Atomic union/complex callback parameter main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_parameter_xtu_other.o "
+          "test/fixtures/probes_found_bugs/"
+          "nested_atomic_union_complex_callback_parameter_xtu_other.c",
+          "nested Atomic union/complex callback parameter other") != 0 ||
+      run_cmd(
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_parameter_xtu.wasm "
+          "build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_parameter_xtu_main.o "
+          "build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_parameter_xtu_other.o",
+          "link nested Atomic union/complex callback parameters") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-validate") &&
+      run_cmd(
+          "wasm-validate build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_parameter_xtu.wasm",
+          "validate nested Atomic union/complex callback parameters") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-interp")) {
+    if (run_cmd(
+            "wasm-interp build/wasm32_obj/"
+            "nested_atomic_union_complex_callback_parameter_xtu.wasm "
+            "--run-all-exports > build/wasm32_obj/"
+            "nested_atomic_union_complex_callback_parameter_xtu.interp",
+            "run nested Atomic union/complex callback parameters") != 0) {
+      return 1;
+    }
+    char output[4096];
+    if (slurp(
+            "build/wasm32_obj/"
+            "nested_atomic_union_complex_callback_parameter_xtu.interp",
+            output, sizeof(output)) != 0) {
+      return 1;
+    }
+    if (!strstr(output, "main() => i32:42")) {
+      fprintf(
+          stderr,
+          "FAIL: nested Atomic union/complex callback parameters returned "
+          "an unexpected result\n");
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static int run_nested_atomic_union_complex_callback_result_xtu_case(void) {
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_result_xtu_main.o "
+          "test/fixtures/probes_found_bugs/"
+          "nested_atomic_union_complex_callback_result_xtu_main.c",
+          "nested Atomic union/complex callback result main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_result_xtu_other.o "
+          "test/fixtures/probes_found_bugs/"
+          "nested_atomic_union_complex_callback_result_xtu_other.c",
+          "nested Atomic union/complex callback result other") != 0 ||
+      run_cmd(
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_result_xtu.wasm "
+          "build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_result_xtu_main.o "
+          "build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_result_xtu_other.o",
+          "link nested Atomic union/complex callback results") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-validate") &&
+      run_cmd(
+          "wasm-validate build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_result_xtu.wasm",
+          "validate nested Atomic union/complex callback results") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-interp")) {
+    if (run_cmd(
+            "wasm-interp build/wasm32_obj/"
+            "nested_atomic_union_complex_callback_result_xtu.wasm "
+            "--run-all-exports > build/wasm32_obj/"
+            "nested_atomic_union_complex_callback_result_xtu.interp",
+            "run nested Atomic union/complex callback results") != 0) {
+      return 1;
+    }
+    char output[4096];
+    if (slurp(
+            "build/wasm32_obj/"
+            "nested_atomic_union_complex_callback_result_xtu.interp",
+            output, sizeof(output)) != 0) {
+      return 1;
+    }
+    if (!strstr(output, "main() => i32:42")) {
+      fprintf(
+          stderr,
+          "FAIL: nested Atomic union/complex callback results returned "
+          "an unexpected result\n");
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static int run_nested_atomic_union_complex_callback_factory_xtu_case(void) {
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_factory_xtu_main.o "
+          "test/fixtures/probes_found_bugs/"
+          "nested_atomic_union_complex_callback_factory_xtu_main.c",
+          "nested Atomic union/complex callback factory main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_factory_xtu_other.o "
+          "test/fixtures/probes_found_bugs/"
+          "nested_atomic_union_complex_callback_factory_xtu_other.c",
+          "nested Atomic union/complex callback factory other") != 0 ||
+      run_cmd(
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_factory_xtu.wasm "
+          "build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_factory_xtu_main.o "
+          "build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_factory_xtu_other.o",
+          "link nested Atomic union/complex callback factory") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-validate") &&
+      run_cmd(
+          "wasm-validate build/wasm32_obj/"
+          "nested_atomic_union_complex_callback_factory_xtu.wasm",
+          "validate nested Atomic union/complex callback factory") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-interp")) {
+    if (run_cmd(
+            "wasm-interp build/wasm32_obj/"
+            "nested_atomic_union_complex_callback_factory_xtu.wasm "
+            "--run-all-exports > build/wasm32_obj/"
+            "nested_atomic_union_complex_callback_factory_xtu.interp",
+            "run nested Atomic union/complex callback factory") != 0) {
+      return 1;
+    }
+    char output[4096];
+    if (slurp(
+            "build/wasm32_obj/"
+            "nested_atomic_union_complex_callback_factory_xtu.interp",
+            output, sizeof(output)) != 0) {
+      return 1;
+    }
+    if (!strstr(output, "main() => i32:42")) {
+      fprintf(
+          stderr,
+          "FAIL: nested Atomic union/complex callback factory returned "
+          "an unexpected result\n");
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static int run_atomic_union_complex_callback_factory_data_xtu_case(void) {
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_data_xtu_main.o "
+          "test/fixtures/probes_found_bugs/"
+          "atomic_union_complex_callback_factory_data_xtu_main.c",
+          "Atomic union/complex callback factory data main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_data_xtu_other.o "
+          "test/fixtures/probes_found_bugs/"
+          "atomic_union_complex_callback_factory_data_xtu_other.c",
+          "Atomic union/complex callback factory data other") != 0 ||
+      run_cmd(
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_data_xtu.wasm "
+          "build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_data_xtu_main.o "
+          "build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_data_xtu_other.o",
+          "link Atomic union/complex callback factory data") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-validate") &&
+      run_cmd(
+          "wasm-validate build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_data_xtu.wasm",
+          "validate Atomic union/complex callback factory data") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-interp")) {
+    if (run_cmd(
+            "wasm-interp build/wasm32_obj/"
+            "atomic_union_complex_callback_factory_data_xtu.wasm "
+            "--run-all-exports > build/wasm32_obj/"
+            "atomic_union_complex_callback_factory_data_xtu.interp",
+            "run Atomic union/complex callback factory data") != 0) {
+      return 1;
+    }
+    char output[4096];
+    if (slurp(
+            "build/wasm32_obj/"
+            "atomic_union_complex_callback_factory_data_xtu.interp",
+            output, sizeof(output)) != 0) {
+      return 1;
+    }
+    if (!strstr(output, "main() => i32:42")) {
+      fprintf(
+          stderr,
+          "FAIL: Atomic union/complex callback factory data returned "
+          "an unexpected result\n");
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static int run_atomic_union_complex_callback_factory_container_xtu_case(void) {
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_container_xtu_main.o "
+          "test/fixtures/probes_found_bugs/"
+          "atomic_union_complex_callback_factory_container_xtu_main.c",
+          "Atomic union/complex callback factory container main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_container_xtu_other.o "
+          "test/fixtures/probes_found_bugs/"
+          "atomic_union_complex_callback_factory_container_xtu_other.c",
+          "Atomic union/complex callback factory container other") != 0 ||
+      run_cmd(
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_container_xtu.wasm "
+          "build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_container_xtu_main.o "
+          "build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_container_xtu_other.o",
+          "link Atomic union/complex callback factory container") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-validate") &&
+      run_cmd(
+          "wasm-validate build/wasm32_obj/"
+          "atomic_union_complex_callback_factory_container_xtu.wasm",
+          "validate Atomic union/complex callback factory container") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-interp")) {
+    if (run_cmd(
+            "wasm-interp build/wasm32_obj/"
+            "atomic_union_complex_callback_factory_container_xtu.wasm "
+            "--run-all-exports > build/wasm32_obj/"
+            "atomic_union_complex_callback_factory_container_xtu.interp",
+            "run Atomic union/complex callback factory container") != 0) {
+      return 1;
+    }
+    char output[4096];
+    if (slurp(
+            "build/wasm32_obj/"
+            "atomic_union_complex_callback_factory_container_xtu.interp",
+            output, sizeof(output)) != 0) {
+      return 1;
+    }
+    if (!strstr(output, "main() => i32:42")) {
+      fprintf(
+          stderr,
+          "FAIL: Atomic union/complex callback factory container returned "
+          "an unexpected result\n");
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 static int run_recursive_function_signature_mismatch_cases(void) {
   static const struct {
     const char *name;
@@ -392,12 +697,108 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "consume_atomic_words",
       },
       {
+          "function_parameter_callback_atomic_union_parameter_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_union_parameter_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_union_parameter_mismatch_other.c",
+          "consume_atomic_union",
+      },
+      {
+          "function_parameter_callback_atomic_small_union_parameter_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_small_union_parameter_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_small_union_parameter_mismatch_other.c",
+          "consume_atomic_small_union",
+      },
+      {
+          "function_parameter_callback_atomic_complex_parameter_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_complex_parameter_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_complex_parameter_mismatch_other.c",
+          "consume_atomic_complex",
+      },
+      {
+          "function_parameter_callback_atomic_float_complex_parameter_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_float_complex_parameter_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_float_complex_parameter_mismatch_other.c",
+          "consume_atomic_float_complex",
+      },
+      {
           "function_parameter_callback_atomic_result_type_mismatch",
           "test/fixtures/wasm32/"
           "function_parameter_callback_atomic_result_type_mismatch_main.c",
           "test/fixtures/wasm32/"
           "function_parameter_callback_atomic_result_type_mismatch_other.c",
           "function_parameter_callback_atomic_result",
+      },
+      {
+          "function_parameter_callback_atomic_union_result_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_union_result_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_union_result_mismatch_other.c",
+          "consume_atomic_union_result",
+      },
+      {
+          "function_parameter_callback_atomic_small_union_result_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_small_union_result_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_small_union_result_mismatch_other.c",
+          "consume_atomic_small_union_result",
+      },
+      {
+          "function_parameter_callback_atomic_complex_result_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_complex_result_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_complex_result_mismatch_other.c",
+          "consume_atomic_complex_result",
+      },
+      {
+          "function_parameter_callback_atomic_float_complex_result_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_float_complex_result_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_float_complex_result_mismatch_other.c",
+          "consume_atomic_float_complex_result",
+      },
+      {
+          "function_parameter_callback_atomic_union_result_const_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_union_result_const_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_union_result_const_qualifier_mismatch_other.c",
+          "consume_qualified_atomic_union_result",
+      },
+      {
+          "function_parameter_callback_atomic_complex_result_volatile_qualifier_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_complex_result_volatile_qualifier_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_complex_result_volatile_qualifier_mismatch_other.c",
+          "consume_qualified_atomic_complex_result",
+      },
+      {
+          "function_parameter_callback_factory_atomic_union_parameter_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_factory_atomic_union_parameter_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_factory_atomic_union_parameter_mismatch_other.c",
+          "invoke_atomic_union_factory",
+      },
+      {
+          "function_parameter_callback_factory_atomic_complex_result_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_factory_atomic_complex_result_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_factory_atomic_complex_result_mismatch_other.c",
+          "invoke_atomic_complex_factory",
       },
       {
           "function_parameter_callback_return_pointee_const_qualifier_mismatch",
@@ -1507,6 +1908,38 @@ static int run_data_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "global_atomic_callback_enum_parameter_mismatch_other.c",
           "global_atomic_callback_enum_parameter",
+      },
+      {
+          "global_callback_factory_atomic_union_parameter_mismatch",
+          "test/fixtures/wasm32/"
+          "global_callback_factory_atomic_union_parameter_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_callback_factory_atomic_union_parameter_mismatch_other.c",
+          "shared_global_atomic_union_factory",
+      },
+      {
+          "global_callback_factory_atomic_complex_result_mismatch",
+          "test/fixtures/wasm32/"
+          "global_callback_factory_atomic_complex_result_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_callback_factory_atomic_complex_result_mismatch_other.c",
+          "shared_global_atomic_complex_factory",
+      },
+      {
+          "record_member_callback_factory_atomic_union_parameter_mismatch",
+          "test/fixtures/wasm32/"
+          "record_member_callback_factory_atomic_union_parameter_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "record_member_callback_factory_atomic_union_parameter_mismatch_other.c",
+          "shared_atomic_factory_holder",
+      },
+      {
+          "global_array_callback_factory_atomic_complex_result_mismatch",
+          "test/fixtures/wasm32/"
+          "global_array_callback_factory_atomic_complex_result_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_array_callback_factory_atomic_complex_result_mismatch_other.c",
+          "shared_atomic_complex_factory_array",
       },
       {
           "record_member_atomic_callback_enum_result_mismatch",
@@ -4444,6 +4877,16 @@ int main(void) {
   failures += run_atomic_aggregate_signature_mismatch_case();
   failures +=
       run_nested_atomic_aggregate_callback_parameter_xtu_case();
+  failures +=
+      run_nested_atomic_union_complex_callback_parameter_xtu_case();
+  failures +=
+      run_nested_atomic_union_complex_callback_result_xtu_case();
+  failures +=
+      run_nested_atomic_union_complex_callback_factory_xtu_case();
+  failures +=
+      run_atomic_union_complex_callback_factory_data_xtu_case();
+  failures +=
+      run_atomic_union_complex_callback_factory_container_xtu_case();
   failures += run_recursive_function_signature_mismatch_cases();
   failures +=
       run_enum_return_signature_mismatch_cases();

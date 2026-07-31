@@ -240,6 +240,15 @@ static _Noreturn void pp_error(
   diag_emit_internalf_in(context->diagnostic_context, id, "%s", msg);
 }
 
+static _Noreturn void pp_error_tok(
+    ag_preprocessor_context_t *context,
+    diag_error_id_t id, const token_t *token, const char *arg) {
+  const char *msg = diag_message_for_in(context->diagnostic_context, id);
+  if (arg)
+    diag_emit_tokf_in(context->diagnostic_context, id, token, msg, arg);
+  diag_emit_tokf_in(context->diagnostic_context, id, token, "%s", msg);
+}
+
 void pp_virtual_dependencies_reset_in(
     ag_preprocessor_context_t *context) {
   if (!context) return;
@@ -1475,14 +1484,17 @@ static pp_integer_t primary(
   if (tok->kind == TK_LPAREN) {
     pp_integer_t val = const_expr(context, &tok, tok->next);
     if (!(tok->kind == TK_RPAREN)) {
-      pp_error(context, DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
+      pp_error_tok(
+          context, DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, tok, NULL);
     }
     *rest = tok->next;
     return val;
   }
   if (tok->kind == TK_NUM) {
     if (tk_as_num(tok)->num_kind != TK_NUM_KIND_INT) {
-      pp_error(context, DIAG_ERR_PREPROCESS_IF_INT_LITERAL_REQUIRED, NULL);
+      pp_error_tok(
+          context, DIAG_ERR_PREPROCESS_IF_INT_LITERAL_REQUIRED,
+          tok, NULL);
     }
     token_num_int_t *number = tk_as_num_int(tok);
     pp_integer_t val = number->is_unsigned
@@ -1495,7 +1507,9 @@ static pp_integer_t primary(
     *rest = tok->next;
     return pp_signed_integer(0); // undefined macro to 0
   }
-  pp_error(context, DIAG_ERR_PREPROCESS_CONST_EXPR_UNEXPECTED_TOKEN, NULL);
+  pp_error_tok(
+      context, DIAG_ERR_PREPROCESS_CONST_EXPR_UNEXPECTED_TOKEN,
+      tok, NULL);
 }
 
 static pp_integer_t unary(
@@ -1533,11 +1547,14 @@ static pp_integer_t mul(
           val.bits * rhs.bits, pp_integer_common_unsigned(val, rhs));
     } else if (tok->kind == TK_DIV) {
       if_expr_step_or_die(context);
-      pp_integer_t rhs = unary(context, &tok, tok->next);
+      token_t *rhs_tok = tok->next;
+      pp_integer_t rhs = unary(context, &tok, rhs_tok);
       bool is_unsigned = pp_integer_common_unsigned(val, rhs);
       if (g_if_expr_eval) {
         if (rhs.bits == 0) {
-          pp_error(context, DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
+          pp_error_tok(
+              context, DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO,
+              rhs_tok, NULL);
         }
         if (is_unsigned) {
           val = pp_unsigned_integer(val.bits / rhs.bits);
@@ -1555,11 +1572,14 @@ static pp_integer_t mul(
       }
     } else if (tok->kind == TK_MOD) {
       if_expr_step_or_die(context);
-      pp_integer_t rhs = unary(context, &tok, tok->next);
+      token_t *rhs_tok = tok->next;
+      pp_integer_t rhs = unary(context, &tok, rhs_tok);
       bool is_unsigned = pp_integer_common_unsigned(val, rhs);
       if (g_if_expr_eval) {
         if (rhs.bits == 0) {
-          pp_error(context, DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
+          pp_error_tok(
+              context, DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO,
+              rhs_tok, NULL);
         }
         if (is_unsigned) {
           val = pp_unsigned_integer(val.bits % rhs.bits);
@@ -1794,7 +1814,8 @@ static pp_integer_t conditional(
   pp_integer_t then_value = const_expr(context, &tok, tok->next);
   g_if_expr_eval = saved_evaluation;
   if (tok->kind != TK_COLON) {
-    pp_error(context, DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, tok, NULL);
   }
 
   g_if_expr_eval = saved_evaluation && !choose_then;
@@ -1839,7 +1860,8 @@ static token_t *pp_expand_arg(
 }
 
 static bool evaluate_constexpr(
-    ag_preprocessor_context_t *context, token_t **rest_tok, token_t *tok) {
+    ag_preprocessor_context_t *context, token_t **rest_tok,
+    token_t *tok, const token_t *directive_tok) {
    token_t head;
    head.next = NULL;
    token_t *cur = &head;
@@ -1848,7 +1870,9 @@ static bool evaluate_constexpr(
    while (tok->kind != TK_EOF && !tok->at_bol) {
       if_expr_token_count++;
       if (if_expr_token_count > PP_MAX_IF_EXPR_TOKENS) {
-        pp_error(context, DIAG_ERR_PREPROCESS_IF_EXPR_TOKEN_LIMIT_EXCEEDED, NULL);
+        pp_error_tok(
+            context, DIAG_ERR_PREPROCESS_IF_EXPR_TOKEN_LIMIT_EXCEEDED,
+            tok, NULL);
       }
       cur->next = copy_token(context, tok);
       cur->next->at_bol = false; 
@@ -1858,6 +1882,7 @@ static bool evaluate_constexpr(
    cur->next = tk_allocator_calloc_in(
        pp_token_allocator(context), 1, sizeof(token_t));
    cur->next->kind = TK_EOF;
+   copy_source_location(cur->next, directive_tok);
    *rest_tok = tok;
 
    token_t *t = head.next;
@@ -1871,7 +1896,10 @@ static bool evaluate_constexpr(
             has_paren = true;
             t = t->next;
          }
-         if (t->kind != TK_IDENT) pp_error(context, DIAG_ERR_PREPROCESS_DEFINED_MACRO_NAME_REQUIRED, NULL);
+         if (t->kind != TK_IDENT)
+           pp_error_tok(
+               context, DIAG_ERR_PREPROCESS_DEFINED_MACRO_NAME_REQUIRED,
+               t, NULL);
          token_ident_t *id = as_ident(t);
          char *name = my_strndup(id->str, id->len);
          bool is_def = find_macro(context, name) != NULL;
@@ -1879,7 +1907,9 @@ static bool evaluate_constexpr(
          t = t->next;
          if (has_paren) {
             if (!(t->kind == TK_RPAREN)) {
-              pp_error(context, DIAG_ERR_PREPROCESS_DEFINED_RPAREN_MISSING, NULL);
+              pp_error_tok(
+                  context, DIAG_ERR_PREPROCESS_DEFINED_RPAREN_MISSING,
+                  t, NULL);
             }
             t = t->next;
          }
@@ -1906,18 +1936,22 @@ static bool evaluate_constexpr(
    cur2->next = tk_allocator_calloc_in(
        pp_token_allocator(context), 1, sizeof(token_t));
    cur2->next->kind = TK_EOF;
+   copy_source_location(cur2->next, directive_tok);
 
    token_t *expanded = preprocess_tokens(context, head2.next);
 
    if (expanded->kind == TK_EOF) {
-     pp_error(
-         context, DIAG_ERR_PREPROCESS_CONST_EXPR_UNEXPECTED_TOKEN, NULL);
+     pp_error_tok(
+         context, DIAG_ERR_PREPROCESS_CONST_EXPR_UNEXPECTED_TOKEN,
+         expanded, NULL);
    }
    if_expr_eval_steps = 0;
    token_t *rest;
   pp_integer_t val = const_expr(context, &rest, expanded);
   if (rest->kind != TK_EOF) {
-    pp_error(context, DIAG_ERR_PREPROCESS_CONST_EXPR_EXTRA_TOKEN, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_CONST_EXPR_EXTRA_TOKEN,
+        rest, NULL);
   }
    return pp_integer_truth(val);
 }
@@ -2106,7 +2140,9 @@ static token_t *paste_tokens(
       token_t *merged = tk_tokenize_ctx(preprocess_tokenizer, buf);
       // Token-pasting must produce exactly one preprocessing token.
       if (merged->kind == TK_EOF || !merged->next || merged->next->kind != TK_EOF) {
-        pp_error(context, DIAG_ERR_PREPROCESS_TOKEN_PASTE_INVALID_RESULT, NULL);
+        pp_error_tok(
+            context, DIAG_ERR_PREPROCESS_TOKEN_PASTE_INVALID_RESULT,
+            cur, NULL);
       }
 
       tk_set_filename_ctx(preprocess_tokenizer, saved_filename);
@@ -2200,12 +2236,14 @@ static token_t *handle_elif(
   if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
   if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
   cond_incl->ctx = IN_ELIF;
+  token_t *directive_tok = tok;
   tok = tok->next;
   if (cond_incl->included) {
     tok = skip_to_next_line(tok);
     return skip_cond_incl(tok);
   }
-  bool is_true = evaluate_constexpr(context, &tok, tok);
+  bool is_true = evaluate_constexpr(
+      context, &tok, tok, directive_tok);
   if (is_true) cond_incl->included = true;
   if (!is_true) tok = skip_cond_incl(tok);
   return tok;
@@ -2213,8 +2251,10 @@ static token_t *handle_elif(
 
 static token_t *handle_if(
     ag_preprocessor_context_t *context, token_t *tok) {
+  token_t *directive_tok = tok;
   tok = tok->next;
-  bool is_true = evaluate_constexpr(context, &tok, tok);
+  bool is_true = evaluate_constexpr(
+      context, &tok, tok, directive_tok);
   push_cond_incl(context, is_true);
   if (!is_true) tok = skip_cond_incl(tok);
   return tok;
@@ -2892,7 +2932,8 @@ static token_t *pp_expand_objlike(
  * free) を返し、*out_rparen に ')' トークンを設定。引数個数を検査する。 */
 static token_t **pp_collect_args(
     ag_preprocessor_context_t *context,
-    macro_t *m, token_t *tok, token_t **out_rparen) {
+    macro_t *m, const token_t *macro_tok,
+    token_t *tok, token_t **out_rparen) {
   token_t **args = calloc(m->num_params > 0 ? (size_t)m->num_params : 1, sizeof(token_t *));
   int arg_cnt = 0;
   int parsed_args = 0;
@@ -2931,13 +2972,21 @@ static token_t **pp_collect_args(
     }
   }
   if (tok->kind != TK_RPAREN) {
-    pp_error(context, DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED, NULL);
+    pp_error_tok(
+        context, DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED,
+        macro_tok, NULL);
   }
   (void)has_empty_arg;  // C99 6.10.3p4: 空引数は合法 (placemarker)
   if (m->is_variadic) {
-    if (parsed_args < num_named) pp_error(context, DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+    if (parsed_args < num_named)
+      pp_error_tok(
+          context, DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT,
+          macro_tok, NULL);
   } else {
-    if (parsed_args != m->num_params) pp_error(context, DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+    if (parsed_args != m->num_params)
+      pp_error_tok(
+          context, DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT,
+          macro_tok, NULL);
   }
   *out_rparen = tok;
   return args;
@@ -3155,7 +3204,7 @@ static token_t *preprocess_tokens(
              token_t *macro_tok = tok;
              token_t *rparen = NULL;
              token_t **args = pp_collect_args(
-                 context, m, tok->next->next, &rparen);
+                 context, m, macro_tok, tok->next->next, &rparen);
              tok = rparen->next;  // skip ')'
              token_t *body_copy = pp_expand_funclike(
                  context, m, macro_tok, args, name);
@@ -3582,7 +3631,8 @@ static void pps_skip_cond_incl(pp_stream_t *s) {
 static void pps_handle_if(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
   token_t *tok = after_hash->next;
-  bool is_true = evaluate_constexpr(context, &tok, tok);
+  bool is_true = evaluate_constexpr(
+      context, &tok, tok, after_hash);
   push_cond_incl(context, is_true);
   if (!is_true) pps_skip_cond_incl(s);
 }
@@ -3609,7 +3659,8 @@ static void pps_handle_elif(pp_stream_t *s, token_t *after_hash) {
   cond_incl->ctx = IN_ELIF;
   token_t *tok = after_hash->next;
   if (cond_incl->included) { pps_skip_cond_incl(s); return; }
-  bool is_true = evaluate_constexpr(context, &tok, tok);
+  bool is_true = evaluate_constexpr(
+      context, &tok, tok, after_hash);
   if (is_true) cond_incl->included = true;
   else pps_skip_cond_incl(s);
 }
@@ -3878,7 +3929,8 @@ static int pps_step(pp_stream_t *s) {
         if (nx && nx->kind == TK_LPAREN) {
           token_t *grp = pps_materialize_balanced(s, nx);
           token_t *rparen = NULL;
-          token_t **args = pp_collect_args(context, m, grp, &rparen);
+          token_t **args = pp_collect_args(
+              context, m, tok, grp, &rparen);
           pps_cursor_hook_binding_t saved_hook = pps_suspend_cursor_hook(s);
           token_t *body = pp_expand_funclike(
               context, m, tok, args, name);

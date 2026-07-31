@@ -1086,7 +1086,10 @@ int main(void) {
       "E1033", "\\x1F", "\\u202E", "\x1f", "\xe2\x80\xae");
   expect_preprocess_fail_with_stderr_substr("#define BAD1(a) ##a\nint main() { return BAD1(42); }\n", "E1031");
   expect_preprocess_fail_with_stderr_substr("#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n", "E1031");
-  expect_preprocess_fail_with_stderr_substr("#define BAD5(a,b) a##b\nint main() { return BAD5(1,+2); }\n", "E1030");
+  expect_preprocess_fail_with_stderr_substr(
+      "#define BAD5(a,b) a##b\n"
+      "int main() { return BAD5(1,+2); }\n",
+      ":2: E1030");
   expect_preprocess_fail_with_stderr_substr(
       "#define VALUE 1\n#define VALUE 2\nint main(void) { return VALUE; }\n",
       "E1044");
@@ -1178,98 +1181,108 @@ int main(void) {
       "#if\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1008");
+      ":1: E1008");
   expect_preprocess_fail_with_stderr_substr(
       "#if /* only a comment */\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1008");
+      ":1: E1008");
   expect_preprocess_fail_with_stderr_substr(
       "#define EMPTY\n"
       "#if EMPTY\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1008");
+      ":2: E1008");
   expect_preprocess_fail_with_stderr_substr(
       "#if 0\n"
       "int hidden;\n"
       "#elif\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1008");
+      ":3: E1008");
   expect_preprocess_fail_with_stderr_substr(
       "#if 1.0\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1007");
+      ":1: E1007");
   expect_preprocess_fail_with_stderr_substr(
       "#if \"text\"\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1008");
+      ":1: E1008");
   expect_preprocess_fail_with_stderr_substr(
       "#if (int)1\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1008");
+      ":1: E1008");
   expect_preprocess_fail_with_stderr_substr(
       "#if 1, 0\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1012");
+      ":1: E1012");
   expect_preprocess_fail_with_stderr_substr(
       "#if sizeof(int)\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1008");
+      ":1: E1008");
   expect_preprocess_fail_with_stderr_substr(
       "#if 0 &&\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1008");
+      ":1: E1008");
   expect_preprocess_fail_with_stderr_substr(
       "#if 1 ||\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1008");
+      ":1: E1008");
   expect_preprocess_fail_with_stderr_substr(
       "#if 1 ? 1 :\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1008");
+      ":1: E1008");
+  expect_preprocess_fail_with_stderr_substr(
+      "#if 1 / 0\n"
+      "int main(void) { return 0; }\n"
+      "#endif\n",
+      ":1: E1009");
+  expect_preprocess_fail_with_stderr_substr(
+      "#if 1 % 0\n"
+      "int main(void) { return 0; }\n"
+      "#endif\n",
+      ":1: E1009");
   expect_preprocess_fail_with_stderr_substr(
       "#if defined\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1010");
+      ":1: E1010");
   expect_preprocess_fail_with_stderr_substr(
       "#if defined()\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1010");
+      ":1: E1010");
   expect_preprocess_fail_with_stderr_substr(
       "#if defined(123)\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1010");
+      ":1: E1010");
   expect_preprocess_fail_with_stderr_substr(
       "#define FLAG 1\n"
       "#if defined((FLAG))\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1010");
+      ":2: E1010");
   expect_preprocess_fail_with_stderr_substr(
       "#define FLAG 1\n"
       "#if defined(FLAG\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1011");
+      ":2: E1011");
   expect_preprocess_fail_with_stderr_substr(
       "#define FLAG 1\n"
       "#if defined FLAG extra\n"
       "int main(void) { return 0; }\n"
       "#endif\n",
-      "E1012");
+      ":2: E1012");
   expect_preprocess_fail_with_stderr_substr(
       "#else\n"
       "int main(void) { return 0; }\n",
@@ -1359,35 +1372,35 @@ int main(void) {
   expect_preprocess_fail_with_stderr_substr(
       "#define ZERO() 0\n"
       "int main(void) { return ZERO(1); }\n",
-      "E1024");
+      ":2: E1024");
   expect_preprocess_fail_with_stderr_substr(
       "#define ZERO() 0\n"
       "int main(void) { return ZERO(,); }\n",
-      "E1024");
+      ":2: E1024");
   expect_preprocess_fail_with_stderr_substr(
       "#define ONE(value) (value)\n"
       "int main(void) { return ONE(1, 2); }\n",
-      "E1024");
+      ":2: E1024");
   expect_preprocess_fail_with_stderr_substr(
       "#define TWO(left, right) ((left) + (right))\n"
       "int main(void) { return TWO(1); }\n",
-      "E1024");
+      ":2: E1024");
   expect_preprocess_fail_with_stderr_substr(
       "#define TWO(left, right) ((left) + (right))\n"
       "int main(void) { return TWO(); }\n",
-      "E1024");
+      ":2: E1024");
   expect_preprocess_fail_with_stderr_substr(
       "#define ONE(value) (value)\n"
       "int main(void) { return ONE(1; }\n",
-      "E1026");
+      ":2: E1026");
   expect_preprocess_fail_with_stderr_substr(
       "#define TWO(left, right) ((left) + (right))\n"
       "int main(void) { return TWO((1 + 2), (3 + 4); }\n",
-      "E1026");
+      ":2: E1026");
   expect_preprocess_fail_with_stderr_substr(
       "#define VARIADIC(first, second, ...) ((first) + (second))\n"
       "int main(void) { return VARIADIC(1); }\n",
-      "E1024");
+      ":2: E1024");
   expect_preprocess_fail_with_stderr_substr(
       "#include \"test/fixtures/should_reject/preprocess_conditional_open.h\"\n"
       "int main(void) { return 0; }\n",
