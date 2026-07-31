@@ -228,6 +228,8 @@ const documentedFunctionPointerCompileFailCases = [
   "nested_callback_atomic_aggregate_return_redeclaration_mismatch",
   "nested_callback_large_atomic_aggregate_return_pointer_mismatch",
   "nested_callback_large_atomic_aggregate_return_redeclaration_mismatch",
+  "nested_callback_large_atomic_aggregate_parameter_pointer_mismatch",
+  "nested_callback_large_atomic_aggregate_parameter_redeclaration_mismatch",
   "nested_callback_atomic_complex_return_pointer_mismatch",
   "nested_callback_atomic_complex_return_redeclaration_mismatch",
   "nested_callback_atomic_union_return_pointer_mismatch",
@@ -8173,7 +8175,11 @@ for (const [name, header, source, functionName] of [
       !/const\s+ag_data_layout_t\s*\*data_layout/.test(header) ||
       (name === "local" && /storage_size\s*>=/.test(source)) ||
       (name === "parameter" &&
-       (/\bir_abi_target_policy_t\b|\bir_abi_policy_/.test(
+       (!/\bpsx_plan_parameter_storage_for_qual_type\s*\(/.test(header) ||
+        !/\bpsx_plan_parameter_storage_for_qual_type\s*\(/.test(source) ||
+        !/\bpsx_qual_type_layout_sizeof\s*\(/.test(source) ||
+        !/\bpsx_qual_type_layout_alignof\s*\(/.test(source) ||
+        /\bir_abi_target_policy_t\b|\bir_abi_policy_/.test(
           `${header}\n${source}`,
         ) ||
         /#include\s+"abi_target_policy\.h"/.test(source) ||
@@ -8184,7 +8190,7 @@ for (const [name, header, source, functionName] of [
         header,
       )) {
     throw new Error(
-      `${name} storage planning must derive source-object layout from TypeId without target ABI policy`,
+      `${name} storage planning must derive source-object layout from TypeId or QualType without target ABI policy`,
     );
   }
 }
@@ -8214,20 +8220,23 @@ if (!automaticLocalPipeline ||
     /\bps_ctx_intern_qual_type_in\s*\(/.test(
       automaticLocalPipeline[0],
     ) ||
-    !/\bpsx_resolve_decl_qual_type\s*\([^]*?\bpsx_type_layout_sizeof\s*\(/.test(
+    !/\bpsx_resolve_decl_qual_type\s*\([^]*?\bpsx_qual_type_layout_sizeof\s*\(/.test(
       parameterDeclarationResolutionSource,
+    ) ||
+    /\bpsx_plan_parameter_storage_for_(?:type_id|qual_type)\s*\(/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/\bpsx_plan_parameter_storage_for_qual_type\s*\(/.test(
+      parameterLoweringSource,
     ) ||
     /\bpsx_plan_parameter_storage_for_type_id\s*\(/.test(
-      parameterDeclarationResolutionSource,
-    ) ||
-    !/\bpsx_plan_parameter_storage_for_type_id\s*\(/.test(
       parameterLoweringSource,
     ) ||
     /\bir_abi_target_policy_for\s*\(|#include\s+"abi_target_policy\.h"/.test(
       parameterLoweringSource,
     )) {
   throw new Error(
-    "parameter source-object storage planning must occur after TypeId resolution without pre-MIR ABI classification",
+    "parameter source-object storage planning must retain QualType after resolution without pre-MIR ABI classification",
   );
 }
 if (/\bpsx_decl_parse_initializer_for_var_in_contexts\s*\(/.test(

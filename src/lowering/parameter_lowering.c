@@ -8,11 +8,11 @@
 #include "vla_lowering.h"
 
 static int plan_parameter_storage(psx_lowering_context_t *lowering_context,
-                                  psx_type_id_t type_id,
+                                  psx_qual_type_t type,
                                   psx_parameter_storage_plan_t *storage) {
-  return psx_plan_parameter_storage_for_type_id(
+  return psx_plan_parameter_storage_for_qual_type(
       ps_lowering_semantic_types(lowering_context),
-      ps_lowering_record_layouts(lowering_context), type_id,
+      ps_lowering_record_layouts(lowering_context), type,
       ps_lowering_data_layout(lowering_context), storage);
 }
 
@@ -50,7 +50,7 @@ lvar_t *lower_resolved_parameter_declaration(
   if (resolution->lowering_kind == PSX_PARAMETER_LOWER_NORMAL) {
     psx_parameter_storage_plan_t storage;
     if (!plan_parameter_storage(request->lowering_context,
-                                resolution->declaration_qual_type.type_id,
+                                resolution->declaration_qual_type,
                                 &storage))
       return NULL;
     return lower_parameter_with_plan(

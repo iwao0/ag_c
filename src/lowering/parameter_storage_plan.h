@@ -19,6 +19,12 @@ typedef struct {
   int alignment;
 } psx_parameter_storage_plan_t;
 
+int psx_plan_parameter_storage_for_qual_type(
+    const psx_semantic_type_table_t *types,
+    const psx_record_layout_table_t *record_layouts,
+    psx_qual_type_t qual_type, const ag_data_layout_t *data_layout,
+    psx_parameter_storage_plan_t *plan);
+
 int psx_plan_parameter_storage_for_type_id(
     const psx_semantic_type_table_t *types,
     const psx_record_layout_table_t *record_layouts,

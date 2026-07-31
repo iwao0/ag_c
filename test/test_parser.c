@@ -4503,10 +4503,20 @@ static void test_typed_hir_register_atomic_aggregate_parameter_lowering_without_
 
   int loads_by_width[17] = {0};
   int stores_by_width[17] = {0};
+  int small_parameter_slot = -1;
+  int wide_parameter_slot = -1;
   for (const ir_block_t *block = ir->funcs->entry;
        block; block = block->next) {
     for (const ir_inst_t *instruction = block->head;
          instruction; instruction = instruction->next) {
+      if (instruction->op == IR_PARAM_BIND &&
+          instruction->parameter_index <= 1) {
+        ASSERT_EQ(IR_TY_PTR, instruction->src1.type);
+        if (instruction->parameter_index == 0)
+          small_parameter_slot = instruction->src1.id;
+        else
+          wide_parameter_slot = instruction->src1.id;
+      }
       if (instruction->op != IR_ATOMIC ||
           instruction->atomic_width > 16)
         continue;
@@ -4521,6 +4531,28 @@ static void test_typed_hir_register_atomic_aggregate_parameter_lowering_without_
   ASSERT_EQ(1, stores_by_width[4]);
   ASSERT_EQ(1, loads_by_width[16]);
   ASSERT_EQ(1, stores_by_width[16]);
+  ASSERT_TRUE(small_parameter_slot >= 0);
+  ASSERT_TRUE(wide_parameter_slot >= 0);
+  int small_parameter_alloca_count = 0;
+  int wide_parameter_alloca_count = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op != IR_ALLOCA) continue;
+      if (instruction->dst.id == small_parameter_slot) {
+        ASSERT_EQ(4, instruction->alloca_size);
+        ASSERT_EQ(4, instruction->alloca_align);
+        small_parameter_alloca_count++;
+      } else if (instruction->dst.id == wide_parameter_slot) {
+        ASSERT_EQ(16, instruction->alloca_size);
+        ASSERT_EQ(16, instruction->alloca_align);
+        wide_parameter_alloca_count++;
+      }
+    }
+  }
+  ASSERT_EQ(1, small_parameter_alloca_count);
+  ASSERT_EQ(1, wide_parameter_alloca_count);
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
 }
@@ -13812,6 +13844,8 @@ static void test_parameter_declaration_storage_plan_boundary(
   psx_qual_type_t large_aggregate =
       psx_semantic_type_table_intern_record(
           types, large_record_id);
+  psx_qual_type_t atomic_small_aggregate = small_aggregate;
+  atomic_small_aggregate.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
 
   psx_parameter_storage_plan_t plan = {0};
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
@@ -13834,6 +13868,14 @@ static void test_parameter_declaration_storage_plan_boundary(
             plan.kind);
   ASSERT_EQ(12, plan.storage_size);
   ASSERT_EQ(8, plan.alignment);
+
+  ASSERT_TRUE(psx_plan_parameter_storage_for_qual_type(
+      types, record_layouts, atomic_small_aggregate,
+      data_layout, &plan));
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE,
+            plan.kind);
+  ASSERT_EQ(16, plan.storage_size);
+  ASSERT_EQ(16, plan.alignment);
 
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
       types, record_layouts, large_aggregate.type_id,
@@ -13876,6 +13918,27 @@ static void test_parameter_declaration_storage_plan_boundary(
                     types, record_layouts,
                     ps_lvar_decl_type_id(lowered),
                     data_layout));
+
+  psx_parameter_declaration_resolution_t atomic_resolution = {
+      .declaration_qual_type = atomic_small_aggregate,
+      .lowering_kind = PSX_PARAMETER_LOWER_NORMAL,
+  };
+  lowered = lower_resolved_parameter_declaration(
+      &(psx_resolved_parameter_lowering_request_t){
+          .local_registry = test_local_registry(test_suite_session),
+          .lowering_context = test_lowering_context(test_suite_session),
+          .name = (char *)"atomic_value",
+          .name_len = 12,
+          .resolution = &atomic_resolution,
+      });
+  ASSERT_TRUE(lowered != NULL);
+  ASSERT_TRUE(ps_lvar_is_param(lowered));
+  ASSERT_EQ(16, ps_lvar_frame_storage_size(lowered));
+  ASSERT_EQ(16, ps_lvar_align_bytes(lowered));
+  ASSERT_EQ(atomic_small_aggregate.type_id,
+            ps_lvar_decl_type_id(lowered));
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_ATOMIC,
+            ps_lvar_decl_qual_type(lowered).qualifiers);
 
   ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int *planned_function(int value, int *pointer) { "

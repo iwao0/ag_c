@@ -105,10 +105,10 @@ int psx_resolve_parameter_declaration(
           types, identity.type_id, &adjusted_shape)) {
     return 0;
   }
-  int object_size = psx_type_layout_sizeof(
+  int object_size = psx_qual_type_layout_sizeof(
       types,
       ps_ctx_record_layout_table_in(request->type.semantic_context),
-      identity.type_id,
+      identity,
       ps_ctx_data_layout(request->type.semantic_context));
   int is_incomplete_aggregate =
       object_size <= 0 &&
