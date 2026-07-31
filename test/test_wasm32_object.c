@@ -243,6 +243,67 @@ static int run_atomic_aggregate_signature_mismatch_case(void) {
       "function signature mismatch: transform_words");
 }
 
+static int run_nested_atomic_aggregate_callback_parameter_xtu_case(void) {
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "nested_atomic_aggregate_callback_parameter_xtu_main.o "
+          "test/fixtures/probes_found_bugs/"
+          "nested_atomic_aggregate_callback_parameter_xtu_main.c",
+          "nested Atomic aggregate callback parameter main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "nested_atomic_aggregate_callback_parameter_xtu_other.o "
+          "test/fixtures/probes_found_bugs/"
+          "nested_atomic_aggregate_callback_parameter_xtu_other.c",
+          "nested Atomic aggregate callback parameter other") != 0 ||
+      run_cmd(
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "nested_atomic_aggregate_callback_parameter_xtu.wasm "
+          "build/wasm32_obj/"
+          "nested_atomic_aggregate_callback_parameter_xtu_main.o "
+          "build/wasm32_obj/"
+          "nested_atomic_aggregate_callback_parameter_xtu_other.o",
+          "link nested Atomic aggregate callback parameter") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-validate") &&
+      run_cmd(
+          "wasm-validate build/wasm32_obj/"
+          "nested_atomic_aggregate_callback_parameter_xtu.wasm",
+          "validate nested Atomic aggregate callback parameter") != 0) {
+    return 1;
+  }
+  if (command_available("wasm-interp")) {
+    if (run_cmd(
+            "wasm-interp build/wasm32_obj/"
+            "nested_atomic_aggregate_callback_parameter_xtu.wasm "
+            "--run-all-exports > build/wasm32_obj/"
+            "nested_atomic_aggregate_callback_parameter_xtu.interp",
+            "run nested Atomic aggregate callback parameter") != 0) {
+      return 1;
+    }
+    char output[4096];
+    if (slurp(
+            "build/wasm32_obj/"
+            "nested_atomic_aggregate_callback_parameter_xtu.interp",
+            output, sizeof(output)) != 0) {
+      return 1;
+    }
+    if (!strstr(output, "main() => i32:42")) {
+      fprintf(
+          stderr,
+          "FAIL: nested Atomic aggregate callback parameter returned "
+          "an unexpected result\n");
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 static int run_recursive_function_signature_mismatch_cases(void) {
   static const struct {
     const char *name;
@@ -321,6 +382,14 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "function_parameter_callback_atomic_parameter_type_mismatch_other.c",
           "function_parameter_callback_atomic_parameter",
+      },
+      {
+          "function_parameter_callback_atomic_aggregate_parameter_mismatch",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_aggregate_parameter_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_parameter_callback_atomic_aggregate_parameter_mismatch_other.c",
+          "consume_atomic_words",
       },
       {
           "function_parameter_callback_atomic_result_type_mismatch",
@@ -4373,6 +4442,8 @@ int main(void) {
   failures += run_e2e_fixture_object_scan();
   failures += run_linked_import_abi_case();
   failures += run_atomic_aggregate_signature_mismatch_case();
+  failures +=
+      run_nested_atomic_aggregate_callback_parameter_xtu_case();
   failures += run_recursive_function_signature_mismatch_cases();
   failures +=
       run_enum_return_signature_mismatch_cases();

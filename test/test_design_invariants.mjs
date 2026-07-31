@@ -230,6 +230,21 @@ const documentedFunctionPointerCompileFailCases = [
   "nested_callback_large_atomic_aggregate_return_redeclaration_mismatch",
   "nested_callback_large_atomic_aggregate_parameter_pointer_mismatch",
   "nested_callback_large_atomic_aggregate_parameter_redeclaration_mismatch",
+  "nested_callback_large_atomic_union_parameter_pointer_mismatch",
+  "nested_callback_large_atomic_union_parameter_redeclaration_mismatch",
+  "nested_callback_atomic_complex_parameter_pointer_mismatch",
+  "nested_callback_atomic_complex_parameter_redeclaration_mismatch",
+  "nested_callback_atomic_distinct_enum_parameter_pointer_mismatch",
+  "nested_callback_atomic_enum_signedness_parameter_redeclaration_mismatch",
+  "nested_callback_atomic_subinteger_parameter_pointer_mismatch",
+  "nested_callback_atomic_subinteger_signedness_parameter_redeclaration_mismatch",
+  "nested_callback_atomic_floating_parameter_pointer_mismatch",
+  "nested_callback_atomic_floating_rank_parameter_redeclaration_mismatch",
+  "nested_callback_atomic_long_parameter_pointer_mismatch",
+  "nested_callback_atomic_long_rank_parameter_redeclaration_mismatch",
+  "nested_callback_atomic_long_signedness_parameter_pointer_mismatch",
+  "nested_callback_atomic_pointer_parameter_pointer_mismatch",
+  "nested_callback_atomic_pointer_pointee_parameter_redeclaration_mismatch",
   "nested_callback_atomic_complex_return_pointer_mismatch",
   "nested_callback_atomic_complex_return_redeclaration_mismatch",
   "nested_callback_atomic_union_return_pointer_mismatch",
@@ -13666,6 +13681,8 @@ const crossTuSignatureMismatchFixtures = [
   "anonymous_global_union_member_name_mismatch_other.c",
   "atomic_aggregate_signature_mismatch_main.c",
   "atomic_aggregate_signature_mismatch_other.c",
+  "function_parameter_callback_atomic_aggregate_parameter_mismatch_main.c",
+  "function_parameter_callback_atomic_aggregate_parameter_mismatch_other.c",
   "array_bound_signature_mismatch_main.c",
   "array_bound_signature_mismatch_other.c",
   "global_anonymous_tagged_union_mismatch_main.c",
@@ -13963,6 +13980,12 @@ if (!/emit_function_flags_section\s*\(/.test(
       wasmObjSource,
     ) ||
     !/canonical_signatures_allow_type_refinement\s*\(/.test(
+      wasmObjSource,
+    ) ||
+    !/obj_canonical_matching_parenthesis\s*\(/.test(
+      wasmObjSource,
+    ) ||
+    !/obj_canonical_parameters_unchanged_by_default_promotions\s*\(/.test(
       wasmObjSource,
     ) ||
     !/shape\.is_unsigned\s*\?\s*":u"\s*:\s*":i"/.test(

@@ -925,6 +925,96 @@ static int update_type_refinement(
   return 1;
 }
 
+static int obj_canonical_matching_parenthesis(
+    const char *signature, int signature_len,
+    int opening_offset, int *closing_offset) {
+  if (!signature || opening_offset < 0 ||
+      opening_offset >= signature_len ||
+      signature[opening_offset] != '(')
+    return 0;
+  int depth = 0;
+  for (int index = opening_offset;
+       index < signature_len; index++) {
+    if (signature[index] == '(') {
+      depth++;
+    } else if (signature[index] == ')') {
+      depth--;
+      if (depth == 0) {
+        if (closing_offset) *closing_offset = index;
+        return 1;
+      }
+      if (depth < 0) return 0;
+    }
+  }
+  return 0;
+}
+
+static int obj_canonical_parameter_unchanged_by_default_promotions(
+    const char *parameter, int length) {
+  int index = 0;
+  int is_atomic = 0;
+  while (index < length &&
+         (parameter[index] == 'k' || parameter[index] == 'V' ||
+          parameter[index] == 'A' || parameter[index] == 'R')) {
+    if (parameter[index] == 'A') is_atomic = 1;
+    index++;
+  }
+  if (index >= length ||
+      (length - index == 3 &&
+       memcmp(parameter + index, "...", 3) == 0))
+    return 0;
+  if (is_atomic) return 1;
+  char kind = parameter[index++];
+  if (kind == 'b' || kind == 'c') return 0;
+  if (kind != 'f' && kind != 'i' && kind != 'u') return 1;
+  if (kind == 'u' && index < length &&
+      (parameter[index] == '{' || parameter[index] == '[' ||
+       parameter[index] == 'l'))
+    return 1;
+  int bits = 0;
+  int has_bits = 0;
+  while (index < length &&
+         parameter[index] >= '0' && parameter[index] <= '9') {
+    has_bits = 1;
+    bits = bits * 10 + parameter[index++] - '0';
+  }
+  if (!has_bits) return 1;
+  return kind == 'f' ? bits >= 64 : bits >= 32;
+}
+
+static int obj_canonical_parameters_unchanged_by_default_promotions(
+    const char *signature, int opening_offset,
+    int closing_offset) {
+  if (!signature || opening_offset < 0 ||
+      closing_offset <= opening_offset + 1)
+    return 0;
+  int parameter_start = opening_offset + 1;
+  int depth = 0;
+  for (int index = parameter_start;
+       index <= closing_offset; index++) {
+    if (index == closing_offset) {
+      if (depth != 0) return 0;
+      return obj_canonical_parameter_unchanged_by_default_promotions(
+          signature + parameter_start,
+          index - parameter_start);
+    }
+    char ch = signature[index];
+    if (ch == '(' || ch == '<' || ch == '{' || ch == '[') {
+      depth++;
+    } else if (ch == ')' || ch == '>' || ch == '}' || ch == ']') {
+      if (depth == 0) return 0;
+      depth--;
+    } else if (ch == ',' && depth == 0) {
+      if (!obj_canonical_parameter_unchanged_by_default_promotions(
+              signature + parameter_start,
+              index - parameter_start))
+        return 0;
+      parameter_start = index + 1;
+    }
+  }
+  return 0;
+}
+
 static int canonical_signatures_allow_type_refinement(
     const char *left, int left_len,
     const char *right, int right_len,
@@ -933,6 +1023,38 @@ static int canonical_signatures_allow_type_refinement(
   int right_offset = 0;
   while (left_offset < left_len &&
          right_offset < right_len) {
+    if (left[left_offset] == '(' &&
+        right[right_offset] == '(') {
+      int left_empty =
+          left_offset + 1 < left_len &&
+          left[left_offset + 1] == ')';
+      int right_empty =
+          right_offset + 1 < right_len &&
+          right[right_offset + 1] == ')';
+      if (left_empty != right_empty) {
+        const char *specified = left_empty ? right : left;
+        int specified_len = left_empty ? right_len : left_len;
+        int specified_open =
+            left_empty ? right_offset : left_offset;
+        int specified_close = 0;
+        if (!obj_canonical_matching_parenthesis(
+                specified, specified_len,
+                specified_open, &specified_close) ||
+            !obj_canonical_parameters_unchanged_by_default_promotions(
+                specified, specified_open, specified_close) ||
+            !update_type_refinement(
+                refinement, left_empty ? 1 : -1))
+          return 0;
+        if (left_empty) {
+          left_offset += 2;
+          right_offset = specified_close + 1;
+        } else {
+          left_offset = specified_close + 1;
+          right_offset += 2;
+        }
+        continue;
+      }
+    }
     obj_canonical_record_t left_record = {0};
     obj_canonical_record_t right_record = {0};
     int left_is_record = obj_canonical_record_at(

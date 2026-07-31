@@ -216,6 +216,9 @@ skip_reason() {
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
+    test/fixtures/probes_found_bugs/nested_atomic_aggregate_callback_parameter_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
@@ -360,6 +363,8 @@ skip_reason() {
     test/fixtures/wasm32/function_parameter_callback_signedness_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_callback_atomic_parameter_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_callback_atomic_parameter_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_aggregate_parameter_mismatch_main.c|\
+    test/fixtures/wasm32/function_parameter_callback_atomic_aggregate_parameter_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_callback_atomic_result_type_mismatch_main.c|\
     test/fixtures/wasm32/function_parameter_callback_atomic_result_type_mismatch_other.c|\
     test/fixtures/wasm32/function_parameter_callback_return_pointee_const_qualifier_mismatch_main.c|\
@@ -736,6 +741,9 @@ link_companion() {
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_other.c"
       ;;
+    test/fixtures/probes_found_bugs/nested_atomic_aggregate_callback_parameter_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/nested_atomic_aggregate_callback_parameter_xtu_other.c"
+      ;;
     test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_other.c"
       ;;
@@ -940,6 +948,9 @@ expected_result() {
       echo 42
       ;;
     test/fixtures/probes_found_bugs/atomic_aggregate_callback_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/nested_atomic_aggregate_callback_parameter_xtu_main.c)
       echo 42
       ;;
     test/fixtures/probes_found_bugs/atomic_callback_function_signature_xtu_main.c)
