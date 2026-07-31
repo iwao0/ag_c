@@ -1599,6 +1599,38 @@ static int run_unprototyped_function_pointer_xtu_case(void) {
   if (run_cmd(
           "./build/ag_c_wasm -c "
           "-o build/wasm32_obj/"
+          "unprototyped_void_zero_xtu_main.o "
+          "test/fixtures/probes_found_bugs/"
+          "unprototyped_void_zero_xtu_main.c",
+          "compile unresolved void zero-parameter function") != 0)
+    return 1;
+  if (command_available("wasm-objdump")) {
+    if (run_cmd(
+            "wasm-objdump -x "
+            "build/wasm32_obj/"
+            "unprototyped_void_zero_xtu_main.o > "
+            "build/wasm32_obj/"
+            "unprototyped_void_zero_xtu_main.objdump",
+            "dump unresolved void zero-parameter function flags") != 0)
+      return 1;
+    char dump[16384];
+    if (slurp(
+            "build/wasm32_obj/"
+            "unprototyped_void_zero_xtu_main.objdump",
+            dump, sizeof(dump)) != 0)
+      return 1;
+    if (!strstr(dump, "agc.function_flags") ||
+        !strstr(dump, "() -> nil")) {
+      fprintf(
+          stderr,
+          "FAIL: unresolved void zero-parameter function did not retain "
+          "its wildcard metadata and Wasm signature\n");
+      return 1;
+    }
+  }
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
           "unprototyped_void_zero_signature_refinement.o "
           "test/fixtures/probes_found_bugs/"
           "unprototyped_void_zero_signature_refinement.c",
@@ -1624,6 +1656,44 @@ static int run_unprototyped_function_pointer_xtu_case(void) {
           stderr,
           "FAIL: resolved void zero-parameter definition retained "
           "unprototyped function flags metadata\n");
+      return 1;
+    }
+  }
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_void_parameter_signature_refinement.o "
+          "test/fixtures/probes_found_bugs/"
+          "unprototyped_void_parameter_signature_refinement.c",
+          "compile resolved void parameter function") != 0)
+    return 1;
+  if (command_available("wasm-objdump")) {
+    if (run_cmd(
+            "wasm-objdump -x "
+            "build/wasm32_obj/"
+            "unprototyped_void_parameter_signature_refinement.o > "
+            "build/wasm32_obj/"
+            "unprototyped_void_parameter_signature_refinement.objdump",
+            "dump resolved void parameter function flags") != 0)
+      return 1;
+    char dump[16384];
+    if (slurp(
+            "build/wasm32_obj/"
+            "unprototyped_void_parameter_signature_refinement.objdump",
+            dump, sizeof(dump)) != 0)
+      return 1;
+    if (strstr(dump, "agc.function_flags")) {
+      fprintf(
+          stderr,
+          "FAIL: resolved void parameter definition retained "
+          "unprototyped function flags metadata\n");
+      return 1;
+    }
+    if (!strstr(dump, "(i32, f64, i64) -> nil")) {
+      fprintf(
+          stderr,
+          "FAIL: resolved void parameter definition has an unexpected "
+          "Wasm signature\n");
       return 1;
     }
   }
@@ -1770,6 +1840,33 @@ static int run_unprototyped_function_pointer_xtu_case(void) {
           "build/wasm32_obj/"
           "unprototyped_address_direct_promotion_mismatch_other.o",
           "function signature mismatch: transform_address_direct") != 0)
+    return 1;
+
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_void_promotion_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_void_promotion_mismatch_main.c",
+          "unprototyped void promotion mismatch main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_void_promotion_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_void_promotion_mismatch_other.c",
+          "unprototyped void promotion mismatch other") != 0)
+    return 1;
+  if (run_fail_case(
+          "unprototyped_void_promotion_mismatch",
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "unprototyped_void_promotion_mismatch.wasm "
+          "build/wasm32_obj/"
+          "unprototyped_void_promotion_mismatch_main.o "
+          "build/wasm32_obj/"
+          "unprototyped_void_promotion_mismatch_other.o",
+          "function signature mismatch: record_float_value") != 0)
     return 1;
 
   if (run_cmd(

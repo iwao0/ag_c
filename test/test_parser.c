@@ -3801,6 +3801,79 @@ static void test_typed_hir_atomic_compound_lowering_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void
+test_typed_hir_qualified_atomic_enum_compound_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_qualified_atomic_enum_compound_lowering_without_ast"
+      "...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(
+      test_suite_session,
+      "enum U { U0 = 0, U1 = 1, U5 = 5 }; "
+      "enum S { SN = -1, S5 = 5 }; "
+      "struct H { "
+      "volatile _Atomic(enum S) member; "
+      "_Atomic(enum U) values[2]; "
+      "}; "
+      "int run(void) { "
+      "volatile _Atomic(enum U) value = U1; "
+      "struct H holder = { S5, { U5, U1 } }; "
+      "_Atomic(enum U) * volatile pointer = &holder.values[0]; "
+      "value <<= 2; "
+      "holder.member ^= 3; "
+      "*pointer |= 8; "
+      "return value + holder.member + holder.values[0]; "
+      "}");
+  ASSERT_TRUE(program_resolved);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  int atomic_cas_count = 0;
+  int word_cas_count = 0;
+  int conditional_branch_count = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_BR_COND)
+        conditional_branch_count++;
+      if (instruction->op != IR_ATOMIC ||
+          instruction->atomic_kind != IR_ATOMIC_CAS)
+        continue;
+      atomic_cas_count++;
+      if (instruction->atomic_width == 4)
+        word_cas_count++;
+    }
+  }
+  ASSERT_EQ(3, atomic_cas_count);
+  ASSERT_EQ(3, word_cas_count);
+  ASSERT_EQ(3, conditional_branch_count);
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_atomic_complex_lowering_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_atomic_complex_lowering_without_ast...\n");
@@ -22381,6 +22454,8 @@ int main() {
   test_typed_hir_register_atomic_parameter_lowering_without_ast(
       test_suite_session);
   test_typed_hir_atomic_compound_lowering_without_ast(test_suite_session);
+  test_typed_hir_qualified_atomic_enum_compound_lowering_without_ast(
+      test_suite_session);
   test_typed_hir_atomic_complex_lowering_without_ast(test_suite_session);
   test_typed_hir_atomic_wide_complex_lowering_without_ast(
       test_suite_session);

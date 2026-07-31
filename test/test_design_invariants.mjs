@@ -304,6 +304,10 @@ const wasmMultiTuProbeFixtures = [
   "unprototyped_direct_call_then_address_xtu_other.c",
   "unprototyped_repeated_direct_call_xtu_main.c",
   "unprototyped_repeated_direct_call_xtu_other.c",
+  "unprototyped_void_parameter_xtu_main.c",
+  "unprototyped_void_parameter_xtu_other.c",
+  "unprototyped_void_zero_xtu_main.c",
+  "unprototyped_void_zero_xtu_other.c",
   "unprototyped_global_callback_signature_xtu_main.c",
   "unprototyped_global_callback_signature_xtu_other.c",
   "unprototyped_funcptr_return_xtu_main.c",
@@ -2972,7 +2976,7 @@ if (!directProgramHirHelper ||
     /compatibility|psx_test_frontend_next_function/.test(
       directProgramHirHelper[1],
     ) ||
-    directProgramHirTests.length !== 60) {
+    directProgramHirTests.length !== 61) {
   throw new Error(
     "Typed HIR program tests must enter through the production frontend",
   );
@@ -13668,6 +13672,8 @@ const crossTuSignatureMismatchFixtures = [
   "unprototyped_address_direct_promotion_mismatch_other.c",
   "unprototyped_direct_address_bool_mismatch_main.c",
   "unprototyped_direct_address_bool_mismatch_other.c",
+  "unprototyped_void_promotion_mismatch_main.c",
+  "unprototyped_void_promotion_mismatch_other.c",
   "unprototyped_return_signature_mismatch_main.c",
   "unprototyped_return_signature_mismatch_other.c",
   "unprototyped_variadic_signature_mismatch_main.c",
