@@ -181,10 +181,12 @@ int psx_resolve_atomic_builtin_call(
       return 0;
     psx_qual_type_t expected_object = psx_semantic_type_table_base(
         types, argument_types[1].type_id);
+    psx_qual_type_t corresponding_object = object_type;
+    corresponding_object.qualifiers = PSX_TYPE_QUALIFIER_NONE;
     if (expected_object.qualifiers !=
             PSX_TYPE_QUALIFIER_NONE ||
-        !psx_semantic_type_table_unqualified_types_match(
-            types, object_type, expected_object))
+        !psx_semantic_type_table_types_compatible(
+            types, corresponding_object, expected_object))
       return 0;
     return atomic_builtin_assignment_is_valid(
         semantic_context, object_type, argument_types[2],

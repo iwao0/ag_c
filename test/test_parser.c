@@ -3593,6 +3593,69 @@ static void test_typed_hir_atomic_lowering_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void
+test_typed_hir_atomic_enum_compatible_expected_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf(
+      "test_typed_hir_atomic_enum_compatible_expected_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "int __ag_atomic_cas(void *obj, void *expected, long desired); "
+      "enum positive_state { POSITIVE_ZERO = 0, POSITIVE_ONE = 1 }; "
+      "enum negative_state { NEGATIVE_ONE = -1, NEGATIVE_ZERO = 0 }; "
+      "int run(void) { "
+      "  _Atomic(enum positive_state) positive = POSITIVE_ONE; "
+      "  unsigned int positive_expected = POSITIVE_ONE; "
+      "  _Atomic(enum negative_state) negative = NEGATIVE_ONE; "
+      "  int negative_expected = NEGATIVE_ONE; "
+      "  return __ag_atomic_cas("
+      "             &positive, &positive_expected, POSITIVE_ZERO) + "
+      "         __ag_atomic_cas("
+      "             &negative, &negative_expected, NEGATIVE_ZERO); "
+      "}"));
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  int compare_exchange_count = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_ATOMIC &&
+          instruction->atomic_kind == IR_ATOMIC_CAS &&
+          instruction->atomic_width == 4 &&
+          instruction->src2.type == IR_TY_PTR &&
+          instruction->src3.type == IR_TY_I32)
+        compare_exchange_count++;
+    }
+  }
+  ASSERT_EQ(2, compare_exchange_count);
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_atomic_array_parameter_lowering_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_atomic_array_parameter_lowering_without_ast...\n");
@@ -22449,6 +22512,8 @@ int main() {
   test_typed_hir_atomic_variadic_value_promotion_without_ast(
       test_suite_session);
   test_typed_hir_atomic_lowering_without_ast(test_suite_session);
+  test_typed_hir_atomic_enum_compatible_expected_without_ast(
+      test_suite_session);
   test_typed_hir_atomic_array_parameter_lowering_without_ast(
       test_suite_session);
   test_typed_hir_register_atomic_parameter_lowering_without_ast(

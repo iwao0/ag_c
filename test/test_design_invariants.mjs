@@ -78,6 +78,40 @@ const probeFixtureNames = (await readdir(probeFixtureDirectory))
   .filter((name) => name.endsWith(".c"))
   .sort();
 const nativeE2ESource = await readFile("test/test_e2e.c", "utf8");
+const enumCompatibilityCompileFailCases = [
+  "enum_incompatible_integer_pointer",
+  "enum_incompatible_nested_integer_pointer",
+  "enum_negative_incompatible_nested_unsigned_pointer",
+  "distinct_enum_pointer_compatibility",
+  "generic_duplicate_positive_enum_compatible_type",
+  "generic_duplicate_negative_enum_compatible_type",
+  "conditional_incompatible_positive_enum_function_pointer",
+  "conditional_incompatible_negative_enum_function_pointer",
+  "stdatomic_compare_exchange_distinct_enum_expected_rejected",
+  "stdatomic_compare_exchange_incompatible_integer_expected_rejected",
+  "stdatomic_compare_exchange_volatile_expected_rejected",
+  "stdatomic_compare_exchange_atomic_expected_rejected",
+];
+for (const caseName of enumCompatibilityCompileFailCases) {
+  if (!nativeE2ESource.includes(`{"${caseName}",`)) {
+    throw new Error(
+      `enum compatibility compile-fail coverage is missing ${caseName}`,
+    );
+  }
+}
+const conditionalConstantExpressionCompileFailCases = [
+  "conditional_unselected_call_enum",
+  "logical_unselected_call_static_assert",
+  "conditional_selected_comma_enum",
+  "logical_selected_comma_static_assert",
+];
+for (const caseName of conditionalConstantExpressionCompileFailCases) {
+  if (!nativeE2ESource.includes(`{"${caseName}",`)) {
+    throw new Error(
+      `conditional constant-expression compile-fail coverage is missing ${caseName}`,
+    );
+  }
+}
 const wasm32E2ESource = await readFile("test/test_wasm32_e2e.c", "utf8");
 const wasm32E2EExtraCaseList = (
   await readFile("test/wasm32_e2e_extra_cases.txt", "utf8")
@@ -2976,7 +3010,7 @@ if (!directProgramHirHelper ||
     /compatibility|psx_test_frontend_next_function/.test(
       directProgramHirHelper[1],
     ) ||
-    directProgramHirTests.length !== 61) {
+    directProgramHirTests.length !== 62) {
   throw new Error(
     "Typed HIR program tests must enter through the production frontend",
   );
