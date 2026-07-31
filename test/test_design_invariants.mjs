@@ -99,16 +99,100 @@ for (const caseName of enumCompatibilityCompileFailCases) {
     );
   }
 }
-const conditionalConstantExpressionCompileFailCases = [
+const documentedConstantExpressionCompileFailCases = [
+  "static_assert_sizeof_vla",
   "conditional_unselected_call_enum",
   "logical_unselected_call_static_assert",
   "conditional_selected_comma_enum",
   "logical_selected_comma_static_assert",
 ];
-for (const caseName of conditionalConstantExpressionCompileFailCases) {
+for (const caseName of documentedConstantExpressionCompileFailCases) {
   if (!nativeE2ESource.includes(`{"${caseName}",`)) {
     throw new Error(
-      `conditional constant-expression compile-fail coverage is missing ${caseName}`,
+      `documented constant-expression compile-fail coverage is missing ${caseName}`,
+    );
+  }
+}
+const documentedCompoundLiteralCompileFailCases = [
+  "compound_literal_void_type",
+  "compound_literal_function_type",
+  "compound_literal_incomplete_record",
+  "compound_literal_vla",
+];
+for (const caseName of documentedCompoundLiteralCompileFailCases) {
+  if (!nativeE2ESource.includes(`{"${caseName}",`)) {
+    throw new Error(
+      `documented compound-literal compile-fail coverage is missing ${caseName}`,
+    );
+  }
+}
+const documentedInitializerDesignatorCompileFailCases = [
+  "array_designator_negative",
+  "array_designator_nonconstant",
+  "array_designator_out_of_bounds",
+  "struct_designator_unknown_member",
+  "scalar_array_designator",
+];
+for (const caseName of documentedInitializerDesignatorCompileFailCases) {
+  if (!nativeE2ESource.includes(`{"${caseName}",`)) {
+    throw new Error(
+      `documented initializer-designator compile-fail coverage is missing ${caseName}`,
+    );
+  }
+}
+if (!nativeE2ESource.includes('{"void_variable",')) {
+  throw new Error(
+    "void-object declaration compile-fail coverage is missing void_variable",
+  );
+}
+const documentedControlFlowCompileFailCases = [
+  "break_outside_loop_or_switch",
+  "continue_outside_loop",
+  "case_outside_switch",
+  "default_outside_switch",
+  "duplicate_label",
+  "duplicate_default",
+  "duplicate_case_simple",
+  "goto_undefined_label",
+  "case_nonconstant_expression",
+  "switch_complex_control_rejected",
+];
+for (const caseName of documentedControlFlowCompileFailCases) {
+  if (!nativeE2ESource.includes(`{"${caseName}",`)) {
+    throw new Error(
+      `documented control-flow compile-fail coverage is missing ${caseName}`,
+    );
+  }
+}
+const documentedPointerQualifierCompileFailCases = [
+  "assign_discards_const_pointer",
+  "argument_discards_const_pointer",
+  "return_discards_const_pointer",
+  "add_const_through_double_pointer",
+  "discard_const_through_double_pointer",
+  "object_double_pointer_to_void_double_pointer",
+];
+for (const caseName of documentedPointerQualifierCompileFailCases) {
+  if (!nativeE2ESource.includes(`{"${caseName}",`)) {
+    throw new Error(
+      `documented pointer-qualifier compile-fail coverage is missing ${caseName}`,
+    );
+  }
+}
+const documentedFunctionPointerCompileFailCases = [
+  "function_pointer_to_void_pointer",
+  "void_pointer_to_function_pointer",
+  "compare_function_and_void_pointers",
+  "conditional_function_and_void_pointers",
+  "assign_incompatible_function_pointer",
+  "compare_incompatible_function_pointers",
+  "argument_incompatible_function_pointer",
+  "return_incompatible_function_pointer",
+];
+for (const caseName of documentedFunctionPointerCompileFailCases) {
+  if (!nativeE2ESource.includes(`{"${caseName}",`)) {
+    throw new Error(
+      `documented function-pointer compile-fail coverage is missing ${caseName}`,
     );
   }
 }
@@ -6573,6 +6657,27 @@ const diagnosticUiTextsSource = await readFile(
   "utf8",
 );
 const makefileSource = await readFile("Makefile", "utf8");
+const shouldRejectGateSource = await readFile(
+  "scripts/check_should_reject.sh",
+  "utf8",
+);
+if (!/^check-should-reject:\s*\$\(TARGET\)\s+\$\(WASM_TARGET\)$/m.test(
+      makefileSource,
+    ) ||
+    !/\$\(MAKE\) check-should-reject/.test(makefileSource) ||
+    !/dir=test\/fixtures\/should_reject/.test(
+      shouldRejectGateSource,
+    ) ||
+    !/\.\/build\/ag_c_wasm[\s\S]*?-c -o \/dev\/null/.test(
+      shouldRejectGateSource,
+    ) ||
+    !/\*E0006\*/.test(shouldRejectGateSource) ||
+    !/\[ "\$native_missed" -ne 0 \]/.test(shouldRejectGateSource) ||
+    !/\[ "\$wasm_missed" -ne 0 \]/.test(shouldRejectGateSource)) {
+  throw new Error(
+    "should_reject fixtures must gate native and Wasm object rejection without E0006",
+  );
+}
 if (/alignas_value(?:\.o|\.h)/.test(
       `${makefileSource}\n${parserUnitTestSource}`,
     )) {

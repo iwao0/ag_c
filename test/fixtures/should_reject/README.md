@@ -1,32 +1,32 @@
 # `should_reject/` fixtures
 
-「cc は拒否するが ag_c は受け入れてしまう」C ソースを集めた回帰用 fixture。
-ag_c が本来検出すべき診断を**現状検出していない**ことを示すドキュメント兼
-追跡用です。
+ISO C11では不正であり、ag_cが必ず拒否すべきCソースを集めた回帰用fixtureです。
+全fixtureはNativeコンパイラとWasm objectコンパイラの両方でgatingされます。
 
 ## 使い方
 
 ```sh
-make build/ag_c
-./scripts/check_should_reject.sh
+make check-should-reject
 ```
 
 各 `.c` に対して以下を比較します:
 
 - `cc -std=c11 -pedantic-errors -fsyntax-only -Werror=implicit-function-declaration` → rc != 0 なら標準 C 違反
-- `./build/ag_c <file>` → rc == 0 なら ag_c が見落としている
+- `./build/ag_c <file>` → rc != 0、かつ`E0006`ではないこと
+- `./build/ag_c_wasm -c -o /dev/null <file>` → rc != 0、かつ`E0006`ではないこと
 
 出力例:
 
 ```
-MISSED  test/fixtures/should_reject/assign_string_to_int.c
-...
-should_reject summary: total=18  rejected_by_agc=0  missed=18  spurious=0
+should_reject summary: total=305 host_accepted=0
+native: rejected=305 missed=0 internal=0
+wasm:   rejected=305 missed=0 internal=0
 ```
 
-ag_c が将来診断を追加してエラーにするようになると、その fixture は `missed` から
-`rejected_by_agc` へ移ります。`make test` には組み込まれていない (CI を red に
-しないため) ので、進捗確認は手動で行ってください。
+host compilerが受理するfixture、ag_cのどちらかのmodeが受理するfixture、
+または`E0006`内部不変条件違反へ落ちるfixtureが1件でもあれば失敗します。
+`make test`からも実行されます。個別の診断コードを固定する重要境界は、
+これに加えて`test/test_e2e.c`のcompile-fail registryへ登録します。
 
 ## カバー範囲
 
@@ -58,6 +58,6 @@ ag_c が将来診断を追加してエラーにするようになると、その
 ## 追加するときの基準
 
 1. `cc -fsyntax-only` がエラーになる (実際に C 標準違反)。
-2. `./build/ag_c` が受け入れて asm を出してしまう。
-3. 1 ファイル 1 ケース、ファイル名は問題を表す snake_case。
-4. ヘッダコメントで「期待: ag_c は X エラー」と意図を書く。
+2. Native/Wasm objectの両方が診断付きで拒否する。
+3. 1ファイル1ケース、ファイル名は問題を表すsnake_case。
+4. ヘッダコメントで期待する制約違反を説明する。

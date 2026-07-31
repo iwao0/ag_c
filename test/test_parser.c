@@ -11390,6 +11390,10 @@ static void test_direct_function_typed_hir_resolution_boundary(
       PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT,
       ND_CASE);
   assert_direct_function_rejection(test_suite_session,
+      "int __direct_void_object(void) { void value; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_DECLARATION_VOID_OBJECT,
+      ND_LOCAL_DECLARATION);
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_dot_base(void) { int value = 0; return value.x; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_DOT_BASE_NOT_AGGREGATE,
       ND_MEMBER_ACCESS);
@@ -11602,6 +11606,32 @@ static void test_direct_function_typed_hir_resolution_boundary(
       "default: (struct __direct_incomplete){0}); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_COMPOUND_LITERAL_INVALID_OBJECT_TYPE,
       ND_COMPOUND_LITERAL);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_array_designator_negative(void) { "
+      "int values[3] = {[-1] = 7}; return values[0]; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+      ND_INIT_LIST);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_array_designator_nonconstant(int index) { "
+      "int values[3] = {[index] = 7}; return values[0]; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+      ND_INIT_LIST);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_array_designator_out_of_bounds(void) { "
+      "int values[3] = {[3] = 7}; return values[0]; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+      ND_INIT_LIST);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_struct_designator_unknown_member(void) { "
+      "struct value { int member; }; "
+      "struct value object = {.missing = 7}; return object.member; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_MEMBER_DESIGNATOR_NOT_FOUND,
+      ND_INIT_LIST);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_scalar_array_designator(void) { "
+      "int value = {[0] = 7}; return value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+      ND_INIT_LIST);
   assert_direct_function_rejection(test_suite_session,
       "int __direct_generic_duplicate_default(void) { "
       "return _Generic(1, default: 1, default: 2); }",

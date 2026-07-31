@@ -149,6 +149,16 @@ int psx_diagnose_syntax_typed_hir_rejection_in_context(
               DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
           "case label");
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_DECLARATION_VOID_OBJECT:
+      if (!failure->source_name || failure->source_name_length <= 0)
+        return 0;
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN,
+          token, diag_message_for_in(
+                     diagnostics,
+                     DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
+          failure->source_name_length, failure->source_name);
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_IDENTIFIER:
       if (!failure->source_name || failure->source_name_length <= 0)
         return 0;
@@ -553,6 +563,27 @@ int psx_diagnose_syntax_typed_hir_rejection_in_context(
           token, "%s", diag_message_for_in(
                            diagnostics,
                            DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_MEMBER_DESIGNATOR_INVALID:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_MEMBER_DESIGNATOR_INVALID,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_MEMBER_DESIGNATOR_INVALID));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_MEMBER_DESIGNATOR_NOT_FOUND:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID));
       return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_UNION_ARRAY_MEMBER_NONBRACE_DISABLED:
       diag_emit_tokf_in(

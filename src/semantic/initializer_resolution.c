@@ -51,7 +51,18 @@ typedef struct {
   int union_activation_count;
   int union_activation_capacity;
   psx_local_initializer_status_t failure_status;
+  const token_t *failure_token;
 } psx_flat_initializer_context_t;
+
+static int flat_initializer_fail(
+    psx_flat_initializer_context_t *context,
+    psx_local_initializer_status_t status, const token_t *token) {
+  if (context && context->failure_status == PSX_LOCAL_INITIALIZER_OK) {
+    context->failure_status = status;
+    context->failure_token = token;
+  }
+  return 0;
+}
 
 static const psx_record_member_layout_t *initializer_member_layout(
     const psx_record_layout_table_t *record_layouts,
@@ -780,31 +791,54 @@ static int flat_initializer_designated_span(
       long long index = -1;
       if (shape.kind != PSX_TYPE_ARRAY) {
         if (i > 0)
-          context->failure_status =
-              PSX_LOCAL_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY;
-        return 0;
+          return flat_initializer_fail(
+              context,
+              PSX_LOCAL_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY,
+              designator->tok);
+        return flat_initializer_fail(
+            context,
+            PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+            designator->tok);
       }
       if (!designator->index_expr || !context->resolve_index)
-        return 0;
+        return flat_initializer_fail(
+            context,
+            PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+            designator->tok);
       if (designator->is_range) {
         if (!ranges || !ranges[i].is_range)
-          return 0;
+          return flat_initializer_fail(
+              context,
+              PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+              designator->tok);
         index = ranges[i].index;
       } else if (!context->resolve_index(
                      context->resolver_context,
                      designator->index_expr, &index)) {
-        return 0;
+        return flat_initializer_fail(
+            context,
+            PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+            designator->tok);
       }
       if (index < 0 || index >= shape.array_len)
-        return 0;
+        return flat_initializer_fail(
+            context,
+            PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+            designator->tok);
       child_index = (int)index;
     } else if (designator->kind == PSX_INIT_DESIGNATOR_MEMBER) {
       if (!psx_type_kind_is_aggregate(shape.kind))
-        return 0;
+        return flat_initializer_fail(
+            context,
+            PSX_LOCAL_INITIALIZER_MEMBER_DESIGNATOR_INVALID,
+            designator->tok);
       psx_initializer_object_span_t child;
       if (!flat_initializer_designated_member_span(
               context, target, designator, &child))
-        return 0;
+        return flat_initializer_fail(
+            context,
+            PSX_LOCAL_INITIALIZER_MEMBER_DESIGNATOR_NOT_FOUND,
+            designator->tok);
       *target = child;
       continue;
     } else {
@@ -863,7 +897,7 @@ static int flat_initializer_relocate_whole_object_value(
 }
 
 static int flat_initializer_entry_ranges(
-    const psx_flat_initializer_context_t *context,
+    psx_flat_initializer_context_t *context,
     const psx_initializer_entry_t *entry,
     psx_initializer_designator_range_t *ranges) {
   if (!context || !entry || !ranges || !context->resolve_index)
@@ -875,7 +909,10 @@ static int flat_initializer_entry_ranges(
     if (!designator->is_range) continue;
     if (designator->kind != PSX_INIT_DESIGNATOR_INDEX ||
         !designator->index_expr || !designator->range_end_expr)
-      return 0;
+      return flat_initializer_fail(
+          context,
+          PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+          designator->tok);
     long long begin = 0;
     long long end = 0;
     if (!context->resolve_index(
@@ -885,7 +922,10 @@ static int flat_initializer_entry_ranges(
             context->resolver_context,
             designator->range_end_expr, &end) ||
         begin < 0 || end < begin)
-      return 0;
+      return flat_initializer_fail(
+          context,
+          PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+          designator->tok);
     ranges[i] = (psx_initializer_designator_range_t){
         .is_range = 1,
         .begin = begin,
@@ -1306,7 +1346,9 @@ psx_local_initializer_status_t psx_resolve_flat_local_initializer_plan(
           &context, &root, initializer, 0)) {
     psx_local_initializer_status_t failure_status =
         context.failure_status;
+    const token_t *failure_token = context.failure_token;
     *plan = (psx_local_initializer_plan_t){0};
+    plan->failure_token = failure_token;
     psx_initializer_scalar_leaf_list_dispose(&leaves);
     return failure_status != PSX_LOCAL_INITIALIZER_OK
                ? failure_status

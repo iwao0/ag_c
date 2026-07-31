@@ -182,10 +182,10 @@ $(BENCH_PARSER): test/bench_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-# 「cc は拒否するが ag_c が受け入れてしまう」C ソースを test/fixtures/should_reject/
-# 配下に集めている。レポート専用 (CI を red にしない)。
-check-should-reject: $(TARGET)
-	./scripts/check_should_reject.sh
+# Standard-invalid fixtures must be rejected by both compiler modes without
+# falling back to an internal diagnostic.
+check-should-reject: $(TARGET) $(WASM_TARGET)
+	CC="$(CC)" ./scripts/check_should_reject.sh
 
 wasm32-object-fixture-scan: $(WASM_TARGET)
 	@bash scripts/run_wasm32_object_fixture_scan.sh --list-fail
@@ -264,6 +264,7 @@ test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_LANGUAGE_ANA
 	$(TEST_TOKENIZER)
 	$(TEST_PARSER)
 	$(MAKE) test-design-invariants
+	$(MAKE) check-should-reject
 	$(TEST_PREPROCESS)
 	$(TEST_LANGUAGE_ANALYSIS)
 	$(TEST_FUZZ_QUICK)

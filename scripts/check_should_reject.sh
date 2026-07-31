@@ -1,15 +1,11 @@
 #!/bin/bash
-# test/fixtures/should_reject/*.c を ag_c に渡し、
-# 「ag_c が受け入れてしまった (本来 cc が拒否する)」ものをレポートする。
-#
-# このスクリプトは main の test に gating されない (CI red にしない)。
-# 各 fixture は将来 ag_c が拒否するようになったときの target を示すドキュメントを
-# 兼ねていて、コミット時点で見えている MISSED 件数を可視化する。
+# Verify that every should_reject fixture is invalid ISO C11 and is rejected
+# by both the native and Wasm object compilers without an internal diagnostic.
 set -u
 cd "$(dirname "$0")/.."
 
-if [ ! -x ./build/ag_c ]; then
-  echo "build/ag_c not found; run 'make build/ag_c' first" >&2
+if [ ! -x ./build/ag_c ] || [ ! -x ./build/ag_c_wasm ]; then
+  echo "build/ag_c and build/ag_c_wasm are required" >&2
   exit 1
 fi
 
@@ -20,31 +16,69 @@ if [ ! -d "$dir" ]; then
 fi
 
 total=0
-missed=0
-ok_reject=0
-spurious=0
+host_accepted=0
+native_rejected=0
+native_missed=0
+native_internal=0
+wasm_rejected=0
+wasm_missed=0
+wasm_internal=0
 for f in "$dir"/*.c; do
   [ -e "$f" ] || continue
   total=$((total + 1))
-  # ISO C11の制約違反と「暗黙宣言」をいずれもerrorとして比較する。
-  cc -std=c11 -pedantic-errors -fsyntax-only \
+  "${CC:-cc}" -std=c11 -pedantic-errors -fsyntax-only \
     -Werror=implicit-function-declaration "$f" 2>/dev/null
-  cc_rc=$?
-  ./build/ag_c "$f" >/dev/null 2>&1
-  agc_rc=$?
-  if [ $cc_rc -ne 0 ] && [ $agc_rc -eq 0 ]; then
-    missed=$((missed + 1))
-    echo "MISSED  $f"
-  elif [ $cc_rc -ne 0 ] && [ $agc_rc -ne 0 ]; then
-    ok_reject=$((ok_reject + 1))
-  elif [ $cc_rc -eq 0 ] && [ $agc_rc -ne 0 ]; then
-    spurious=$((spurious + 1))
-    echo "SPURIOUS $f (ag_c rejects valid C)"
+  host_rc=$?
+  if [ "$host_rc" -eq 0 ]; then
+    host_accepted=$((host_accepted + 1))
+    echo "HOST_ACCEPTED   $f"
   fi
+
+  native_output=$(./build/ag_c "$f" 2>&1)
+  native_rc=$?
+  if [ "$native_rc" -eq 0 ]; then
+    native_missed=$((native_missed + 1))
+    echo "NATIVE_ACCEPTED $f"
+  else
+    native_rejected=$((native_rejected + 1))
+  fi
+  case "$native_output" in
+    *E0006*)
+      native_internal=$((native_internal + 1))
+      echo "NATIVE_INTERNAL $f"
+      ;;
+  esac
+
+  wasm_output=$(
+    ./build/ag_c_wasm -c -o /dev/null "$f" 2>&1
+  )
+  wasm_rc=$?
+  if [ "$wasm_rc" -eq 0 ]; then
+    wasm_missed=$((wasm_missed + 1))
+    echo "WASM_ACCEPTED   $f"
+  else
+    wasm_rejected=$((wasm_rejected + 1))
+  fi
+  case "$wasm_output" in
+    *E0006*)
+      wasm_internal=$((wasm_internal + 1))
+      echo "WASM_INTERNAL   $f"
+      ;;
+  esac
 done
 
 echo ""
-echo "should_reject summary: total=$total  rejected_by_agc=$ok_reject  missed=$missed  spurious=$spurious"
-# missed や spurious があっても exit 0 (CI を red にしない)。
-# 修正したい/対応進捗を見たい場合は手動で実行する想定。
+echo "should_reject summary: total=$total host_accepted=$host_accepted"
+echo "native: rejected=$native_rejected missed=$native_missed internal=$native_internal"
+echo "wasm:   rejected=$wasm_rejected missed=$wasm_missed internal=$wasm_internal"
+
+if [ "$total" -eq 0 ] ||
+   [ "$host_accepted" -ne 0 ] ||
+   [ "$native_missed" -ne 0 ] ||
+   [ "$native_internal" -ne 0 ] ||
+   [ "$wasm_missed" -ne 0 ] ||
+   [ "$wasm_internal" -ne 0 ]; then
+  exit 1
+fi
+
 exit 0

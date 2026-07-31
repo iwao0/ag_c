@@ -37,6 +37,7 @@ typedef struct {
   psx_qual_type_t object_qual_type;
   psx_local_initializer_item_t *items;
   const node_t **evaluation_values;
+  const token_t *failure_token;
   int item_count;
   int explicit_item_count;
   int evaluation_group_count;
@@ -47,6 +48,9 @@ typedef enum {
   PSX_LOCAL_INITIALIZER_NOT_SUPPORTED,
   PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS,
   PSX_LOCAL_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY,
+  PSX_LOCAL_INITIALIZER_MEMBER_DESIGNATOR_INVALID,
+  PSX_LOCAL_INITIALIZER_MEMBER_DESIGNATOR_NOT_FOUND,
+  PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
   PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_TOO_LONG,
   PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_INCOMPATIBLE,
   PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY,

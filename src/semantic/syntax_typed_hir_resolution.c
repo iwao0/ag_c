@@ -1424,6 +1424,16 @@ static int note_direct_semantic_rejection(
   return 0;
 }
 
+static int note_direct_initializer_rejection(
+    direct_resolution_context_t *context,
+    psx_syntax_typed_hir_rejection_t rejection,
+    const node_t *source, const token_t *failure_token) {
+  note_direct_semantic_rejection(context, rejection, source);
+  if (context && context->failure && failure_token)
+    context->failure->source_token = failure_token;
+  return 0;
+}
+
 static int note_direct_integer_rejection(
     direct_resolution_context_t *context,
     psx_syntax_typed_hir_rejection_t rejection,
@@ -6377,10 +6387,25 @@ static int preflight_direct_flat_initializer(
         PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_UNION_TOO_MANY_ELEMENTS,
         initializer->value);
   if (status == PSX_LOCAL_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY)
-    return note_direct_semantic_rejection(
+    return note_direct_initializer_rejection(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY,
-        initializer->value);
+        initializer->value, plan->failure_token);
+  if (status == PSX_LOCAL_INITIALIZER_MEMBER_DESIGNATOR_INVALID)
+    return note_direct_initializer_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_MEMBER_DESIGNATOR_INVALID,
+        initializer->value, plan->failure_token);
+  if (status == PSX_LOCAL_INITIALIZER_MEMBER_DESIGNATOR_NOT_FOUND)
+    return note_direct_initializer_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_MEMBER_DESIGNATOR_NOT_FOUND,
+        initializer->value, plan->failure_token);
+  if (status == PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID)
+    return note_direct_initializer_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
+        initializer->value, plan->failure_token);
   if (status == PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_TOO_LONG)
     return reject_direct_character_array_initializer(
         context, PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG,
@@ -7285,6 +7310,11 @@ static int preflight_direct_local_declaration(
             semantic_types, decl_qual_type.type_id);
     int is_vla_object =
         has_vla_type && type_shape.kind == PSX_TYPE_ARRAY;
+    if (has_type && type_shape.kind == PSX_TYPE_VOID)
+      return note_direct_named_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_DECLARATION_VOID_OBJECT,
+          &syntax->base, name->str, name->len);
     if (!has_type || (!psx_type_kind_is_scalar(type_shape.kind) &&
                   !is_complete_fixed_array &&
                   !is_complete_aggregate && !has_vla_type))
