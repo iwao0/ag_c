@@ -1,3 +1,4 @@
+/* Nested callback return qualifiers remain part of pointer compatibility. */
 typedef int plain_callback_function(void);
 typedef const int qualified_callback_function(void);
 typedef int plain_consumer_function(plain_callback_function *callback);

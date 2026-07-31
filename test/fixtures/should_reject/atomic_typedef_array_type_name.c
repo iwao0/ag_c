@@ -1,3 +1,4 @@
+/* An atomic-qualified array typedef is invalid even in a type name. */
 typedef int array_type[2];
 
 int main(void) {

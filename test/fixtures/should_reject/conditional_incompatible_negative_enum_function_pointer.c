@@ -1,3 +1,4 @@
+/* Enum signedness remains significant in function pointer compatibility. */
 enum Negative {
   NEGATIVE_ONE = -1,
   NEGATIVE_ZERO

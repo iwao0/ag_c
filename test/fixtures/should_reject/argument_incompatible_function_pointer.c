@@ -1,3 +1,4 @@
+/* A call argument cannot convert an incompatible function pointer. */
 static int increment(int value) {
   return value + 1;
 }

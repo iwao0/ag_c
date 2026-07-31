@@ -1,3 +1,4 @@
+/* A function pointer cannot implicitly convert to void *. */
 static int answer(void) {
   return 42;
 }

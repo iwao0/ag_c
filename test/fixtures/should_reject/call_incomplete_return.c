@@ -1,8 +1,9 @@
+/* A call cannot produce a value of incomplete record type. */
 struct record;
 
-struct record make_record(void);
+struct record make(void);
 
 int main(void) {
-  make_record();
+  make();
   return 0;
 }

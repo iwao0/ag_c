@@ -1,3 +1,4 @@
+/* A conditional expression rejects incompatible nested callback pointers. */
 typedef int plain_callback_function(void);
 typedef const int qualified_callback_function(void);
 

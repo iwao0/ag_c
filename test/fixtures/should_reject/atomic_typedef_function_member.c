@@ -1,3 +1,4 @@
+/* An aggregate member cannot have an atomic-qualified function type. */
 typedef int function_type(void);
 
 struct callbacks {

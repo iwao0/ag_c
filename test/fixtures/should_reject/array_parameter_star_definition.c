@@ -1,3 +1,4 @@
+/* A [*] parameter array declarator is limited to function declarations. */
 int read_values(int values[*]) {
   return values[0];
 }

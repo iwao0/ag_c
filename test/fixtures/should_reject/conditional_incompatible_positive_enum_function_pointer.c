@@ -1,3 +1,4 @@
+/* Distinct enum and integer function return types are not pointer-compatible. */
 enum Positive {
   POSITIVE_ZERO,
   POSITIVE_ONE

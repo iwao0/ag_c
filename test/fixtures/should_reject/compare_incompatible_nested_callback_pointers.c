@@ -1,3 +1,4 @@
+/* Equality rejects consumer pointers with incompatible nested callbacks. */
 typedef int plain_callback_function(void);
 typedef const int qualified_callback_function(void);
 

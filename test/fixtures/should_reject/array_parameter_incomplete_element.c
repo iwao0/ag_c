@@ -1,3 +1,4 @@
+/* A parameter array element type must be complete. */
 struct incomplete;
 
 static int consume(struct incomplete values[]);

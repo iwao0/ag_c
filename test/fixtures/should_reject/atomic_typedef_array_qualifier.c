@@ -1,3 +1,4 @@
+/* The _Atomic qualifier cannot be applied to an array typedef. */
 typedef int array_type[2];
 _Atomic array_type values;
 

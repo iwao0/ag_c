@@ -1,3 +1,4 @@
+/* Equality cannot compare a function pointer with an object pointer. */
 static int answer(void) {
   return 42;
 }

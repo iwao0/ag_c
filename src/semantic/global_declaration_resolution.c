@@ -93,12 +93,7 @@ void psx_resolve_global_declaration(
   int defer_incomplete_record =
       contains_incomplete_record && !request->is_static &&
       !request->has_initializer;
-  /* An external-linkage incomplete array without an initializer is also a
-   * tentative definition. A static one is forbidden by C11 6.9.2p3. */
-  if ((contains_incomplete_record && !defer_incomplete_record) ||
-      (incoming_shape.kind == PSX_TYPE_ARRAY &&
-       incoming_shape.array_len <= 0 && !request->is_extern_decl &&
-       !request->has_initializer && request->is_static)) {
+  if (contains_incomplete_record && !defer_incomplete_record) {
     resolution->status = PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT;
     return;
   }

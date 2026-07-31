@@ -1,3 +1,4 @@
+/* A conditional expression cannot combine incompatible object pointers. */
 int main(void) {
   int integer_value = 0;
   double floating_value = 0.0;
