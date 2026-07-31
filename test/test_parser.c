@@ -4100,10 +4100,14 @@ test_typed_hir_atomic_discarded_scalar_loads_without_ast(
   reset_test_translation_unit_state(test_suite_session);
   ASSERT_TRUE(resolve_program_input_hir(
       test_suite_session,
+      "enum signed_state { SIGNED_NEGATIVE = -1, SIGNED_VALUE = 7 };"
+      "enum unsigned_state { UNSIGNED_ZERO = 0, UNSIGNED_VALUE = 9 };"
       "typedef int callback_t(int);"
       "int run(_Atomic unsigned char *byte_pointer,"
       "        _Atomic unsigned short *short_pointer,"
       "        _Atomic int *int_pointer,"
+      "        _Atomic(enum signed_state) *signed_enum_pointer,"
+      "        _Atomic(enum unsigned_state) *unsigned_enum_pointer,"
       "        _Atomic unsigned long long *wide_pointer,"
       "        _Atomic float *float_pointer,"
       "        _Atomic double *double_pointer,"
@@ -4113,6 +4117,8 @@ test_typed_hir_atomic_discarded_scalar_loads_without_ast(
       "  _Atomic unsigned char local_byte = 1;"
       "  _Atomic unsigned short local_short = 2;"
       "  _Atomic int local_int = 3;"
+      "  _Atomic(enum signed_state) local_signed_enum = SIGNED_VALUE;"
+      "  _Atomic(enum unsigned_state) local_unsigned_enum = UNSIGNED_VALUE;"
       "  _Atomic unsigned long long local_wide = 4;"
       "  _Atomic float local_float = 5.0f;"
       "  _Atomic double local_double = 6.0;"
@@ -4121,6 +4127,8 @@ test_typed_hir_atomic_discarded_scalar_loads_without_ast(
       "  (void)local_byte;"
       "  (void)local_short;"
       "  (void)local_int;"
+      "  (void)local_signed_enum;"
+      "  (void)local_unsigned_enum;"
       "  (void)local_wide;"
       "  (void)local_float;"
       "  (void)local_double;"
@@ -4129,6 +4137,8 @@ test_typed_hir_atomic_discarded_scalar_loads_without_ast(
       "  (void)*byte_pointer;"
       "  (void)*short_pointer;"
       "  (void)*int_pointer;"
+      "  (void)*signed_enum_pointer;"
+      "  (void)*unsigned_enum_pointer;"
       "  (void)*wide_pointer;"
       "  (void)*float_pointer;"
       "  (void)*double_pointer;"
@@ -4175,7 +4185,7 @@ test_typed_hir_atomic_discarded_scalar_loads_without_ast(
    * complete atomic read even when its converted value is unused. */
   ASSERT_EQ(2, loads_by_width[1]);
   ASSERT_EQ(2, loads_by_width[2]);
-  ASSERT_EQ(4, loads_by_width[4]);
+  ASSERT_EQ(8, loads_by_width[4]);
   ASSERT_EQ(8, loads_by_width[8]);
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);

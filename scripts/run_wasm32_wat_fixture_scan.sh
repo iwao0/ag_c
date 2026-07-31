@@ -104,6 +104,12 @@ skip_reason() {
     test/fixtures/probes_found_bugs/union_member_order_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_main.c|\
     test/fixtures/probes_found_bugs/unprototyped_funcptr_xtu_other.c|\
+    test/fixtures/probes_found_bugs/unprototyped_address_then_direct_call_xtu_main.c|\
+    test/fixtures/probes_found_bugs/unprototyped_address_then_direct_call_xtu_other.c|\
+    test/fixtures/probes_found_bugs/unprototyped_direct_call_then_address_xtu_main.c|\
+    test/fixtures/probes_found_bugs/unprototyped_direct_call_then_address_xtu_other.c|\
+    test/fixtures/probes_found_bugs/unprototyped_repeated_direct_call_xtu_main.c|\
+    test/fixtures/probes_found_bugs/unprototyped_repeated_direct_call_xtu_other.c|\
     test/fixtures/probes_found_bugs/unprototyped_global_callback_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/unprototyped_global_callback_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/unprototyped_funcptr_return_xtu_main.c|\
@@ -458,6 +464,10 @@ skip_reason() {
     test/fixtures/wasm32/unprototyped_narrow_signature_mismatch_other.c|\
     test/fixtures/wasm32/unprototyped_promotion_signature_mismatch_main.c|\
     test/fixtures/wasm32/unprototyped_promotion_signature_mismatch_other.c|\
+    test/fixtures/wasm32/unprototyped_address_direct_promotion_mismatch_main.c|\
+    test/fixtures/wasm32/unprototyped_address_direct_promotion_mismatch_other.c|\
+    test/fixtures/wasm32/unprototyped_direct_address_bool_mismatch_main.c|\
+    test/fixtures/wasm32/unprototyped_direct_address_bool_mismatch_other.c|\
     test/fixtures/wasm32/unprototyped_return_signature_mismatch_main.c|\
     test/fixtures/wasm32/unprototyped_return_signature_mismatch_other.c|\
     test/fixtures/wasm32/unprototyped_variadic_signature_mismatch_main.c|\

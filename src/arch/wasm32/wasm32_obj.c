@@ -1269,12 +1269,14 @@ static void ensure_func_sig_for_address(
     target->sig = sig;
     target->signature_parameters_unspecified =
         parameters_unspecified;
+    target->signature_refined_from_unspecified_call = 0;
     return;
   }
   if (!target->defined && target->sig.nparams == 0 && target->sig.result == IR_TY_VOID) {
     target->sig = sig;
     target->signature_parameters_unspecified =
         parameters_unspecified;
+    target->signature_refined_from_unspecified_call = 0;
   } else if (!target->defined &&
              target->signature_parameters_unspecified &&
              !parameters_unspecified &&
@@ -1282,6 +1284,7 @@ static void ensure_func_sig_for_address(
     free(target->sig.params);
     target->sig = sig;
     target->signature_parameters_unspecified = 0;
+    target->signature_refined_from_unspecified_call = 0;
   } else {
     free(sig.params);
   }
@@ -2248,6 +2251,18 @@ static void gen_func_body(
           obj_sig_t *emit_sig = &target->sig;
           if (target->sig.nparams == 0 && target->sig.result == IR_TY_VOID && !target->defined) {
             target->sig = copy_signature(context, csig);
+            target->signature_parameters_unspecified =
+                i->reference_parameters_unspecified;
+            target->signature_refined_from_unspecified_call =
+                i->reference_parameters_unspecified;
+            emit_sig = &target->sig;
+          } else if (!target->defined &&
+                     target->signature_parameters_unspecified &&
+                     !target->signature_refined_from_unspecified_call &&
+                     sig_result_equal(&target->sig, csig)) {
+            free(target->sig.params);
+            target->sig = copy_signature(context, csig);
+            target->signature_refined_from_unspecified_call = 1;
             emit_sig = &target->sig;
           } else if (!target->defined &&
                      !sig_equal(&target->sig, csig) &&
@@ -2649,9 +2664,13 @@ void wasm32_obj_gen_machine_module_in(
       obj_unsupported_msg(context, "duplicate function in Wasm object mode");
     obj_sig_t def_sig = {0};
     collect_func_sig(context, function, &def_sig);
-    if (of->sig.nparams > 0 || of->sig.result != IR_TY_VOID) {
+    if (of->sig.nparams > 0 || of->sig.result != IR_TY_VOID ||
+        of->signature_parameters_unspecified) {
       if (of->signature_parameters_unspecified) {
-        if (!sig_result_equal(&of->sig, &def_sig)) {
+        if (!sig_result_equal(&of->sig, &def_sig) ||
+            (of->signature_refined_from_unspecified_call &&
+             !sig_equal(&of->sig, &def_sig) &&
+             !sig_integer_width_compatible(&of->sig, &def_sig))) {
           char msg[160];
           snprintf(msg, sizeof(msg), "conflicting Wasm object function signature: %.*s",
                    function->name_len, function->name);
@@ -2660,6 +2679,7 @@ void wasm32_obj_gen_machine_module_in(
         free(of->sig.params);
         of->sig = def_sig;
         of->signature_parameters_unspecified = 0;
+        of->signature_refined_from_unspecified_call = 0;
       } else if (!sig_equal(&of->sig, &def_sig) &&
           !sig_integer_width_compatible(&of->sig, &def_sig)) {
         char msg[160];

@@ -1597,6 +1597,37 @@ static int run_unprototyped_function_pointer_xtu_case(void) {
     }
   }
   if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_void_zero_signature_refinement.o "
+          "test/fixtures/probes_found_bugs/"
+          "unprototyped_void_zero_signature_refinement.c",
+          "compile resolved void zero-parameter function") != 0)
+    return 1;
+  if (command_available("wasm-objdump")) {
+    if (run_cmd(
+            "wasm-objdump -x "
+            "build/wasm32_obj/"
+            "unprototyped_void_zero_signature_refinement.o > "
+            "build/wasm32_obj/"
+            "unprototyped_void_zero_signature_refinement.objdump",
+            "dump resolved void zero-parameter function flags") != 0)
+      return 1;
+    char dump[16384];
+    if (slurp(
+            "build/wasm32_obj/"
+            "unprototyped_void_zero_signature_refinement.objdump",
+            dump, sizeof(dump)) != 0)
+      return 1;
+    if (strstr(dump, "agc.function_flags")) {
+      fprintf(
+          stderr,
+          "FAIL: resolved void zero-parameter definition retained "
+          "unprototyped function flags metadata\n");
+      return 1;
+    }
+  }
+  if (run_cmd(
           "./build/ag_wasm_link --nostdlib --no-entry --export=main "
           "-o build/wasm32_obj/unprototyped_funcptr_xtu.wasm "
           "build/wasm32_obj/unprototyped_funcptr_xtu_main.o "
@@ -1712,6 +1743,60 @@ static int run_unprototyped_function_pointer_xtu_case(void) {
           "build/wasm32_obj/"
           "unprototyped_promotion_signature_mismatch_other.o",
           "function signature mismatch: transform_value") != 0)
+    return 1;
+
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_address_direct_promotion_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_address_direct_promotion_mismatch_main.c",
+          "unprototyped address-direct promotion mismatch main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_address_direct_promotion_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_address_direct_promotion_mismatch_other.c",
+          "unprototyped address-direct promotion mismatch other") != 0)
+    return 1;
+  if (run_fail_case(
+          "unprototyped_address_direct_promotion_mismatch",
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "unprototyped_address_direct_promotion_mismatch.wasm "
+          "build/wasm32_obj/"
+          "unprototyped_address_direct_promotion_mismatch_main.o "
+          "build/wasm32_obj/"
+          "unprototyped_address_direct_promotion_mismatch_other.o",
+          "function signature mismatch: transform_address_direct") != 0)
+    return 1;
+
+  if (run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_direct_address_bool_mismatch_main.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_direct_address_bool_mismatch_main.c",
+          "unprototyped direct-address bool mismatch main") != 0 ||
+      run_cmd(
+          "./build/ag_c_wasm -c "
+          "-o build/wasm32_obj/"
+          "unprototyped_direct_address_bool_mismatch_other.o "
+          "test/fixtures/wasm32/"
+          "unprototyped_direct_address_bool_mismatch_other.c",
+          "unprototyped direct-address bool mismatch other") != 0)
+    return 1;
+  if (run_fail_case(
+          "unprototyped_direct_address_bool_mismatch",
+          "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+          "-o build/wasm32_obj/"
+          "unprototyped_direct_address_bool_mismatch.wasm "
+          "build/wasm32_obj/"
+          "unprototyped_direct_address_bool_mismatch_main.o "
+          "build/wasm32_obj/"
+          "unprototyped_direct_address_bool_mismatch_other.o",
+          "function signature mismatch: transform_direct_address") != 0)
     return 1;
 
   if (run_cmd(

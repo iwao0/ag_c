@@ -81,6 +81,8 @@ typedef struct {
   int defined;
   int is_static;
   int signature_parameters_unspecified;
+  /* The C wildcard remains live after a call fixes the emitted Wasm ABI. */
+  int signature_refined_from_unspecified_call;
   int type_index;
   int func_index;
   int symbol_index;
