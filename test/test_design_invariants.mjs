@@ -188,11 +188,39 @@ const documentedFunctionPointerCompileFailCases = [
   "compare_incompatible_function_pointers",
   "argument_incompatible_function_pointer",
   "return_incompatible_function_pointer",
+  "function_return_qualifier_redeclaration_mismatch",
+  "function_pointer_return_qualifier_redeclaration_mismatch",
+  "function_return_qualifier_pointer_mismatch",
 ];
 for (const caseName of documentedFunctionPointerCompileFailCases) {
   if (!nativeE2ESource.includes(`{"${caseName}",`)) {
     throw new Error(
       `documented function-pointer compile-fail coverage is missing ${caseName}`,
+    );
+  }
+}
+const documentedGenericFunctionCompatibilityCompileFailCases = [
+  "generic_duplicate_qualified_parameter_function_pointer",
+  "generic_duplicate_array_adjusted_function_pointer",
+  "generic_duplicate_function_adjusted_parameter_pointer",
+];
+for (const caseName of documentedGenericFunctionCompatibilityCompileFailCases) {
+  if (!nativeE2ESource.includes(`{"${caseName}",`)) {
+    throw new Error(
+      `documented _Generic function-compatibility coverage is missing ${caseName}`,
+    );
+  }
+}
+const documentedNestedArrayFunctionCompatibilityCompileFailCases = [
+  "nested_array_inner_bound_function_redeclaration_mismatch",
+  "nested_array_inner_bound_function_pointer_mismatch",
+  "nested_callback_return_array_bound_redeclaration_mismatch",
+  "nested_callback_return_array_bound_pointer_mismatch",
+];
+for (const caseName of documentedNestedArrayFunctionCompatibilityCompileFailCases) {
+  if (!nativeE2ESource.includes(`{"${caseName}",`)) {
+    throw new Error(
+      `documented nested-array function compatibility coverage is missing ${caseName}`,
     );
   }
 }
