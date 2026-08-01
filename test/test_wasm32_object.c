@@ -1290,6 +1290,14 @@ static int run_record_member_alignment_signature_mismatch_cases(void) {
           "consume_alignment_value",
       },
       {
+          "variadic_parameter_member_alignment_presence_mismatch",
+          "test/fixtures/wasm32/"
+          "variadic_parameter_member_alignment_presence_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "variadic_parameter_member_alignment_presence_mismatch_other.c",
+          "consume_variadic_parameter_alignment",
+      },
+      {
           "callback_parameter_member_alignment_presence_mismatch",
           "test/fixtures/wasm32/"
           "callback_parameter_member_alignment_presence_mismatch_main.c",
@@ -1900,6 +1908,14 @@ static int run_data_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "global_callback_pointee_const_qualifier_mismatch_other.c",
           "global_callback_pointee_const_qualifier",
+      },
+      {
+          "global_vla_callback_element_const_mismatch",
+          "test/fixtures/wasm32/"
+          "global_vla_callback_element_const_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_vla_callback_element_const_mismatch_other.c",
+          "global_vla_callback_element_const_mismatch",
       },
       {
           "global_void_pointer_type_mismatch",

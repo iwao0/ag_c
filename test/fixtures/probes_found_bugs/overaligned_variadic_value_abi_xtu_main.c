@@ -3,6 +3,7 @@
 // units.
 // Expected with overaligned_variadic_value_abi_xtu_other.c: exit=0.
 #include <stdint.h>
+#include <complex.h>
 
 #ifndef AG_C_OVERALIGNED_VARIADIC_VALUE_ABI_XTU_TYPES
 #define AG_C_OVERALIGNED_VARIADIC_VALUE_ABI_XTU_TYPES
@@ -40,6 +41,8 @@ static int is_aligned_in_variadic_main(const void *pointer,
 
 int main(void) {
   struct aligned_variadic32 first = {11, 13};
+  float _Complex narrow = 1.5f + 2.5f * I;
+  double _Complex wide = 3.25 + 4.75 * I;
   union aligned_variadic64 middle = {
       .record = {17, 19, 23}};
   struct aligned_variadic32 last = {29, 31};
@@ -55,13 +58,15 @@ int main(void) {
   }
 
   if (check_overaligned_variadic_values(
-          91, 7, first, 2.5, middle, &sentinel, last) != 42) {
+          91, 7, narrow, first, 2.5, wide,
+          middle, &sentinel, last) != 42) {
     return 2;
   }
 
   overaligned_variadic_checker_t *checker =
       check_overaligned_variadic_values;
-  if (checker(92, 9, first, 3.5, middle, &sentinel, last) != 42) {
+  if (checker(92, 9, narrow, first, 3.5, wide,
+              middle, &sentinel, last) != 42) {
     return 3;
   }
   return 0;
