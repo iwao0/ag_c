@@ -17381,6 +17381,24 @@ static void test_expr_generic(
       1, 13);
 
   assert_test_program_return_hir_int_at(test_suite_session,
+      "typedef int (*unary_fn)(int); "
+      "typedef int (*const const_unary_fn)(int); "
+      "int f(int x){ return x; } "
+      "int main(){ return _Generic((const_unary_fn)f, "
+      "unary_fn: 15, default: 7); }",
+      1, 15);
+
+  assert_test_program_return_hir_int_at(test_suite_session,
+      "int main(){ return _Generic((const int)1, "
+      "int: 16, default: 7); }",
+      0, 16);
+
+  assert_test_program_return_hir_int_at(test_suite_session,
+      "int main(){ return _Generic((_Atomic(int))1, "
+      "_Atomic(int): 17, int: 7, default: 0); }",
+      0, 17);
+
+  assert_test_program_return_hir_int_at(test_suite_session,
       "double fd(double x){ return x; } "
       "int main(){ return _Generic("
       "fd, double (*)(double): 17, default: 7); }",

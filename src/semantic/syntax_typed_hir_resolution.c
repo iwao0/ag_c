@@ -926,6 +926,9 @@ static int resolve_direct_generic_selection(
   if (!preflight_direct_unevaluated_expression(
           context, selection->control, &control_type))
     return 0;
+  /* Generic selection drops top-level cv/restrict qualification from the
+     converted value. Atomic types remain distinct, as do nested qualifiers. */
+  control_type.qualifiers &= PSX_TYPE_QUALIFIER_ATOMIC;
   size_t association_count = (size_t)selection->association_count;
   psx_qual_type_t *association_types = arena_alloc_in(
       ps_ctx_arena(context->semantic_context),
