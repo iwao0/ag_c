@@ -187,6 +187,14 @@ static void write_type(signature_writer_t *writer,
                                               shape.floating_kind,
                                               shape.kind == PSX_TYPE_COMPLEX)) *
                          8));
+      if (shape.floating_kind == PSX_FLOATING_KIND_FLOAT)
+        write_literal(writer, "F");
+      else if (shape.floating_kind == PSX_FLOATING_KIND_DOUBLE)
+        write_literal(writer, "D");
+      else if (shape.floating_kind == PSX_FLOATING_KIND_LONG_DOUBLE)
+        write_literal(writer, "L");
+      else
+        writer->failed = 1;
       return;
     case PSX_TYPE_POINTER:
     case PSX_TYPE_ARRAY: {

@@ -1105,6 +1105,22 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "function_return_atomic_function_pointer",
       },
       {
+          "function_floating_rank_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "function_floating_rank_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_floating_rank_signature_mismatch_other.c",
+          "transform_floating_rank",
+      },
+      {
+          "function_complex_floating_rank_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "function_complex_floating_rank_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_complex_floating_rank_signature_mismatch_other.c",
+          "transform_complex_floating_rank",
+      },
+      {
           "function_return_vla_callback_element_const_mismatch",
           "test/fixtures/wasm32/"
           "function_return_vla_callback_element_const_mismatch_main.c",
@@ -1628,6 +1644,22 @@ static int run_data_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "global_callback_member_alignment_presence_mismatch_other.c",
           "global_callback_member_alignment",
+      },
+      {
+          "global_callback_floating_rank_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "global_callback_floating_rank_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_callback_floating_rank_signature_mismatch_other.c",
+          "global_floating_rank_callback",
+      },
+      {
+          "global_callback_complex_floating_rank_signature_mismatch",
+          "test/fixtures/wasm32/"
+          "global_callback_complex_floating_rank_signature_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_callback_complex_floating_rank_signature_mismatch_other.c",
+          "global_complex_floating_rank_callback",
       },
       {
           "global_callback_return_member_alignment_value_mismatch",

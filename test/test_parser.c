@@ -13080,12 +13080,24 @@ static void test_target_type_layout_boundary(
   psx_qual_type_t unsigned_short =
       psx_semantic_type_table_intern_integer(
           types, PSX_INTEGER_KIND_SHORT, 1, 0);
+  psx_qual_type_t real_float =
+      psx_semantic_type_table_intern_floating(
+          types, PSX_FLOATING_KIND_FLOAT, 0);
+  psx_qual_type_t real_double =
+      psx_semantic_type_table_intern_floating(
+          types, PSX_FLOATING_KIND_DOUBLE, 0);
+  psx_qual_type_t real_long_double =
+      psx_semantic_type_table_intern_floating(
+          types, PSX_FLOATING_KIND_LONG_DOUBLE, 0);
   psx_qual_type_t float_complex =
       psx_semantic_type_table_intern_floating(
           types, PSX_FLOATING_KIND_FLOAT, 1);
   psx_qual_type_t double_complex =
       psx_semantic_type_table_intern_floating(
           types, PSX_FLOATING_KIND_DOUBLE, 1);
+  psx_qual_type_t long_double_complex =
+      psx_semantic_type_table_intern_floating(
+          types, PSX_FLOATING_KIND_LONG_DOUBLE, 1);
   psx_qual_type_t atomic_float_complex = float_complex;
   atomic_float_complex.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
   psx_qual_type_t atomic_double_complex = double_complex;
@@ -13178,6 +13190,36 @@ static void test_target_type_layout_boundary(
                        &narrow_int_target),
                    signature, sizeof(signature)));
   ASSERT_TRUE(strcmp("i16", signature) == 0);
+  ASSERT_EQ(4, psx_format_canonical_type_signature(
+                   types, real_float,
+                   ag_target_info_data_layout(&host),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("f32F", signature) == 0);
+  ASSERT_EQ(4, psx_format_canonical_type_signature(
+                   types, real_double,
+                   ag_target_info_data_layout(&host),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("f64D", signature) == 0);
+  ASSERT_EQ(4, psx_format_canonical_type_signature(
+                   types, real_long_double,
+                   ag_target_info_data_layout(&host),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("f64L", signature) == 0);
+  ASSERT_EQ(4, psx_format_canonical_type_signature(
+                   types, float_complex,
+                   ag_target_info_data_layout(&host),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("x64F", signature) == 0);
+  ASSERT_EQ(5, psx_format_canonical_type_signature(
+                   types, double_complex,
+                   ag_target_info_data_layout(&host),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("x128D", signature) == 0);
+  ASSERT_EQ(5, psx_format_canonical_type_signature(
+                   types, long_double_complex,
+                   ag_target_info_data_layout(&host),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("x128L", signature) == 0);
 
   ag_target_info_t packed_complex_target = host;
   packed_complex_target.data_layout

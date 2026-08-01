@@ -80,13 +80,17 @@ names and localizes the message using that compile request's
 text.
 
 String exports retain the original name-only behavior. An object export checks
-the function's canonical C type recorded in the `agc.c_signature` object
-section. Common signature atoms are `v`, `b`, `i8`/`u8`, `i16`/`u16`,
-`i32`/`u32`, `lN`/`ulN`, `llN`/`ullN`, `f32`, `f64`, and recursive
+the function's canonical C type recorded in the version 2 `agc.c_signature`
+object section. Common signature atoms are `v`, `b`, `i8`/`u8`, `i16`/`u16`,
+`i32`/`u32`, `lN`/`ulN`, `llN`/`ullN`, `f32F`, `f64D`, `f64L`, and recursive
 `p<type>` pointers. Function types use `result(param,...)`, so `void (void)` is
 `v()` and `int (int)` is `i32(i32)`. Function pointer types remain structural,
-for example `p<i32(i32)>`. A named enumeration records both its tag identity
-and compatible integer type, for example `e{6:status:u32}`. Cross-object
+for example `p<i32(i32)>`. Floating atoms retain both target width and C rank:
+the final `F`, `D`, or `L` distinguishes `float`, `double`, or `long double`
+even when two ranks share a physical representation. Complex atoms use the
+same rank suffix, such as `x64F`, `x128D`, and `x128L`. A named enumeration
+records both its tag identity and compatible integer type, for example
+`e{6:status:u32}`. Cross-object
 signature comparison accepts that enumeration wherever the corresponding
 `u32` occurs recursively, while distinct enumeration tags and `i32` remain
 different types. Array types use `aN<type>`. An incomplete or variable bound
@@ -120,7 +124,8 @@ pointers or passed through callbacks. Union member fingerprints are compared
 independently of declaration order. Versions 1 and 2 and objects without this
 section remain linkable for backward compatibility.
 
-The version 2 `agc.data_signature` section records the canonical C type,
+The version 3 `agc.data_signature` section records the rank-preserving
+canonical C type,
 version 3 target layout fingerprint, thread-local storage flag, and explicit
 object alignment requirement of each externally visible data symbol. When
 both the reference and definition provide this metadata, the linker rejects
@@ -128,8 +133,11 @@ incompatible scalar types, aggregate layout differences,
 `_Thread_local`/ordinary-storage mismatches, and a reference whose `_Alignas`
 requirement is absent or different on the definition before applying memory
 relocations. A reference without `_Alignas` remains compatible with a more
-strictly aligned definition. Version 1 entries remain readable; their absent
-object properties are treated as unknown so old objects stay linkable.
+strictly aligned definition. Versions 1 and 2 remain readable; version 1's
+absent object properties are treated as unknown. When version 1 function
+metadata or version 1/2 data metadata is mixed with the rank-preserving
+format, canonical type comparison is treated as unavailable while low-level
+Wasm ABI and available layout metadata are still checked.
 Subobject symbols with a non-zero segment offset and manifest-declared runtime
 data bridges are excluded because their symbol-level type intentionally
 differs from the owning storage object. Objects without this section remain

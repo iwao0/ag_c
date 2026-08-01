@@ -345,7 +345,7 @@ static void emit_c_signature_section(
   if (count == 0) return;
   wb_t payload = {
       .diagnostic_context = context->diagnostic_context};
-  wb_uleb(&payload, 1);
+  wb_uleb(&payload, 2);
   wb_uleb(&payload, (uint32_t)count);
   for (int index = 0; index < g_obj.func_count; index++) {
     const obj_func_t *function = &g_obj.funcs[index];
@@ -399,7 +399,7 @@ static void emit_data_signature_section(
   if (count == 0) return;
   wb_t payload = {
       .diagnostic_context = context->diagnostic_context};
-  wb_uleb(&payload, 2);
+  wb_uleb(&payload, 3);
   wb_uleb(&payload, 3);
   wb_uleb(&payload, (uint32_t)count);
   for (int index = 0; index < g_obj.data_count; index++) {

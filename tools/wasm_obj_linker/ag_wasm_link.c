@@ -161,6 +161,8 @@ typedef struct {
   c_signature_t *c_signatures;
   int c_signature_count;
   int c_signature_cap;
+  int has_c_signature_section;
+  uint32_t c_signature_version;
   c_signature_t *abi_layout_signatures;
   int abi_layout_signature_count;
   int abi_layout_signature_cap;
@@ -170,6 +172,7 @@ typedef struct {
   int data_signature_count;
   int data_signature_cap;
   int has_data_signature_section;
+  uint32_t data_signature_version;
   uint32_t data_layout_version;
   function_flags_t *function_flags;
   int function_flag_count;
@@ -691,8 +694,11 @@ static void parse_reloc_section(object_t *o, rd_t sec, int is_code) {
 }
 
 static void parse_c_signature_section(object_t *o, rd_t sec) {
+  if (o->has_c_signature_section)
+    die("duplicate agc.c_signature section");
   uint32_t version = rd_uleb(&sec);
-  if (version != 1) die("unsupported agc.c_signature version");
+  if (version != 1 && version != 2)
+    die("unsupported agc.c_signature version");
   uint32_t count = rd_uleb(&sec);
   for (uint32_t i = 0; i < count; i++) {
     c_signature_t entry = {rd_str_dup(&sec), rd_str_dup(&sec)};
@@ -705,6 +711,8 @@ static void parse_c_signature_section(object_t *o, rd_t sec) {
     PUSH(o->c_signatures, o->c_signature_count, o->c_signature_cap, entry);
   }
   if (sec.pos != sec.len) die("trailing bytes in agc.c_signature section");
+  o->has_c_signature_section = 1;
+  o->c_signature_version = version;
 }
 
 static void parse_abi_layout_section(object_t *o, rd_t sec) {
@@ -745,7 +753,7 @@ static void parse_data_signature_section(object_t *o, rd_t sec) {
   if (o->has_data_signature_section)
     die("duplicate agc.data_signature section");
   uint32_t version = rd_uleb(&sec);
-  if (version != 1 && version != 2)
+  if (version != 1 && version != 2 && version != 3)
     die("unsupported agc.data_signature version");
   uint32_t layout_version = rd_uleb(&sec);
   if (layout_version != 3)
@@ -787,6 +795,7 @@ static void parse_data_signature_section(object_t *o, rd_t sec) {
   if (sec.pos != sec.len)
     die("trailing bytes in agc.data_signature section");
   o->has_data_signature_section = 1;
+  o->data_signature_version = version;
   o->data_layout_version = layout_version;
 }
 
@@ -2287,10 +2296,17 @@ static int data_c_signatures_compatible(
                    right_function, left_function);
 }
 
+static uint32_t data_c_signature_format_version(
+    uint32_t section_version) {
+  return section_version >= 3 ? 2 : 1;
+}
+
 static int data_signatures_compatible(
     const data_signature_t *left_entry,
+    uint32_t left_signature_version,
     uint32_t left_layout_version,
     const data_signature_t *right_entry,
+    uint32_t right_signature_version,
     uint32_t right_layout_version) {
   if (!left_entry || !right_entry) return 1;
   if (left_entry->has_object_properties &&
@@ -2304,7 +2320,9 @@ static int data_signatures_compatible(
       left_entry->requested_alignment !=
           right_entry->requested_alignment)
     return 0;
-  if (!data_c_signatures_compatible(
+  if (data_c_signature_format_version(left_signature_version) ==
+          data_c_signature_format_version(right_signature_version) &&
+      !data_c_signatures_compatible(
           left_entry, right_entry))
     return 0;
   if (str_eq(
@@ -2353,6 +2371,9 @@ static int func_signature_matches(object_t *ref_obj, int ref_func,
           reference_layout, ref_obj->abi_layout_version,
           definition_layout, def_obj->abi_layout_version);
   if (!reference || !definition)
+    return wasm_types_equal && layouts_compatible;
+  if (ref_obj->c_signature_version !=
+      def_obj->c_signature_version)
     return wasm_types_equal && layouts_compatible;
   if (canonical_type_signatures_compatible(
           reference->signature, definition->signature))
@@ -4578,8 +4599,10 @@ static uint32_t final_data_addr_for_symbol(object_t *objs, int obj_count, object
     if (symbol_offset == 0 &&
         !is_runtime_data_symbol(sym->name) &&
         !data_signatures_compatible(
-            reference, cur->data_layout_version,
-            definition, def_obj->data_layout_version))
+            reference, cur->data_signature_version,
+            cur->data_layout_version,
+            definition, def_obj->data_signature_version,
+            def_obj->data_layout_version))
       dief("data signature mismatch: %s", sym->name.s);
   }
   if (data_index < 0 || data_index >= def_obj->data_count || !def_obj->data[data_index].defined) {
