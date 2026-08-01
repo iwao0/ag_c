@@ -334,6 +334,15 @@ skip_reason() {
     test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_other.c)
       echo "multi-TU link fixture component without main"
       ;;
+    test/fixtures/probes_found_bugs/overaligned_callback_value_abi_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/overaligned_variadic_value_abi_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
+    test/fixtures/probes_found_bugs/overaligned_variadic_return_abi_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c)
       echo "multi-TU link fixture component without main"
       ;;
@@ -489,6 +498,10 @@ skip_reason() {
     test/fixtures/wasm32/record_member_alignment_presence_mismatch_other.c|\
     test/fixtures/wasm32/record_member_alignment_value_mismatch_main.c|\
     test/fixtures/wasm32/record_member_alignment_value_mismatch_other.c|\
+    test/fixtures/wasm32/callback_parameter_member_alignment_presence_mismatch_main.c|\
+    test/fixtures/wasm32/callback_parameter_member_alignment_presence_mismatch_other.c|\
+    test/fixtures/wasm32/callback_return_member_alignment_value_mismatch_main.c|\
+    test/fixtures/wasm32/callback_return_member_alignment_value_mismatch_other.c|\
     test/fixtures/wasm32/indirect_record_layout_signature_mismatch_main.c|\
     test/fixtures/wasm32/indirect_record_layout_signature_mismatch_other.c|\
     test/fixtures/wasm32/nested_record_layout_signature_mismatch_main.c|\
@@ -511,6 +524,12 @@ skip_reason() {
     test/fixtures/wasm32/global_pointer_record_layout_signature_mismatch_other.c|\
     test/fixtures/wasm32/global_callback_record_layout_signature_mismatch_main.c|\
     test/fixtures/wasm32/global_callback_record_layout_signature_mismatch_other.c|\
+    test/fixtures/wasm32/global_callback_member_alignment_presence_mismatch_main.c|\
+    test/fixtures/wasm32/global_callback_member_alignment_presence_mismatch_other.c|\
+    test/fixtures/wasm32/global_callback_return_member_alignment_value_mismatch_main.c|\
+    test/fixtures/wasm32/global_callback_return_member_alignment_value_mismatch_other.c|\
+    test/fixtures/wasm32/global_callback_factory_member_alignment_presence_mismatch_main.c|\
+    test/fixtures/wasm32/global_callback_factory_member_alignment_presence_mismatch_other.c|\
     test/fixtures/wasm32/global_scalar_type_signature_mismatch_main.c|\
     test/fixtures/wasm32/global_scalar_type_signature_mismatch_other.c|\
     test/fixtures/wasm32/global_array_bound_signature_mismatch_main.c|\
@@ -905,6 +924,15 @@ link_companion() {
       ;;
     test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_main.c)
       echo "test/fixtures/probes_found_bugs/aggregate_value_abi_xtu_boundaries_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/overaligned_callback_value_abi_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/overaligned_callback_value_abi_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/overaligned_variadic_value_abi_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/overaligned_variadic_value_abi_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/overaligned_variadic_return_abi_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/overaligned_variadic_return_abi_xtu_other.c"
       ;;
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_main.c)
       echo "test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c"

@@ -1289,6 +1289,22 @@ static int run_record_member_alignment_signature_mismatch_cases(void) {
           "record_member_alignment_value_mismatch_other.c",
           "consume_alignment_value",
       },
+      {
+          "callback_parameter_member_alignment_presence_mismatch",
+          "test/fixtures/wasm32/"
+          "callback_parameter_member_alignment_presence_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "callback_parameter_member_alignment_presence_mismatch_other.c",
+          "invoke_callback_parameter_alignment_presence",
+      },
+      {
+          "callback_return_member_alignment_value_mismatch",
+          "test/fixtures/wasm32/"
+          "callback_return_member_alignment_value_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "callback_return_member_alignment_value_mismatch_other.c",
+          "invoke_callback_return_alignment_value",
+      },
   };
   for (size_t index = 0;
        index < sizeof(cases) / sizeof(cases[0]); index++) {
@@ -1580,6 +1596,30 @@ static int run_data_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "global_callback_record_layout_signature_mismatch_other.c",
           "global_callback_layout_reader",
+      },
+      {
+          "global_callback_member_alignment_presence_mismatch",
+          "test/fixtures/wasm32/"
+          "global_callback_member_alignment_presence_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_callback_member_alignment_presence_mismatch_other.c",
+          "global_callback_member_alignment",
+      },
+      {
+          "global_callback_return_member_alignment_value_mismatch",
+          "test/fixtures/wasm32/"
+          "global_callback_return_member_alignment_value_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_callback_return_member_alignment_value_mismatch_other.c",
+          "global_callback_return_alignment_factory",
+      },
+      {
+          "global_callback_factory_member_alignment_presence_mismatch",
+          "test/fixtures/wasm32/"
+          "global_callback_factory_member_alignment_presence_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_callback_factory_member_alignment_presence_mismatch_other.c",
+          "global_callback_factory_alignment_factory",
       },
       {
           "global_scalar_type_signature_mismatch",
@@ -3773,11 +3813,21 @@ int main(void) {
                                 "int main(void){_Alignas(32) int x=7; return x;}\n",
                                 align_ptr_needles, 4);
 
-  const char *vla_needles[] = {"__stack_pointer", "i32.const 15", "i32.and", "global.set",
-                               "i32.store", "i32.load"};
+  const char *vla_needles[] = {"__stack_pointer", "i32.sub", "i32.const 4294967280",
+                               "i32.and", "global.set", "i32.store", "i32.load"};
   failures += run_objdump_check("vla_alloc",
                                 "int main(void){int n=4; int a[n]; a[0]=7; return a[0];}\n",
-                                vla_needles, 6);
+                                vla_needles, 7);
+
+  const char *overaligned_vla_needles[] = {
+      "__stack_pointer", "i32.sub", "i32.const 4294967232",
+      "i32.and", "global.set", "i32.store", "i32.load"};
+  failures += run_objdump_check(
+      "overaligned_vla_alloc",
+      "struct S{_Alignas(64) int value;};"
+      "int main(void){int n=2; struct S a[n]; "
+      "a[1].value=7; return a[1].value;}\n",
+      overaligned_vla_needles, 7);
 
   const char *va_arg_area_needles[] = {"__ag_va_arg_area", "R_WASM_GLOBAL_INDEX_LEB", "global.get"};
   failures += run_objdump_check("va_arg_area",
