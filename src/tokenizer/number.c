@@ -7,6 +7,7 @@
 #include "context.h"
 #include "diag_helper.h"
 #include "charclass.h"
+#include "scanner.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +18,11 @@ static inline bool tk_is_binary_literal_enabled_in_ctx(
   if (!ctx) return false;
   if (tk_ctx_get_strict_c11_mode(ctx)) return false;
   return tk_ctx_get_enable_binary_literals(ctx);
+}
+
+static bool starts_identifier_continuation(const char *p) {
+  int length = 0;
+  return tk_scan_ident_continue(p, &length);
 }
 
 static void choose_int_type(
@@ -175,7 +181,7 @@ static bool try_parse_decimal_int_fast(
   } else {
     choose_int_type(ctx, num, val, true, false, 0, *pp);
   }
-  if (*p == '.' || tk_is_ident_continue_byte(*p)) {
+  if (*p == '.' || starts_identifier_continuation(p)) {
     TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
   }
   *pp = p;
@@ -369,7 +375,7 @@ void tk_parse_number_literal_ctx(
     }
   }
 
-  if (*p == '.' || tk_is_ident_continue_byte(*p)) {
+  if (*p == '.' || starts_identifier_continuation(p)) {
     TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
   }
   *pp = p;

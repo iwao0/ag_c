@@ -359,6 +359,7 @@ static void test_tokenize_invalid(tokenizer_context_t *test_ctx) {
   expect_tokenize_fail(test_ctx, "\xC0\xAF");    // 不正UTF-8シーケンス（overlong）
   expect_tokenize_fail(test_ctx, "1.0f0");      // pp-number 連結
   expect_tokenize_fail(test_ctx, "1..2");       // pp-number 連結
+  expect_tokenize_fail(test_ctx, "42２2");      // Unicode識別子継続の数値suffix
 
   // 大きすぎるトークン長を安全に拒否できること（テスト用上限を利用）
   tk_set_max_token_len_limit_for_test_ctx(test_ctx, 8);

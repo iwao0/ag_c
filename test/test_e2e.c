@@ -2099,6 +2099,9 @@ static const link2_case_t link2_cases[] = {
     {"probes", "floating_rank_signature_xtu",
      "test/fixtures/probes_found_bugs/floating_rank_signature_xtu_main.c",
      "test/fixtures/probes_found_bugs/floating_rank_signature_xtu_other.c", 0},
+    {"probes", "integer_rank_signature_xtu",
+     "test/fixtures/probes_found_bugs/integer_rank_signature_xtu_main.c",
+     "test/fixtures/probes_found_bugs/integer_rank_signature_xtu_other.c", 0},
     {"probes", "thread_local_xtu_boundaries",
      "test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_main.c",
      "test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c", 42},
@@ -4859,6 +4862,10 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"tokenizer_numeric_suffix_concatenated_rejected",
      "fixture:test/fixtures/should_reject/"
      "tokenizer_numeric_suffix_concatenated.c",
+     "E2018"},
+    {"tokenizer_unicode_numeric_suffix_concatenated_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "tokenizer_unicode_numeric_suffix_concatenated.c",
      "E2018"},
     {"tokenizer_numeric_multiple_decimal_points_rejected",
      "fixture:test/fixtures/should_reject/"

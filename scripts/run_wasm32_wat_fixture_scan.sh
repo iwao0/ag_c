@@ -236,6 +236,8 @@ skip_reason() {
     test/fixtures/probes_found_bugs/overaligned_vla_callback_aggregate_return_xtu_other.c|\
     test/fixtures/probes_found_bugs/floating_rank_signature_xtu_main.c|\
     test/fixtures/probes_found_bugs/floating_rank_signature_xtu_other.c|\
+    test/fixtures/probes_found_bugs/integer_rank_signature_xtu_main.c|\
+    test/fixtures/probes_found_bugs/integer_rank_signature_xtu_other.c|\
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_main.c|\
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c|\
     test/fixtures/probes_found_bugs/aligned_global_definition_xtu_main.c|\
@@ -396,6 +398,8 @@ skip_reason() {
     test/fixtures/wasm32/function_floating_rank_signature_mismatch_other.c|\
     test/fixtures/wasm32/function_complex_floating_rank_signature_mismatch_main.c|\
     test/fixtures/wasm32/function_complex_floating_rank_signature_mismatch_other.c|\
+    test/fixtures/wasm32/function_short_int_rank_signature_mismatch_main.c|\
+    test/fixtures/wasm32/function_short_int_rank_signature_mismatch_other.c|\
     test/fixtures/wasm32/function_return_vla_callback_element_const_mismatch_main.c|\
     test/fixtures/wasm32/function_return_vla_callback_element_const_mismatch_other.c|\
     test/fixtures/wasm32/function_return_vla_callback_result_alignment_presence_mismatch_main.c|\
@@ -440,6 +444,8 @@ skip_reason() {
     test/fixtures/wasm32/global_callback_floating_rank_signature_mismatch_other.c|\
     test/fixtures/wasm32/global_callback_complex_floating_rank_signature_mismatch_main.c|\
     test/fixtures/wasm32/global_callback_complex_floating_rank_signature_mismatch_other.c|\
+    test/fixtures/wasm32/global_callback_char_short_rank_signature_mismatch_main.c|\
+    test/fixtures/wasm32/global_callback_char_short_rank_signature_mismatch_other.c|\
     test/fixtures/wasm32/global_callback_return_member_alignment_value_mismatch_main.c|\
     test/fixtures/wasm32/global_callback_return_member_alignment_value_mismatch_other.c|\
     test/fixtures/wasm32/global_callback_factory_member_alignment_presence_mismatch_main.c|\

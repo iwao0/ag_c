@@ -600,8 +600,8 @@ int main(void) {
     return 1;
   }
 
-  char reference_c_signature[] = "i32(i64)";
-  char call_c_signature[] = "i32(i32,...)";
+  char reference_c_signature[] = "i32I(i64I)";
+  char call_c_signature[] = "i32I(i32I,...)";
   ir_inst_t function_instructions[18] = {0};
   function_instructions[0].op = IR_ALLOCA;
   function_instructions[0].dst =
@@ -636,7 +636,8 @@ int main(void) {
   function_instructions[5].sym_len = 11;
   function_instructions[5].reference_c_signature =
       reference_c_signature;
-  function_instructions[5].reference_c_signature_len = 8;
+  function_instructions[5].reference_c_signature_len =
+      (int)sizeof(reference_c_signature) - 1;
   function_instructions[5].is_function_symbol = 1;
   function_instructions[5].function_type.has_prototype = 1;
   function_instructions[5].function_type.param_count = 1;
@@ -691,7 +692,8 @@ int main(void) {
   function_instructions[12].sym_len = 12;
   function_instructions[12].reference_c_signature =
       call_c_signature;
-  function_instructions[12].reference_c_signature_len = 12;
+  function_instructions[12].reference_c_signature_len =
+      (int)sizeof(call_c_signature) - 1;
   function_instructions[13].op = IR_PARAM_BIND;
   function_instructions[13].src1 =
       (ir_val_t){.id = 0, .type = IR_TY_PTR};
@@ -717,7 +719,7 @@ int main(void) {
       .tail = &function_instructions[17],
   };
   char function_name[] = "planned_function";
-  char function_c_signature[] = "i32(i32)";
+  char function_c_signature[] = "i32I(i32I)";
   char continuation_entry[] = "planned_entry";
   char continuation_condition[] = "planned_condition";
   char continuation_start[] = "planned_start";
@@ -735,7 +737,8 @@ int main(void) {
       .continuation_result_export = continuation_result,
       .entry = &function_block,
       .name_len = 16,
-      .c_signature_len = 8,
+      .c_signature_len =
+          (int)sizeof(function_c_signature) - 1,
       .next_vreg_id = 13,
       .is_static = 1,
       .continuation_condition_block_id = 7,
@@ -1109,12 +1112,13 @@ int main(void) {
   }
   unsigned char target_bytes[] = {1, 2, 3, 4};
   unsigned char holder_bytes[8] = {0};
-  char relocation_c_signature[] = "i32(i64)";
+  char relocation_c_signature[] = "i32I(i64I)";
   ir_data_reloc_t function_data_relocation = {
       .target = "planned_function",
       .reference_c_signature = relocation_c_signature,
       .target_len = 16,
-      .reference_c_signature_len = 8,
+      .reference_c_signature_len =
+          (int)sizeof(relocation_c_signature) - 1,
       .offset = 4,
       .width = 4,
       .kind = IR_DATA_RELOC_FUNCTION,
@@ -1158,16 +1162,16 @@ int main(void) {
   ir_abi_data_object_t data_object_signatures[] = {
       {
           .object = &target_object,
-          .c_signature = "i32",
+          .c_signature = "i32I",
           .layout_signature = "x4:4",
-          .c_signature_len = 3,
+          .c_signature_len = 4,
           .layout_signature_len = 4,
       },
       {
           .object = &holder_object,
-          .c_signature = "a8<u8>",
+          .c_signature = "a8<u8C>",
           .layout_signature = "a8<x1:1>",
-          .c_signature_len = 6,
+          .c_signature_len = 7,
           .layout_signature_len = 8,
       },
   };
@@ -1254,10 +1258,11 @@ int main(void) {
       !machine_holder->relocations[1].reference_c_signature ||
       machine_holder->relocations[1].reference_c_signature ==
           source_relocation_c_signature ||
-      machine_holder->relocations[1].reference_c_signature_len != 8 ||
+      machine_holder->relocations[1].reference_c_signature_len !=
+          (int)sizeof(relocation_c_signature) - 1 ||
       strcmp(
           machine_holder->relocations[1].reference_c_signature,
-          "i32(i64)") != 0 ||
+          "i32I(i64I)") != 0 ||
       !machine_holder->relocations[1].has_function_signature ||
       !machine_holder->relocations[1]
            .reference_parameters_unspecified ||

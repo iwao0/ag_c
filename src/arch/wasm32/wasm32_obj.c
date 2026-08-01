@@ -2641,7 +2641,7 @@ static obj_func_t *define_continuation_helper(
       helper->sig.params[i] = IR_TY_I32;
   }
   const char *signature =
-      param_count ? "i32(i32)" : "i32()";
+      param_count ? "i32I(i32I)" : "i32I()";
   set_func_c_signature(
       context, helper, signature, (int)strlen(signature));
   return helper;

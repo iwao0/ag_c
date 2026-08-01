@@ -10017,11 +10017,11 @@ static void test_function_prototype_type_identity_boundary(
                 test_suite_session, atomic_array_parameter).kind);
 
   char signature[16];
-  ASSERT_EQ(5, ps_ctx_format_function_signature_in(
+  ASSERT_EQ(6, ps_ctx_format_function_signature_in(
                    test_semantic_context(test_suite_session), void_prototype_name,
                    (int)sizeof(void_prototype_name) - 1,
                    signature, sizeof(signature)));
-  ASSERT_TRUE(strcmp(signature, "i32()") == 0);
+  ASSERT_TRUE(strcmp(signature, "i32I()") == 0);
 
   psx_call_types_resolution_t resolution;
   psx_resolve_call_qual_types_in(
@@ -13071,6 +13071,12 @@ static void test_target_type_layout_boundary(
   psx_qual_type_t integer =
       psx_semantic_type_table_intern_integer(
           types, PSX_INTEGER_KIND_INT, 0, 0);
+  psx_qual_type_t signed_char =
+      psx_semantic_type_table_intern_integer(
+          types, PSX_INTEGER_KIND_CHAR, 0, 0);
+  psx_qual_type_t signed_short =
+      psx_semantic_type_table_intern_integer(
+          types, PSX_INTEGER_KIND_SHORT, 0, 0);
   psx_qual_type_t signed_long =
       psx_semantic_type_table_intern_integer(
           types, PSX_INTEGER_KIND_LONG, 0, 0);
@@ -13178,18 +13184,46 @@ static void test_target_type_layout_boundary(
                    ag_target_info_data_layout(
                        &narrow_int_target)));
 
+  ag_target_info_t equal_integer_rank_width_target = host;
+  equal_integer_rank_width_target.data_layout
+      .scalar[AG_TARGET_SCALAR_CHAR] =
+      (ag_target_scalar_layout_t){4, 4};
+  equal_integer_rank_width_target.data_layout
+      .scalar[AG_TARGET_SCALAR_SHORT] =
+      (ag_target_scalar_layout_t){4, 4};
+  ASSERT_TRUE(ag_target_info_is_valid(
+      &equal_integer_rank_width_target));
+
   char signature[64];
-  ASSERT_EQ(3, psx_format_canonical_type_signature(
+  ASSERT_EQ(4, psx_format_canonical_type_signature(
                    types, integer,
                    ag_target_info_data_layout(&host),
                    signature, sizeof(signature)));
-  ASSERT_TRUE(strcmp("i32", signature) == 0);
-  ASSERT_EQ(3, psx_format_canonical_type_signature(
+  ASSERT_TRUE(strcmp("i32I", signature) == 0);
+  ASSERT_EQ(4, psx_format_canonical_type_signature(
                    types, integer,
                    ag_target_info_data_layout(
                        &narrow_int_target),
                    signature, sizeof(signature)));
-  ASSERT_TRUE(strcmp("i16", signature) == 0);
+  ASSERT_TRUE(strcmp("i16I", signature) == 0);
+  ASSERT_EQ(4, psx_format_canonical_type_signature(
+                   types, signed_char,
+                   ag_target_info_data_layout(
+                       &equal_integer_rank_width_target),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("i32C", signature) == 0);
+  ASSERT_EQ(4, psx_format_canonical_type_signature(
+                   types, signed_short,
+                   ag_target_info_data_layout(
+                       &equal_integer_rank_width_target),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("i32S", signature) == 0);
+  ASSERT_EQ(4, psx_format_canonical_type_signature(
+                   types, integer,
+                   ag_target_info_data_layout(
+                       &equal_integer_rank_width_target),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("i32I", signature) == 0);
   ASSERT_EQ(4, psx_format_canonical_type_signature(
                    types, real_float,
                    ag_target_info_data_layout(&host),
@@ -17262,7 +17296,7 @@ static void test_expr_unary_ops(
   ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(test_suite_session, base).kind);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, base.qualifiers);
   assert_canonical_qual_type_signature(test_suite_session,
-      psx_hir_node_qual_type(root), "Rp<Vp<ki32>>");
+      psx_hir_node_qual_type(root), "Rp<Vp<ki32I>>");
   psx_frontend_expression_hir_dispose(&expression);
 
   assert_test_integer_cast_hir(test_suite_session,
@@ -17359,7 +17393,7 @@ static void test_expr_unary_ops(
     type = psx_hir_node_qual_type(root);
     ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
     ASSERT_EQ(PSX_TYPE_QUALIFIER_RESTRICT, type.qualifiers);
-    assert_canonical_qual_type_signature(test_suite_session, type, "Rp<i32>");
+    assert_canonical_qual_type_signature(test_suite_session, type, "Rp<i32I>");
     psx_frontend_expression_hir_dispose(&expression);
   }
 
@@ -17522,8 +17556,8 @@ static void test_expr_generic(
             test_qual_type_shape(test_suite_session,
                 test_qual_type_base(test_suite_session, unary_type)).kind);
   assert_canonical_qual_type_signature(test_suite_session,
-      generic_id_function, "i32(i32)");
-  assert_canonical_qual_type_signature(test_suite_session, unary_type, "p<i32(i32)>");
+      generic_id_function, "i32I(i32I)");
+  assert_canonical_qual_type_signature(test_suite_session, unary_type, "p<i32I(i32I)>");
   node_t *generic_id_syntax = NULL;
   psx_frontend_expression_hir_t generic_id_expression =
       resolve_test_expression_input_hir(test_suite_session,
@@ -19245,7 +19279,7 @@ static void test_type_metadata_bridge(
       types, pointer_to_qualified_int, data_layout,
       canonical_signature, sizeof(canonical_signature));
   ASSERT_TRUE(canonical_length > 0);
-  ASSERT_TRUE(strcmp(canonical_signature, "p<kAi32>") == 0);
+  ASSERT_TRUE(strcmp(canonical_signature, "p<kAi32I>") == 0);
   psx_semantic_type_table_destroy(types);
 
   reset_test_translation_unit_state(test_suite_session);
@@ -21205,14 +21239,14 @@ static void test_named_enum_canonical_signature_compatible_integer(
           ag_compilation_session_target(test_suite_session)),
       signature, sizeof(signature)) > 0);
   ASSERT_TRUE(
-      strcmp(signature, "e{13:signed_result:i32}") == 0);
+      strcmp(signature, "e{13:signed_result:i32I}") == 0);
   ASSERT_TRUE(psx_format_canonical_type_signature(
       types, unsigned_enum,
       ag_target_info_data_layout(
           ag_compilation_session_target(test_suite_session)),
       signature, sizeof(signature)) > 0);
   ASSERT_TRUE(
-      strcmp(signature, "e{15:unsigned_result:u32}") == 0);
+      strcmp(signature, "e{15:unsigned_result:u32I}") == 0);
   psx_semantic_type_table_destroy(types);
 }
 
@@ -21271,7 +21305,7 @@ static void test_named_record_canonical_signature_structure(
   ASSERT_TRUE(
       strcmp(
           signature,
-          "s{6:packet}[1:1|5:value:0u:m1:16:i32]") == 0);
+          "s{6:packet}[1:1|5:value:0u:m1:16:i32I]") == 0);
   ASSERT_TRUE(psx_format_canonical_type_signature(
       types, envelope,
       ag_target_info_data_layout(

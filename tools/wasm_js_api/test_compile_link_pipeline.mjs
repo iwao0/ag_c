@@ -605,22 +605,22 @@ async function expectSignedExportFailure(source, exportSpec, expectedMessage) {
 await expectSignedExportFailure(
   "int start(void) { return 0; }\n",
   { name: "start", signature: "v()" },
-  "export C signature mismatch for start: expected v(), actual i32()",
+  "export C signature mismatch for start: expected v(), actual i32I()",
 );
 await expectSignedExportFailure(
   "void start(int value) { (void)value; }\n",
   { name: "start", signature: "v()" },
-  "export C signature mismatch for start: expected v(), actual v(i32)",
+  "export C signature mismatch for start: expected v(), actual v(i32I)",
 );
 await expectSignedExportFailure(
   "void start(double value) { (void)value; }\n",
-  { name: "start", signature: "v(i32)" },
-  "export C signature mismatch for start: expected v(i32), actual v(f64)",
+  { name: "start", signature: "v(i32I)" },
+  "export C signature mismatch for start: expected v(i32I), actual v(f64D)",
 );
 await expectSignedExportFailure(
   "void start(unsigned int value) { (void)value; }\n",
-  { name: "start", signature: "v(i32)" },
-  "export C signature mismatch for start: expected v(i32), actual v(u32)",
+  { name: "start", signature: "v(i32I)" },
+  "export C signature mismatch for start: expected v(i32I), actual v(u32I)",
 );
 await expectSignedExportFailure(
   "int start;\n",
@@ -668,7 +668,7 @@ void accept_callback(callback_t callback) { (void)callback; }
 `, {
   exports: [
     { name: "typed_start", signature: "v()" },
-    { name: "accept_callback", signature: "v(p<i32(i32)>)" },
+    { name: "accept_callback", signature: "v(p<i32I(i32I)>)" },
   ],
   useStdlib: false,
 });
@@ -3717,17 +3717,17 @@ try {
     exports: ["main"],
     useStdlib: false,
   });
-  throw new Error("invalid UTF-8 token source unexpectedly compiled");
+  throw new Error("invalid Unicode numeric suffix source unexpectedly compiled");
 } catch (err) {
   const message = err && err.message ? err.message : String(err);
-  if (!message.includes("source 2:") || !message.includes("E2028")) {
+  if (!message.includes("source 2:") || !message.includes("E2018")) {
     throw new Error(`invalid token diagnostic was not surfaced: ${JSON.stringify(message)}`);
   }
   if (message.includes("%*s")) {
     throw new Error(`invalid token diagnostic leaked printf format text: ${JSON.stringify(message)}`);
   }
   const diagnostic = err.diagnostics?.[0];
-  if (!diagnostic || diagnostic.code !== "E2028" || diagnostic.severity !== "error" ||
+  if (!diagnostic || diagnostic.code !== "E2018" || diagnostic.severity !== "error" ||
       diagnostic.sourceId !== 1 || diagnostic.sourceName !== "input.c") {
     throw new Error(`toolchain error did not preserve structured source identity: ${JSON.stringify(err.diagnostics)}`);
   }

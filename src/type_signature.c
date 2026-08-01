@@ -149,7 +149,7 @@ static void write_type(signature_writer_t *writer,
                 shape.enum_tag_name, shape.enum_tag_length)) {
           write_literal(writer, shape.is_unsigned ? "e<u" : "e<i");
           write_unsigned(writer, bits);
-          write_literal(writer, ">");
+          write_literal(writer, "I>");
         } else {
           write_literal(writer, "e{");
           write_unsigned(writer, (unsigned int)(
@@ -160,7 +160,7 @@ static void write_type(signature_writer_t *writer,
                         (size_t)shape.enum_tag_length);
           write_literal(writer, shape.is_unsigned ? ":u" : ":i");
           write_unsigned(writer, bits);
-          write_literal(writer, "}");
+          write_literal(writer, "I}");
         }
       } else if (shape.is_plain_char) {
         write_literal(writer, "c");
@@ -174,6 +174,12 @@ static void write_type(signature_writer_t *writer,
       } else {
         write_literal(writer, shape.is_unsigned ? "u" : "i");
         write_unsigned(writer, bits);
+        if (shape.integer_kind == PSX_INTEGER_KIND_CHAR)
+          write_literal(writer, "C");
+        else if (shape.integer_kind == PSX_INTEGER_KIND_SHORT)
+          write_literal(writer, "S");
+        else if (shape.integer_kind == PSX_INTEGER_KIND_INT)
+          write_literal(writer, "I");
       }
       return;
     }

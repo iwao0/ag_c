@@ -407,6 +407,8 @@ const wasmMultiTuProbeFixtures = [
   "overaligned_vla_callback_aggregate_return_xtu_other.c",
   "floating_rank_signature_xtu_main.c",
   "floating_rank_signature_xtu_other.c",
+  "integer_rank_signature_xtu_main.c",
+  "integer_rank_signature_xtu_other.c",
   "anonymous_flexible_callback_signature_xtu_main.c",
   "anonymous_flexible_callback_signature_xtu_other.c",
   "anonymous_flexible_function_signature_xtu_main.c",
@@ -13604,6 +13606,10 @@ const runtimeLinkerSource = await readFile(
   "tools/wasm_obj_linker/ag_wasm_link.c",
   "utf8",
 );
+const canonicalTypeSignatureSource = await readFile(
+  "src/type_signature.c",
+  "utf8",
+);
 const wasm32ObjectTestSource = await readFile(
   "test/test_wasm32_object.c",
   "utf8",
@@ -13647,10 +13653,19 @@ if (!/\bchar\s*\*\s*layout_signature\s*;/.test(abiLoweringHeader) ||
       abiLoweringSource,
     ) ||
     !/copy_abi_layout_signature\s*\(/.test(wasmMachineAbiSource) ||
-    !/emit_c_signature_section[^]*?wb_uleb\s*\(\s*&payload\s*,\s*2\s*\)/.test(
+    !/PSX_INTEGER_KIND_CHAR\s*\)[^]*?write_literal\s*\(\s*writer\s*,\s*"C"\s*\)/.test(
+      canonicalTypeSignatureSource,
+    ) ||
+    !/PSX_INTEGER_KIND_SHORT\s*\)[^]*?write_literal\s*\(\s*writer\s*,\s*"S"\s*\)/.test(
+      canonicalTypeSignatureSource,
+    ) ||
+    !/PSX_INTEGER_KIND_INT\s*\)[^]*?write_literal\s*\(\s*writer\s*,\s*"I"\s*\)/.test(
+      canonicalTypeSignatureSource,
+    ) ||
+    !/emit_c_signature_section[^]*?wb_uleb\s*\(\s*&payload\s*,\s*3\s*\)/.test(
       wasmObjectSectionsSource,
     ) ||
-    !/parse_c_signature_section[^]*?version\s*!=\s*1\s*&&\s*version\s*!=\s*2[^]*?uint32_t\s+count/.test(
+    !/parse_c_signature_section[^]*?version\s*!=\s*1\s*&&\s*version\s*!=\s*2\s*&&\s*version\s*!=\s*3[^]*?uint32_t\s+count/.test(
       runtimeLinkerSource,
     ) ||
     !/emit_abi_layout_section\s*\(/.test(wasmObjectSectionsSource) ||
@@ -13674,7 +13689,7 @@ if (!/\bchar\s*\*\s*layout_signature\s*;/.test(abiLoweringHeader) ||
       wasmObjectSectionsSource,
     ) ||
     !/agc\.data_signature/.test(wasmObjectSectionsSource) ||
-    !/emit_data_signature_section[^]*?wb_uleb\s*\(\s*&payload\s*,\s*3\s*\)/.test(
+    !/emit_data_signature_section[^]*?wb_uleb\s*\(\s*&payload\s*,\s*4\s*\)/.test(
       wasmObjectSectionsSource,
     ) ||
     !/AGC_DATA_FLAG_THREAD_LOCAL/.test(
@@ -13693,11 +13708,17 @@ if (!/\bchar\s*\*\s*layout_signature\s*;/.test(abiLoweringHeader) ||
       wasmObjectSectionsSource,
     ) ||
     !/parse_data_signature_section\s*\(/.test(runtimeLinkerSource) ||
-    !/version\s*!=\s*1\s*&&\s*version\s*!=\s*2\s*&&\s*version\s*!=\s*3/.test(
+    !/version\s*!=\s*1\s*&&\s*version\s*!=\s*2\s*&&\s*version\s*!=\s*3\s*&&[^]*?version\s*!=\s*4/.test(
       runtimeLinkerSource,
     ) ||
     !/data_signatures_compatible\s*\(/.test(runtimeLinkerSource) ||
     !/data_c_signature_format_version\s*\(\s*left_signature_version\s*\)[^]*?data_c_signature_format_version\s*\(\s*right_signature_version\s*\)[^]*?data_c_signatures_compatible/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/section_version\s*>=\s*4\s*\)\s*return\s+3/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/parameter\[index\]\s*==\s*'C'[^]*?parameter\[index\]\s*==\s*'S'[^]*?return\s+0/.test(
       runtimeLinkerSource,
     ) ||
     !/ref_obj->c_signature_version\s*!=[^]*?def_obj->c_signature_version[^]*?wasm_types_equal\s*&&\s*layouts_compatible/.test(
@@ -13820,6 +13841,8 @@ const crossTuSignatureMismatchFixtures = [
   "global_callback_floating_rank_signature_mismatch_other.c",
   "global_callback_complex_floating_rank_signature_mismatch_main.c",
   "global_callback_complex_floating_rank_signature_mismatch_other.c",
+  "global_callback_char_short_rank_signature_mismatch_main.c",
+  "global_callback_char_short_rank_signature_mismatch_other.c",
   "global_callback_return_member_alignment_value_mismatch_main.c",
   "global_callback_return_member_alignment_value_mismatch_other.c",
   "global_callback_factory_member_alignment_presence_mismatch_main.c",
@@ -13938,6 +13961,8 @@ const crossTuSignatureMismatchFixtures = [
   "function_floating_rank_signature_mismatch_other.c",
   "function_complex_floating_rank_signature_mismatch_main.c",
   "function_complex_floating_rank_signature_mismatch_other.c",
+  "function_short_int_rank_signature_mismatch_main.c",
+  "function_short_int_rank_signature_mismatch_other.c",
   "function_return_vla_callback_element_const_mismatch_main.c",
   "function_return_vla_callback_element_const_mismatch_other.c",
   "function_return_vla_callback_result_alignment_presence_mismatch_main.c",

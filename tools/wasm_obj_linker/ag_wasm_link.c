@@ -697,7 +697,7 @@ static void parse_c_signature_section(object_t *o, rd_t sec) {
   if (o->has_c_signature_section)
     die("duplicate agc.c_signature section");
   uint32_t version = rd_uleb(&sec);
-  if (version != 1 && version != 2)
+  if (version != 1 && version != 2 && version != 3)
     die("unsupported agc.c_signature version");
   uint32_t count = rd_uleb(&sec);
   for (uint32_t i = 0; i < count; i++) {
@@ -753,7 +753,8 @@ static void parse_data_signature_section(object_t *o, rd_t sec) {
   if (o->has_data_signature_section)
     die("duplicate agc.data_signature section");
   uint32_t version = rd_uleb(&sec);
-  if (version != 1 && version != 2 && version != 3)
+  if (version != 1 && version != 2 && version != 3 &&
+      version != 4)
     die("unsupported agc.data_signature version");
   uint32_t layout_version = rd_uleb(&sec);
   if (layout_version != 3)
@@ -1026,6 +1027,7 @@ typedef struct {
   int end;
   int has_compatible_integer;
   char integer_kind;
+  char integer_rank;
   uint32_t integer_bits;
 } canonical_enum_type_t;
 
@@ -1078,7 +1080,7 @@ static int canonical_decimal(
 
 static int canonical_integer_type_at(
     str_t signature, int offset, char *kind,
-    uint32_t *bits, int *end) {
+    uint32_t *bits, char *rank, int *end) {
   if (offset < 0 || offset >= signature.len ||
       (signature.s[offset] != 'i' &&
        signature.s[offset] != 'u'))
@@ -1088,8 +1090,15 @@ static int canonical_integer_type_at(
   if (!canonical_decimal(
           signature, &offset, &parsed_bits))
     return 0;
+  char parsed_rank = 0;
+  if (offset < signature.len &&
+      (signature.s[offset] == 'C' ||
+       signature.s[offset] == 'S' ||
+       signature.s[offset] == 'I'))
+    parsed_rank = signature.s[offset++];
   if (kind) *kind = parsed_kind;
   if (bits) *bits = parsed_bits;
+  if (rank) *rank = parsed_rank;
   if (end) *end = offset;
   return 1;
 }
@@ -1106,7 +1115,7 @@ static int canonical_enum_type_at(
   if (signature.s[offset + 1] == '<') {
     if (!canonical_integer_type_at(
             signature, index, &result.integer_kind,
-            &result.integer_bits, &index) ||
+            &result.integer_bits, &result.integer_rank, &index) ||
         index >= signature.len ||
         signature.s[index] != '>')
       return 0;
@@ -1134,7 +1143,7 @@ static int canonical_enum_type_at(
       signature.s[index++] != ':' ||
       !canonical_integer_type_at(
           signature, index, &result.integer_kind,
-          &result.integer_bits, &index) ||
+          &result.integer_bits, &result.integer_rank, &index) ||
       index >= signature.len ||
       signature.s[index] != '}')
     return 0;
@@ -1521,13 +1530,16 @@ static int canonical_type_signatures_compatible(
       int integer_offset =
           left_is_enum ? right_offset : left_offset;
       char integer_kind = 0;
+      char integer_rank = 0;
       uint32_t integer_bits = 0;
       int integer_end = 0;
       if (!enumeration.has_compatible_integer ||
           !canonical_integer_type_at(
               integer_signature, integer_offset,
-              &integer_kind, &integer_bits, &integer_end) ||
+              &integer_kind, &integer_bits, &integer_rank,
+              &integer_end) ||
           enumeration.integer_kind != integer_kind ||
+          enumeration.integer_rank != integer_rank ||
           enumeration.integer_bits != integer_bits)
         return 0;
       if (left_is_enum) {
@@ -1619,6 +1631,11 @@ static int canonical_parameter_unchanged_by_default_promotions(
     bits = bits * 10 + parameter[index++] - '0';
   }
   if (!has_bits) return 1;
+  if ((kind == 'i' || kind == 'u') && index < length) {
+    if (parameter[index] == 'C' || parameter[index] == 'S')
+      return 0;
+    if (parameter[index] == 'I') return 1;
+  }
   return kind == 'f' ? bits >= 64 : bits >= 32;
 }
 
@@ -2298,6 +2315,7 @@ static int data_c_signatures_compatible(
 
 static uint32_t data_c_signature_format_version(
     uint32_t section_version) {
+  if (section_version >= 4) return 3;
   return section_version >= 3 ? 2 : 1;
 }
 
