@@ -3110,14 +3110,12 @@ static int direct_syntax_designates_lvalue(
          syntax->kind == ND_STRING;
 }
 
-static int preflight_direct_expression(
+static int finish_preflight_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax,
+    int resolved,
+    psx_qual_type_t resolved_type,
     psx_qual_type_t *qual_type) {
-  psx_qual_type_t resolved_type = {
-      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  int resolved = preflight_direct_expression_impl(
-      context, syntax, &resolved_type);
   if (resolved && context &&
       context->suppress_value_decay_depth == 0) {
     int designates_lvalue =
@@ -3164,6 +3162,244 @@ finish:
     context->failure->source_token = syntax ? syntax->tok : NULL;
   }
   return resolved;
+}
+
+typedef struct {
+  const node_t *syntax;
+  psx_type_binary_op_t type_operator;
+  psx_qual_type_t lhs_type;
+  psx_qual_type_t rhs_type;
+  direct_initialization_snapshot_t short_circuit_exit;
+  long long condition_value;
+  unsigned char state;
+  unsigned char condition_is_constant;
+  unsigned char rhs_initialization_suppressed;
+} direct_binary_preflight_frame_t;
+
+static int push_direct_binary_preflight_frame(
+    direct_resolution_context_t *context,
+    direct_binary_preflight_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  psx_hir_node_kind_t hir_kind;
+  psx_type_binary_op_t type_operator;
+  if (!context || !frames || !count || !capacity || !syntax ||
+      !direct_binary_kind(
+          syntax->kind, &hir_kind, &type_operator))
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    direct_binary_preflight_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] = (direct_binary_preflight_frame_t){
+      .syntax = syntax,
+      .type_operator = type_operator,
+      .lhs_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .rhs_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  return 1;
+}
+
+static int resolve_direct_binary_preflight_types(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_type_binary_op_t type_operator,
+    psx_qual_type_t lhs_type,
+    psx_qual_type_t rhs_type,
+    psx_qual_type_t *result_type) {
+  if (!context || !syntax || !result_type) return 0;
+  int lhs_is_null_pointer_constant = 0;
+  int rhs_is_null_pointer_constant = 0;
+  if (type_operator == PSX_TYPE_BINARY_EQUALITY) {
+    lhs_is_null_pointer_constant = direct_null_pointer_constant(
+        context, syntax->lhs, lhs_type);
+    rhs_is_null_pointer_constant = direct_null_pointer_constant(
+        context, syntax->rhs, rhs_type);
+  }
+  if (type_operator != PSX_TYPE_BINARY_LOGICAL &&
+      type_operator != PSX_TYPE_BINARY_COMMA) {
+    lhs_type = direct_promoted_bitfield_qual_type(
+        context, syntax->lhs, lhs_type);
+    rhs_type = direct_promoted_bitfield_qual_type(
+        context, syntax->rhs, rhs_type);
+  }
+  psx_binary_types_resolution_t resolution;
+  psx_resolve_binary_qual_types_in(
+      context->semantic_context, type_operator,
+      lhs_type, rhs_type, lhs_is_null_pointer_constant,
+      rhs_is_null_pointer_constant, &resolution);
+  if (resolution.status == PSX_BINARY_OPERANDS_INCOMPATIBLE)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_BINARY_OPERANDS_INCOMPATIBLE,
+        syntax);
+  if (resolution.status != PSX_BINARY_TYPES_OK) return 0;
+  *result_type = resolution.result_qual_type;
+  return 1;
+}
+
+static int preflight_direct_binary_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_qual_type_t *qual_type) {
+  direct_binary_preflight_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  const node_t *failure_syntax = syntax;
+  if (!push_direct_binary_preflight_frame(
+          context, &frames, &count, &capacity, syntax))
+    goto fail;
+
+  while (count > 0) {
+    direct_binary_preflight_frame_t *frame = &frames[count - 1];
+    failure_syntax = frame->syntax;
+    if (frame->state == 0) {
+      frame->state = 1;
+      psx_hir_node_kind_t child_kind;
+      if (frame->syntax->lhs &&
+          direct_binary_kind(
+              frame->syntax->lhs->kind, &child_kind, NULL)) {
+        if (!push_direct_binary_preflight_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->lhs))
+          goto fail;
+        continue;
+      }
+      if (!preflight_direct_expression(
+              context, frame->syntax->lhs,
+              &frame->lhs_type))
+        goto fail;
+    }
+    if (frame->state == 1) {
+      if (frame->type_operator == PSX_TYPE_BINARY_LOGICAL) {
+        if (!capture_direct_initialization_snapshot(
+                context, &frame->short_circuit_exit,
+                frame->syntax))
+          goto fail;
+        frame->condition_is_constant = direct_integer_constant(
+            context, frame->syntax->lhs,
+            &frame->condition_value);
+        int rhs_is_unreachable = frame->condition_is_constant &&
+            ((frame->syntax->kind == ND_LOGAND &&
+              frame->condition_value == 0) ||
+             (frame->syntax->kind == ND_LOGOR &&
+              frame->condition_value != 0));
+        if (rhs_is_unreachable) {
+          context->suppress_initialization_diagnostics++;
+          frame->rhs_initialization_suppressed = 1;
+        }
+      }
+      frame->state = 2;
+      psx_hir_node_kind_t child_kind;
+      if (frame->syntax->rhs &&
+          direct_binary_kind(
+              frame->syntax->rhs->kind, &child_kind, NULL)) {
+        if (!push_direct_binary_preflight_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->rhs))
+          goto fail;
+        continue;
+      }
+      if (!preflight_direct_expression(
+              context, frame->syntax->rhs,
+              &frame->rhs_type))
+        goto fail;
+    }
+
+    if (frame->rhs_initialization_suppressed) {
+      context->suppress_initialization_diagnostics--;
+      frame->rhs_initialization_suppressed = 0;
+    }
+    if (frame->type_operator == PSX_TYPE_BINARY_LOGICAL) {
+      direct_initialization_snapshot_t rhs_exit;
+      if (!capture_direct_initialization_snapshot(
+              context, &rhs_exit, frame->syntax))
+        goto fail;
+      if (frame->condition_is_constant) {
+        int rhs_executes =
+            (frame->syntax->kind == ND_LOGAND &&
+             frame->condition_value != 0) ||
+            (frame->syntax->kind == ND_LOGOR &&
+             frame->condition_value == 0);
+        restore_direct_initialization_snapshot(
+            context, rhs_executes
+                         ? &rhs_exit
+                         : &frame->short_circuit_exit);
+      } else {
+        merge_direct_initialization_snapshots(
+            context, &frame->short_circuit_exit, &rhs_exit);
+      }
+    }
+
+    psx_qual_type_t completed_type = {
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+    if (!resolve_direct_binary_preflight_types(
+            context, frame->syntax, frame->type_operator,
+            frame->lhs_type, frame->rhs_type,
+            &completed_type) ||
+        !finish_preflight_direct_expression(
+            context, frame->syntax, 1,
+            completed_type, &completed_type))
+      goto fail;
+
+    count--;
+    if (count == 0) {
+      free(frames);
+      if (qual_type) *qual_type = completed_type;
+      return 1;
+    }
+    direct_binary_preflight_frame_t *parent = &frames[count - 1];
+    if (parent->state == 1)
+      parent->lhs_type = completed_type;
+    else
+      parent->rhs_type = completed_type;
+  }
+
+fail:
+  for (size_t index = 0; index < count; index++) {
+    if (frames[index].rhs_initialization_suppressed)
+      context->suppress_initialization_diagnostics--;
+  }
+  free(frames);
+  psx_qual_type_t invalid = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  return finish_preflight_direct_expression(
+      context, failure_syntax, 0, invalid, NULL);
+}
+
+static int preflight_direct_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_qual_type_t *qual_type) {
+  psx_hir_node_kind_t binary_kind;
+  if (syntax && direct_binary_kind(
+                    syntax->kind, &binary_kind, NULL))
+    return preflight_direct_binary_expression(
+        context, syntax, qual_type);
+  psx_qual_type_t resolved_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  int resolved = preflight_direct_expression_impl(
+      context, syntax, &resolved_type);
+  return finish_preflight_direct_expression(
+      context, syntax, resolved, resolved_type, qual_type);
 }
 
 static int preflight_direct_expression_impl(

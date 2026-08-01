@@ -23,30 +23,9 @@ static void set_failure(
       source ? source->source_node_kind : -1;
 }
 
-static psx_hir_node_id_t emit_node(
-    hir_emitter_t *emitter, const psx_semantic_node_t *source) {
-  if (!source) {
-    set_failure(emitter, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT, NULL);
-    return PSX_HIR_NODE_ID_INVALID;
-  }
-  psx_hir_node_id_t *children = NULL;
-  if (source->spec.child_count) {
-    children = malloc(
-        source->spec.child_count * sizeof(*children));
-    if (!children) {
-      set_failure(
-          emitter, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
-      return PSX_HIR_NODE_ID_INVALID;
-    }
-    for (size_t i = 0; i < source->spec.child_count; i++) {
-      children[i] = emit_node(emitter, source->children[i]);
-      if (children[i] == PSX_HIR_NODE_ID_INVALID) {
-        free(children);
-        return PSX_HIR_NODE_ID_INVALID;
-      }
-    }
-  }
-
+static psx_hir_node_id_t emit_completed_node(
+    hir_emitter_t *emitter, const psx_semantic_node_t *source,
+    psx_hir_node_id_t *children) {
   psx_hir_node_spec_t spec = source->spec;
   spec.children = children;
   spec.child_edges = source->child_edges;
@@ -89,6 +68,102 @@ static psx_hir_node_id_t emit_node(
         source);
   }
   return result;
+}
+
+typedef struct {
+  const psx_semantic_node_t *source;
+  psx_hir_node_id_t *children;
+  size_t next_child;
+} hir_emission_frame_t;
+
+static int push_emission_frame(
+    hir_emitter_t *emitter,
+    hir_emission_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const psx_semantic_node_t *source) {
+  if (!source) {
+    set_failure(emitter, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT, NULL);
+    return 0;
+  }
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          emitter, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
+      return 0;
+    }
+    hir_emission_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          emitter, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  psx_hir_node_id_t *children = NULL;
+  if (source->spec.child_count) {
+    if (source->spec.child_count >
+        (size_t)-1 / sizeof(*children)) {
+      set_failure(
+          emitter, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
+      return 0;
+    }
+    children = malloc(
+        source->spec.child_count * sizeof(*children));
+    if (!children) {
+      set_failure(
+          emitter, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
+      return 0;
+    }
+  }
+  (*frames)[(*count)++] = (hir_emission_frame_t){
+      .source = source,
+      .children = children,
+  };
+  return 1;
+}
+
+static psx_hir_node_id_t emit_node(
+    hir_emitter_t *emitter, const psx_semantic_node_t *source) {
+  hir_emission_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_emission_frame(
+          emitter, &frames, &count, &capacity, source))
+    goto fail;
+
+  while (count > 0) {
+    hir_emission_frame_t *frame = &frames[count - 1];
+    if (frame->next_child < frame->source->spec.child_count) {
+      const psx_semantic_node_t *child =
+          frame->source->children[frame->next_child];
+      if (!push_emission_frame(
+              emitter, &frames, &count, &capacity, child))
+        goto fail;
+      continue;
+    }
+
+    psx_hir_node_id_t completed = emit_completed_node(
+        emitter, frame->source, frame->children);
+    frame->children = NULL;
+    if (completed == PSX_HIR_NODE_ID_INVALID) goto fail;
+    count--;
+    if (count == 0) {
+      free(frames);
+      return completed;
+    }
+    hir_emission_frame_t *parent = &frames[count - 1];
+    parent->children[parent->next_child++] = completed;
+  }
+
+fail:
+  for (size_t index = 0; index < count; index++)
+    free(frames[index].children);
+  free(frames);
+  return PSX_HIR_NODE_ID_INVALID;
 }
 
 psx_hir_node_id_t psx_typed_hir_tree_emit(

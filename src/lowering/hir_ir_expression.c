@@ -4285,7 +4285,303 @@ static ir_val_t build_function_reference(
   return load->dst;
 }
 
+static ir_val_t build_eager_scalar_binary_from_values(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t type,
+    ir_mir_type_info_t left_type,
+    ir_mir_type_info_t right_type,
+    ir_val_t left, ir_val_t right) {
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  int reverse_comparison =
+      kind == PSX_HIR_GT || kind == PSX_HIR_GE;
+  int is_float = hir_ir_is_float_value_type(left_type) ||
+                 hir_ir_is_float_value_type(right_type);
+  if (is_float) {
+    if (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB &&
+        kind != PSX_HIR_MUL && kind != PSX_HIR_DIV &&
+        kind != PSX_HIR_EQ && kind != PSX_HIR_NE &&
+        kind != PSX_HIR_LT && kind != PSX_HIR_LE &&
+        kind != PSX_HIR_GT && kind != PSX_HIR_GE)
+      return hir_ir_unsupported_expr(context);
+    ir_type_t fp_type = left_type.type == IR_TY_F64 ||
+                                right_type.type == IR_TY_F64
+                            ? IR_TY_F64
+                            : IR_TY_F32;
+    ir_mir_type_info_t arithmetic_type = {
+        .type = fp_type,
+        .type_class = IR_MIR_TYPE_FLOAT,
+        .source_size = ir_type_fixed_size(fp_type),
+    };
+    left = hir_ir_coerce_direct_value(
+        context, left, left_type, arithmetic_type);
+    if (context->status == IR_HIR_BUILD_OK)
+      right = hir_ir_coerce_direct_value(
+          context, right, right_type, arithmetic_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    ir_op_t fp_op;
+    switch (kind) {
+      case PSX_HIR_ADD: fp_op = IR_FADD; break;
+      case PSX_HIR_SUB: fp_op = IR_FSUB; break;
+      case PSX_HIR_MUL: fp_op = IR_FMUL; break;
+      case PSX_HIR_DIV: fp_op = IR_FDIV; break;
+      case PSX_HIR_EQ: fp_op = IR_FEQ; break;
+      case PSX_HIR_NE: fp_op = IR_FNE; break;
+      case PSX_HIR_LT: fp_op = IR_FLT; break;
+      case PSX_HIR_LE: fp_op = IR_FLE; break;
+      case PSX_HIR_GT: fp_op = IR_FLT; break;
+      case PSX_HIR_GE: fp_op = IR_FLE; break;
+      default: return hir_ir_unsupported_expr(context);
+    }
+    int result_vreg = hir_ir_new_vreg(context);
+    if (result_vreg < 0) return ir_val_none();
+    ir_inst_t *instruction = ir_inst_new(fp_op);
+    if (!instruction) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    instruction->dst = ir_val_vreg(result_vreg, type.type);
+    instruction->src1 = reverse_comparison ? right : left;
+    instruction->src2 = reverse_comparison ? left : right;
+    if (!hir_ir_append_instruction(context, instruction))
+      return ir_val_none();
+    return instruction->dst;
+  }
+
+  const ag_data_layout_t *data_layout =
+      ag_target_info_data_layout(context->options->target);
+  int uac_is_unsigned = ir_mir_usual_arithmetic_result_is_unsigned(
+      left_type, right_type, data_layout);
+  int shift_is_unsigned = ir_mir_integer_promotion_is_unsigned(
+      left_type, data_layout);
+  if (left_type.type_class == IR_MIR_TYPE_INTEGER &&
+      right_type.type_class == IR_MIR_TYPE_INTEGER &&
+      kind != PSX_HIR_SHL && kind != PSX_HIR_SHR) {
+    ir_mir_type_info_t operation_type =
+        ir_mir_usual_arithmetic_type(
+            left_type, right_type, data_layout);
+    if (operation_type.type_class != IR_MIR_TYPE_INTEGER)
+      return hir_ir_unsupported_expr(context);
+    left = hir_ir_coerce_direct_value(
+        context, left, left_type, operation_type);
+    if (context->status == IR_HIR_BUILD_OK)
+      right = hir_ir_coerce_direct_value(
+          context, right, right_type, operation_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    left_type = operation_type;
+    right_type = operation_type;
+    uac_is_unsigned = operation_type.is_unsigned;
+  }
+  ir_op_t op;
+  switch (kind) {
+    case PSX_HIR_ADD: op = IR_ADD; break;
+    case PSX_HIR_SUB: op = IR_SUB; break;
+    case PSX_HIR_MUL: op = IR_MUL; break;
+    case PSX_HIR_DIV:
+      if (left_type.type_class != IR_MIR_TYPE_INTEGER)
+        return hir_ir_unsupported_expr(context);
+      op = uac_is_unsigned ? IR_UDIV : IR_DIV;
+      break;
+    case PSX_HIR_MOD:
+      if (left_type.type_class != IR_MIR_TYPE_INTEGER)
+        return hir_ir_unsupported_expr(context);
+      op = uac_is_unsigned ? IR_UMOD : IR_MOD;
+      break;
+    case PSX_HIR_BITAND: op = IR_AND; break;
+    case PSX_HIR_BITOR: op = IR_OR; break;
+    case PSX_HIR_BITXOR: op = IR_XOR; break;
+    case PSX_HIR_SHL: op = IR_SHL; break;
+    case PSX_HIR_SHR: op = shift_is_unsigned ? IR_LSR : IR_SHR; break;
+    case PSX_HIR_EQ: op = IR_EQ; break;
+    case PSX_HIR_NE: op = IR_NE; break;
+    case PSX_HIR_LT:
+      op = left_type.type_class == IR_MIR_TYPE_POINTER ||
+                   uac_is_unsigned ? IR_ULT : IR_LT;
+      break;
+    case PSX_HIR_LE:
+      op = left_type.type_class == IR_MIR_TYPE_POINTER ||
+                   uac_is_unsigned ? IR_ULE : IR_LE;
+      break;
+    case PSX_HIR_GT:
+      op = left_type.type_class == IR_MIR_TYPE_POINTER ||
+                   uac_is_unsigned ? IR_ULT : IR_LT;
+      break;
+    case PSX_HIR_GE:
+      op = left_type.type_class == IR_MIR_TYPE_POINTER ||
+                   uac_is_unsigned ? IR_ULE : IR_LE;
+      break;
+    default: return hir_ir_unsupported_expr(context);
+  }
+  int result_vreg = hir_ir_new_vreg(context);
+  if (result_vreg < 0) return ir_val_none();
+  ir_inst_t *instruction = ir_inst_new(op);
+  if (!instruction) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  instruction->dst = ir_val_vreg(result_vreg, type.type);
+  instruction->src1 = reverse_comparison ? right : left;
+  instruction->src2 = reverse_comparison ? left : right;
+  if (!hir_ir_append_instruction(context, instruction))
+    return ir_val_none();
+  return instruction->dst;
+}
+
+static int is_eager_scalar_binary_kind(psx_hir_node_kind_t kind) {
+  return kind == PSX_HIR_ADD || kind == PSX_HIR_SUB ||
+         kind == PSX_HIR_MUL || kind == PSX_HIR_DIV ||
+         kind == PSX_HIR_MOD || kind == PSX_HIR_BITAND ||
+         kind == PSX_HIR_BITOR || kind == PSX_HIR_BITXOR ||
+         kind == PSX_HIR_SHL || kind == PSX_HIR_SHR ||
+         kind == PSX_HIR_EQ || kind == PSX_HIR_NE ||
+         kind == PSX_HIR_LT || kind == PSX_HIR_LE ||
+         kind == PSX_HIR_GT || kind == PSX_HIR_GE;
+}
+
+static int can_iterate_eager_scalar_binary(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  if (!context || !node ||
+      !is_eager_scalar_binary_kind(psx_hir_node_kind(node)))
+    return 0;
+  const psx_hir_node_t *lhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *rhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  if (!lhs || !rhs) return 0;
+  ir_mir_type_info_t result_type =
+      hir_ir_classify_node_type(context, node);
+  ir_mir_type_info_t left_type =
+      hir_ir_classify_node_type(context, lhs);
+  ir_mir_type_info_t right_type =
+      hir_ir_classify_node_type(context, rhs);
+  return hir_ir_is_direct_value_type(result_type) &&
+         hir_ir_is_direct_value_type(left_type) &&
+         hir_ir_is_direct_value_type(right_type) &&
+         !hir_ir_is_complex_type(result_type) &&
+         !hir_ir_is_complex_type(left_type) &&
+         !hir_ir_is_complex_type(right_type) &&
+         result_type.type_class != IR_MIR_TYPE_POINTER &&
+         left_type.type_class != IR_MIR_TYPE_POINTER &&
+         right_type.type_class != IR_MIR_TYPE_POINTER;
+}
+
+typedef struct {
+  const psx_hir_node_t *node;
+  const psx_hir_node_t *lhs;
+  const psx_hir_node_t *rhs;
+  ir_mir_type_info_t type;
+  ir_mir_type_info_t left_type;
+  ir_mir_type_info_t right_type;
+  ir_val_t left;
+  ir_val_t right;
+  unsigned char state;
+} eager_scalar_binary_frame_t;
+
+static int push_eager_scalar_binary_frame(
+    hir_ir_context_t *context,
+    eager_scalar_binary_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const psx_hir_node_t *node) {
+  if (!can_iterate_eager_scalar_binary(context, node)) return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+    eager_scalar_binary_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  const psx_hir_node_t *lhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *rhs = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  (*frames)[(*count)++] = (eager_scalar_binary_frame_t){
+      .node = node,
+      .lhs = lhs,
+      .rhs = rhs,
+      .type = hir_ir_classify_node_type(context, node),
+      .left_type = hir_ir_classify_node_type(context, lhs),
+      .right_type = hir_ir_classify_node_type(context, rhs),
+      .left = ir_val_none(),
+      .right = ir_val_none(),
+  };
+  return 1;
+}
+
+static ir_val_t build_eager_scalar_binary_iterative(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  eager_scalar_binary_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_eager_scalar_binary_frame(
+          context, &frames, &count, &capacity, node)) {
+    free(frames);
+    return ir_val_none();
+  }
+  while (count > 0) {
+    eager_scalar_binary_frame_t *frame = &frames[count - 1];
+    if (frame->state == 0) {
+      frame->state = 1;
+      if (can_iterate_eager_scalar_binary(context, frame->lhs)) {
+        if (!push_eager_scalar_binary_frame(
+                context, &frames, &count, &capacity,
+                frame->lhs))
+          break;
+        continue;
+      }
+      frame->left = hir_ir_build_expr(context, frame->lhs);
+      if (context->status != IR_HIR_BUILD_OK) break;
+    }
+    if (frame->state == 1) {
+      frame->state = 2;
+      if (can_iterate_eager_scalar_binary(context, frame->rhs)) {
+        if (!push_eager_scalar_binary_frame(
+                context, &frames, &count, &capacity,
+                frame->rhs))
+          break;
+        continue;
+      }
+      frame->right = hir_ir_build_expr(context, frame->rhs);
+      if (context->status != IR_HIR_BUILD_OK) break;
+    }
+    ir_val_t completed = build_eager_scalar_binary_from_values(
+        context, frame->node, frame->type,
+        frame->left_type, frame->right_type,
+        frame->left, frame->right);
+    if (context->status != IR_HIR_BUILD_OK) break;
+    count--;
+    if (count == 0) {
+      free(frames);
+      return completed;
+    }
+    eager_scalar_binary_frame_t *parent = &frames[count - 1];
+    if (parent->state == 1)
+      parent->left = completed;
+    else
+      parent->right = completed;
+  }
+  free(frames);
+  return ir_val_none();
+}
+
+static ir_val_t hir_ir_build_expr_impl(
+    hir_ir_context_t *context, const psx_hir_node_t *node);
+
 ir_val_t hir_ir_build_expr(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  return can_iterate_eager_scalar_binary(context, node)
+             ? build_eager_scalar_binary_iterative(context, node)
+             : hir_ir_build_expr_impl(context, node);
+}
+
+static ir_val_t hir_ir_build_expr_impl(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   if (!node || context->status != IR_HIR_BUILD_OK)
     return ir_val_none();
@@ -4635,8 +4931,6 @@ ir_val_t hir_ir_build_expr(
       context, node, PSX_HIR_EDGE_RHS, 0);
   if (!lhs || !rhs) return hir_ir_unsupported_expr(context);
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
-  int reverse_comparison =
-      kind == PSX_HIR_GT || kind == PSX_HIR_GE;
   ir_val_t pointer_result = ir_val_none();
   if (try_build_pointer_arithmetic(
           context, node, lhs, rhs, type, &pointer_result))
@@ -4662,131 +4956,6 @@ ir_val_t hir_ir_build_expr(
   ir_val_t left = hir_ir_build_expr(context, lhs);
   ir_val_t right = hir_ir_build_expr(context, rhs);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-  int is_float = hir_ir_is_float_value_type(left_type) ||
-                 hir_ir_is_float_value_type(right_type);
-  if (is_float) {
-    if (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB &&
-        kind != PSX_HIR_MUL && kind != PSX_HIR_DIV &&
-        kind != PSX_HIR_EQ && kind != PSX_HIR_NE &&
-        kind != PSX_HIR_LT && kind != PSX_HIR_LE &&
-        kind != PSX_HIR_GT && kind != PSX_HIR_GE)
-      return hir_ir_unsupported_expr(context);
-    ir_type_t fp_type = left_type.type == IR_TY_F64 ||
-                                right_type.type == IR_TY_F64
-                            ? IR_TY_F64
-                            : IR_TY_F32;
-    ir_mir_type_info_t arithmetic_type = {
-        .type = fp_type,
-        .type_class = IR_MIR_TYPE_FLOAT,
-        .source_size = ir_type_fixed_size(fp_type),
-    };
-    left = hir_ir_coerce_direct_value(
-        context, left, left_type, arithmetic_type);
-    if (context->status == IR_HIR_BUILD_OK)
-      right = hir_ir_coerce_direct_value(
-          context, right, right_type, arithmetic_type);
-    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-    ir_op_t fp_op;
-    switch (kind) {
-      case PSX_HIR_ADD: fp_op = IR_FADD; break;
-      case PSX_HIR_SUB: fp_op = IR_FSUB; break;
-      case PSX_HIR_MUL: fp_op = IR_FMUL; break;
-      case PSX_HIR_DIV: fp_op = IR_FDIV; break;
-      case PSX_HIR_EQ: fp_op = IR_FEQ; break;
-      case PSX_HIR_NE: fp_op = IR_FNE; break;
-      case PSX_HIR_LT: fp_op = IR_FLT; break;
-      case PSX_HIR_LE: fp_op = IR_FLE; break;
-      case PSX_HIR_GT: fp_op = IR_FLT; break;
-      case PSX_HIR_GE: fp_op = IR_FLE; break;
-      default: return hir_ir_unsupported_expr(context);
-    }
-    int result_vreg = hir_ir_new_vreg(context);
-    if (result_vreg < 0) return ir_val_none();
-    ir_inst_t *instruction = ir_inst_new(fp_op);
-    if (!instruction) {
-      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return ir_val_none();
-    }
-    instruction->dst = ir_val_vreg(result_vreg, type.type);
-    instruction->src1 = reverse_comparison ? right : left;
-    instruction->src2 = reverse_comparison ? left : right;
-    if (!hir_ir_append_instruction(context, instruction)) return ir_val_none();
-    return instruction->dst;
-  }
-  const ag_data_layout_t *data_layout =
-      ag_target_info_data_layout(context->options->target);
-  int uac_is_unsigned = ir_mir_usual_arithmetic_result_is_unsigned(
-      left_type, right_type, data_layout);
-  int shift_is_unsigned = ir_mir_integer_promotion_is_unsigned(
-      left_type, data_layout);
-  if (left_type.type_class == IR_MIR_TYPE_INTEGER &&
-      right_type.type_class == IR_MIR_TYPE_INTEGER &&
-      kind != PSX_HIR_SHL && kind != PSX_HIR_SHR) {
-    ir_mir_type_info_t operation_type =
-        ir_mir_usual_arithmetic_type(
-            left_type, right_type, data_layout);
-    if (operation_type.type_class != IR_MIR_TYPE_INTEGER)
-      return hir_ir_unsupported_expr(context);
-    left = hir_ir_coerce_direct_value(
-        context, left, left_type, operation_type);
-    if (context->status == IR_HIR_BUILD_OK)
-      right = hir_ir_coerce_direct_value(
-          context, right, right_type, operation_type);
-    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-    left_type = operation_type;
-    right_type = operation_type;
-    uac_is_unsigned = operation_type.is_unsigned;
-  }
-  ir_op_t op;
-  switch (kind) {
-    case PSX_HIR_ADD: op = IR_ADD; break;
-    case PSX_HIR_SUB: op = IR_SUB; break;
-    case PSX_HIR_MUL: op = IR_MUL; break;
-    case PSX_HIR_DIV:
-      if (left_type.type_class != IR_MIR_TYPE_INTEGER)
-        return hir_ir_unsupported_expr(context);
-      op = uac_is_unsigned ? IR_UDIV : IR_DIV;
-      break;
-    case PSX_HIR_MOD:
-      if (left_type.type_class != IR_MIR_TYPE_INTEGER)
-        return hir_ir_unsupported_expr(context);
-      op = uac_is_unsigned ? IR_UMOD : IR_MOD;
-      break;
-    case PSX_HIR_BITAND: op = IR_AND; break;
-    case PSX_HIR_BITOR: op = IR_OR; break;
-    case PSX_HIR_BITXOR: op = IR_XOR; break;
-    case PSX_HIR_SHL: op = IR_SHL; break;
-    case PSX_HIR_SHR: op = shift_is_unsigned ? IR_LSR : IR_SHR; break;
-    case PSX_HIR_EQ: op = IR_EQ; break;
-    case PSX_HIR_NE: op = IR_NE; break;
-    case PSX_HIR_LT:
-      op = left_type.type_class == IR_MIR_TYPE_POINTER ||
-                   uac_is_unsigned ? IR_ULT : IR_LT;
-      break;
-    case PSX_HIR_LE:
-      op = left_type.type_class == IR_MIR_TYPE_POINTER ||
-                   uac_is_unsigned ? IR_ULE : IR_LE;
-      break;
-    case PSX_HIR_GT:
-      op = left_type.type_class == IR_MIR_TYPE_POINTER ||
-                   uac_is_unsigned ? IR_ULT : IR_LT;
-      break;
-    case PSX_HIR_GE:
-      op = left_type.type_class == IR_MIR_TYPE_POINTER ||
-                   uac_is_unsigned ? IR_ULE : IR_LE;
-      break;
-    default: return hir_ir_unsupported_expr(context);
-  }
-  int result_vreg = hir_ir_new_vreg(context);
-  if (result_vreg < 0) return ir_val_none();
-  ir_inst_t *instruction = ir_inst_new(op);
-  if (!instruction) {
-    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-    return ir_val_none();
-  }
-  instruction->dst = ir_val_vreg(result_vreg, type.type);
-  instruction->src1 = reverse_comparison ? right : left;
-  instruction->src2 = reverse_comparison ? left : right;
-  if (!hir_ir_append_instruction(context, instruction)) return ir_val_none();
-  return instruction->dst;
+  return build_eager_scalar_binary_from_values(
+      context, node, type, left_type, right_type, left, right);
 }
