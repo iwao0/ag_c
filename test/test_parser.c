@@ -17399,6 +17399,24 @@ static void test_expr_generic(
       0, 17);
 
   assert_test_program_return_hir_int_at(test_suite_session,
+      "typedef int *restrict restricted_pointer; "
+      "int main(){ return _Generic((restricted_pointer)0, "
+      "int *: 18, default: 7); }",
+      0, 18);
+
+  assert_test_program_return_hir_int_at(test_suite_session,
+      "typedef int *restrict *pointer_to_restricted_pointer; "
+      "int main(){ return _Generic((pointer_to_restricted_pointer)0, "
+      "int *restrict *: 19, default: 7); }",
+      0, 19);
+
+  assert_test_program_return_hir_int_at(test_suite_session,
+      "typedef _Atomic(int *) atomic_pointer; "
+      "int main(){ return _Generic((atomic_pointer)0, "
+      "atomic_pointer: 20, int *: 7, default: 0); }",
+      0, 20);
+
+  assert_test_program_return_hir_int_at(test_suite_session,
       "double fd(double x){ return x; } "
       "int main(){ return _Generic("
       "fd, double (*)(double): 17, default: 7); }",
