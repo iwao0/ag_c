@@ -358,6 +358,9 @@ skip_reason() {
     test/fixtures/probes_found_bugs/overaligned_vla_callback_factory_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
+    test/fixtures/probes_found_bugs/overaligned_vla_callback_aggregate_return_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c)
       echo "multi-TU link fixture component without main"
       ;;
@@ -507,6 +510,10 @@ skip_reason() {
     test/fixtures/wasm32/function_return_atomic_pointee_type_mismatch_other.c|\
     test/fixtures/wasm32/function_return_atomic_function_pointer_type_mismatch_main.c|\
     test/fixtures/wasm32/function_return_atomic_function_pointer_type_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_vla_callback_element_const_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_vla_callback_element_const_mismatch_other.c|\
+    test/fixtures/wasm32/function_return_vla_callback_result_alignment_presence_mismatch_main.c|\
+    test/fixtures/wasm32/function_return_vla_callback_result_alignment_presence_mismatch_other.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_main.c|\
     test/fixtures/wasm32/record_member_signature_mismatch_other.c|\
     test/fixtures/wasm32/record_member_alignment_presence_mismatch_main.c|\
@@ -631,6 +638,8 @@ skip_reason() {
     test/fixtures/wasm32/global_callback_pointee_const_qualifier_mismatch_other.c|\
     test/fixtures/wasm32/global_vla_callback_element_const_mismatch_main.c|\
     test/fixtures/wasm32/global_vla_callback_element_const_mismatch_other.c|\
+    test/fixtures/wasm32/global_vla_callback_factory_element_const_mismatch_main.c|\
+    test/fixtures/wasm32/global_vla_callback_factory_element_const_mismatch_other.c|\
     test/fixtures/wasm32/global_void_pointer_type_mismatch_main.c|\
     test/fixtures/wasm32/global_void_pointer_type_mismatch_other.c|\
     test/fixtures/wasm32/global_pointer_array_shape_mismatch_main.c|\
@@ -967,6 +976,9 @@ link_companion() {
       ;;
     test/fixtures/probes_found_bugs/overaligned_vla_callback_factory_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/overaligned_vla_callback_factory_xtu_other.c"
+      ;;
+    test/fixtures/probes_found_bugs/overaligned_vla_callback_aggregate_return_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/overaligned_vla_callback_aggregate_return_xtu_other.c"
       ;;
     test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_main.c)
       echo "test/fixtures/probes_found_bugs/thread_local_xtu_boundaries_other.c"

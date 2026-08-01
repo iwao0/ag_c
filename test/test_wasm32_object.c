@@ -1104,6 +1104,22 @@ static int run_recursive_function_signature_mismatch_cases(void) {
           "function_return_atomic_function_pointer_type_mismatch_other.c",
           "function_return_atomic_function_pointer",
       },
+      {
+          "function_return_vla_callback_element_const_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_vla_callback_element_const_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_vla_callback_element_const_mismatch_other.c",
+          "function_return_vla_callback_element_const_mismatch",
+      },
+      {
+          "function_return_vla_callback_result_alignment_presence_mismatch",
+          "test/fixtures/wasm32/"
+          "function_return_vla_callback_result_alignment_presence_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "function_return_vla_callback_result_alignment_presence_mismatch_other.c",
+          "function_return_vla_callback_result_alignment_presence_mismatch",
+      },
   };
   for (size_t index = 0;
        index < sizeof(cases) / sizeof(cases[0]); index++) {
@@ -1916,6 +1932,14 @@ static int run_data_signature_mismatch_cases(void) {
           "test/fixtures/wasm32/"
           "global_vla_callback_element_const_mismatch_other.c",
           "global_vla_callback_element_const_mismatch",
+      },
+      {
+          "global_vla_callback_factory_element_const_mismatch",
+          "test/fixtures/wasm32/"
+          "global_vla_callback_factory_element_const_mismatch_main.c",
+          "test/fixtures/wasm32/"
+          "global_vla_callback_factory_element_const_mismatch_other.c",
+          "global_vla_callback_factory_element_const_mismatch",
       },
       {
           "global_void_pointer_type_mismatch",
