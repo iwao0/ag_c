@@ -645,6 +645,7 @@ int main(void) {
       (ir_val_t){.id = 5, .type = IR_TY_PTR};
   function_instructions[6].src1 =
       (ir_val_t){.id = 3, .type = IR_TY_I32};
+  function_instructions[6].alloca_align = 64;
   function_instructions[7].op = IR_ATOMIC;
   function_instructions[7].dst =
       (ir_val_t){.id = 10, .type = IR_TY_I32};
@@ -901,9 +902,9 @@ int main(void) {
           WASM32_MACHINE_INST_SYMBOL_ADDRESS ||
       machine_function.instructions[6].kind !=
           WASM32_MACHINE_INST_DYNAMIC_ALLOCA ||
-      machine_function.instructions[6].alignment.alignment != 16 ||
-      machine_function.instructions[6].alignment.addend != 15 ||
-      machine_function.instructions[6].alignment.mask != -16 ||
+      machine_function.instructions[6].alignment.alignment != 64 ||
+      machine_function.instructions[6].alignment.addend != 63 ||
+      machine_function.instructions[6].alignment.mask != -64 ||
       selected_stack_save->kind !=
           WASM32_MACHINE_INST_STACK_SAVE ||
       selected_stack_restore->kind !=

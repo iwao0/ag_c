@@ -489,7 +489,9 @@ static int select_instruction(
     case IR_VLA_ALLOC:
       selected->kind = WASM32_MACHINE_INST_DYNAMIC_ALLOCA;
       return wasm32_machine_alignment_plan_build(
-          0, 16, &selected->alignment);
+          instruction->alloca_align > 16
+              ? instruction->alloca_align : 0,
+          16, &selected->alignment);
     case IR_STACK_SAVE:
       selected->kind = WASM32_MACHINE_INST_STACK_SAVE;
       return 1;

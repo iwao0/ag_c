@@ -130,9 +130,10 @@ typedef enum {
    * representation (frame address, global cursor, or another target form). */
   IR_VARARG_CURSOR,
   /* Dynamic VLA stack allocation: src1 = required byte count (i32/i64),
-   * dst = start address of allocated storage (PTR).  Codegen internally aligns
-   * to 16 bytes, subtracts from sp, and moves sp to dst.  Because this changes
-   * SP, regalloc and DCE treat it as having side effects. */
+   * alloca_align = the C object's required alignment, and dst = the aligned
+   * start address of allocated storage (PTR).  Codegen preserves at least the
+   * target stack alignment.  Because this changes SP, regalloc and DCE treat
+   * it as having side effects. */
   IR_VLA_ALLOC,
   /* Dynamic-stack lifetime checkpoints used around scopes that can repeatedly
    * execute VLA declarations.  STACK_SAVE captures the current target stack
@@ -288,7 +289,7 @@ typedef struct ir_inst_t {
       int label_id;       /* Branch target / label ID. */
       int else_label_id;  /* False target of BR_COND. */
     };
-    struct {            /* IR_ALLOCA / IR_MEMCPY / IR_ALIGN_PTR */
+    struct {            /* IR_ALLOCA / IR_MEMCPY / IR_ALIGN_PTR / IR_VLA_ALLOC */
       int alloca_size;    /* Slot size in bytes. */
       int alloca_align;   /* Alignment in bytes. */
     };

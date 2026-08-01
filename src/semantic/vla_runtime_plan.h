@@ -19,6 +19,7 @@ typedef struct psx_vla_runtime_plan_t {
   int descriptor_frame_offset;
   int row_stride_frame_offset;
   int element_size;
+  int allocation_alignment;
   unsigned char performs_allocation;
 } psx_vla_runtime_plan_t;
 

@@ -2722,6 +2722,69 @@ static void test_typed_hir_vla_parameter_metadata_without_ast(
   reset_test_translation_unit_state(test_suite_session);
 }
 
+static void test_typed_hir_aggregate_vla_parameter_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_hir_aggregate_vla_parameter_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "struct aligned_cell { _Alignas(32) long value; char tag; }; "
+      "long aggregate_stride(int rows, int columns, "
+      "    struct aligned_cell values[rows][columns]) { "
+      "  return values[1][columns - 1].value; "
+      "}"));
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *function = find_test_named_hir_node(
+      hir, PSX_HIR_FUNCTION, "aggregate_stride", 0);
+  const psx_hir_node_t *parameter =
+      find_test_hir_function_parameter(hir, function, "values");
+  ASSERT_TRUE(function != NULL);
+  ASSERT_TRUE(parameter != NULL);
+  ASSERT_TRUE(psx_hir_node_vla_stride_frame_offset(parameter) != 0);
+  ASSERT_EQ(32, psx_hir_node_vla_stride_element_size(parameter));
+  ASSERT_EQ(8, psx_hir_node_vla_stride_slot_size(parameter));
+  ASSERT_EQ(1, psx_hir_node_vla_dimension_count(parameter));
+
+  psx_hir_node_id_t function_id = PSX_HIR_NODE_ID_INVALID;
+  for (size_t i = 0; i < psx_hir_module_root_count(hir); i++) {
+    psx_hir_node_id_t candidate_id = psx_hir_module_root_at(hir, i);
+    if (psx_hir_module_lookup(hir, candidate_id) == function) {
+      function_id = candidate_id;
+      break;
+    }
+  }
+  ASSERT_TRUE(function_id != PSX_HIR_NODE_ID_INVALID);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+  ASSERT_EQ(1, psx_hir_node_vla_dimension_count(parameter));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, function_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_MUL) >= 2);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) +
+                  count_ir_op(ir->funcs, IR_SEXT) >=
+              1);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
 static void test_typed_hir_parameter_array_bound_evaluation_without_ast(
     ag_compilation_session_t *test_suite_session) {
   printf(
@@ -3003,6 +3066,91 @@ static void test_typed_hir_vla_allocation_without_ast(
                   count_ir_op(ir->funcs, IR_SEXT) >=
               1);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 5);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void test_typed_hir_overaligned_vla_allocation_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_hir_overaligned_vla_allocation_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(
+      test_suite_session,
+      "struct aligned_vla_cell { "
+      "  _Alignas(32) long value; char tag; "
+      "}; "
+      "long aligned_vla(int count) { "
+      "  _Alignas(64) struct aligned_vla_cell explicit_values[count]; "
+      "  struct aligned_vla_cell natural_values[count + 1]; "
+      "  explicit_values[0].value = 19; "
+      "  natural_values[0].value = 23; "
+      "  return explicit_values[0].value + natural_values[0].value; "
+      "}"));
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *function = find_test_named_hir_node(
+      hir, PSX_HIR_FUNCTION, "aligned_vla", 0);
+  ASSERT_TRUE(function != NULL);
+  int hir_allocation_count = 0;
+  unsigned hir_alignment_mask = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *candidate =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!candidate || psx_hir_node_kind(candidate) != PSX_HIR_VLA_ALLOC)
+      continue;
+    hir_allocation_count++;
+    ASSERT_EQ(32, psx_hir_node_vla_stride_element_size(candidate));
+    if (psx_hir_node_object_align(candidate) == 32)
+      hir_alignment_mask |= 1u;
+    if (psx_hir_node_object_align(candidate) == 64)
+      hir_alignment_mask |= 2u;
+  }
+  ASSERT_EQ(2, hir_allocation_count);
+  ASSERT_EQ(3, hir_alignment_mask);
+
+  psx_hir_node_id_t function_id = PSX_HIR_NODE_ID_INVALID;
+  for (size_t i = 0; i < psx_hir_module_root_count(hir); i++) {
+    psx_hir_node_id_t candidate_id = psx_hir_module_root_at(hir, i);
+    if (psx_hir_module_lookup(hir, candidate_id) == function) {
+      function_id = candidate_id;
+      break;
+    }
+  }
+  ASSERT_TRUE(function_id != PSX_HIR_NODE_ID_INVALID);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, function_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  int ir_allocation_count = 0;
+  unsigned ir_alignment_mask = 0;
+  for (ir_block_t *block = ir->funcs->entry; block; block = block->next) {
+    for (ir_inst_t *instruction = block->head; instruction;
+         instruction = instruction->next) {
+      if (instruction->op != IR_VLA_ALLOC) continue;
+      ir_allocation_count++;
+      if (instruction->alloca_align == 32) ir_alignment_mask |= 1u;
+      if (instruction->alloca_align == 64) ir_alignment_mask |= 2u;
+    }
+  }
+  ASSERT_EQ(2, ir_allocation_count);
+  ASSERT_EQ(3, ir_alignment_mask);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
@@ -22628,6 +22776,7 @@ int main() {
   test_typed_hir_pointer_lowering_without_ast(test_suite_session);
   test_typed_hir_post_inc_lowering_without_ast(test_suite_session);
   test_typed_hir_vla_parameter_metadata_without_ast(test_suite_session);
+  test_typed_hir_aggregate_vla_parameter_without_ast(test_suite_session);
   test_typed_hir_parameter_array_bound_evaluation_without_ast(
       test_suite_session);
   test_typed_hir_parameter_inner_array_bound_evaluation_without_ast(
@@ -22635,6 +22784,8 @@ int main() {
   test_typed_hir_indirect_vla_parameter_metadata_without_ast(
       test_suite_session);
   test_typed_hir_vla_allocation_without_ast(test_suite_session);
+  test_typed_hir_overaligned_vla_allocation_without_ast(
+      test_suite_session);
   test_typed_hir_direct_call_lowering_without_ast(test_suite_session);
   test_typed_hir_variadic_aggregate_call_without_ast(test_suite_session);
   test_typed_hir_variadic_complex_call_without_ast(test_suite_session);

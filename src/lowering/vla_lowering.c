@@ -32,6 +32,15 @@ static int qual_type_size(
       ag_target_info_data_layout(ps_lowering_target(lowering_context)));
 }
 
+static int qual_type_alignment(
+    const psx_lowering_context_t *lowering_context,
+    psx_qual_type_t qual_type) {
+  return psx_qual_type_layout_alignof(
+      ps_lowering_semantic_types(lowering_context),
+      ps_lowering_record_layouts(lowering_context), qual_type,
+      ag_target_info_data_layout(ps_lowering_target(lowering_context)));
+}
+
 static int type_alignment(
     const psx_lowering_context_t *lowering_context,
     psx_type_id_t type_id) {
@@ -89,9 +98,15 @@ psx_vla_lowering_result_t lower_vla_declaration_plan(
       request->lowering_context, request->type);
   int element_size = qual_type_size(
       request->lowering_context, element_type);
+  int element_alignment = qual_type_alignment(
+      request->lowering_context, element_type);
+  int allocation_alignment = request->requested_alignment > element_alignment
+                                 ? request->requested_alignment
+                                 : element_alignment;
   if (!request->local_registry ||
       request->type.type_id == PSX_TYPE_ID_INVALID || count <= 0 ||
-      element_size <= 0 || !request->dimensions) {
+      element_size <= 0 || element_alignment <= 0 ||
+      allocation_alignment <= 0 || !request->dimensions) {
     ps_diag_ctx_in(
         diagnostics, request->diag_tok, "vla-lowering", "%s",
         diag_message_for_in(
@@ -147,6 +162,7 @@ psx_vla_lowering_result_t lower_vla_declaration_plan(
   plan->descriptor_frame_offset = var_offset;
   plan->row_stride_frame_offset = row_stride_offset;
   plan->element_size = element_size;
+  plan->allocation_alignment = allocation_alignment;
   plan->performs_allocation = 1;
 
   plan->stride_store_count =

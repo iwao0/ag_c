@@ -535,18 +535,18 @@ static void gen_inst_int_cast(gen_ctx_t *ctx, ir_inst_t *inst) {
 }
 
 static void gen_inst_vla_alloc(gen_ctx_t *ctx, ir_inst_t *inst) {
-      /* VLA 動的スタック確保: src1 = バイトサイズ (i32 のことが多い)。
-       *   ldr/mov 経由で x9 にロード
-       *   x9 = (x9 + 15) & ~15   ; 16-byte align
-       *   sub sp, sp, x9
-       *   dst (frame slot) = sp  */
+      /* VLA dynamic stack allocation.  Round the resulting stack pointer
+       * down instead of only rounding the byte count: the incoming SP is
+       * guaranteed to be 16-byte aligned, but a C object may require more. */
+      int alignment = inst->alloca_align > 16
+                          ? inst->alloca_align : 16;
       char b1[8];
       const char *src = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
       if (strcmp(src, "x9") != 0) arm64_cg_emitf(ctx, "  mov x9, %s\n", src);
-      arm64_cg_emitf(ctx, "  add x9, x9, #15\n");
-      arm64_cg_emitf(ctx, "  and x9, x9, #-16\n");
       arm64_cg_emitf(ctx, "  sub sp, sp, x9\n");
       arm64_cg_emitf(ctx, "  mov x9, sp\n");
+      arm64_cg_emitf(ctx, "  and x9, x9, #-%d\n", alignment);
+      arm64_cg_emitf(ctx, "  mov sp, x9\n");
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
     emit_frame_store(ctx, "x9", ctx->vreg_off[inst->dst.id]);
   }

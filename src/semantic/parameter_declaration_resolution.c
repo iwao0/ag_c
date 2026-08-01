@@ -137,14 +137,15 @@ int psx_resolve_parameter_declaration(
   int has_pointer = request_shape_has(request, PSX_DECL_OP_POINTER);
   int has_array = request_shape_has(request, PSX_DECL_OP_ARRAY);
   int has_function = request_shape_has(request, PSX_DECL_OP_FUNCTION);
-  if ((has_array && !leaf_is_aggregate && !has_pointer && !has_function) ||
-      (has_pointer && has_array && !leaf_is_aggregate && !has_function &&
-       has_runtime_inner_dimension(request))) {
+  int has_runtime_inner = has_runtime_inner_dimension(request);
+  if ((has_array && !has_pointer && !has_function &&
+       (!leaf_is_aggregate || has_runtime_inner)) ||
+      (has_pointer && has_array && !has_function && has_runtime_inner)) {
     resolution->lowering_kind = PSX_PARAMETER_LOWER_VLA;
   }
 
   if (resolution->lowering_kind == PSX_PARAMETER_LOWER_VLA &&
-      has_runtime_inner_dimension(request)) {
+      has_runtime_inner) {
     if (ag_data_layout_scalar_size(
             ps_ctx_data_layout(request->type.semantic_context),
             AG_TARGET_SCALAR_LONG_LONG) != PSX_VLA_RUNTIME_SLOT_SIZE)

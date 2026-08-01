@@ -238,8 +238,12 @@ ir_val_t hir_ir_build_vla_allocation(
   int descriptor_offset = psx_hir_node_storage_offset(node);
   int element_size =
       psx_hir_node_vla_stride_element_size(node);
+  int allocation_alignment = psx_hir_node_object_align(node);
   int slot_size = psx_hir_node_vla_stride_slot_size(node);
   if (dimension_count == 0 || element_size <= 0 ||
+      (descriptor_offset > 0 &&
+       (allocation_alignment <= 0 ||
+        (allocation_alignment & (allocation_alignment - 1)) != 0)) ||
       slot_size < 8 || (descriptor_offset <= 0 && store_count == 0))
     return hir_ir_unsupported_expr(context);
 
@@ -327,6 +331,7 @@ ir_val_t hir_ir_build_vla_allocation(
   }
   allocation->dst = ir_val_vreg(base_vreg, IR_TY_PTR);
   allocation->src1 = total_size;
+  allocation->alloca_align = allocation_alignment;
   if (!hir_ir_append_instruction(context, allocation)) {
     free(suffix_sizes);
     return ir_val_none();

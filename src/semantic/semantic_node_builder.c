@@ -176,7 +176,10 @@ psx_semantic_node_t *psx_semantic_node_builder_vla_runtime(
   if (!builder || !plan || plan->dimension_count <= 0 ||
       !plan->dimensions || plan->element_size <= 0 ||
       (plan->performs_allocation &&
-       plan->descriptor_frame_offset <= 0) ||
+       (plan->descriptor_frame_offset <= 0 ||
+        plan->allocation_alignment <= 0 ||
+        (plan->allocation_alignment &
+         (plan->allocation_alignment - 1)) != 0)) ||
       (!plan->performs_allocation &&
        plan->descriptor_frame_offset != 0) ||
       plan->stride_store_count < 0 ||
@@ -250,6 +253,7 @@ psx_semantic_node_t *psx_semantic_node_builder_vla_runtime(
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
       .storage_offset = plan->descriptor_frame_offset,
+      .object_align = plan->allocation_alignment,
       .vla_stride_frame_offset = plan->row_stride_frame_offset,
       .vla_stride_element_size = plan->element_size,
       .vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE,

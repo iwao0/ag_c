@@ -2227,20 +2227,15 @@ static void gen_func_body(
         case WASM32_MACHINE_INST_DYNAMIC_ALLOCA:
           emit_stack_global_get(context, &body, of, stack_pointer);
           emit_val(context, &body, i->src1, IR_TY_I32, param_count);
-          emit_const(
-              context, &body, IR_TY_I32, i->alignment.addend);
           wb_u8(
               &body, machine_binary_binary_or_unsupported(
-                         context, &g_obj_machine_primitives->i32_add));
+                         context,
+                         &g_obj_machine_primitives->i32_subtract));
           emit_const(
               context, &body, IR_TY_I32, i->alignment.mask);
           wb_u8(
               &body, machine_binary_binary_or_unsupported(
                          context, &g_obj_machine_primitives->i32_and));
-          wb_u8(
-              &body, machine_binary_binary_or_unsupported(
-                         context,
-                         &g_obj_machine_primitives->i32_subtract));
           emit_local_set(&body, local_index(param_count, i->dst.id));
           emit_local_get(&body, local_index(param_count, i->dst.id));
           emit_stack_global_set(context, &body, of, stack_pointer);

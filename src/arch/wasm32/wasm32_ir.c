@@ -1601,20 +1601,15 @@ static void emit_inst(
     case WASM32_MACHINE_INST_DYNAMIC_ALLOCA:
       wasm_emitf(
           indent,
-          "(local.set $v%d (%s (global.get $__stack_pointer) ",
+          "(local.set $v%d (%s (%s (global.get $__stack_pointer) ",
           i->dst.id,
-          machine_binary_wat_or_unsupported(
-              context, &g_machine_primitives->i32_subtract));
-      wasm_cg_emitf(
-          "(%s (%s ",
           machine_binary_wat_or_unsupported(
               context, &g_machine_primitives->i32_and),
           machine_binary_wat_or_unsupported(
-              context, &g_machine_primitives->i32_add));
+              context, &g_machine_primitives->i32_subtract));
       emit_val_expr_as(ctx, i->src1, IR_TY_I32);
       wasm_cg_emitf(
-          " (i32.const %d)) (i32.const %d))))\n",
-          i->alignment.addend, i->alignment.mask);
+          ") (i32.const %d)))\n", i->alignment.mask);
       wasm_emitf(indent, "(global.set $__stack_pointer (local.get $v%d))\n", i->dst.id);
       return;
     case WASM32_MACHINE_INST_STACK_SAVE:

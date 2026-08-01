@@ -3215,7 +3215,7 @@ if (!directProgramHirHelper ||
     /compatibility|psx_test_frontend_next_function/.test(
       directProgramHirHelper[1],
     ) ||
-    directProgramHirTests.length !== 62) {
+    directProgramHirTests.length !== 64) {
   throw new Error(
     "Typed HIR program tests must enter through the production frontend",
   );
@@ -13031,7 +13031,7 @@ if (!/wasm32_machine_alignment_plan_build\s*\(/.test(
     !/case\s+IR_ALIGN_PTR\s*:[^]*?wasm32_machine_alignment_plan_build\s*\(\s*instruction->alloca_align,\s*16,\s*&selected->alignment\s*\)/.test(
       wasmMachineFunctionSource,
     ) ||
-    !/case\s+IR_VLA_ALLOC\s*:[^]*?wasm32_machine_alignment_plan_build\s*\(\s*0,\s*16,\s*&selected->alignment\s*\)/.test(
+    !/case\s+IR_VLA_ALLOC\s*:[^]*?wasm32_machine_alignment_plan_build\s*\([^]*?instruction->alloca_align[^]*?16,\s*&selected->alignment\s*\)/.test(
       wasmMachineFunctionSource,
     ) ||
     !/alignment\.addend/.test(wasmWatWriterSource) ||
