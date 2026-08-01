@@ -1284,7 +1284,15 @@ static int has_wasm_e2e_fixture_path(const char *path, size_t nextra) {
 }
 
 static int is_wasm_e2e_fixture_parity_exclusion(const char *path) {
-  return strcmp(
+  static const char should_reject_prefix[] =
+      "test/fixtures/should_reject/";
+  static const char compiler_limits_prefix[] =
+      "test/fixtures/compiler_limits/";
+  return strncmp(path, should_reject_prefix,
+                 sizeof(should_reject_prefix) - 1) == 0 ||
+         strncmp(path, compiler_limits_prefix,
+                 sizeof(compiler_limits_prefix) - 1) == 0 ||
+         strcmp(
              path,
              "test/fixtures/probes_found_bugs/"
              "anonymous_flexible_callback_signature_xtu_main.c") == 0 ||
