@@ -61,6 +61,20 @@ if (!(coldDeepConstantResult.object instanceof Uint8Array) ||
   );
 }
 
+const coldShortCircuitToolchain = await makeToolchain();
+const coldDeepShortCircuitSource = await readFile(
+  "test/fixtures/probes_found_bugs/deep_short_circuit_constant_expression.c",
+  "utf8",
+);
+const coldDeepShortCircuitResult =
+  coldShortCircuitToolchain.compileObjectWithDiagnostics(coldDeepShortCircuitSource);
+if (!(coldDeepShortCircuitResult.object instanceof Uint8Array) ||
+    coldDeepShortCircuitResult.diagnostics.length !== 0) {
+  throw new Error(
+    `cold deep short-circuit compile failed: ${JSON.stringify(coldDeepShortCircuitResult.diagnostics)}`,
+  );
+}
+
 const sourceBase = "int source_limit(void) { return 1; }\n";
 const sourceLimit = Buffer.byteLength(sourceBase) + 2;
 toolchain.compileObject(`${sourceBase} `, { limits: { maxSourceBytes: sourceLimit } });

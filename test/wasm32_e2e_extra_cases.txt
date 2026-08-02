@@ -1054,6 +1054,7 @@ probes_found_bugs/wide_format_stream_input_boundaries.c
 probes_found_bugs/hir_ir_dynamic_capacity_boundaries.c
 probes_found_bugs/deep_binary_expression_pipeline.c
 probes_found_bugs/deep_integer_constant_expression.c
+probes_found_bugs/deep_short_circuit_constant_expression.c
 flex_array/union_contains_flex.c
 flex_array/assignment_copies_fixed_prefix.c
 wasm32/libc_funcptr_stub_ops.c

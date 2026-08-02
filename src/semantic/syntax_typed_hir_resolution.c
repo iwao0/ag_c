@@ -409,6 +409,9 @@ static int preflight_direct_expression_impl(
 static int direct_integer_constant(
     direct_resolution_context_t *context,
     const node_t *syntax, long long *value);
+static int direct_integer_constant_evaluate(
+    direct_resolution_context_t *context,
+    const node_t *syntax, long long *value);
 static int direct_null_pointer_constant(
     direct_resolution_context_t *context,
     const node_t *syntax,
@@ -5590,7 +5593,7 @@ static int direct_integer_constant_has_allowed_operands_impl(
              direct_integer_constant_has_allowed_operands(
                  context, conditional->els, 0);
     long long condition = 0;
-    if (!direct_integer_constant(
+    if (!direct_integer_constant_evaluate(
             context, syntax->lhs, &condition))
       return 0;
     return direct_integer_constant_has_allowed_operands(
@@ -5629,7 +5632,7 @@ static int direct_integer_constant_has_allowed_operands_impl(
       return direct_integer_constant_has_allowed_operands(
           context, syntax->rhs, 0);
     long long lhs = 0;
-    if (!direct_integer_constant(
+    if (!direct_integer_constant_evaluate(
             context, syntax->lhs, &lhs))
       return 0;
     int rhs_evaluated =
@@ -5790,7 +5793,7 @@ static int direct_integer_constant_iterative(
           break;
         continue;
       }
-      if (!direct_integer_constant(
+      if (!direct_integer_constant_evaluate(
               context, frame->syntax->lhs, &frame->lhs))
         break;
     }
@@ -5805,7 +5808,7 @@ static int direct_integer_constant_iterative(
           break;
         continue;
       }
-      if (!direct_integer_constant(
+      if (!direct_integer_constant_evaluate(
               context, frame->syntax->rhs, &frame->rhs))
         break;
     }
@@ -5831,13 +5834,10 @@ static int direct_integer_constant_iterative(
   return 0;
 }
 
-static int direct_integer_constant_impl(
+static int direct_integer_constant_evaluate_impl(
     direct_resolution_context_t *context,
     const node_t *syntax, long long *value) {
-  if (!context || !syntax || !value ||
-      !direct_integer_constant_has_allowed_operands(
-          context, syntax, 1))
-    return 0;
+  if (!context || !syntax || !value) return 0;
   if (syntax->kind == ND_NUM) {
     if (syntax->tok && syntax->tok->kind == TK_NUM &&
         tk_as_num(syntax->tok)->num_kind == TK_NUM_KIND_FLOAT)
@@ -5875,7 +5875,7 @@ static int direct_integer_constant_impl(
         binding->selected_index >= selection->association_count)
       return 0;
     long long selected_value = 0;
-    if (!direct_integer_constant(
+    if (!direct_integer_constant_evaluate(
             context,
             selection->associations[binding->selected_index].expression,
             &selected_value))
@@ -5891,7 +5891,7 @@ static int direct_integer_constant_impl(
   }
   if (syntax->kind == ND_UNARY_PLUS) {
     long long operand = 0;
-    if (!direct_integer_constant(
+    if (!direct_integer_constant_evaluate(
             context, syntax->lhs, &operand))
       return 0;
     psx_type_shape_t result_type = {0};
@@ -5905,7 +5905,8 @@ static int direct_integer_constant_impl(
   }
   if (syntax->kind == ND_UNARY_NEGATE) {
     long long operand;
-    if (!direct_integer_constant(context, syntax->lhs, &operand))
+    if (!direct_integer_constant_evaluate(
+            context, syntax->lhs, &operand))
       return 0;
     psx_type_shape_t result_type = {0};
     return direct_integer_constant_shape(
@@ -5918,7 +5919,8 @@ static int direct_integer_constant_impl(
   }
   if (syntax->kind == ND_LOGICAL_NOT) {
     long long operand;
-    if (!direct_integer_constant(context, syntax->lhs, &operand))
+    if (!direct_integer_constant_evaluate(
+            context, syntax->lhs, &operand))
       return 0;
     psx_type_shape_t result_type = {0};
     return direct_integer_constant_shape(
@@ -5931,7 +5933,8 @@ static int direct_integer_constant_impl(
   }
   if (syntax->kind == ND_BITWISE_NOT) {
     long long operand;
-    if (!direct_integer_constant(context, syntax->lhs, &operand))
+    if (!direct_integer_constant_evaluate(
+            context, syntax->lhs, &operand))
       return 0;
     psx_type_shape_t result_type = {0};
     return direct_integer_constant_shape(
@@ -5960,7 +5963,8 @@ static int direct_integer_constant_impl(
           &target, ((const node_num_t *)syntax->lhs)->fval, value);
     }
     long long operand;
-    if (!direct_integer_constant(context, syntax->lhs, &operand))
+    if (!direct_integer_constant_evaluate(
+            context, syntax->lhs, &operand))
       return 0;
     return psx_normalize_integer_constant_cast(
         &target, operand, value);
@@ -5968,11 +5972,11 @@ static int direct_integer_constant_impl(
   if (syntax->kind == ND_TERNARY) {
     const node_ctrl_t *conditional = (const node_ctrl_t *)syntax;
     long long condition;
-    if (!direct_integer_constant(
+    if (!direct_integer_constant_evaluate(
             context, syntax->lhs, &condition))
       return 0;
     long long selected_value = 0;
-    if (!direct_integer_constant(
+    if (!direct_integer_constant_evaluate(
             context, condition ? syntax->rhs : conditional->els,
             &selected_value))
       return 0;
@@ -5990,11 +5994,13 @@ static int direct_integer_constant_impl(
         (const node_function_call_t *)syntax;
     const node_t *operand = psx_builtin_expect_value_operand(call);
     return operand &&
-           direct_integer_constant(context, operand, value);
+           direct_integer_constant_evaluate(
+               context, operand, value);
   }
 
   long long lhs;
-  if (!direct_integer_constant(context, syntax->lhs, &lhs))
+  if (!direct_integer_constant_evaluate(
+          context, syntax->lhs, &lhs))
     return 0;
   if (syntax->kind == ND_LOGAND && !lhs) {
     *value = 0;
@@ -6005,7 +6011,8 @@ static int direct_integer_constant_impl(
     return 1;
   }
   long long rhs;
-  if (!direct_integer_constant(context, syntax->rhs, &rhs))
+  if (!direct_integer_constant_evaluate(
+          context, syntax->rhs, &rhs))
     return 0;
   psx_type_shape_t lhs_type = {0};
   psx_type_shape_t rhs_type = {0};
@@ -6029,14 +6036,26 @@ static int direct_integer_constant_impl(
       syntax->kind, lhs, rhs, value);
 }
 
-static int direct_integer_constant(
+static int direct_integer_constant_evaluate(
     direct_resolution_context_t *context,
     const node_t *syntax, long long *value) {
   if (syntax && direct_integer_constant_eager_binary_kind(
                     syntax->kind))
     return direct_integer_constant_iterative(
         context, syntax, value);
-  return direct_integer_constant_impl(context, syntax, value);
+  return direct_integer_constant_evaluate_impl(
+      context, syntax, value);
+}
+
+static int direct_integer_constant(
+    direct_resolution_context_t *context,
+    const node_t *syntax, long long *value) {
+  if (!context || !syntax || !value ||
+      !direct_integer_constant_has_allowed_operands(
+          context, syntax, 1))
+    return 0;
+  return direct_integer_constant_evaluate(
+      context, syntax, value);
 }
 
 typedef struct {
