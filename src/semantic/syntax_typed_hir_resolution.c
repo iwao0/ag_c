@@ -5412,7 +5412,126 @@ static int direct_integer_constant_binary_operation(
     psx_syntax_node_kind_t kind,
     psx_integer_constant_operation_t *operation);
 
+static int direct_integer_constant_eager_binary_kind(
+    psx_syntax_node_kind_t kind) {
+  psx_integer_constant_operation_t operation =
+      PSX_INTEGER_CONSTANT_OP_INVALID;
+  return kind != ND_LOGAND && kind != ND_LOGOR &&
+         kind != ND_COMMA &&
+         direct_integer_constant_binary_operation(
+             kind, &operation);
+}
+
+static int direct_integer_constant_has_allowed_operands_impl(
+    direct_resolution_context_t *context,
+    const node_t *syntax, int evaluated);
+
+typedef struct {
+  const node_t *syntax;
+  unsigned char state;
+} direct_integer_constant_operand_frame_t;
+
+static int note_direct_integer_constant_stack_out_of_memory(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
+  if (context) {
+    context->preflight_failed = 1;
+    set_failure(
+        context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        syntax);
+  }
+  return 0;
+}
+
+static int push_direct_integer_constant_operand_frame(
+    direct_resolution_context_t *context,
+    direct_integer_constant_operand_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  if (!context || !frames || !count || !capacity || !syntax ||
+      !direct_integer_constant_eager_binary_kind(syntax->kind))
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames))
+      return note_direct_integer_constant_stack_out_of_memory(
+          context, syntax);
+    direct_integer_constant_operand_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next)
+      return note_direct_integer_constant_stack_out_of_memory(
+          context, syntax);
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] =
+      (direct_integer_constant_operand_frame_t){.syntax = syntax};
+  return 1;
+}
+
+static int direct_integer_constant_has_allowed_operands_iterative(
+    direct_resolution_context_t *context,
+    const node_t *syntax, int evaluated) {
+  direct_integer_constant_operand_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_direct_integer_constant_operand_frame(
+          context, &frames, &count, &capacity, syntax)) {
+    free(frames);
+    return 0;
+  }
+  while (count > 0) {
+    direct_integer_constant_operand_frame_t *frame =
+        &frames[count - 1];
+    if (frame->state == 0) {
+      frame->state = 1;
+      if (!frame->syntax->lhs) break;
+      if (direct_integer_constant_eager_binary_kind(
+              frame->syntax->lhs->kind)) {
+        if (!push_direct_integer_constant_operand_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->lhs))
+          break;
+        continue;
+      }
+      if (!direct_integer_constant_has_allowed_operands_impl(
+              context, frame->syntax->lhs, evaluated))
+        break;
+    }
+    if (frame->state == 1) {
+      frame->state = 2;
+      if (!frame->syntax->rhs) break;
+      if (direct_integer_constant_eager_binary_kind(
+              frame->syntax->rhs->kind)) {
+        if (!push_direct_integer_constant_operand_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->rhs))
+          break;
+        continue;
+      }
+      if (!direct_integer_constant_has_allowed_operands_impl(
+              context, frame->syntax->rhs, evaluated))
+        break;
+    }
+    count--;
+  }
+  free(frames);
+  return count == 0;
+}
+
 static int direct_integer_constant_has_allowed_operands(
+    direct_resolution_context_t *context,
+    const node_t *syntax, int evaluated) {
+  if (syntax && direct_integer_constant_eager_binary_kind(
+                    syntax->kind))
+    return direct_integer_constant_has_allowed_operands_iterative(
+        context, syntax, evaluated);
+  return direct_integer_constant_has_allowed_operands_impl(
+      context, syntax, evaluated);
+}
+
+static int direct_integer_constant_has_allowed_operands_impl(
     direct_resolution_context_t *context,
     const node_t *syntax, int evaluated) {
   if (!context || !syntax) return 0;
@@ -5586,7 +5705,133 @@ static int direct_promoted_integer_shape(
   return 1;
 }
 
-static int direct_integer_constant(
+typedef struct {
+  const node_t *syntax;
+  long long lhs;
+  long long rhs;
+  unsigned char state;
+} direct_integer_constant_value_frame_t;
+
+static int push_direct_integer_constant_value_frame(
+    direct_resolution_context_t *context,
+    direct_integer_constant_value_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  if (!context || !frames || !count || !capacity || !syntax ||
+      !direct_integer_constant_eager_binary_kind(syntax->kind))
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames))
+      return note_direct_integer_constant_stack_out_of_memory(
+          context, syntax);
+    direct_integer_constant_value_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next)
+      return note_direct_integer_constant_stack_out_of_memory(
+          context, syntax);
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] =
+      (direct_integer_constant_value_frame_t){.syntax = syntax};
+  return 1;
+}
+
+static int apply_direct_integer_constant_eager_binary(
+    direct_resolution_context_t *context,
+    const node_t *syntax, long long lhs, long long rhs,
+    long long *value) {
+  psx_type_shape_t lhs_type = {0};
+  psx_type_shape_t rhs_type = {0};
+  psx_type_shape_t result_type = {0};
+  psx_integer_constant_operation_t operation =
+      PSX_INTEGER_CONSTANT_OP_INVALID;
+  if (direct_integer_constant_shape(
+          context, syntax->lhs, &lhs_type) &&
+      direct_integer_constant_shape(
+          context, syntax->rhs, &rhs_type) &&
+      direct_integer_constant_shape(
+          context, syntax, &result_type) &&
+      direct_integer_constant_binary_operation(
+          syntax->kind, &operation)) {
+    return psx_apply_typed_integer_constant_binary(
+        operation, &lhs_type, &rhs_type, &result_type,
+        ps_ctx_data_layout(context->semantic_context),
+        lhs, rhs, value);
+  }
+  return psx_apply_integer_constant_binary(
+      syntax->kind, lhs, rhs, value);
+}
+
+static int direct_integer_constant_iterative(
+    direct_resolution_context_t *context,
+    const node_t *syntax, long long *value) {
+  direct_integer_constant_value_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_direct_integer_constant_value_frame(
+          context, &frames, &count, &capacity, syntax)) {
+    free(frames);
+    return 0;
+  }
+  while (count > 0) {
+    direct_integer_constant_value_frame_t *frame =
+        &frames[count - 1];
+    if (frame->state == 0) {
+      frame->state = 1;
+      if (!frame->syntax->lhs) break;
+      if (direct_integer_constant_eager_binary_kind(
+              frame->syntax->lhs->kind)) {
+        if (!push_direct_integer_constant_value_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->lhs))
+          break;
+        continue;
+      }
+      if (!direct_integer_constant(
+              context, frame->syntax->lhs, &frame->lhs))
+        break;
+    }
+    if (frame->state == 1) {
+      frame->state = 2;
+      if (!frame->syntax->rhs) break;
+      if (direct_integer_constant_eager_binary_kind(
+              frame->syntax->rhs->kind)) {
+        if (!push_direct_integer_constant_value_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->rhs))
+          break;
+        continue;
+      }
+      if (!direct_integer_constant(
+              context, frame->syntax->rhs, &frame->rhs))
+        break;
+    }
+    long long completed = 0;
+    if (!apply_direct_integer_constant_eager_binary(
+            context, frame->syntax, frame->lhs, frame->rhs,
+            &completed))
+      break;
+    count--;
+    if (count == 0) {
+      free(frames);
+      *value = completed;
+      return 1;
+    }
+    direct_integer_constant_value_frame_t *parent =
+        &frames[count - 1];
+    if (parent->state == 1)
+      parent->lhs = completed;
+    else
+      parent->rhs = completed;
+  }
+  free(frames);
+  return 0;
+}
+
+static int direct_integer_constant_impl(
     direct_resolution_context_t *context,
     const node_t *syntax, long long *value) {
   if (!context || !syntax || !value ||
@@ -5782,6 +6027,16 @@ static int direct_integer_constant(
   }
   return psx_apply_integer_constant_binary(
       syntax->kind, lhs, rhs, value);
+}
+
+static int direct_integer_constant(
+    direct_resolution_context_t *context,
+    const node_t *syntax, long long *value) {
+  if (syntax && direct_integer_constant_eager_binary_kind(
+                    syntax->kind))
+    return direct_integer_constant_iterative(
+        context, syntax, value);
+  return direct_integer_constant_impl(context, syntax, value);
 }
 
 typedef struct {

@@ -35,6 +35,32 @@ if (!Object.isFrozen(toolchain.resourceLimits) || toolchain.resourceLimits.maxDi
   throw new Error(`resource defaults are not exposed or stable: ${JSON.stringify(toolchain.resourceLimits)}`);
 }
 
+const coldDeepBinarySource = await readFile(
+  "test/fixtures/probes_found_bugs/deep_binary_expression_pipeline.c",
+  "utf8",
+);
+const coldDeepBinaryResult = toolchain.compileObjectWithDiagnostics(coldDeepBinarySource);
+if (!(coldDeepBinaryResult.object instanceof Uint8Array) ||
+    coldDeepBinaryResult.diagnostics.length !== 0) {
+  throw new Error(
+    `cold deep binary compile failed: ${JSON.stringify(coldDeepBinaryResult.diagnostics)}`,
+  );
+}
+
+const coldConstantToolchain = await makeToolchain();
+const coldDeepConstantSource = await readFile(
+  "test/fixtures/probes_found_bugs/deep_integer_constant_expression.c",
+  "utf8",
+);
+const coldDeepConstantResult =
+  coldConstantToolchain.compileObjectWithDiagnostics(coldDeepConstantSource);
+if (!(coldDeepConstantResult.object instanceof Uint8Array) ||
+    coldDeepConstantResult.diagnostics.length !== 0) {
+  throw new Error(
+    `cold deep constant compile failed: ${JSON.stringify(coldDeepConstantResult.diagnostics)}`,
+  );
+}
+
 const sourceBase = "int source_limit(void) { return 1; }\n";
 const sourceLimit = Buffer.byteLength(sourceBase) + 2;
 toolchain.compileObject(`${sourceBase} `, { limits: { maxSourceBytes: sourceLimit } });
