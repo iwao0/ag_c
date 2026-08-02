@@ -75,6 +75,20 @@ if (!(coldDeepShortCircuitResult.object instanceof Uint8Array) ||
   );
 }
 
+const coldUnaryToolchain = await makeToolchain();
+const coldDeepUnarySource = await readFile(
+  "test/fixtures/probes_found_bugs/deep_unary_constant_expression.c",
+  "utf8",
+);
+const coldDeepUnaryResult =
+  coldUnaryToolchain.compileObjectWithDiagnostics(coldDeepUnarySource);
+if (!(coldDeepUnaryResult.object instanceof Uint8Array) ||
+    coldDeepUnaryResult.diagnostics.length !== 0) {
+  throw new Error(
+    `cold deep unary compile failed: ${JSON.stringify(coldDeepUnaryResult.diagnostics)}`,
+  );
+}
+
 const sourceBase = "int source_limit(void) { return 1; }\n";
 const sourceLimit = Buffer.byteLength(sourceBase) + 2;
 toolchain.compileObject(`${sourceBase} `, { limits: { maxSourceBytes: sourceLimit } });

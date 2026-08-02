@@ -412,6 +412,9 @@ static int direct_integer_constant(
 static int direct_integer_constant_evaluate(
     direct_resolution_context_t *context,
     const node_t *syntax, long long *value);
+static int direct_integer_constant_unary_operation(
+    psx_syntax_node_kind_t kind,
+    psx_integer_constant_operation_t *operation);
 static int direct_null_pointer_constant(
     direct_resolution_context_t *context,
     const node_t *syntax,
@@ -1056,6 +1059,9 @@ static psx_semantic_node_t *build_direct_expression_impl(
     direct_resolution_context_t *context,
     const node_t *syntax);
 static psx_semantic_node_t *build_direct_binary_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax);
+static psx_semantic_node_t *build_direct_unary_expression(
     direct_resolution_context_t *context,
     const node_t *syntax);
 static psx_semantic_node_t *apply_direct_expression_decay(
@@ -3388,6 +3394,168 @@ fail:
       context, failure_syntax, 0, invalid, NULL);
 }
 
+typedef struct {
+  const node_t *syntax;
+  psx_qual_type_t operand_type;
+} direct_unary_preflight_frame_t;
+
+static int direct_iterative_unary_kind(
+    psx_syntax_node_kind_t kind) {
+  psx_integer_constant_operation_t operation =
+      PSX_INTEGER_CONSTANT_OP_INVALID;
+  return direct_integer_constant_unary_operation(
+      kind, &operation);
+}
+
+static int push_direct_unary_preflight_frame(
+    direct_resolution_context_t *context,
+    direct_unary_preflight_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  if (!context || !frames || !count || !capacity || !syntax ||
+      !direct_iterative_unary_kind(syntax->kind))
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    direct_unary_preflight_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] = (direct_unary_preflight_frame_t){
+      .syntax = syntax,
+      .operand_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  return 1;
+}
+
+static int resolve_direct_unary_preflight_type(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_qual_type_t operand_type,
+    psx_qual_type_t *result_type) {
+  if (!context || !syntax || !result_type) return 0;
+  if (syntax->kind == ND_UNARY_PLUS ||
+      syntax->kind == ND_UNARY_NEGATE) {
+    psx_type_arithmetic_unary_op_t type_operator;
+    if (!direct_arithmetic_unary_operator(
+            syntax->kind, &type_operator))
+      return 0;
+    operand_type = direct_promoted_bitfield_qual_type(
+        context, syntax->lhs, operand_type);
+    psx_qual_type_t result =
+        psx_resolve_arithmetic_unary_result_qual_type_in(
+            context->semantic_context, type_operator,
+            operand_type);
+    if (result.type_id == PSX_TYPE_ID_INVALID)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
+          syntax);
+    *result_type = result;
+    return 1;
+  }
+  if (syntax->kind == ND_LOGICAL_NOT) {
+    psx_qual_type_t result =
+        psx_resolve_logical_not_result_qual_type_in(
+            context->semantic_context, operand_type);
+    if (result.type_id == PSX_TYPE_ID_INVALID)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_LOGICAL_NOT_REQUIRES_SCALAR,
+          syntax);
+    *result_type = result;
+    return 1;
+  }
+  if (syntax->kind == ND_BITWISE_NOT) {
+    operand_type = direct_promoted_bitfield_qual_type(
+        context, syntax->lhs, operand_type);
+    psx_qual_type_t result =
+        psx_resolve_bitwise_not_result_qual_type_in(
+            context->semantic_context, operand_type);
+    if (result.type_id == PSX_TYPE_ID_INVALID)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_BITWISE_NOT_REQUIRES_INTEGER,
+          syntax);
+    *result_type = result;
+    return 1;
+  }
+  return 0;
+}
+
+static int preflight_direct_unary_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_qual_type_t *qual_type) {
+  direct_unary_preflight_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  const node_t *failure_syntax = syntax;
+  if (!push_direct_unary_preflight_frame(
+          context, &frames, &count, &capacity, syntax))
+    goto fail;
+
+  while (count > 0) {
+    direct_unary_preflight_frame_t *frame = &frames[count - 1];
+    failure_syntax = frame->syntax;
+    if (frame->operand_type.type_id == PSX_TYPE_ID_INVALID &&
+        frame->syntax->lhs &&
+        direct_iterative_unary_kind(
+            frame->syntax->lhs->kind)) {
+      if (!push_direct_unary_preflight_frame(
+              context, &frames, &count, &capacity,
+              frame->syntax->lhs))
+        goto fail;
+      continue;
+    }
+    if (frame->operand_type.type_id == PSX_TYPE_ID_INVALID &&
+        !preflight_direct_expression(
+            context, frame->syntax->lhs,
+            &frame->operand_type))
+      goto fail;
+
+    psx_qual_type_t completed_type = {
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+    if (!resolve_direct_unary_preflight_type(
+            context, frame->syntax, frame->operand_type,
+            &completed_type) ||
+        !finish_preflight_direct_expression(
+            context, frame->syntax, 1,
+            completed_type, &completed_type))
+      goto fail;
+
+    count--;
+    if (count == 0) {
+      free(frames);
+      if (qual_type) *qual_type = completed_type;
+      return 1;
+    }
+    frames[count - 1].operand_type = completed_type;
+  }
+
+fail:
+  free(frames);
+  psx_qual_type_t invalid = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  return finish_preflight_direct_expression(
+      context, failure_syntax, 0, invalid, NULL);
+}
+
 static int preflight_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax,
@@ -3396,6 +3564,10 @@ static int preflight_direct_expression(
   if (syntax && direct_binary_kind(
                     syntax->kind, &binary_kind, NULL))
     return preflight_direct_binary_expression(
+        context, syntax, qual_type);
+  if (syntax && direct_iterative_unary_kind(
+                    syntax->kind))
+    return preflight_direct_unary_expression(
         context, syntax, qual_type);
   psx_qual_type_t resolved_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
@@ -3722,9 +3894,7 @@ static int preflight_direct_expression_impl(
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
-  if (syntax->kind == ND_UNARY_PLUS ||
-      syntax->kind == ND_UNARY_NEGATE ||
-      syntax->kind == ND_CREAL ||
+  if (syntax->kind == ND_CREAL ||
       syntax->kind == ND_CIMAG) {
     psx_type_arithmetic_unary_op_t type_operator;
     psx_qual_type_t operand_type;
@@ -3733,10 +3903,6 @@ static int preflight_direct_expression_impl(
         !preflight_direct_expression(
             context, syntax->lhs, &operand_type))
       return 0;
-    if (syntax->kind == ND_UNARY_PLUS ||
-        syntax->kind == ND_UNARY_NEGATE)
-      operand_type = direct_promoted_bitfield_qual_type(
-          context, syntax->lhs, operand_type);
     psx_qual_type_t result =
         psx_resolve_arithmetic_unary_result_qual_type_in(
             context->semantic_context, type_operator,
@@ -3745,40 +3911,6 @@ static int preflight_direct_expression_impl(
       return note_direct_semantic_rejection(
           context,
           PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
-          syntax);
-    if (qual_type) *qual_type = result;
-    return 1;
-  }
-  if (syntax->kind == ND_LOGICAL_NOT) {
-    psx_qual_type_t operand_type;
-    if (!preflight_direct_expression(
-            context, syntax->lhs, &operand_type))
-      return 0;
-    psx_qual_type_t result =
-        psx_resolve_logical_not_result_qual_type_in(
-            context->semantic_context, operand_type);
-    if (result.type_id == PSX_TYPE_ID_INVALID)
-      return note_direct_semantic_rejection(
-          context,
-          PSX_SYNTAX_TYPED_HIR_REJECTION_LOGICAL_NOT_REQUIRES_SCALAR,
-          syntax);
-    if (qual_type) *qual_type = result;
-    return 1;
-  }
-  if (syntax->kind == ND_BITWISE_NOT) {
-    psx_qual_type_t operand_type;
-    if (!preflight_direct_expression(
-            context, syntax->lhs, &operand_type))
-      return 0;
-    operand_type = direct_promoted_bitfield_qual_type(
-        context, syntax->lhs, operand_type);
-    psx_qual_type_t result =
-        psx_resolve_bitwise_not_result_qual_type_in(
-            context->semantic_context, operand_type);
-    if (result.type_id == PSX_TYPE_ID_INVALID)
-      return note_direct_semantic_rejection(
-          context,
-          PSX_SYNTAX_TYPED_HIR_REJECTION_BITWISE_NOT_REQUIRES_INTEGER,
           syntax);
     if (qual_type) *qual_type = result;
     return 1;
@@ -4515,11 +4647,15 @@ static psx_semantic_node_t *build_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax) {
   psx_hir_node_kind_t binary_kind;
-  psx_semantic_node_t *expression =
-      syntax && direct_binary_kind(
-                    syntax->kind, &binary_kind, NULL)
-          ? build_direct_binary_expression(context, syntax)
-          : build_direct_expression_impl(context, syntax);
+  psx_semantic_node_t *expression = NULL;
+  if (syntax && direct_binary_kind(
+                    syntax->kind, &binary_kind, NULL))
+    expression = build_direct_binary_expression(context, syntax);
+  else if (syntax && direct_iterative_unary_kind(
+                         syntax->kind))
+    expression = build_direct_unary_expression(context, syntax);
+  else
+    expression = build_direct_expression_impl(context, syntax);
   expression = apply_direct_expression_decay(
       context, syntax, expression);
   if (!expression)
@@ -4537,6 +4673,45 @@ typedef struct direct_binary_build_frame_t {
   psx_semantic_node_t *rhs;
   unsigned char state;
 } direct_binary_build_frame_t;
+
+typedef struct {
+  const node_t *syntax;
+  psx_semantic_node_t *operand;
+} direct_unary_build_frame_t;
+
+static int push_direct_unary_build_frame(
+    direct_resolution_context_t *context,
+    direct_unary_build_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  if (!context || !frames || !count || !capacity || !syntax ||
+      !direct_iterative_unary_kind(syntax->kind))
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    direct_unary_build_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] = (direct_unary_build_frame_t){
+      .syntax = syntax,
+  };
+  return 1;
+}
 
 static int push_direct_binary_build_frame(
     direct_resolution_context_t *context,
@@ -4642,6 +4817,65 @@ static psx_semantic_node_t *apply_direct_bitfield_promotion(
       children, edges, 1, NULL, syntax->kind);
 }
 
+static psx_semantic_node_t *build_direct_unary_node(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_semantic_node_t *operand) {
+  if (!context || !syntax || !operand) return NULL;
+  psx_hir_node_kind_t hir_kind;
+  psx_qual_type_t result_qual_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (syntax->kind == ND_UNARY_PLUS ||
+      syntax->kind == ND_UNARY_NEGATE) {
+    psx_type_arithmetic_unary_op_t type_operator;
+    operand = apply_direct_bitfield_promotion(
+        context, syntax->lhs, operand);
+    if (!operand || !direct_arithmetic_unary_operator(
+                        syntax->kind, &type_operator))
+      return NULL;
+    result_qual_type =
+        psx_resolve_arithmetic_unary_result_qual_type_in(
+            context->semantic_context, type_operator,
+            psx_semantic_node_expression_qual_type(operand));
+    hir_kind = syntax->kind == ND_UNARY_PLUS
+                   ? PSX_HIR_UNARY_PLUS
+                   : PSX_HIR_NEGATE;
+  } else if (syntax->kind == ND_LOGICAL_NOT) {
+    result_qual_type =
+        psx_resolve_logical_not_result_qual_type_in(
+            context->semantic_context,
+            psx_semantic_node_expression_qual_type(operand));
+    hir_kind = PSX_HIR_LOGICAL_NOT;
+  } else if (syntax->kind == ND_BITWISE_NOT) {
+    operand = apply_direct_bitfield_promotion(
+        context, syntax->lhs, operand);
+    if (!operand) return NULL;
+    result_qual_type =
+        psx_resolve_bitwise_not_result_qual_type_in(
+            context->semantic_context,
+            psx_semantic_node_expression_qual_type(operand));
+    hir_kind = PSX_HIR_BITWISE_NOT;
+  } else {
+    return NULL;
+  }
+  if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    set_failure(
+        context->failure,
+        PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
+    return NULL;
+  }
+  psx_semantic_node_t *children[] = {operand};
+  psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
+  psx_hir_node_spec_t spec = {
+      .kind = hir_kind,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  return psx_semantic_node_builder_expression(
+      &context->builder, &spec, result_qual_type,
+      children, edges, 1, NULL, syntax->kind);
+}
+
 static psx_semantic_node_t *apply_direct_default_argument_promotion(
     direct_resolution_context_t *context,
     const node_t *syntax,
@@ -4729,6 +4963,52 @@ static psx_semantic_node_t *build_direct_binary_node(
   return psx_semantic_node_builder_expression(
       &context->builder, &spec, result_qual_type,
       children, edges, 2, NULL, syntax->kind);
+}
+
+static psx_semantic_node_t *build_direct_unary_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
+  direct_unary_build_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_direct_unary_build_frame(
+          context, &frames, &count, &capacity, syntax))
+    return NULL;
+
+  while (count > 0) {
+    direct_unary_build_frame_t *frame = &frames[count - 1];
+    if (!frame->operand) {
+      if (frame->syntax->lhs &&
+          direct_iterative_unary_kind(
+              frame->syntax->lhs->kind)) {
+        if (!push_direct_unary_build_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->lhs))
+          break;
+        continue;
+      }
+      frame->operand = build_direct_expression(
+          context, frame->syntax->lhs);
+      if (!frame->operand) break;
+    }
+
+    const node_t *completed_syntax = frame->syntax;
+    psx_semantic_node_t *completed = build_direct_unary_node(
+        context, completed_syntax, frame->operand);
+    if (!completed) break;
+    count--;
+    if (count == 0) {
+      free(frames);
+      return completed;
+    }
+    completed = apply_direct_expression_decay(
+        context, completed_syntax, completed);
+    if (!completed) break;
+    frames[count - 1].operand = completed;
+  }
+
+  free(frames);
+  return NULL;
 }
 
 static psx_semantic_node_t *build_direct_binary_expression(
@@ -5213,9 +5493,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
         children, edges, 1, NULL, syntax->kind);
   }
 
-  if (syntax->kind == ND_UNARY_PLUS ||
-      syntax->kind == ND_UNARY_NEGATE ||
-      syntax->kind == ND_CREAL ||
+  if (syntax->kind == ND_CREAL ||
       syntax->kind == ND_CIMAG) {
     psx_type_arithmetic_unary_op_t type_operator;
     psx_semantic_node_t *operand =
@@ -5223,12 +5501,6 @@ static psx_semantic_node_t *build_direct_expression_impl(
     if (!operand || !direct_arithmetic_unary_operator(
                         syntax->kind, &type_operator))
       return NULL;
-    if (syntax->kind == ND_UNARY_PLUS ||
-        syntax->kind == ND_UNARY_NEGATE) {
-      operand = apply_direct_bitfield_promotion(
-          context, syntax->lhs, operand);
-      if (!operand) return NULL;
-    }
     psx_qual_type_t result_qual_type =
         psx_resolve_arithmetic_unary_result_qual_type_in(
             context->semantic_context, type_operator,
@@ -5239,71 +5511,17 @@ static psx_semantic_node_t *build_direct_expression_impl(
           PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
       return NULL;
     }
-    psx_semantic_node_t *children[] = {operand};
-    psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
-    psx_hir_node_spec_t spec = {
-        .kind = syntax->kind == ND_UNARY_PLUS
-                    ? PSX_HIR_UNARY_PLUS
-                    : syntax->kind == ND_CREAL
-                          ? PSX_HIR_CREAL
-                          : syntax->kind == ND_CIMAG
-                                ? PSX_HIR_CIMAG
-                                : PSX_HIR_NEGATE,
-        .attached_qual_type = {
-            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-    };
-    return psx_semantic_node_builder_expression(
-        &context->builder, &spec, result_qual_type,
-        children, edges, 1, NULL, syntax->kind);
-  }
-
-  if (syntax->kind == ND_LOGICAL_NOT) {
-    psx_semantic_node_t *operand =
-        build_direct_expression(context, syntax->lhs);
-    if (!operand) return NULL;
-    psx_qual_type_t result_qual_type =
-        psx_resolve_logical_not_result_qual_type_in(
-            context->semantic_context,
-            psx_semantic_node_expression_qual_type(operand));
-    if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
-      set_failure(
-          context->failure,
-          PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
+    psx_hir_node_kind_t hir_kind;
+    if (syntax->kind == ND_CREAL)
+      hir_kind = PSX_HIR_CREAL;
+    else if (syntax->kind == ND_CIMAG)
+      hir_kind = PSX_HIR_CIMAG;
+    else
       return NULL;
-    }
     psx_semantic_node_t *children[] = {operand};
     psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
     psx_hir_node_spec_t spec = {
-        .kind = PSX_HIR_LOGICAL_NOT,
-        .attached_qual_type = {
-            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-    };
-    return psx_semantic_node_builder_expression(
-        &context->builder, &spec, result_qual_type,
-        children, edges, 1, NULL, syntax->kind);
-  }
-
-  if (syntax->kind == ND_BITWISE_NOT) {
-    psx_semantic_node_t *operand =
-        build_direct_expression(context, syntax->lhs);
-    if (!operand) return NULL;
-    operand = apply_direct_bitfield_promotion(
-        context, syntax->lhs, operand);
-    if (!operand) return NULL;
-    psx_qual_type_t result_qual_type =
-        psx_resolve_bitwise_not_result_qual_type_in(
-            context->semantic_context,
-            psx_semantic_node_expression_qual_type(operand));
-    if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
-      set_failure(
-          context->failure,
-          PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
-      return NULL;
-    }
-    psx_semantic_node_t *children[] = {operand};
-    psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
-    psx_hir_node_spec_t spec = {
-        .kind = PSX_HIR_BITWISE_NOT,
+        .kind = hir_kind,
         .attached_qual_type = {
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
     };
@@ -5425,6 +5643,37 @@ static int direct_integer_constant_eager_binary_kind(
              kind, &operation);
 }
 
+static int direct_integer_constant_unary_operation(
+    psx_syntax_node_kind_t kind,
+    psx_integer_constant_operation_t *operation) {
+  if (!operation) return 0;
+  switch (kind) {
+    case ND_UNARY_PLUS:
+      *operation = PSX_INTEGER_CONSTANT_OP_UNARY_PLUS;
+      return 1;
+    case ND_UNARY_NEGATE:
+      *operation = PSX_INTEGER_CONSTANT_OP_NEGATE;
+      return 1;
+    case ND_LOGICAL_NOT:
+      *operation = PSX_INTEGER_CONSTANT_OP_LOGICAL_NOT;
+      return 1;
+    case ND_BITWISE_NOT:
+      *operation = PSX_INTEGER_CONSTANT_OP_BITWISE_NOT;
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int direct_integer_constant_iterative_kind(
+    psx_syntax_node_kind_t kind) {
+  psx_integer_constant_operation_t operation =
+      PSX_INTEGER_CONSTANT_OP_INVALID;
+  return direct_integer_constant_eager_binary_kind(kind) ||
+         direct_integer_constant_unary_operation(
+             kind, &operation);
+}
+
 static int direct_integer_constant_has_allowed_operands_impl(
     direct_resolution_context_t *context,
     const node_t *syntax, int evaluated);
@@ -5452,7 +5701,7 @@ static int push_direct_integer_constant_operand_frame(
     size_t *count, size_t *capacity,
     const node_t *syntax) {
   if (!context || !frames || !count || !capacity || !syntax ||
-      !direct_integer_constant_eager_binary_kind(syntax->kind))
+      !direct_integer_constant_iterative_kind(syntax->kind))
     return 0;
   if (*count == *capacity) {
     size_t next_capacity = *capacity ? *capacity * 2 : 32;
@@ -5490,7 +5739,7 @@ static int direct_integer_constant_has_allowed_operands_iterative(
     if (frame->state == 0) {
       frame->state = 1;
       if (!frame->syntax->lhs) break;
-      if (direct_integer_constant_eager_binary_kind(
+      if (direct_integer_constant_iterative_kind(
               frame->syntax->lhs->kind)) {
         if (!push_direct_integer_constant_operand_frame(
                 context, &frames, &count, &capacity,
@@ -5502,10 +5751,17 @@ static int direct_integer_constant_has_allowed_operands_iterative(
               context, frame->syntax->lhs, evaluated))
         break;
     }
+    psx_integer_constant_operation_t unary_operation =
+        PSX_INTEGER_CONSTANT_OP_INVALID;
+    if (direct_integer_constant_unary_operation(
+            frame->syntax->kind, &unary_operation)) {
+      count--;
+      continue;
+    }
     if (frame->state == 1) {
       frame->state = 2;
       if (!frame->syntax->rhs) break;
-      if (direct_integer_constant_eager_binary_kind(
+      if (direct_integer_constant_iterative_kind(
               frame->syntax->rhs->kind)) {
         if (!push_direct_integer_constant_operand_frame(
                 context, &frames, &count, &capacity,
@@ -5526,7 +5782,7 @@ static int direct_integer_constant_has_allowed_operands_iterative(
 static int direct_integer_constant_has_allowed_operands(
     direct_resolution_context_t *context,
     const node_t *syntax, int evaluated) {
-  if (syntax && direct_integer_constant_eager_binary_kind(
+  if (syntax && direct_integer_constant_iterative_kind(
                     syntax->kind))
     return direct_integer_constant_has_allowed_operands_iterative(
         context, syntax, evaluated);
@@ -5721,7 +5977,7 @@ static int push_direct_integer_constant_value_frame(
     size_t *count, size_t *capacity,
     const node_t *syntax) {
   if (!context || !frames || !count || !capacity || !syntax ||
-      !direct_integer_constant_eager_binary_kind(syntax->kind))
+      !direct_integer_constant_iterative_kind(syntax->kind))
     return 0;
   if (*count == *capacity) {
     size_t next_capacity = *capacity ? *capacity * 2 : 32;
@@ -5740,6 +5996,32 @@ static int push_direct_integer_constant_value_frame(
   (*frames)[(*count)++] =
       (direct_integer_constant_value_frame_t){.syntax = syntax};
   return 1;
+}
+
+static int apply_direct_integer_constant_unary(
+    direct_resolution_context_t *context,
+    const node_t *syntax, long long operand,
+    long long *value) {
+  psx_type_shape_t result_type = {0};
+  psx_integer_constant_operation_t operation =
+      PSX_INTEGER_CONSTANT_OP_INVALID;
+  if (!context || !syntax || !value ||
+      !direct_integer_constant_unary_operation(
+          syntax->kind, &operation))
+    return 0;
+  if (direct_integer_constant_shape(
+          context, syntax, &result_type))
+    return psx_apply_typed_integer_constant_unary(
+        operation, &result_type,
+        ps_ctx_data_layout(context->semantic_context),
+        operand, value);
+  switch (syntax->kind) {
+    case ND_UNARY_PLUS: *value = operand; return 1;
+    case ND_UNARY_NEGATE: *value = -operand; return 1;
+    case ND_LOGICAL_NOT: *value = !operand; return 1;
+    case ND_BITWISE_NOT: *value = ~operand; return 1;
+    default: return 0;
+  }
 }
 
 static int apply_direct_integer_constant_eager_binary(
@@ -5785,7 +6067,7 @@ static int direct_integer_constant_iterative(
     if (frame->state == 0) {
       frame->state = 1;
       if (!frame->syntax->lhs) break;
-      if (direct_integer_constant_eager_binary_kind(
+      if (direct_integer_constant_iterative_kind(
               frame->syntax->lhs->kind)) {
         if (!push_direct_integer_constant_value_frame(
                 context, &frames, &count, &capacity,
@@ -5797,10 +6079,33 @@ static int direct_integer_constant_iterative(
               context, frame->syntax->lhs, &frame->lhs))
         break;
     }
+    psx_integer_constant_operation_t unary_operation =
+        PSX_INTEGER_CONSTANT_OP_INVALID;
+    if (direct_integer_constant_unary_operation(
+            frame->syntax->kind, &unary_operation)) {
+      long long completed = 0;
+      if (!apply_direct_integer_constant_unary(
+              context, frame->syntax, frame->lhs,
+              &completed))
+        break;
+      count--;
+      if (count == 0) {
+        free(frames);
+        *value = completed;
+        return 1;
+      }
+      direct_integer_constant_value_frame_t *parent =
+          &frames[count - 1];
+      if (parent->state == 1)
+        parent->lhs = completed;
+      else
+        parent->rhs = completed;
+      continue;
+    }
     if (frame->state == 1) {
       frame->state = 2;
       if (!frame->syntax->rhs) break;
-      if (direct_integer_constant_eager_binary_kind(
+      if (direct_integer_constant_iterative_kind(
               frame->syntax->rhs->kind)) {
         if (!push_direct_integer_constant_value_frame(
                 context, &frames, &count, &capacity,
@@ -5888,62 +6193,6 @@ static int direct_integer_constant_evaluate_impl(
     }
     return psx_normalize_integer_constant_cast(
         &result_type, selected_value, value);
-  }
-  if (syntax->kind == ND_UNARY_PLUS) {
-    long long operand = 0;
-    if (!direct_integer_constant_evaluate(
-            context, syntax->lhs, &operand))
-      return 0;
-    psx_type_shape_t result_type = {0};
-    return direct_integer_constant_shape(
-               context, syntax, &result_type)
-               ? psx_apply_typed_integer_constant_unary(
-                     PSX_INTEGER_CONSTANT_OP_UNARY_PLUS, &result_type,
-                     ps_ctx_data_layout(context->semantic_context),
-                     operand, value)
-               : (*value = operand, 1);
-  }
-  if (syntax->kind == ND_UNARY_NEGATE) {
-    long long operand;
-    if (!direct_integer_constant_evaluate(
-            context, syntax->lhs, &operand))
-      return 0;
-    psx_type_shape_t result_type = {0};
-    return direct_integer_constant_shape(
-               context, syntax, &result_type)
-               ? psx_apply_typed_integer_constant_unary(
-                     PSX_INTEGER_CONSTANT_OP_NEGATE, &result_type,
-                     ps_ctx_data_layout(context->semantic_context),
-                     operand, value)
-               : (*value = -operand, 1);
-  }
-  if (syntax->kind == ND_LOGICAL_NOT) {
-    long long operand;
-    if (!direct_integer_constant_evaluate(
-            context, syntax->lhs, &operand))
-      return 0;
-    psx_type_shape_t result_type = {0};
-    return direct_integer_constant_shape(
-               context, syntax, &result_type)
-               ? psx_apply_typed_integer_constant_unary(
-                     PSX_INTEGER_CONSTANT_OP_LOGICAL_NOT, &result_type,
-                     ps_ctx_data_layout(context->semantic_context),
-                     operand, value)
-               : (*value = !operand, 1);
-  }
-  if (syntax->kind == ND_BITWISE_NOT) {
-    long long operand;
-    if (!direct_integer_constant_evaluate(
-            context, syntax->lhs, &operand))
-      return 0;
-    psx_type_shape_t result_type = {0};
-    return direct_integer_constant_shape(
-               context, syntax, &result_type)
-               ? psx_apply_typed_integer_constant_unary(
-                     PSX_INTEGER_CONSTANT_OP_BITWISE_NOT, &result_type,
-                     ps_ctx_data_layout(context->semantic_context),
-                     operand, value)
-               : (*value = ~operand, 1);
   }
   if (syntax->kind == ND_SOURCE_CAST) {
     psx_qual_type_t target_qual_type;
@@ -6039,7 +6288,7 @@ static int direct_integer_constant_evaluate_impl(
 static int direct_integer_constant_evaluate(
     direct_resolution_context_t *context,
     const node_t *syntax, long long *value) {
-  if (syntax && direct_integer_constant_eager_binary_kind(
+  if (syntax && direct_integer_constant_iterative_kind(
                     syntax->kind))
     return direct_integer_constant_iterative(
         context, syntax, value);
