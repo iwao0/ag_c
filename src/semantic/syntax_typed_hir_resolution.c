@@ -3556,6 +3556,237 @@ fail:
       context, failure_syntax, 0, invalid, NULL);
 }
 
+typedef struct {
+  const node_t *syntax;
+  psx_qual_type_t condition_type;
+  psx_qual_type_t then_type;
+  psx_qual_type_t else_type;
+  direct_initialization_snapshot_t branch_entry;
+  direct_initialization_snapshot_t then_exit;
+  direct_initialization_snapshot_t else_exit;
+  long long condition_value;
+  unsigned char state;
+  unsigned char condition_is_constant;
+  unsigned char initialization_diagnostics_suppressed;
+} direct_ternary_preflight_frame_t;
+
+static int push_direct_ternary_preflight_frame(
+    direct_resolution_context_t *context,
+    direct_ternary_preflight_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  if (!context || !frames || !count || !capacity || !syntax ||
+      syntax->kind != ND_TERNARY)
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    direct_ternary_preflight_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] = (direct_ternary_preflight_frame_t){
+      .syntax = syntax,
+      .condition_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .then_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .else_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  return 1;
+}
+
+static int resolve_direct_ternary_preflight_type(
+    direct_resolution_context_t *context,
+    direct_ternary_preflight_frame_t *frame,
+    psx_qual_type_t *result_type) {
+  if (!context || !frame || !result_type) return 0;
+  const node_t *syntax = frame->syntax;
+  const node_ctrl_t *ternary = (const node_ctrl_t *)syntax;
+  if (frame->condition_is_constant)
+    restore_direct_initialization_snapshot(
+        context, frame->condition_value != 0
+                     ? &frame->then_exit : &frame->else_exit);
+  else
+    merge_direct_initialization_snapshots(
+        context, &frame->then_exit, &frame->else_exit);
+  int then_is_null_pointer_constant =
+      direct_null_pointer_constant(
+          context, syntax->rhs, frame->then_type);
+  int else_is_null_pointer_constant =
+      direct_null_pointer_constant(
+          context, ternary->els, frame->else_type);
+  psx_qual_type_t then_type = direct_promoted_bitfield_qual_type(
+      context, syntax->rhs, frame->then_type);
+  psx_qual_type_t else_type = direct_promoted_bitfield_qual_type(
+      context, ternary->els, frame->else_type);
+  psx_conditional_types_resolution_t resolution;
+  psx_resolve_conditional_qual_types_in(
+      context->semantic_context, frame->condition_type,
+      then_type, else_type,
+      then_is_null_pointer_constant,
+      else_is_null_pointer_constant, &resolution);
+  if (resolution.status ==
+      PSX_CONDITIONAL_CONDITION_NOT_SCALAR)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_CONDITION_NOT_SCALAR,
+        syntax);
+  if (resolution.status ==
+      PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE,
+        syntax);
+  if (resolution.status != PSX_CONDITIONAL_TYPES_OK)
+    return 0;
+  *result_type = resolution.result_qual_type;
+  return 1;
+}
+
+static int preflight_direct_ternary_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_qual_type_t *qual_type) {
+  direct_ternary_preflight_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  const node_t *failure_syntax = syntax;
+  if (!push_direct_ternary_preflight_frame(
+          context, &frames, &count, &capacity, syntax))
+    goto fail;
+
+  while (count > 0) {
+    direct_ternary_preflight_frame_t *frame = &frames[count - 1];
+    const node_ctrl_t *ternary =
+        (const node_ctrl_t *)frame->syntax;
+    failure_syntax = frame->syntax;
+    if (frame->state == 0) {
+      frame->state = 1;
+      if (frame->syntax->lhs &&
+          frame->syntax->lhs->kind == ND_TERNARY) {
+        if (!push_direct_ternary_preflight_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->lhs))
+          goto fail;
+        continue;
+      }
+      if (!preflight_direct_expression(
+              context, frame->syntax->lhs,
+              &frame->condition_type))
+        goto fail;
+    }
+    if (frame->state == 1) {
+      frame->condition_is_constant = direct_integer_constant(
+          context, frame->syntax->lhs,
+          &frame->condition_value);
+      if (!capture_direct_initialization_snapshot(
+              context, &frame->branch_entry, frame->syntax))
+        goto fail;
+      if (frame->condition_is_constant &&
+          frame->condition_value == 0) {
+        context->suppress_initialization_diagnostics++;
+        frame->initialization_diagnostics_suppressed = 1;
+      }
+      frame->state = 2;
+      if (frame->syntax->rhs &&
+          frame->syntax->rhs->kind == ND_TERNARY) {
+        if (!push_direct_ternary_preflight_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->rhs))
+          goto fail;
+        continue;
+      }
+      if (!preflight_direct_expression(
+              context, frame->syntax->rhs,
+              &frame->then_type))
+        goto fail;
+    }
+    if (frame->state == 2) {
+      if (frame->initialization_diagnostics_suppressed) {
+        context->suppress_initialization_diagnostics--;
+        frame->initialization_diagnostics_suppressed = 0;
+      }
+      if (!capture_direct_initialization_snapshot(
+              context, &frame->then_exit, frame->syntax))
+        goto fail;
+      restore_direct_initialization_snapshot(
+          context, &frame->branch_entry);
+      if (frame->condition_is_constant &&
+          frame->condition_value != 0) {
+        context->suppress_initialization_diagnostics++;
+        frame->initialization_diagnostics_suppressed = 1;
+      }
+      frame->state = 3;
+      if (ternary->els && ternary->els->kind == ND_TERNARY) {
+        if (!push_direct_ternary_preflight_frame(
+                context, &frames, &count, &capacity,
+                ternary->els))
+          goto fail;
+        continue;
+      }
+      if (!preflight_direct_expression(
+              context, ternary->els, &frame->else_type))
+        goto fail;
+    }
+
+    if (frame->initialization_diagnostics_suppressed) {
+      context->suppress_initialization_diagnostics--;
+      frame->initialization_diagnostics_suppressed = 0;
+    }
+    if (!capture_direct_initialization_snapshot(
+            context, &frame->else_exit, frame->syntax))
+      goto fail;
+    psx_qual_type_t completed_type = {
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+    if (!resolve_direct_ternary_preflight_type(
+            context, frame, &completed_type) ||
+        !finish_preflight_direct_expression(
+            context, frame->syntax, 1,
+            completed_type, &completed_type))
+      goto fail;
+
+    count--;
+    if (count == 0) {
+      free(frames);
+      if (qual_type) *qual_type = completed_type;
+      return 1;
+    }
+    direct_ternary_preflight_frame_t *parent = &frames[count - 1];
+    if (parent->state == 1)
+      parent->condition_type = completed_type;
+    else if (parent->state == 2)
+      parent->then_type = completed_type;
+    else
+      parent->else_type = completed_type;
+  }
+
+fail:
+  for (size_t index = 0; index < count; index++) {
+    if (frames[index].initialization_diagnostics_suppressed)
+      context->suppress_initialization_diagnostics--;
+  }
+  free(frames);
+  psx_qual_type_t invalid = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  return finish_preflight_direct_expression(
+      context, failure_syntax, 0, invalid, NULL);
+}
+
 static int preflight_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax,
@@ -3568,6 +3799,9 @@ static int preflight_direct_expression(
   if (syntax && direct_iterative_unary_kind(
                     syntax->kind))
     return preflight_direct_unary_expression(
+        context, syntax, qual_type);
+  if (syntax && syntax->kind == ND_TERNARY)
+    return preflight_direct_ternary_expression(
         context, syntax, qual_type);
   psx_qual_type_t resolved_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
@@ -3913,91 +4147,6 @@ static int preflight_direct_expression_impl(
           PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
           syntax);
     if (qual_type) *qual_type = result;
-    return 1;
-  }
-  if (syntax->kind == ND_TERNARY) {
-    const node_ctrl_t *ternary = (const node_ctrl_t *)syntax;
-    psx_qual_type_t condition_type;
-    psx_qual_type_t then_type;
-    psx_qual_type_t else_type;
-    if (!preflight_direct_expression(
-            context, syntax->lhs, &condition_type))
-      return 0;
-    long long condition_value = 0;
-    int condition_is_constant =
-        direct_integer_constant(
-            context, syntax->lhs, &condition_value);
-    direct_initialization_snapshot_t branch_entry;
-    direct_initialization_snapshot_t then_exit;
-    direct_initialization_snapshot_t else_exit;
-    if (!capture_direct_initialization_snapshot(
-            context, &branch_entry, syntax))
-      return 0;
-    int suppress_then =
-        condition_is_constant && condition_value == 0;
-    if (suppress_then)
-      context->suppress_initialization_diagnostics++;
-    int then_resolved = preflight_direct_expression(
-        context, syntax->rhs, &then_type);
-    if (suppress_then)
-      context->suppress_initialization_diagnostics--;
-    if (!then_resolved ||
-        !capture_direct_initialization_snapshot(
-            context, &then_exit, syntax))
-      return 0;
-    restore_direct_initialization_snapshot(
-        context, &branch_entry);
-    int suppress_else =
-        condition_is_constant && condition_value != 0;
-    if (suppress_else)
-      context->suppress_initialization_diagnostics++;
-    int else_resolved = preflight_direct_expression(
-        context, ternary->els, &else_type);
-    if (suppress_else)
-      context->suppress_initialization_diagnostics--;
-    if (!else_resolved ||
-        !capture_direct_initialization_snapshot(
-            context, &else_exit, syntax))
-      return 0;
-    if (condition_is_constant)
-      restore_direct_initialization_snapshot(
-          context, condition_value != 0
-                       ? &then_exit : &else_exit);
-    else
-      merge_direct_initialization_snapshots(
-          context, &then_exit, &else_exit);
-    int then_is_null_pointer_constant =
-        direct_null_pointer_constant(
-            context, syntax->rhs, then_type);
-    int else_is_null_pointer_constant =
-        direct_null_pointer_constant(
-            context, ternary->els, else_type);
-    then_type = direct_promoted_bitfield_qual_type(
-        context, syntax->rhs, then_type);
-    else_type = direct_promoted_bitfield_qual_type(
-        context, ternary->els, else_type);
-    psx_conditional_types_resolution_t resolution;
-    psx_resolve_conditional_qual_types_in(
-        context->semantic_context, condition_type,
-        then_type, else_type,
-        then_is_null_pointer_constant,
-        else_is_null_pointer_constant, &resolution);
-    if (resolution.status ==
-        PSX_CONDITIONAL_CONDITION_NOT_SCALAR)
-      return note_direct_semantic_rejection(
-          context,
-          PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_CONDITION_NOT_SCALAR,
-          syntax);
-    if (resolution.status ==
-        PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE)
-      return note_direct_semantic_rejection(
-          context,
-          PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE,
-          syntax);
-    if (resolution.status != PSX_CONDITIONAL_TYPES_OK)
-      return 0;
-    if (qual_type)
-      *qual_type = resolution.result_qual_type;
     return 1;
   }
   psx_hir_node_kind_t hir_kind;
