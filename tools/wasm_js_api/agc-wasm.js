@@ -150,6 +150,64 @@ function prepareVirtualHeaders(options, encoder, resourceLimits) {
   return { bytes, limits };
 }
 
+function prepareProjectSources(options, encoder, resourceLimits) {
+  const revision = positiveInt(
+    options?.projectRevision,
+    "projectRevision",
+  );
+  const sources = options?.projectSources;
+  if (!Array.isArray(sources) || sources.length === 0) {
+    throw new TypeError("projectSources must be a non-empty array of named sources");
+  }
+  assertResourceLimit("maxSources", sources.length, resourceLimits.maxSources);
+  const names = new Set();
+  let totalSourceBytes = 0;
+  const entries = sources.map((input, index) => {
+    const source = normalizeCompileInput(input);
+    if (source.name === null) {
+      throw new TypeError(`projectSources[${index}] must be { name, source }`);
+    }
+    if (names.has(source.name)) {
+      throw new TypeError(`duplicate project source name ${JSON.stringify(source.name)}`);
+    }
+    names.add(source.name);
+    const sourceByteLength = utf8ByteLength(source.source);
+    assertResourceLimit(
+      "maxSourceBytes", sourceByteLength, resourceLimits.maxSourceBytes,
+    );
+    totalSourceBytes += sourceByteLength;
+    assertResourceLimit(
+      "maxTotalSourceBytes", totalSourceBytes,
+      resourceLimits.maxTotalSourceBytes,
+    );
+    return {
+      name: encoder.encode(source.name),
+      source: encoder.encode(source.source),
+    };
+  });
+  let byteLength = 4;
+  for (const entry of entries) {
+    byteLength += 8 + entry.name.length + 1 + entry.source.length + 1;
+    if (!Number.isSafeInteger(byteLength) || byteLength > 0x7fffffff) {
+      throw new RangeError("project source bundle exceeds Wasm32 addressable size");
+    }
+  }
+  const bytes = new Uint8Array(byteLength);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, entries.length, true);
+  let offset = 4;
+  for (const entry of entries) {
+    view.setUint32(offset, entry.name.length, true);
+    view.setUint32(offset + 4, entry.source.length, true);
+    offset += 8;
+    bytes.set(entry.name, offset);
+    offset += entry.name.length + 1;
+    bytes.set(entry.source, offset);
+    offset += entry.source.length + 1;
+  }
+  return { revision, bytes };
+}
+
 function normalizeCompileInput(input) {
   if (typeof input === "string") return { source: input, name: null };
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -285,6 +343,10 @@ export async function createCompiler(wasmSource, options = {}) {
   const compileWatVirtualExport = instance.exports.agc_wasm_adapter_compile_wat_virtual;
   const compileObjectVirtualExport = instance.exports.agc_wasm_adapter_compile_object_virtual;
   const analyzeSourceExport = instance.exports.agc_wasm_adapter_analyze_source_virtual;
+  const analyzeProjectSourceExport =
+    instance.exports.agc_wasm_adapter_analyze_project_source_virtual;
+  const updateLanguageProjectExport =
+    instance.exports.agc_wasm_adapter_update_language_project;
   const analysisErrorExports = {
     codePtr: instance.exports.agc_wasm_adapter_analysis_error_code_ptr,
     limitPtr: instance.exports.agc_wasm_adapter_analysis_error_limit_ptr,
@@ -920,7 +982,7 @@ export async function createCompiler(wasmSource, options = {}) {
     return error;
   }
 
-  function analyzeSource(input, analysisOptions = {}) {
+  function analyzeSourceInternal(input, analysisOptions = {}, useProject = false) {
     if (typeof analyzeSourceExport !== "function") {
       throw new Error("ag_c wasm module does not support language analysis");
     }
@@ -941,6 +1003,14 @@ export async function createCompiler(wasmSource, options = {}) {
     const resourceLimits = resolveResourceLimits(
       compilerResourceLimits, analysisOptions.limits ?? {},
     );
+    if (useProject &&
+        (typeof analyzeProjectSourceExport !== "function" ||
+         typeof updateLanguageProjectExport !== "function")) {
+      throw new Error("ag_c wasm module does not support project language analysis");
+    }
+    const project = useProject
+      ? prepareProjectSources(analysisOptions, encoder, resourceLimits)
+      : null;
     const sourceByteLength = utf8ByteLength(normalized.source);
     assertResourceLimit("maxSourceBytes", sourceByteLength, resourceLimits.maxSourceBytes);
     assertResourceLimit(
@@ -966,6 +1036,7 @@ export async function createCompiler(wasmSource, options = {}) {
     if (!sourceAlloc) throw new Error("ag_c wasm malloc failed for analysis source");
     let sourceNameAlloc = 0;
     let headerAlloc = 0;
+    let projectAlloc = 0;
     let outputAlloc = 0;
     try {
       sourceNameAlloc = callPtrFunc(malloc, sourceNameBytes.length);
@@ -981,6 +1052,45 @@ export async function createCompiler(wasmSource, options = {}) {
         ensureMemoryRange(memory, headerAlloc, virtualHeaders.bytes.length, "analysis headers");
         new Uint8Array(memory.buffer).set(virtualHeaders.bytes, headerAlloc);
       }
+      if (project) {
+        projectAlloc = callPtrFunc(malloc, project.bytes.length);
+        if (!projectAlloc) {
+          throw new Error("ag_c wasm malloc failed for project sources");
+        }
+        ensureMemoryRange(
+          memory, projectAlloc, project.bytes.length, "project sources",
+        );
+        new Uint8Array(memory.buffer).set(project.bytes, projectAlloc);
+        resetDiagnostics();
+        let projectRc;
+        try {
+          projectRc = callNumberFunc(updateLanguageProjectExport, [
+            requireAdapterHandle(), project.revision,
+            projectAlloc, project.bytes.length,
+            headerAlloc, virtualHeaders?.bytes.length ?? 0,
+            headerLimits.maxFiles, headerLimits.maxFileBytes,
+            headerLimits.maxTotalBytes, headerLimits.maxIncludeDepth,
+            resourceLimits.maxSources, resourceLimits.maxSourceBytes,
+            resourceLimits.maxTotalSourceBytes,
+            resourceLimits.maxAnalysisSymbols,
+            resourceLimits.maxCompletionItems,
+            resourceLimits.maxAnalysisStringBytes,
+            resourceLimits.maxAnalysisSnapshotBytes,
+          ]);
+        } catch (cause) {
+          throw analysisTrapError(cause);
+        }
+        if (projectRc === -7) {
+          throw analysisResourceError(resourceLimits) ??
+            new Error("ag_c project language index exceeded a resource limit");
+        }
+        if (projectRc === -6 || projectRc === -1) {
+          throw new TypeError("ag_c rejected the project language index request");
+        }
+        if (projectRc < 0) {
+          throw new Error("ag_c failed to update the project language index");
+        }
+      }
       let capacity = Math.min(
         initialOutputCap, resourceLimits.maxAnalysisSnapshotBytes + 1,
       );
@@ -991,7 +1101,9 @@ export async function createCompiler(wasmSource, options = {}) {
         resetDiagnostics();
         let rc;
         try {
-          rc = callNumberFunc(analyzeSourceExport, [
+          rc = callNumberFunc(
+            useProject ? analyzeProjectSourceExport : analyzeSourceExport,
+            [
             requireAdapterHandle(), sourceAlloc, sourceNameAlloc, cursor.byteOffset,
             headerAlloc, virtualHeaders?.bytes.length ?? 0,
             headerLimits.maxFiles, headerLimits.maxFileBytes,
@@ -1002,7 +1114,8 @@ export async function createCompiler(wasmSource, options = {}) {
             resourceLimits.maxAnalysisStringBytes,
             resourceLimits.maxAnalysisSnapshotBytes,
             outputAlloc, capacity,
-          ]);
+            ],
+          );
         } catch (cause) {
           throw analysisTrapError(cause);
         }
@@ -1037,10 +1150,19 @@ export async function createCompiler(wasmSource, options = {}) {
       }
     } finally {
       if (outputAlloc) callVoidPtrFunc(free, outputAlloc);
+      if (projectAlloc) callVoidPtrFunc(free, projectAlloc);
       if (headerAlloc) callVoidPtrFunc(free, headerAlloc);
       if (sourceNameAlloc) callVoidPtrFunc(free, sourceNameAlloc);
       callVoidPtrFunc(free, sourceAlloc);
     }
+  }
+
+  function analyzeSource(input, analysisOptions = {}) {
+    return analyzeSourceInternal(input, analysisOptions, false);
+  }
+
+  function analyzeProjectSource(input, analysisOptions = {}) {
+    return analyzeSourceInternal(input, analysisOptions, true);
   }
 
   function readDiagnosticBytes() {
@@ -1068,6 +1190,7 @@ export async function createCompiler(wasmSource, options = {}) {
     compileObject,
     compileObjectWithDiagnostics,
     analyzeSource,
+    analyzeProjectSource,
     readStdout,
     readStderr: readStderrText,
     readDiagnostics: readStructuredDiagnostics,

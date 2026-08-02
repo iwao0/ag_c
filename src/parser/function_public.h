@@ -7,6 +7,13 @@
 typedef struct psx_function_symbol_t psx_function_symbol_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 
+typedef struct {
+  const char *source_name;
+  const char *source_input;
+  int byte_offset;
+  int byte_length;
+} psx_function_source_location_t;
+
 int ps_ctx_is_function_defined_in(
     psx_semantic_context_t *context, char *name, int len);
 const psx_function_symbol_t *ps_ctx_find_function_symbol_in(
@@ -19,6 +26,16 @@ int ps_function_symbol_has_explicit_extern(
     const psx_function_symbol_t *symbol);
 int ps_function_symbol_is_noreturn(
     const psx_function_symbol_t *symbol);
+int ps_function_symbol_declaration_location(
+    const psx_function_symbol_t *symbol,
+    psx_function_source_location_t *location);
+int ps_function_symbol_definition_location(
+    const psx_function_symbol_t *symbol,
+    psx_function_source_location_t *location);
+int ps_ctx_note_function_source_in(
+    psx_semantic_context_t *context, char *name, int len,
+    int is_definition, const char *source_name,
+    const char *source_input, int byte_offset, int byte_length);
 psx_qual_type_t ps_ctx_get_function_qual_type_in(
     psx_semantic_context_t *context, char *name, int len);
 psx_qual_type_t psx_ctx_get_function_return_qual_type_in(

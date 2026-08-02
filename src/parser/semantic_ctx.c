@@ -150,6 +150,8 @@ typedef_record_runtime_application(const typedef_name_t *t) {
 
 struct psx_function_symbol_t {
   psx_qual_type_t function_qual_type;
+  psx_function_source_location_t declaration_location;
+  psx_function_source_location_t definition_location;
   /* 1: この関数名はすでに本体定義済み。2 度目の定義を E3064 で弾くために使う
    * (C11 6.9p3、`int f(){...} int f(){...}` 等)。プロトタイプ宣言 `int f(int);`
    * のみではこのフラグは立たない。 */
@@ -1544,6 +1546,53 @@ int ps_function_symbol_is_noreturn(
   return symbol && symbol->is_noreturn;
 }
 
+int ps_function_symbol_declaration_location(
+    const psx_function_symbol_t *symbol,
+    psx_function_source_location_t *location) {
+  if (location) *location = (psx_function_source_location_t){0};
+  if (!symbol || !location ||
+      !symbol->declaration_location.source_name ||
+      !symbol->declaration_location.source_input)
+    return 0;
+  *location = symbol->declaration_location;
+  return 1;
+}
+
+int ps_function_symbol_definition_location(
+    const psx_function_symbol_t *symbol,
+    psx_function_source_location_t *location) {
+  if (location) *location = (psx_function_source_location_t){0};
+  if (!symbol || !location ||
+      !symbol->definition_location.source_name ||
+      !symbol->definition_location.source_input)
+    return 0;
+  *location = symbol->definition_location;
+  return 1;
+}
+
+int ps_ctx_note_function_source_in(
+    psx_semantic_context_t *context, char *name, int len,
+    int is_definition, const char *source_name,
+    const char *source_input, int byte_offset, int byte_length) {
+  if (!context || !name || len <= 0 || !source_name || !source_input ||
+      byte_offset < 0 || byte_length < 0)
+    return 0;
+  psx_function_symbol_t *function =
+      find_function_name_mut_in(context, name, len);
+  if (!function) return 0;
+  psx_function_source_location_t location = {
+      .source_name = source_name,
+      .source_input = source_input,
+      .byte_offset = byte_offset,
+      .byte_length = byte_length,
+  };
+  if (!function->declaration_location.source_name)
+    function->declaration_location = location;
+  if (is_definition)
+    function->definition_location = location;
+  return 1;
+}
+
 void ps_ctx_checkpoint_function_registration_in(
     psx_semantic_context_t *context, char *name, int len,
     psx_function_registration_checkpoint_t *checkpoint) {
@@ -1561,6 +1610,8 @@ void ps_ctx_checkpoint_function_registration_in(
       function->has_explicit_extern;
   checkpoint->is_noreturn = function->is_noreturn;
   checkpoint->function_qual_type = function->function_qual_type;
+  checkpoint->declaration_location = function->declaration_location;
+  checkpoint->definition_location = function->definition_location;
 }
 
 void ps_ctx_rollback_function_registration_in(
@@ -1590,6 +1641,8 @@ void ps_ctx_rollback_function_registration_in(
       checkpoint->has_explicit_extern;
   function->is_noreturn = checkpoint->is_noreturn;
   function->function_qual_type = checkpoint->function_qual_type;
+  function->declaration_location = checkpoint->declaration_location;
+  function->definition_location = checkpoint->definition_location;
 }
 
 static void define_function_name_in(

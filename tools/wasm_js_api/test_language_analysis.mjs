@@ -464,6 +464,9 @@ function functionHoverFields(hover) {
     signature: hover.signature,
     storageClass: hover.storageClass,
     declaration: hover.declaration,
+    definition: hover.definition,
+    definitionConflict: hover.definitionConflict,
+    definitionCandidates: hover.definitionCandidates,
     function: hover.function,
   };
 }
@@ -616,6 +619,261 @@ for (const functionCase of functionStorageCases) {
     occurrence += functionCase.name.length;
   }
 }
+
+const projectHeaders = {
+  "player.h":
+    "void move_and_draw(void);\n" +
+    "void declared_only_project(void);\n" +
+    "void local_only(void);\n",
+};
+const projectPlayerSource = {
+  name: "player.c",
+  source: "#include \"player.h\"\n/* プレイヤー */\nvoid move_and_draw(void) {}\n",
+};
+const projectMainSource = {
+  name: "main.c",
+  source:
+    "#include \"player.h\"\n\n" +
+    "int main(void) {\n" +
+    "  move_and_draw();\n" +
+    "  declared_only_project();\n" +
+    "  local_only();\n" +
+    "  return 0;\n" +
+    "}\n",
+};
+const projectStaticA = {
+  name: "static_a.c",
+  source: "static void local_only(void) {}\n",
+};
+const projectStaticB = {
+  name: "static_b.c",
+  source: "static void local_only(void) {}\n",
+};
+const projectSources = [
+  projectPlayerSource,
+  projectMainSource,
+  projectStaticA,
+  projectStaticB,
+];
+const projectUseStart = projectMainSource.source.indexOf(moveName);
+const projectDefinitionStart = Buffer.byteLength(
+  projectPlayerSource.source.slice(
+    0, projectPlayerSource.source.indexOf(moveName),
+  ),
+);
+const projectDeclarationStart = projectHeaders["player.h"].indexOf(moveName);
+const wasmProjectParity = compiler.analyzeProjectSource(
+  projectMainSource,
+  {
+    projectRevision: 1,
+    projectSources,
+    headers: projectHeaders,
+    cursor: {
+      sourceName: projectMainSource.name,
+      byteOffset: projectUseStart + Math.floor(moveName.length / 2),
+    },
+  },
+);
+const nativeProjectParity = JSON.parse(execFileSync(
+  nativeAnalysisPath,
+  ["--project-function-parity-json"],
+  { encoding: "utf8" },
+));
+assert.deepStrictEqual(
+  wasmProjectParity,
+  nativeProjectParity,
+  "native and Wasm project function snapshots differ",
+);
+
+const projectHoverSources = [
+  { source: projectMainSource, offset: projectUseStart },
+  {
+    source: { name: "player.h", source: projectHeaders["player.h"] },
+    offset: projectDeclarationStart,
+  },
+  { source: projectPlayerSource, offset: projectDefinitionStart },
+];
+for (const hoverSource of projectHoverSources) {
+  for (const cursorDelta of functionCursorDeltas) {
+    const result = compiler.analyzeProjectSource(hoverSource.source, {
+      projectRevision: 1,
+      projectSources,
+      headers: projectHeaders,
+      cursor: {
+        sourceName: hoverSource.source.name,
+        byteOffset: hoverSource.offset + cursorDelta,
+      },
+    });
+    if (result.hover?.name !== moveName ||
+        result.hover.declaration.sourceName !== "player.h" ||
+        result.hover.declaration.start.offset !== projectDeclarationStart ||
+        result.hover.definition?.sourceName !== "player.c" ||
+        result.hover.definition.start.offset !== projectDefinitionStart ||
+        result.hover.definition.end.offset !==
+          projectDefinitionStart + Buffer.byteLength(moveName) ||
+        result.hover.definitionConflict ||
+        result.hover.definitionCandidates.length !== 1) {
+      throw new Error(
+        `project function hover failed: ${JSON.stringify(result)}`,
+      );
+    }
+  }
+}
+
+const declaredOnlyProjectStart = projectMainSource.source.indexOf(
+  "declared_only_project",
+);
+const declaredOnlyProjectResult = compiler.analyzeProjectSource(
+  projectMainSource,
+  {
+    projectRevision: 1,
+    projectSources,
+    headers: projectHeaders,
+    cursor: {
+      sourceName: projectMainSource.name,
+      byteOffset: declaredOnlyProjectStart + 2,
+    },
+  },
+);
+if (declaredOnlyProjectResult.hover?.definition !== null ||
+    declaredOnlyProjectResult.hover?.definitionConflict ||
+    declaredOnlyProjectResult.hover?.definitionCandidates.length !== 0) {
+  throw new Error(
+    `declaration-only project function gained a definition: ${JSON.stringify(declaredOnlyProjectResult)}`,
+  );
+}
+
+const localOnlyStart = projectMainSource.source.indexOf("local_only");
+const localOnlyResult = compiler.analyzeProjectSource(projectMainSource, {
+  projectRevision: 1,
+  projectSources,
+  headers: projectHeaders,
+  cursor: {
+    sourceName: projectMainSource.name,
+    byteOffset: localOnlyStart + 2,
+  },
+});
+if (localOnlyResult.hover?.definition !== null ||
+    localOnlyResult.hover?.definitionCandidates.length !== 0) {
+  throw new Error(
+    `translation-unit-local definition leaked into project index: ${JSON.stringify(localOnlyResult)}`,
+  );
+}
+
+const movedProjectPlayer = {
+  name: "player.c",
+  source: "#include \"player.h\"\n\n\n\nvoid move_and_draw(void) {}\n",
+};
+const movedProjectSources = [movedProjectPlayer, ...projectSources.slice(1)];
+const movedDefinitionStart = movedProjectPlayer.source.indexOf(moveName);
+const movedResult = compiler.analyzeProjectSource(projectMainSource, {
+  projectRevision: 2,
+  projectSources: movedProjectSources,
+  headers: projectHeaders,
+  cursor: {
+    sourceName: projectMainSource.name,
+    byteOffset: projectUseStart + 2,
+  },
+});
+assert.equal(movedResult.hover?.definition?.start.offset, movedDefinitionStart);
+
+const removedProjectPlayer = {
+  name: "player.c",
+  source: "#include \"player.h\"\n",
+};
+const removedProjectSources = [removedProjectPlayer, ...projectSources.slice(1)];
+const cachedResult = compiler.analyzeProjectSource(projectMainSource, {
+  projectRevision: 2,
+  projectSources: removedProjectSources,
+  headers: projectHeaders,
+  cursor: {
+    sourceName: projectMainSource.name,
+    byteOffset: projectUseStart + 2,
+  },
+});
+assert.equal(cachedResult.hover?.definition?.start.offset, movedDefinitionStart);
+const removedResult = compiler.analyzeProjectSource(projectMainSource, {
+  projectRevision: 3,
+  projectSources: removedProjectSources,
+  headers: projectHeaders,
+  cursor: {
+    sourceName: projectMainSource.name,
+    byteOffset: projectUseStart + 2,
+  },
+});
+assert.equal(removedResult.hover?.definition, null);
+
+const duplicateProjectSources = [
+  {
+    name: "player.c",
+    source: "#include \"player.h\"\nvoid move_and_draw(void) {}\n",
+  },
+  projectMainSource,
+  projectStaticA,
+  {
+    name: "duplicate.c",
+    source: "#include \"player.h\"\n\nvoid move_and_draw(void) {}\n",
+  },
+];
+const duplicateResult = compiler.analyzeProjectSource(projectMainSource, {
+  projectRevision: 4,
+  projectSources: duplicateProjectSources,
+  headers: projectHeaders,
+  cursor: {
+    sourceName: projectMainSource.name,
+    byteOffset: projectUseStart + 2,
+  },
+});
+if (duplicateResult.hover?.definition !== null ||
+    !duplicateResult.hover?.definitionConflict ||
+    duplicateResult.hover?.definitionCandidates.length !== 2) {
+  throw new Error(
+    `duplicate project definitions were not explicit: ${JSON.stringify(duplicateResult)}`,
+  );
+}
+
+assert.throws(
+  () => compiler.analyzeProjectSource(projectMainSource, {
+    projectRevision: 5,
+    projectSources,
+    headers: projectHeaders,
+    limits: { maxSources: 1 },
+    cursor: {
+      sourceName: projectMainSource.name,
+      byteOffset: projectUseStart + 2,
+    },
+  }),
+  (error) => error?.name === "AgcResourceLimitError" &&
+    error.limit === "maxSources",
+);
+assert.throws(
+  () => compiler.analyzeProjectSource(
+    { name: "first.c", source: "void first_indexed(void) {}\n" },
+    {
+      projectRevision: 6,
+      projectSources: [
+        { name: "first.c", source: "void first_indexed(void) {}\n" },
+        { name: "second.c", source: "void second_indexed(void) {}\n" },
+      ],
+      limits: { maxAnalysisSymbols: 1 },
+      cursor: { sourceName: "first.c", byteOffset: 6 },
+    },
+  ),
+  (error) => error?.name === "AgcResourceLimitError" &&
+    error.limit === "maxAnalysisSymbols",
+);
+assert.throws(
+  () => compiler.analyzeProjectSource(projectMainSource, {
+    projectRevision: 7,
+    projectSources: [projectMainSource, projectMainSource],
+    headers: projectHeaders,
+    cursor: {
+      sourceName: projectMainSource.name,
+      byteOffset: projectUseStart + 2,
+    },
+  }),
+  /duplicate project source name/,
+);
 
 const objectDeclarationCases = [
   {

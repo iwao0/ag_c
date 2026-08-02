@@ -240,6 +240,8 @@ psx_name_classifier_t ps_ctx_name_classifier(
     psx_semantic_context_t *context);
 struct psx_function_registration_checkpoint_t {
   psx_qual_type_t function_qual_type;
+  psx_function_source_location_t declaration_location;
+  psx_function_source_location_t definition_location;
   int existed;
   int is_defined;
   int has_internal_linkage;

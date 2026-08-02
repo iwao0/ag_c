@@ -74,6 +74,32 @@ static int analyze(ag_compilation_session_t *session, const char *source,
       session, "main.c", source, cursor, bundle, limits, snapshot, error);
 }
 
+static int analyze_project_named(
+    ag_compilation_session_t *session,
+    const ag_language_project_index_t *project,
+    const char *source_name, const char *source, size_t cursor,
+    header_bundle_t bundle, ag_language_analysis_limits_t limits,
+    ag_language_analysis_snapshot_t *snapshot,
+    ag_language_analysis_error_t *error) {
+  return ag_language_analyze_project_source(
+      session, project,
+      &(ag_language_analysis_request_t){
+          .source_name = source_name,
+          .source = source,
+          .source_length = strlen(source),
+          .cursor_source_name = source_name,
+          .cursor_byte_offset = cursor,
+          .virtual_header_bundle = bundle.bytes,
+          .virtual_header_bundle_length = bundle.length,
+          .max_header_files = 32,
+          .max_header_file_bytes = 1024 * 1024,
+          .max_header_total_bytes = 4 * 1024 * 1024,
+          .max_include_depth = 16,
+          .limits = limits,
+      },
+      snapshot, error);
+}
+
 static const ag_language_symbol_t *find_symbol(
     const ag_language_analysis_snapshot_t *snapshot, const char *name,
     ag_language_symbol_kind_t kind) {
@@ -110,6 +136,24 @@ static int same_range(
          left->end.line == right->end.line &&
          left->end.column == right->end.column &&
          left->end.offset == right->end.offset;
+}
+
+static int same_optional_definition(
+    const ag_language_symbol_t *left,
+    const ag_language_symbol_t *right) {
+  if (left->has_definition != right->has_definition ||
+      left->definition_conflict != right->definition_conflict ||
+      left->definition_candidate_count !=
+          right->definition_candidate_count)
+    return 0;
+  if (left->has_definition &&
+      !same_range(&left->definition, &right->definition))
+    return 0;
+  for (int i = 0; i < left->definition_candidate_count; i++)
+    if (!same_range(&left->definition_candidates[i],
+                    &right->definition_candidates[i]))
+      return 0;
+  return 1;
 }
 
 static int same_object_hover(
@@ -156,6 +200,7 @@ static int same_function_hover(
       strcmp(left->return_type, right->return_type) != 0 ||
       strcmp(left->storage_class, right->storage_class) != 0 ||
       !same_range(&left->declaration, &right->declaration) ||
+      !same_optional_definition(left, right) ||
       left->has_function_prototype != right->has_function_prototype ||
       left->is_variadic != right->is_variadic ||
       left->parameter_count != right->parameter_count)
@@ -371,6 +416,91 @@ static int print_function_definition_parity_snapshot(void) {
   return 0;
 }
 
+static int print_project_function_parity_snapshot(void) {
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  if (!session || !project) {
+    ag_language_project_index_destroy(project);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  const char *header_paths[] = {"player.h"};
+  const char *header_sources[] = {
+      "void move_and_draw(void);\n"
+      "void declared_only_project(void);\n"
+      "void local_only(void);\n"};
+  header_bundle_t bundle = make_bundle(
+      header_paths, header_sources, 1);
+  const char *player_source =
+      "#include \"player.h\"\n/* プレイヤー */\n"
+      "void move_and_draw(void) {}\n";
+  const char *main_source =
+      "#include \"player.h\"\n\n"
+      "int main(void) {\n"
+      "  move_and_draw();\n"
+      "  declared_only_project();\n"
+      "  local_only();\n"
+      "  return 0;\n"
+      "}\n";
+  const char *static_source = "static void local_only(void) {}\n";
+  ag_language_project_source_t sources[] = {
+      {"player.c", player_source, 0},
+      {"main.c", main_source, 0},
+      {"static_a.c", static_source, 0},
+      {"static_b.c", static_source, 0},
+  };
+  for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++)
+    sources[i].source_length = strlen(sources[i].source);
+  ag_language_analysis_limits_t limits =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_error_t error = {0};
+  if (!ag_language_project_index_update(
+          session, project,
+          &(ag_language_project_update_request_t){
+              .revision = 1,
+              .sources = sources,
+              .source_count =
+                  sizeof(sources) / sizeof(sources[0]),
+              .virtual_header_bundle = bundle.bytes,
+              .virtual_header_bundle_length = bundle.length,
+              .max_header_files = 32,
+              .max_header_file_bytes = 1024 * 1024,
+              .max_header_total_bytes = 4 * 1024 * 1024,
+              .max_include_depth = 16,
+              .limits = limits,
+          },
+          &error)) {
+    free(bundle.bytes);
+    ag_language_project_index_destroy(project);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  const char *use = strstr(main_source, "move_and_draw");
+  ag_language_analysis_snapshot_t snapshot = {0};
+  int ok = analyze_project_named(
+      session, project, "main.c", main_source,
+      (size_t)(use - main_source) + strlen("move_and_draw") / 2,
+      bundle, limits, &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  int result = 1;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  free(bundle.bytes);
+  ag_language_project_index_destroy(project);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--parity-json") == 0)
     return print_parity_snapshot();
@@ -383,6 +513,9 @@ int main(int argc, char **argv) {
   if (argc == 2 &&
       strcmp(argv[1], "--function-definition-parity-json") == 0)
     return print_function_definition_parity_snapshot();
+  if (argc == 2 &&
+      strcmp(argv[1], "--project-function-parity-json") == 0)
+    return print_project_function_parity_snapshot();
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "session");
@@ -734,6 +867,10 @@ int main(int argc, char **argv) {
             function_use_hover->parameter_count == 0 &&
             function_use_hover->declaration.start.offset ==
                 (int)(function_definition -
+                      function_definition_source) &&
+            function_use_hover->has_definition &&
+            function_use_hover->definition.start.offset ==
+                (int)(function_definition -
                       function_definition_source),
         "function use hover baseline fields");
   for (size_t cursor_index = 0;
@@ -797,6 +934,8 @@ int main(int argc, char **argv) {
             prototype_hover->parameter_count == 1 &&
             prototype_hover->declaration.start.offset ==
                 (int)(declared_only - function_forms_source) &&
+            !prototype_hover->has_definition &&
+            prototype_hover->definition_candidate_count == 0 &&
             !snapshot.partial && snapshot.diagnostic_count == 0,
         "function prototype-only fields");
   ag_language_analysis_snapshot_dispose(&snapshot);
@@ -828,6 +967,9 @@ int main(int argc, char **argv) {
             definition_hover->has_function_prototype &&
             definition_hover->parameter_count == 1 &&
             definition_hover->declaration.start.offset ==
+                (int)(defined_prototype - function_forms_source) &&
+            definition_hover->has_definition &&
+            definition_hover->definition.start.offset ==
                 (int)(defined_definition - function_forms_source) &&
             !snapshot.partial && snapshot.diagnostic_count == 0,
         "static inline function definition fields");
@@ -841,6 +983,9 @@ int main(int argc, char **argv) {
         "function use after prototype and definition");
   CHECK(hover_symbol(&snapshot) &&
             hover_symbol(&snapshot)->declaration.start.offset ==
+                (int)(defined_prototype - function_forms_source) &&
+            hover_symbol(&snapshot)->has_definition &&
+            hover_symbol(&snapshot)->definition.start.offset ==
                 (int)(defined_definition - function_forms_source) &&
             strcmp(hover_symbol(&snapshot)->storage_class, "static") == 0 &&
             !snapshot.partial && snapshot.diagnostic_count == 0,
@@ -902,6 +1047,345 @@ int main(int argc, char **argv) {
       occurrence += strlen(function_storage_cases[case_index].name);
     }
   }
+
+  source =
+      "void duplicate_definition(void) {}\n"
+      "void duplicate_definition(void) {}\n";
+  const char *first_duplicate_definition = strstr(
+      source, "duplicate_definition");
+  const char *second_duplicate_definition = strstr(
+      first_duplicate_definition + 1, "duplicate_definition");
+  ag_compilation_session_t *duplicate_session =
+      ag_compilation_session_create(&target);
+  CHECK(duplicate_session != NULL, "duplicate definition session");
+  CHECK(analyze(
+            duplicate_session, source,
+            (size_t)(second_duplicate_definition - source) + 2,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "duplicate function definition analysis");
+  CHECK(hover_symbol(&snapshot) &&
+            hover_symbol(&snapshot)->has_definition &&
+            hover_symbol(&snapshot)->definition.start.offset ==
+                (int)(first_duplicate_definition - source) &&
+            hover_symbol(&snapshot)->definition_candidate_count == 1 &&
+            find_diagnostic(&snapshot, "E3064"),
+        "invalid duplicate does not replace the first definition range");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(duplicate_session);
+
+  const char *project_header_paths[] = {"player.h"};
+  const char *project_header_sources[] = {
+      "void move_and_draw(void);\n"
+      "void declared_only_project(void);\n"
+      "void local_only(void);\n",
+  };
+  header_bundle_t project_bundle = make_bundle(
+      project_header_paths, project_header_sources, 1);
+  const char *player_source =
+      "#include \"player.h\"\n/* プレイヤー */\n"
+      "void move_and_draw(void) {}\n";
+  const char *main_project_source =
+      "#include \"player.h\"\n\n"
+      "int main(void) {\n"
+      "  move_and_draw();\n"
+      "  declared_only_project();\n"
+      "  local_only();\n"
+      "  return 0;\n"
+      "}\n";
+  const char *static_a_source =
+      "static void local_only(void) {}\n";
+  const char *static_b_source =
+      "static void local_only(void) {}\n";
+  ag_language_project_source_t project_sources[] = {
+      {"player.c", player_source, 0},
+      {"main.c", main_project_source, 0},
+      {"static_a.c", static_a_source, 0},
+      {"static_b.c", static_b_source, 0},
+  };
+  for (size_t source_index = 0;
+       source_index < sizeof(project_sources) / sizeof(project_sources[0]);
+       source_index++)
+    project_sources[source_index].source_length =
+        strlen(project_sources[source_index].source);
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  CHECK(project != NULL, "project language index");
+  CHECK(ag_language_project_index_update(
+            session, project,
+            &(ag_language_project_update_request_t){
+                .revision = 1,
+                .sources = project_sources,
+                .source_count = 4,
+                .virtual_header_bundle = project_bundle.bytes,
+                .virtual_header_bundle_length = project_bundle.length,
+                .max_header_files = 32,
+                .max_header_file_bytes = 1024 * 1024,
+                .max_header_total_bytes = 4 * 1024 * 1024,
+                .max_include_depth = 16,
+                .limits = defaults,
+            },
+            &error),
+        "build project language index");
+  CHECK(ag_language_project_index_revision(project) == 1,
+        "project language revision");
+  const char *project_declaration = strstr(
+      project_header_sources[0], "move_and_draw");
+  const char *project_definition = strstr(
+      player_source, "move_and_draw");
+  const char *project_use = strstr(
+      main_project_source, "move_and_draw");
+  struct {
+    const char *source_name;
+    const char *source;
+    const char *identifier;
+  } project_hover_sources[] = {
+      {"main.c", main_project_source, project_use},
+      {"player.h", project_header_sources[0], project_declaration},
+      {"player.c", player_source, project_definition},
+  };
+  size_t project_cursor_deltas[] = {
+      0, strlen("move_and_draw") / 2, strlen("move_and_draw"),
+  };
+  for (size_t source_index = 0;
+       source_index < sizeof(project_hover_sources) /
+                          sizeof(project_hover_sources[0]);
+       source_index++) {
+    for (size_t cursor_index = 0;
+         cursor_index < sizeof(project_cursor_deltas) /
+                            sizeof(project_cursor_deltas[0]);
+         cursor_index++) {
+      CHECK(analyze_project_named(
+                session, project,
+                project_hover_sources[source_index].source_name,
+                project_hover_sources[source_index].source,
+                (size_t)(project_hover_sources[source_index].identifier -
+                         project_hover_sources[source_index].source) +
+                    project_cursor_deltas[cursor_index],
+                project_bundle, defaults, &snapshot, &error),
+            "project function hover");
+      const ag_language_symbol_t *project_hover =
+          hover_symbol(&snapshot);
+      CHECK(project_hover &&
+                strcmp(project_hover->name, "move_and_draw") == 0 &&
+                strcmp(project_hover->declaration.source_name,
+                       "player.h") == 0 &&
+                project_hover->declaration.start.offset ==
+                    (int)(project_declaration -
+                          project_header_sources[0]) &&
+                project_hover->has_definition &&
+                !project_hover->definition_conflict &&
+                project_hover->definition_candidate_count == 1 &&
+                strcmp(project_hover->definition.source_name,
+                       "player.c") == 0 &&
+                project_hover->definition.start.offset ==
+                    (int)(project_definition - player_source) &&
+                project_hover->definition.end.offset ==
+                    (int)(project_definition - player_source) +
+                        (int)strlen("move_and_draw"),
+            "project function declaration and definition ranges");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  const char *declared_only_use = strstr(
+      main_project_source, "declared_only_project");
+  CHECK(analyze_project_named(
+            session, project, "main.c", main_project_source,
+            (size_t)(declared_only_use - main_project_source) + 2,
+            project_bundle, defaults, &snapshot, &error),
+        "project declaration-only hover");
+  CHECK(hover_symbol(&snapshot) &&
+            strcmp(hover_symbol(&snapshot)->name,
+                   "declared_only_project") == 0 &&
+            !hover_symbol(&snapshot)->has_definition &&
+            !hover_symbol(&snapshot)->definition_conflict &&
+            hover_symbol(&snapshot)->definition_candidate_count == 0,
+        "project declaration-only has null definition");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *local_only_use = strstr(
+      main_project_source, "local_only");
+  CHECK(analyze_project_named(
+            session, project, "main.c", main_project_source,
+            (size_t)(local_only_use - main_project_source) + 2,
+            project_bundle, defaults, &snapshot, &error),
+        "project static isolation hover");
+  CHECK(hover_symbol(&snapshot) &&
+            strcmp(hover_symbol(&snapshot)->name, "local_only") == 0 &&
+            !hover_symbol(&snapshot)->has_definition &&
+            hover_symbol(&snapshot)->definition_candidate_count == 0,
+        "project static definitions remain translation-unit local");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *moved_player_source =
+      "#include \"player.h\"\n\n\n\n"
+      "void move_and_draw(void) {}\n";
+  project_sources[0].source = moved_player_source;
+  project_sources[0].source_length = strlen(moved_player_source);
+  CHECK(ag_language_project_index_update(
+            session, project,
+            &(ag_language_project_update_request_t){
+                .revision = 2,
+                .sources = project_sources,
+                .source_count = 4,
+                .virtual_header_bundle = project_bundle.bytes,
+                .virtual_header_bundle_length = project_bundle.length,
+                .limits = defaults,
+            },
+            &error),
+        "update project language revision");
+  CHECK(analyze_project_named(
+            session, project, "main.c", main_project_source,
+            (size_t)(project_use - main_project_source) + 2,
+            project_bundle, defaults, &snapshot, &error),
+        "project moved definition hover");
+  CHECK(hover_symbol(&snapshot) && hover_symbol(&snapshot)->has_definition &&
+            hover_symbol(&snapshot)->definition.start.offset ==
+                (int)(strstr(moved_player_source, "move_and_draw") -
+                      moved_player_source),
+        "project revision invalidates moved definition range");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *removed_player_source =
+      "#include \"player.h\"\n";
+  project_sources[0].source = removed_player_source;
+  project_sources[0].source_length = strlen(removed_player_source);
+  CHECK(ag_language_project_index_update(
+            session, project,
+            &(ag_language_project_update_request_t){
+                .revision = 2,
+                .sources = project_sources,
+                .source_count = 4,
+                .virtual_header_bundle = project_bundle.bytes,
+                .virtual_header_bundle_length = project_bundle.length,
+                .limits = defaults,
+            },
+            &error),
+        "reuse unchanged project revision");
+  CHECK(analyze_project_named(
+            session, project, "main.c", main_project_source,
+            (size_t)(project_use - main_project_source) + 2,
+            project_bundle, defaults, &snapshot, &error),
+        "cached project definition hover");
+  CHECK(hover_symbol(&snapshot) && hover_symbol(&snapshot)->has_definition &&
+            hover_symbol(&snapshot)->definition.start.offset ==
+                (int)(strstr(moved_player_source, "move_and_draw") -
+                      moved_player_source),
+        "unchanged revision reuses bounded project index");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  CHECK(ag_language_project_index_update(
+            session, project,
+            &(ag_language_project_update_request_t){
+                .revision = 3,
+                .sources = project_sources,
+                .source_count = 4,
+                .virtual_header_bundle = project_bundle.bytes,
+                .virtual_header_bundle_length = project_bundle.length,
+                .limits = defaults,
+            },
+            &error),
+        "remove project definition");
+  CHECK(analyze_project_named(
+            session, project, "main.c", main_project_source,
+            (size_t)(project_use - main_project_source) + 2,
+            project_bundle, defaults, &snapshot, &error),
+        "removed project definition hover");
+  CHECK(hover_symbol(&snapshot) &&
+            !hover_symbol(&snapshot)->has_definition &&
+            hover_symbol(&snapshot)->definition_candidate_count == 0,
+        "removed project definition does not leave stale range");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *duplicate_definition_a =
+      "#include \"player.h\"\n"
+      "void move_and_draw(void) {}\n";
+  const char *duplicate_definition_b =
+      "#include \"player.h\"\n\n"
+      "void move_and_draw(void) {}\n";
+  project_sources[0] = (ag_language_project_source_t){
+      "player.c", duplicate_definition_a,
+      strlen(duplicate_definition_a)};
+  project_sources[3] = (ag_language_project_source_t){
+      "duplicate.c", duplicate_definition_b,
+      strlen(duplicate_definition_b)};
+  CHECK(ag_language_project_index_update(
+            session, project,
+            &(ag_language_project_update_request_t){
+                .revision = 4,
+                .sources = project_sources,
+                .source_count = 4,
+                .virtual_header_bundle = project_bundle.bytes,
+                .virtual_header_bundle_length = project_bundle.length,
+                .limits = defaults,
+            },
+            &error),
+        "index duplicate project definitions");
+  CHECK(analyze_project_named(
+            session, project, "main.c", main_project_source,
+            (size_t)(project_use - main_project_source) + 2,
+            project_bundle, defaults, &snapshot, &error),
+        "duplicate project definition hover");
+  CHECK(hover_symbol(&snapshot) &&
+            !hover_symbol(&snapshot)->has_definition &&
+            hover_symbol(&snapshot)->definition_conflict &&
+            hover_symbol(&snapshot)->definition_candidate_count == 2,
+        "duplicate project definitions return explicit candidates");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  ag_language_analysis_limits_t one_source_limit = defaults;
+  one_source_limit.max_sources = 1;
+  CHECK(!ag_language_project_index_update(
+            session, project,
+            &(ag_language_project_update_request_t){
+                .revision = 5,
+                .sources = project_sources,
+                .source_count = 4,
+                .limits = one_source_limit,
+            },
+            &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.limit, "maxSources") == 0,
+        "project source count limit");
+  const char *first_index_source = "void first_indexed(void) {}\n";
+  const char *second_index_source = "void second_indexed(void) {}\n";
+  ag_language_project_source_t symbol_limit_sources[] = {
+      {"first.c", first_index_source, strlen(first_index_source)},
+      {"second.c", second_index_source, strlen(second_index_source)},
+  };
+  ag_language_analysis_limits_t one_symbol_limit = defaults;
+  one_symbol_limit.max_symbols = 1;
+  CHECK(!ag_language_project_index_update(
+            session, project,
+            &(ag_language_project_update_request_t){
+                .revision = 6,
+                .sources = symbol_limit_sources,
+                .source_count = 2,
+                .limits = one_symbol_limit,
+            },
+            &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.limit, "maxAnalysisSymbols") == 0,
+        "project symbol index limit");
+  ag_language_project_source_t duplicate_name_sources[] = {
+      {"same.c", first_index_source, strlen(first_index_source)},
+      {"same.c", second_index_source, strlen(second_index_source)},
+  };
+  CHECK(!ag_language_project_index_update(
+            session, project,
+            &(ag_language_project_update_request_t){
+                .revision = 7,
+                .sources = duplicate_name_sources,
+                .source_count = 2,
+                .limits = defaults,
+            },
+            &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_INVALID_REQUEST &&
+            strcmp(error.code,
+                   "AGC_LANGUAGE_ANALYSIS_DUPLICATE_PROJECT_SOURCE") == 0,
+        "duplicate project source names are rejected");
+  ag_language_project_index_destroy(project);
+  free(project_bundle.bytes);
   free(function_bundle.bytes);
 
   struct {

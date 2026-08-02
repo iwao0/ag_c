@@ -20,6 +20,7 @@
 #include "arch/wasm32/wasm32_ir.h"
 #include "arch/wasm32/wasm32_obj.h"
 #include "arch/wasm32/backend_context.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -229,6 +230,7 @@ typedef struct {
 
 typedef struct {
   ag_compilation_session_t *session;
+  ag_language_project_index_t *language_project;
   unsigned int session_generation;
   wasm_pending_continuation_t continuation;
   char diagnostic_locale[3];
@@ -263,6 +265,11 @@ static ag_compilation_session_t *wasm_adapter_language_session(
 int agc_wasm_adapter_create(void) {
   agc_wasm_adapter_t *adapter = calloc(1, sizeof(*adapter));
   if (!adapter) return 0;
+  adapter->language_project = ag_language_project_index_create();
+  if (!adapter->language_project) {
+    free(adapter);
+    return 0;
+  }
   memcpy(adapter->diagnostic_locale, "ja", sizeof(adapter->diagnostic_locale));
   adapter->diagnostic_record_limit = 128;
   adapter->diagnostic_byte_limit = 1024 * 1024;
@@ -273,6 +280,7 @@ int agc_wasm_adapter_destroy(int handle) {
   agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
   if (!adapter) return -1;
   wasm_adapter_discard_session(adapter);
+  ag_language_project_index_destroy(adapter->language_project);
   free(adapter);
   return 0;
 }
@@ -603,13 +611,13 @@ int agc_wasm_adapter_compile_object_virtual(
       max_total_bytes, max_depth, out_addr, out_cap, 1);
 }
 
-int agc_wasm_adapter_analyze_source_virtual(
+static int agc_wasm_adapter_analyze_source_virtual_impl(
     int handle, int source_addr, int source_name_addr, int cursor_offset,
     int bundle_addr, int bundle_len, int max_files, int max_file_bytes,
     int max_total_bytes, int max_depth, int max_sources,
     int max_source_bytes, int max_total_source_bytes, int max_symbols,
     int max_completion_items, int max_string_bytes, int max_snapshot_bytes,
-    int out_addr, int out_cap) {
+    int out_addr, int out_cap, int use_project) {
   agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
   if (!adapter || !source_addr || !source_name_addr || cursor_offset < 0 ||
       !out_addr || out_cap <= 0) return -1;
@@ -638,9 +646,7 @@ int agc_wasm_adapter_analyze_source_virtual(
     return -1;
   }
   ag_language_analysis_snapshot_t snapshot = {0};
-  int ok = ag_language_analyze_source(
-      session,
-      &(ag_language_analysis_request_t){
+  ag_language_analysis_request_t request = {
           .source_name = source_name,
           .source = source,
           .source_length = source_length,
@@ -667,8 +673,14 @@ int agc_wasm_adapter_analyze_source_virtual(
               .max_string_bytes = max_string_bytes,
               .max_snapshot_bytes = max_snapshot_bytes,
           },
-      },
-      &snapshot, &adapter->analysis_error);
+      };
+  int ok = use_project
+               ? ag_language_analyze_project_source(
+                     session, adapter->language_project,
+                     &request, &snapshot, &adapter->analysis_error)
+               : ag_language_analyze_source(
+                     session, &request, &snapshot,
+                     &adapter->analysis_error);
   if (!ok) {
     if (adapter->analysis_error.status ==
         AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT)
@@ -708,6 +720,154 @@ int agc_wasm_adapter_analyze_source_virtual(
       &snapshot, (char *)(long)out_addr, (size_t)out_cap);
   ag_language_analysis_snapshot_dispose(&snapshot);
   return written;
+}
+
+int agc_wasm_adapter_analyze_source_virtual(
+    int handle, int source_addr, int source_name_addr, int cursor_offset,
+    int bundle_addr, int bundle_len, int max_files, int max_file_bytes,
+    int max_total_bytes, int max_depth, int max_sources,
+    int max_source_bytes, int max_total_source_bytes, int max_symbols,
+    int max_completion_items, int max_string_bytes, int max_snapshot_bytes,
+    int out_addr, int out_cap) {
+  return agc_wasm_adapter_analyze_source_virtual_impl(
+      handle, source_addr, source_name_addr, cursor_offset,
+      bundle_addr, bundle_len, max_files, max_file_bytes,
+      max_total_bytes, max_depth, max_sources,
+      max_source_bytes, max_total_source_bytes, max_symbols,
+      max_completion_items, max_string_bytes, max_snapshot_bytes,
+      out_addr, out_cap, 0);
+}
+
+int agc_wasm_adapter_analyze_project_source_virtual(
+    int handle, int source_addr, int source_name_addr, int cursor_offset,
+    int bundle_addr, int bundle_len, int max_files, int max_file_bytes,
+    int max_total_bytes, int max_depth, int max_sources,
+    int max_source_bytes, int max_total_source_bytes, int max_symbols,
+    int max_completion_items, int max_string_bytes, int max_snapshot_bytes,
+    int out_addr, int out_cap) {
+  return agc_wasm_adapter_analyze_source_virtual_impl(
+      handle, source_addr, source_name_addr, cursor_offset,
+      bundle_addr, bundle_len, max_files, max_file_bytes,
+      max_total_bytes, max_depth, max_sources,
+      max_source_bytes, max_total_source_bytes, max_symbols,
+      max_completion_items, max_string_bytes, max_snapshot_bytes,
+      out_addr, out_cap, 1);
+}
+
+static unsigned int wasm_adapter_read_u32(
+    const unsigned char *bytes) {
+  return (unsigned int)bytes[0] |
+         ((unsigned int)bytes[1] << 8) |
+         ((unsigned int)bytes[2] << 16) |
+         ((unsigned int)bytes[3] << 24);
+}
+
+static int wasm_adapter_decode_project_sources(
+    const unsigned char *bundle, size_t bundle_length,
+    ag_language_project_source_t **sources, int *source_count) {
+  if (sources) *sources = NULL;
+  if (source_count) *source_count = 0;
+  if (!bundle || bundle_length < 4 || !sources || !source_count)
+    return 0;
+  unsigned int count = wasm_adapter_read_u32(bundle);
+  if (count == 0 || count > (unsigned int)INT_MAX) return 0;
+  ag_language_project_source_t *items = calloc(
+      count, sizeof(*items));
+  if (!items) return 0;
+  size_t offset = 4;
+  for (unsigned int index = 0; index < count; index++) {
+    if (offset > bundle_length || bundle_length - offset < 8) {
+      free(items);
+      return 0;
+    }
+    unsigned int name_length = wasm_adapter_read_u32(bundle + offset);
+    unsigned int source_length = wasm_adapter_read_u32(bundle + offset + 4);
+    offset += 8;
+    size_t required = (size_t)name_length + 1 +
+                      (size_t)source_length + 1;
+    if (offset > bundle_length || required > bundle_length - offset ||
+        bundle[offset + name_length] != 0 ||
+        bundle[offset + name_length + 1 + source_length] != 0) {
+      free(items);
+      return 0;
+    }
+    items[index] = (ag_language_project_source_t){
+        .source_name = (const char *)(bundle + offset),
+        .source = (const char *)(bundle + offset + name_length + 1),
+        .source_length = source_length,
+    };
+    offset += required;
+  }
+  if (offset != bundle_length) {
+    free(items);
+    return 0;
+  }
+  *sources = items;
+  *source_count = (int)count;
+  return 1;
+}
+
+int agc_wasm_adapter_update_language_project(
+    int handle, int revision, int project_bundle_addr,
+    int project_bundle_len, int header_bundle_addr,
+    int header_bundle_len, int max_files, int max_file_bytes,
+    int max_total_bytes, int max_depth, int max_sources,
+    int max_source_bytes, int max_total_source_bytes, int max_symbols,
+    int max_completion_items, int max_string_bytes,
+    int max_snapshot_bytes) {
+  agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
+  if (!adapter || revision <= 0 || !project_bundle_addr ||
+      project_bundle_len <= 0)
+    return -1;
+  memset(&adapter->analysis_error, 0, sizeof(adapter->analysis_error));
+  ag_language_project_source_t *sources = NULL;
+  int source_count = 0;
+  if (!wasm_adapter_decode_project_sources(
+          (const unsigned char *)(long)project_bundle_addr,
+          (size_t)project_bundle_len, &sources, &source_count))
+    return -6;
+  ag_compilation_session_t *session =
+      wasm_adapter_language_session(adapter);
+  if (!session) {
+    free(sources);
+    return -4;
+  }
+  int ok = ag_language_project_index_update(
+      session, adapter->language_project,
+      &(ag_language_project_update_request_t){
+          .revision = (unsigned int)revision,
+          .sources = sources,
+          .source_count = source_count,
+          .virtual_header_bundle = header_bundle_addr
+              ? (const unsigned char *)(long)header_bundle_addr : NULL,
+          .virtual_header_bundle_length = header_bundle_len > 0
+              ? (size_t)header_bundle_len : 0,
+          .max_header_files = max_files,
+          .max_header_file_bytes = max_file_bytes,
+          .max_header_total_bytes = max_total_bytes,
+          .max_include_depth = max_depth,
+          .limits = {
+              .max_sources = max_sources,
+              .max_source_bytes = max_source_bytes > 0
+                  ? (size_t)max_source_bytes : 0,
+              .max_total_source_bytes = max_total_source_bytes > 0
+                  ? (size_t)max_total_source_bytes : 0,
+              .max_symbols = max_symbols,
+              .max_completion_items = max_completion_items,
+              .max_string_bytes = max_string_bytes,
+              .max_snapshot_bytes = max_snapshot_bytes,
+          },
+      },
+      &adapter->analysis_error);
+  free(sources);
+  if (ok) return 0;
+  if (adapter->analysis_error.status ==
+      AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT)
+    return -7;
+  if (adapter->analysis_error.status ==
+      AG_LANGUAGE_ANALYSIS_INVALID_REQUEST)
+    return -6;
+  return -4;
 }
 
 int agc_wasm_adapter_analysis_error_code_ptr(int handle) {

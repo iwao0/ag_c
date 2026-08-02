@@ -134,6 +134,13 @@ export interface AgcAnalysisOptions extends AgcCompileOptions {
   cursor: AgcAnalysisCursor;
 }
 
+export interface AgcProjectAnalysisOptions extends AgcAnalysisOptions {
+  /** Positive revision. Reusing it reuses the existing bounded symbol index. */
+  projectRevision: number;
+  /** Individually parsed C translation units; sources are never concatenated. */
+  projectSources: readonly AgcNamedSource[];
+}
+
 export interface AgcLanguageSourceRange {
   readonly sourceName: string;
   readonly start: AgcDiagnosticPosition;
@@ -173,7 +180,14 @@ export interface AgcLanguageSymbol {
   readonly storageClass: string;
   readonly scopeDepth: number;
   readonly declarationOrder: number;
+  /** The first declaration visible to the analyzed translation unit. */
   readonly declaration: AgcLanguageSourceRange;
+  /** Prefer this over declaration for definition navigation when non-null. */
+  readonly definition: AgcLanguageSourceRange | null;
+  /** True when no single definition was selected because multiple exist. */
+  readonly definitionConflict: boolean;
+  /** All external definition candidates; empty for declaration-only symbols. */
+  readonly definitionCandidates: readonly AgcLanguageSourceRange[];
   readonly initializer: AgcLanguageInitializer;
   readonly function: AgcLanguageFunctionInfo | null;
   readonly macro: AgcLanguageMacroInfo | null;
@@ -206,6 +220,10 @@ export interface AgcWasmCompiler {
     options?: AgcCompileOptions,
   ): AgcWasmObjectResult;
   analyzeSource(source: AgcNamedSource, options: AgcAnalysisOptions): AgcLanguageAnalysisSnapshot;
+  analyzeProjectSource(
+    source: AgcNamedSource,
+    options: AgcProjectAnalysisOptions,
+  ): AgcLanguageAnalysisSnapshot;
   readStdout(): string;
   readStderr(): string;
   readDiagnostics(): readonly AgcDiagnostic[];

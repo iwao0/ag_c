@@ -55,6 +55,22 @@ static void note_pipeline_declaration_source(
       token->source_input, token->byte_offset, token->byte_length);
 }
 
+static void note_pipeline_function_source(
+    const psx_function_declaration_pipeline_request_t *request) {
+  if (!request || !request->semantic_context || !request->diag_tok)
+    return;
+  ag_source_manager_t *sources = diag_context_source_manager(
+      ps_ctx_diagnostics(request->semantic_context));
+  (void)ps_ctx_note_function_source_in(
+      request->semantic_context, request->name, request->name_len,
+      request->is_definition,
+      ag_source_manager_name(
+          sources, request->diag_tok->file_name_id),
+      request->diag_tok->source_input,
+      request->diag_tok->byte_offset,
+      request->diag_tok->byte_length);
+}
+
 static const psx_scope_declaration_t *
 pipeline_current_ordinary_declaration(
     psx_semantic_context_t *semantic_context,
@@ -742,6 +758,8 @@ int psx_apply_function_declaration_pipeline(
       backing_declaration->kind != PSX_DECL_FUNCTION ||
       backing_declaration->payload != resolution.function)
     return 0;
+  if (resolution.status == PSX_FUNCTION_DECLARATION_OK)
+    note_pipeline_function_source(request);
   if (request->is_block_scope) {
     if (!had_existing_tu_declaration &&
         !psx_scope_graph_set_declaration_hidden_from_lookup(

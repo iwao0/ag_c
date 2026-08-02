@@ -35,6 +35,34 @@ if (!toolchainAnalysis.completionItems.some((item) =>
       item.name === "toolchain_symbol" && item.kind === "object")) {
   throw new Error("toolchain analyzeSource did not delegate to the compiler snapshot API");
 }
+const projectToolchainMain = {
+  name: "toolchain-main.c",
+  source: "void project_entry(void);\nvoid call_entry(void) { project_entry(); }\n",
+};
+const projectToolchainDefinition = {
+  name: "toolchain-entry.c",
+  source: "void project_entry(void) {}\n",
+};
+const projectToolchainUse = projectToolchainMain.source.lastIndexOf(
+  "project_entry",
+);
+const projectToolchainAnalysis = toolchain.analyzeProjectSource(
+  projectToolchainMain,
+  {
+    projectRevision: 1,
+    projectSources: [projectToolchainMain, projectToolchainDefinition],
+    cursor: {
+      sourceName: projectToolchainMain.name,
+      byteOffset: projectToolchainUse + 2,
+    },
+  },
+);
+if (projectToolchainAnalysis.hover?.definition?.sourceName !==
+    projectToolchainDefinition.name) {
+  throw new Error(
+    "toolchain analyzeProjectSource did not delegate to the project index API",
+  );
+}
 const toolchainDependencyResult = toolchain.compileObjectWithDiagnostics({
   name: "toolchain-dependencies.c",
   source: "#include <outer.h>\nint value(void) { return INNER_VALUE; }\n",

@@ -59,7 +59,15 @@ typedef struct {
   char *storage_class;
   int scope_depth;
   unsigned int declaration_order;
+  /* The first declaration visible to this translation unit. */
   ag_language_source_range_t declaration;
+  /* Consumers should prefer this range for definition navigation. */
+  int has_definition;
+  ag_language_source_range_t definition;
+  /* Multiple external definitions are explicit and never arbitrarily chosen. */
+  int definition_conflict;
+  ag_language_source_range_t *definition_candidates;
+  int definition_candidate_count;
   ag_language_initializer_state_t initializer_state;
   char *constant_value;
   int has_initializer_range;
@@ -119,6 +127,27 @@ typedef struct {
   ag_language_analysis_limits_t limits;
 } ag_language_analysis_request_t;
 
+typedef struct ag_language_project_index_t ag_language_project_index_t;
+
+typedef struct {
+  const char *source_name;
+  const char *source;
+  size_t source_length;
+} ag_language_project_source_t;
+
+typedef struct {
+  unsigned int revision;
+  const ag_language_project_source_t *sources;
+  int source_count;
+  const unsigned char *virtual_header_bundle;
+  size_t virtual_header_bundle_length;
+  int max_header_files;
+  int max_header_file_bytes;
+  int max_header_total_bytes;
+  int max_include_depth;
+  ag_language_analysis_limits_t limits;
+} ag_language_project_update_request_t;
+
 typedef enum {
   AG_LANGUAGE_ANALYSIS_OK = 0,
   AG_LANGUAGE_ANALYSIS_INVALID_REQUEST,
@@ -138,6 +167,24 @@ typedef struct {
 ag_language_analysis_limits_t ag_language_analysis_default_limits(void);
 int ag_language_analyze_source(
     ag_compilation_session_t *session,
+    const ag_language_analysis_request_t *request,
+    ag_language_analysis_snapshot_t *snapshot,
+    ag_language_analysis_error_t *error);
+ag_language_project_index_t *ag_language_project_index_create(void);
+void ag_language_project_index_destroy(
+    ag_language_project_index_t *index);
+unsigned int ag_language_project_index_revision(
+    const ag_language_project_index_t *index);
+/* Rebuilds the bounded index unless request->revision is already current.
+ * Each source is parsed as a separate translation unit. */
+int ag_language_project_index_update(
+    ag_compilation_session_t *session,
+    ag_language_project_index_t *index,
+    const ag_language_project_update_request_t *request,
+    ag_language_analysis_error_t *error);
+int ag_language_analyze_project_source(
+    ag_compilation_session_t *session,
+    const ag_language_project_index_t *index,
     const ag_language_analysis_request_t *request,
     ag_language_analysis_snapshot_t *snapshot,
     ag_language_analysis_error_t *error);
