@@ -3048,7 +3048,9 @@ static token_t *pp_expand_objlike(
   hideset_t *hs = new_hideset(context, name);
   for (token_t *t = body_copy; t; t = t->next) {
     count_macro_expansion_or_die(context, macro_tok);
-    as_pp(t)->hideset = hideset_union(context, as_pp(t)->hideset, hs);
+    if (t->kind == TK_IDENT)
+      as_pp(t)->hideset = hideset_union(
+          context, as_pp(t)->hideset, hs);
     copy_source_location(t, macro_tok);
   }
   if (body_copy) {
@@ -3251,7 +3253,9 @@ static token_t *pp_expand_funclike(
   hideset_t *hs = new_hideset(context, name);
   for (token_t *t = body_copy; t; t = t->next) {
     count_macro_expansion_or_die(context, macro_tok);
-    as_pp(t)->hideset = hideset_union(context, as_pp(t)->hideset, hs);
+    if (t->kind == TK_IDENT)
+      as_pp(t)->hideset = hideset_union(
+          context, as_pp(t)->hideset, hs);
     copy_source_location(t, macro_tok);
   }
   if (body_copy) {

@@ -1793,6 +1793,7 @@ static const test_case_t test_cases[] = {
     {"probes", "deep_integer_constant_expression", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_integer_constant_expression.c", 0, 0},
     {"probes", "deep_short_circuit_constant_expression", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_short_circuit_constant_expression.c", 0, 0},
     {"probes", "deep_unary_constant_expression", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_unary_constant_expression.c", 0, 0},
+    {"probes", "nested_function_macro_expansion", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nested_function_macro_expansion.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

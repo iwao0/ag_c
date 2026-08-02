@@ -89,6 +89,20 @@ if (!(coldDeepUnaryResult.object instanceof Uint8Array) ||
   );
 }
 
+const coldNestedMacroToolchain = await makeToolchain();
+const coldNestedMacroSource = await readFile(
+  "test/fixtures/probes_found_bugs/nested_function_macro_expansion.c",
+  "utf8",
+);
+const coldNestedMacroResult =
+  coldNestedMacroToolchain.compileObjectWithDiagnostics(coldNestedMacroSource);
+if (!(coldNestedMacroResult.object instanceof Uint8Array) ||
+    coldNestedMacroResult.diagnostics.length !== 0) {
+  throw new Error(
+    `cold nested macro compile failed: ${JSON.stringify(coldNestedMacroResult.diagnostics)}`,
+  );
+}
+
 const sourceBase = "int source_limit(void) { return 1; }\n";
 const sourceLimit = Buffer.byteLength(sourceBase) + 2;
 toolchain.compileObject(`${sourceBase} `, { limits: { maxSourceBytes: sourceLimit } });
