@@ -11616,13 +11616,13 @@ if (!/\bND_GT\b/.test(syntaxNodeKindHeader) ||
     !/\bND_GE\b/.test(syntaxNodeKindHeader) ||
     !/\bPSX_HIR_GT\b/.test(hirHeader) ||
     !/\bPSX_HIR_GE\b/.test(hirHeader) ||
-    !/new_binary_with_source_op\s*\(\s*ctx,\s*ND_GT,\s*node,\s*rhs,\s*TK_GT\s*\)/.test(
+    !/case\s+TK_GT:\s*result\s*=\s*\(binary_operator_spec_t\)\{\s*7,\s*ND_GT,\s*1\s*\}/.test(
       parserExpressionSource,
     ) ||
-    !/new_binary_with_source_op\s*\(\s*ctx,\s*ND_GE,\s*node,\s*rhs,\s*TK_GE\s*\)/.test(
+    !/case\s+TK_GE:\s*result\s*=\s*\(binary_operator_spec_t\)\{\s*7,\s*ND_GE,\s*1\s*\}/.test(
       parserExpressionSource,
     ) ||
-    /new_binary_with_source_op\s*\(\s*ctx,\s*ND_(?:LT|LE),\s*rhs,\s*node,\s*TK_(?:GT|GE)\s*\)/.test(
+    !/new_binary_with_source_op\s*\([^]*?spec\.node_kind,\s*node,\s*rhs,\s*token_kind\s*\)/.test(
       parserExpressionSource,
     ) ||
     !/MAP\s*\(\s*ND_GT,\s*PSX_HIR_GT,\s*PSX_TYPE_BINARY_RELATIONAL\s*\)/.test(

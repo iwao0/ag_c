@@ -239,15 +239,6 @@ static node_t *expr_internal_ctx(expr_parse_ctx_t *ctx);
 static node_t *assign_ctx(expr_parse_ctx_t *ctx);
 static node_t *conditional_ctx(expr_parse_ctx_t *ctx);
 static node_t *logical_or_ctx(expr_parse_ctx_t *ctx);
-static node_t *logical_and_ctx(expr_parse_ctx_t *ctx);
-static node_t *bit_or_ctx(expr_parse_ctx_t *ctx);
-static node_t *bit_xor_ctx(expr_parse_ctx_t *ctx);
-static node_t *bit_and_ctx(expr_parse_ctx_t *ctx);
-static node_t *equality_ctx(expr_parse_ctx_t *ctx);
-static node_t *relational_ctx(expr_parse_ctx_t *ctx);
-static node_t *shift_ctx(expr_parse_ctx_t *ctx);
-static node_t *add_ctx(expr_parse_ctx_t *ctx);
-static node_t *mul_ctx(expr_parse_ctx_t *ctx);
 static node_t *cast_ctx(expr_parse_ctx_t *ctx);
 static node_t *unary_ctx(expr_parse_ctx_t *ctx);
 static node_t *primary_ctx(expr_parse_ctx_t *ctx);
@@ -347,148 +338,60 @@ static node_t *conditional_ctx(expr_parse_ctx_t *ctx) {
   return node;
 }
 
-static node_t *logical_or_ctx(expr_parse_ctx_t *ctx) {
-  node_t *node = logical_and_ctx(ctx);
-  while (curtok(ctx)->kind == TK_OROR) {
-    set_curtok(ctx, curtok(ctx)->next);
-    node_t *rhs = logical_and_ctx(ctx);
-    node = new_binary_with_source_op(
-        ctx, ND_LOGOR, node, rhs, TK_OROR);
+typedef struct {
+  int precedence;
+  psx_syntax_node_kind_t node_kind;
+  int records_source_op;
+} binary_operator_spec_t;
+
+static int binary_operator_spec(
+    token_kind_t token_kind, binary_operator_spec_t *spec) {
+  binary_operator_spec_t result = {0};
+  switch (token_kind) {
+    case TK_OROR: result = (binary_operator_spec_t){1, ND_LOGOR, 1}; break;
+    case TK_ANDAND: result = (binary_operator_spec_t){2, ND_LOGAND, 1}; break;
+    case TK_PIPE: result = (binary_operator_spec_t){3, ND_BITOR, 0}; break;
+    case TK_CARET: result = (binary_operator_spec_t){4, ND_BITXOR, 0}; break;
+    case TK_AMP: result = (binary_operator_spec_t){5, ND_BITAND, 0}; break;
+    case TK_EQEQ: result = (binary_operator_spec_t){6, ND_EQ, 1}; break;
+    case TK_NEQ: result = (binary_operator_spec_t){6, ND_NE, 1}; break;
+    case TK_LT: result = (binary_operator_spec_t){7, ND_LT, 1}; break;
+    case TK_LE: result = (binary_operator_spec_t){7, ND_LE, 1}; break;
+    case TK_GT: result = (binary_operator_spec_t){7, ND_GT, 1}; break;
+    case TK_GE: result = (binary_operator_spec_t){7, ND_GE, 1}; break;
+    case TK_SHL: result = (binary_operator_spec_t){8, ND_SHL, 1}; break;
+    case TK_SHR: result = (binary_operator_spec_t){8, ND_SHR, 1}; break;
+    case TK_PLUS: result = (binary_operator_spec_t){9, ND_ADD, 1}; break;
+    case TK_MINUS: result = (binary_operator_spec_t){9, ND_SUB, 1}; break;
+    case TK_MUL: result = (binary_operator_spec_t){10, ND_MUL, 1}; break;
+    case TK_DIV: result = (binary_operator_spec_t){10, ND_DIV, 1}; break;
+    case TK_MOD: result = (binary_operator_spec_t){10, ND_MOD, 1}; break;
+    default: return 0;
   }
-  return node;
+  if (spec) *spec = result;
+  return 1;
 }
 
-static node_t *logical_and_ctx(expr_parse_ctx_t *ctx) {
-  node_t *node = bit_or_ctx(ctx);
-  while (curtok(ctx)->kind == TK_ANDAND) {
-    set_curtok(ctx, curtok(ctx)->next);
-    node_t *rhs = bit_or_ctx(ctx);
-    node = new_binary_with_source_op(
-        ctx, ND_LOGAND, node, rhs, TK_ANDAND);
-  }
-  return node;
-}
-
-static node_t *bit_or_ctx(expr_parse_ctx_t *ctx) {
-  node_t *node = bit_xor_ctx(ctx);
-  while (curtok(ctx)->kind == TK_PIPE) {
-    set_curtok(ctx, curtok(ctx)->next);
-    node = psx_node_new_raw_binary_in(
-        ctx->arena_context, ND_BITOR, node, bit_xor_ctx(ctx));
-  }
-  return node;
-}
-
-static node_t *bit_xor_ctx(expr_parse_ctx_t *ctx) {
-  node_t *node = bit_and_ctx(ctx);
-  while (curtok(ctx)->kind == TK_CARET) {
-    set_curtok(ctx, curtok(ctx)->next);
-    node = psx_node_new_raw_binary_in(
-        ctx->arena_context, ND_BITXOR, node, bit_and_ctx(ctx));
-  }
-  return node;
-}
-
-static node_t *bit_and_ctx(expr_parse_ctx_t *ctx) {
-  node_t *node = equality_ctx(ctx);
-  while (curtok(ctx)->kind == TK_AMP) {
-    set_curtok(ctx, curtok(ctx)->next);
-    node = psx_node_new_raw_binary_in(
-        ctx->arena_context, ND_BITAND, node, equality_ctx(ctx));
-  }
-  return node;
-}
-
-static node_t *equality_ctx(expr_parse_ctx_t *ctx) {
-  node_t *node = relational_ctx(ctx);
-  for (;;) {
-    if (curtok(ctx)->kind == TK_EQEQ) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = relational_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_EQ, node, rhs, TK_EQEQ);
-    } else if (curtok(ctx)->kind == TK_NEQ) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = relational_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_NE, node, rhs, TK_NEQ);
-    }
-    else return node;
-  }
-}
-
-static node_t *relational_ctx(expr_parse_ctx_t *ctx) {
-  node_t *node = shift_ctx(ctx);
-  for (;;) {
-    if (curtok(ctx)->kind == TK_LT) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = shift_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_LT, node, rhs, TK_LT);
-    } else if (curtok(ctx)->kind == TK_LE) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = shift_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_LE, node, rhs, TK_LE);
-    } else if (curtok(ctx)->kind == TK_GT) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = shift_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_GT, node, rhs, TK_GT);
-    } else if (curtok(ctx)->kind == TK_GE) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = shift_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_GE, node, rhs, TK_GE);
-    }
-    else return node;
-  }
-}
-
-static node_t *shift_ctx(expr_parse_ctx_t *ctx) {
-  node_t *node = add_ctx(ctx);
-  for (;;) {
-    if (curtok(ctx)->kind == TK_SHL) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = add_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_SHL, node, rhs, TK_SHL);
-    } else if (curtok(ctx)->kind == TK_SHR) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = add_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_SHR, node, rhs, TK_SHR);
-    }
-    else return node;
-  }
-}
-
-static node_t *add_ctx(expr_parse_ctx_t *ctx) {
-  node_t *node = mul_ctx(ctx);
-  for (;;) {
-    if (curtok(ctx)->kind == TK_PLUS) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = mul_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_ADD, node, rhs, TK_PLUS);
-    } else if (curtok(ctx)->kind == TK_MINUS) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = mul_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_SUB, node, rhs, TK_MINUS);
-    }
-    else return node;
-  }
-}
-
-static node_t *mul_ctx(expr_parse_ctx_t *ctx) {
+static node_t *binary_ctx(expr_parse_ctx_t *ctx, int min_precedence) {
   node_t *node = cast_ctx(ctx);
   for (;;) {
-    if (curtok(ctx)->kind == TK_MUL) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = cast_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_MUL, node, rhs, TK_MUL);
-    } else if (curtok(ctx)->kind == TK_DIV) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = cast_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_DIV, node, rhs, TK_DIV);
-    } else if (curtok(ctx)->kind == TK_MOD) {
-      set_curtok(ctx, curtok(ctx)->next);
-      node_t *rhs = cast_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_MOD, node, rhs, TK_MOD);
-    }
-    else return node;
+    token_kind_t token_kind = curtok(ctx)->kind;
+    binary_operator_spec_t spec;
+    if (!binary_operator_spec(token_kind, &spec) ||
+        spec.precedence < min_precedence)
+      return node;
+    set_curtok(ctx, curtok(ctx)->next);
+    node_t *rhs = binary_ctx(ctx, spec.precedence + 1);
+    node = spec.records_source_op
+               ? new_binary_with_source_op(
+                     ctx, spec.node_kind, node, rhs, token_kind)
+               : psx_node_new_raw_binary_in(
+                     ctx->arena_context, spec.node_kind, node, rhs);
   }
+}
+
+static node_t *logical_or_ctx(expr_parse_ctx_t *ctx) {
+  return binary_ctx(ctx, 1);
 }
 
 static node_t *cast_ctx(expr_parse_ctx_t *ctx) {
