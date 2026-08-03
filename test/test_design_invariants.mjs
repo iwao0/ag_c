@@ -6244,6 +6244,8 @@ if (/\bnode_func_t\b/.test(astSource) ||
   );
 }
 const logicalCallLowering = hirIrBuilder.match(
+  /static\s+ir_val_t\s+hir_ir_build_call_with_prebuilt\s*\([^;]*?\)\s*\{[^]*?\n\}/,
+) ?? hirIrBuilder.match(
   /ir_val_t\s+hir_ir_build_call\s*\([^;]*?\)\s*\{[^]*?\n\}/,
 );
 if (!logicalCallLowering ||

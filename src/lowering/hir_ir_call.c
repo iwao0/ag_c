@@ -821,9 +821,12 @@ static ir_val_t hir_ir_build_atomic_call(
   return atomic->dst;
 }
 
-ir_val_t hir_ir_build_call(
+static ir_val_t hir_ir_build_call_with_prebuilt(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_mir_type_info_t result_type) {
+    ir_mir_type_info_t result_type,
+    ir_val_t prebuilt_callee, int callee_prebuilt,
+    const ir_val_t *prebuilt_arguments,
+    const unsigned char *argument_prebuilt) {
   size_t name_length = 0;
   const char *name = psx_hir_node_name(node, &name_length);
   const psx_hir_node_t *callee = hir_ir_child_for_edge(
@@ -875,10 +878,13 @@ ir_val_t hir_ir_build_call(
        !is_aggregate_result &&
        !hir_ir_is_direct_value_type(result_type)))
     return hir_ir_unsupported_expr(context);
-  ir_val_t callee_value = ir_val_none();
+  ir_val_t callee_value = callee_prebuilt
+                              ? prebuilt_callee
+                              : ir_val_none();
   if (callee) {
     ir_mir_type_info_t callee_type = hir_ir_classify_node_type(context, callee);
-    callee_value = hir_ir_build_expr(context, callee);
+    if (!callee_prebuilt)
+      callee_value = hir_ir_build_expr(context, callee);
     if (context->status != IR_HIR_BUILD_OK ||
         callee_type.type_class != IR_MIR_TYPE_POINTER ||
         callee_value.type != IR_TY_PTR)
@@ -898,6 +904,11 @@ ir_val_t hir_ir_build_call(
   for (size_t i = 0; i < argument_count; i++) {
     const psx_hir_node_t *argument = hir_ir_child_for_edge(
         context, node, PSX_HIR_EDGE_ARGUMENT, i);
+    int has_prebuilt_argument =
+        argument_prebuilt && argument_prebuilt[i];
+    ir_val_t prebuilt_argument = has_prebuilt_argument
+                                     ? prebuilt_arguments[i]
+                                     : ir_val_none();
     ir_mir_type_info_t argument_type = hir_ir_classify_node_type(
         context, argument);
     ir_mir_type_info_t parameter_type;
@@ -930,7 +941,10 @@ ir_val_t hir_ir_build_call(
         free(arguments);
         return hir_ir_unsupported_expr(context);
       }
-      ir_val_t source = hir_ir_aggregate_value_address(context, argument);
+      ir_val_t source = has_prebuilt_argument
+                            ? prebuilt_argument
+                            : hir_ir_aggregate_value_address(
+                                  context, argument);
       int temporary = hir_ir_allocate_scalar_temp(context, rounded_size, 8);
       if (context->status != IR_HIR_BUILD_OK ||
           source.type != IR_TY_PTR || temporary < 0) {
@@ -963,8 +977,12 @@ ir_val_t hir_ir_build_call(
         free(arguments);
         return hir_ir_unsupported_expr(context);
       }
-      ir_val_t pointer = hir_ir_materialize_complex_operand(
-          context, argument, argument_type);
+      ir_val_t pointer = has_prebuilt_argument
+          ? hir_ir_materialize_prebuilt_complex_operand(
+                context, argument, argument_type,
+                prebuilt_argument)
+          : hir_ir_materialize_complex_operand(
+                context, argument, argument_type);
       if (context->status != IR_HIR_BUILD_OK ||
           pointer.type != IR_TY_PTR) {
         free(arguments);
@@ -983,8 +1001,12 @@ ir_val_t hir_ir_build_call(
         free(arguments);
         return hir_ir_unsupported_expr(context);
       }
-      ir_val_t pointer = hir_ir_materialize_complex_operand(
-          context, argument, parameter_type);
+      ir_val_t pointer = has_prebuilt_argument
+          ? hir_ir_materialize_prebuilt_complex_operand(
+                context, argument, parameter_type,
+                prebuilt_argument)
+          : hir_ir_materialize_complex_operand(
+                context, argument, parameter_type);
       if (context->status != IR_HIR_BUILD_OK ||
           pointer.type != IR_TY_PTR) {
         free(arguments);
@@ -1005,7 +1027,10 @@ ir_val_t hir_ir_build_call(
         free(arguments);
         return hir_ir_unsupported_expr(context);
       }
-      ir_val_t source = hir_ir_aggregate_value_address(context, argument);
+      ir_val_t source = has_prebuilt_argument
+                            ? prebuilt_argument
+                            : hir_ir_aggregate_value_address(
+                                  context, argument);
       int temporary = hir_ir_allocate_scalar_temp(
           context, parameter_type.source_size, 8);
       if (context->status != IR_HIR_BUILD_OK ||
@@ -1042,7 +1067,9 @@ ir_val_t hir_ir_build_call(
       free(arguments);
       return hir_ir_unsupported_expr(context);
     }
-    ir_val_t value = hir_ir_build_expr(context, argument);
+    ir_val_t value = has_prebuilt_argument
+                         ? prebuilt_argument
+                         : hir_ir_build_expr(context, argument);
     if (context->status == IR_HIR_BUILD_OK) {
       value = hir_ir_coerce_direct_value_to_qual_type(
           context, value, argument_type,
@@ -1127,4 +1154,190 @@ ir_val_t hir_ir_build_call(
   if (is_complex_result || is_aggregate_result)
     return call->result_storage;
   return ir_val_vreg(result_vreg, result_type.type);
+}
+
+ir_val_t hir_ir_build_call(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t result_type) {
+  return hir_ir_build_call_with_prebuilt(
+      context, node, result_type, ir_val_none(), 0, NULL, NULL);
+}
+
+typedef struct {
+  const psx_hir_node_t *node;
+  const psx_hir_node_t *callee;
+  ir_mir_type_info_t result_type;
+  ir_val_t callee_value;
+  ir_val_t *argument_values;
+  unsigned char *argument_prebuilt;
+  size_t argument_count;
+  size_t child_count;
+  size_t next_child;
+  unsigned char callee_prebuilt;
+} hir_ir_call_build_frame_t;
+
+static int hir_ir_call_uses_atomic_lowering(
+    const psx_hir_node_t *node) {
+  size_t name_length = 0;
+  const char *name = psx_hir_node_name(node, &name_length);
+  return name && name_length > 12 &&
+         memcmp(name, "__ag_atomic_", 12) == 0;
+}
+
+static void hir_ir_dispose_call_build_frame(
+    hir_ir_call_build_frame_t *frame) {
+  if (!frame) return;
+  free(frame->argument_values);
+  free(frame->argument_prebuilt);
+  frame->argument_values = NULL;
+  frame->argument_prebuilt = NULL;
+}
+
+static int hir_ir_push_call_build_frame(
+    hir_ir_context_t *context,
+    hir_ir_call_build_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const psx_hir_node_t *node) {
+  if (!context || !frames || !count || !capacity || !node ||
+      psx_hir_node_kind(node) != PSX_HIR_CALL ||
+      hir_ir_call_uses_atomic_lowering(node))
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+    hir_ir_call_build_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+
+  hir_ir_call_build_frame_t frame = {
+      .node = node,
+      .callee = hir_ir_child_for_edge(
+          context, node, PSX_HIR_EDGE_CALLEE, 0),
+      .result_type = hir_ir_classify_node_type(context, node),
+      .callee_value = ir_val_none(),
+      .argument_count = hir_ir_child_count_for_edge(
+          node, PSX_HIR_EDGE_ARGUMENT),
+  };
+  frame.child_count = frame.argument_count +
+                      (frame.callee ? 1u : 0u);
+  if (frame.argument_count) {
+    frame.argument_values = calloc(
+        frame.argument_count, sizeof(*frame.argument_values));
+    frame.argument_prebuilt = calloc(
+        frame.argument_count, sizeof(*frame.argument_prebuilt));
+    if (!frame.argument_values || !frame.argument_prebuilt) {
+      hir_ir_dispose_call_build_frame(&frame);
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+  }
+  (*frames)[(*count)++] = frame;
+  return 1;
+}
+
+static const psx_hir_node_t *hir_ir_call_build_child(
+    hir_ir_context_t *context,
+    const hir_ir_call_build_frame_t *frame,
+    size_t child_index) {
+  if (!context || !frame || child_index >= frame->child_count)
+    return NULL;
+  size_t callee_count = frame->callee ? 1 : 0;
+  if (callee_count && child_index == 0) return frame->callee;
+  return hir_ir_child_for_edge(
+      context, frame->node, PSX_HIR_EDGE_ARGUMENT,
+      child_index - callee_count);
+}
+
+static int hir_ir_store_call_build_child(
+    hir_ir_call_build_frame_t *frame, size_t child_index,
+    ir_val_t value) {
+  if (!frame || child_index >= frame->child_count) return 0;
+  size_t callee_count = frame->callee ? 1 : 0;
+  if (callee_count && child_index == 0) {
+    frame->callee_value = value;
+    frame->callee_prebuilt = 1;
+    return 1;
+  }
+  size_t argument_index = child_index - callee_count;
+  frame->argument_values[argument_index] = value;
+  frame->argument_prebuilt[argument_index] = 1;
+  return 1;
+}
+
+ir_val_t hir_ir_build_call_iterative(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  if (!context) return ir_val_none();
+  if (!node || psx_hir_node_kind(node) != PSX_HIR_CALL)
+    return hir_ir_unsupported_expr(context);
+  ir_mir_type_info_t result_type = hir_ir_classify_node_type(
+      context, node);
+  if (hir_ir_call_uses_atomic_lowering(node))
+    return hir_ir_build_call(context, node, result_type);
+
+  hir_ir_call_build_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!hir_ir_push_call_build_frame(
+          context, &frames, &count, &capacity, node))
+    goto fail;
+
+  while (count > 0) {
+    hir_ir_call_build_frame_t *frame = &frames[count - 1];
+    if (frame->next_child < frame->child_count) {
+      size_t child_index = frame->next_child++;
+      const psx_hir_node_t *child = hir_ir_call_build_child(
+          context, frame, child_index);
+      if (!child) {
+        context->status = IR_HIR_BUILD_INVALID;
+        goto fail;
+      }
+      if (psx_hir_node_kind(child) == PSX_HIR_CALL &&
+          !hir_ir_call_uses_atomic_lowering(child)) {
+        if (!hir_ir_push_call_build_frame(
+                context, &frames, &count, &capacity, child))
+          goto fail;
+        continue;
+      }
+      ir_val_t child_value = hir_ir_build_expr(context, child);
+      if (context->status != IR_HIR_BUILD_OK ||
+          !hir_ir_store_call_build_child(
+              frame, child_index, child_value))
+        goto fail;
+      continue;
+    }
+
+    ir_val_t completed = hir_ir_build_call_with_prebuilt(
+        context, frame->node, frame->result_type,
+        frame->callee_value, frame->callee_prebuilt,
+        frame->argument_values, frame->argument_prebuilt);
+    if (context->status != IR_HIR_BUILD_OK) goto fail;
+    hir_ir_dispose_call_build_frame(frame);
+    count--;
+    if (count == 0) {
+      free(frames);
+      return completed;
+    }
+    hir_ir_call_build_frame_t *parent = &frames[count - 1];
+    if (!hir_ir_store_call_build_child(
+            parent, parent->next_child - 1, completed)) {
+      context->status = IR_HIR_BUILD_INVALID;
+      goto fail;
+    }
+  }
+
+fail:
+  for (size_t index = 0; index < count; index++)
+    hir_ir_dispose_call_build_frame(&frames[index]);
+  free(frames);
+  return ir_val_none();
 }

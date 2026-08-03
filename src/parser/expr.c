@@ -17,6 +17,7 @@
 
 #define PS_MAX_EXPR_NEST_DEPTH 1024
 #define PS_MAX_PAREN_NEST_DEPTH 1024
+#define PS_DEEP_CALL_CHAIN_MIN 32
 
 typedef struct {
   psx_expression_syntax_context_t syntax;
@@ -242,9 +243,14 @@ static node_t *logical_or_ctx(expr_parse_ctx_t *ctx);
 static node_t *cast_ctx(expr_parse_ctx_t *ctx);
 static node_t *unary_ctx(expr_parse_ctx_t *ctx);
 static node_t *primary_ctx(expr_parse_ctx_t *ctx);
+static node_t *parse_identifier_syntax(
+    token_ident_t *tok, expr_parse_ctx_t *ctx);
 static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx);
 
 static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx);
+static node_t *parse_deep_first_argument_call_chain(
+    expr_parse_ctx_t *ctx, size_t depth);
+static node_t *parse_call_argument(expr_parse_ctx_t *ctx);
 
 node_t *psx_expr_expr_syntax(
     const psx_expression_syntax_context_t *syntax_context) {
@@ -662,6 +668,160 @@ static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx) {
   }
 }
 
+static token_t *find_call_closing_paren(token_t *token) {
+  size_t paren_depth = 0;
+  size_t bracket_depth = 0;
+  size_t brace_depth = 0;
+  for (; token; token = token->next) {
+    if (token->kind == TK_EOF) return NULL;
+    switch (token->kind) {
+      case TK_LPAREN:
+        paren_depth++;
+        break;
+      case TK_RPAREN:
+        if (paren_depth) {
+          paren_depth--;
+          break;
+        }
+        if (bracket_depth || brace_depth) return NULL;
+        return token;
+      case TK_LBRACKET:
+        bracket_depth++;
+        break;
+      case TK_RBRACKET:
+        if (!bracket_depth) return NULL;
+        bracket_depth--;
+        break;
+      case TK_LBRACE:
+        brace_depth++;
+        break;
+      case TK_RBRACE:
+        if (!brace_depth) return NULL;
+        brace_depth--;
+        break;
+      default:
+        break;
+    }
+  }
+  return NULL;
+}
+
+static size_t deep_first_argument_call_chain_depth(
+    expr_parse_ctx_t *ctx) {
+  if (!ctx || !curtok(ctx)) return 0;
+  token_t *token = curtok(ctx);
+  size_t depth = 0;
+  while (token && token->kind == TK_IDENT && token->next &&
+         token->next->kind == TK_LPAREN) {
+    depth++;
+    token = token->next->next;
+  }
+  if (depth < PS_DEEP_CALL_CHAIN_MIN) return 0;
+
+  tk_ensure_lookahead_ctx(ctx->tokenizer_context);
+  token = curtok(ctx);
+  depth = 0;
+  while (token && token->kind == TK_IDENT && token->next &&
+         token->next->kind == TK_LPAREN) {
+    depth++;
+    token = token->next->next;
+  }
+
+  token_t *closing = find_call_closing_paren(token);
+  for (size_t remaining = depth; remaining > 1; remaining--) {
+    if (!closing || !closing->next) return 0;
+    token = closing->next;
+    if (token->kind == TK_RPAREN) {
+      closing = token;
+      continue;
+    }
+    if (token->kind != TK_COMMA || !token->next ||
+        token->next->kind == TK_COMMA ||
+        token->next->kind == TK_RPAREN)
+      return 0;
+    closing = find_call_closing_paren(token->next);
+  }
+  if (!closing) return 0;
+  token = closing->next;
+  if (!token ||
+      (token->kind != TK_RPAREN && token->kind != TK_COMMA))
+    return 0;
+  return depth;
+}
+
+typedef struct {
+  node_t *callee;
+  token_t *call_token;
+} deep_call_syntax_frame_t;
+
+static node_t *finish_deep_call_syntax_frame(
+    expr_parse_ctx_t *ctx,
+    const deep_call_syntax_frame_t *frame,
+    node_t *first_argument) {
+  node_function_call_t *call = arena_alloc_in(
+      ctx->arena_context, sizeof(*call));
+  call->base.kind = ND_FUNCALL;
+  call->base.tok = frame->call_token;
+  call->callee = frame->callee;
+  int argument_count = 0;
+  int argument_capacity = 16;
+  call->arguments = calloc(
+      (size_t)argument_capacity, sizeof(*call->arguments));
+  if (!call->arguments) {
+    diag_emit_internalf_in(
+        diagnostics(ctx), DIAG_ERR_INTERNAL_OOM, "%s",
+        diag_message_for_in(diagnostics(ctx), DIAG_ERR_INTERNAL_OOM));
+  }
+  if (first_argument) {
+    call->arguments[argument_count++] = first_argument;
+  } else if (curtok(ctx)->kind != TK_RPAREN) {
+    call->arguments[argument_count++] = parse_call_argument(ctx);
+  }
+  while (curtok(ctx)->kind == TK_COMMA) {
+    set_curtok(ctx, curtok(ctx)->next);
+    if (argument_count >= argument_capacity) {
+      argument_capacity = pda_next_cap_in(
+          diagnostics(ctx), argument_capacity,
+          argument_count + 1);
+      call->arguments = pda_xreallocarray_in(
+          diagnostics(ctx), call->arguments,
+          (size_t)argument_capacity, sizeof(*call->arguments));
+    }
+    call->arguments[argument_count++] = parse_call_argument(ctx);
+  }
+  tk_expect_ctx(ctx->tokenizer_context, ')');
+  call->argument_count = argument_count;
+  return (node_t *)call;
+}
+
+static node_t *parse_deep_first_argument_call_chain(
+    expr_parse_ctx_t *ctx, size_t depth) {
+  deep_call_syntax_frame_t *frames =
+      calloc(depth, sizeof(*frames));
+  if (!frames) {
+    diag_emit_internalf_in(
+        diagnostics(ctx), DIAG_ERR_INTERNAL_OOM, "%s",
+        diag_message_for_in(diagnostics(ctx), DIAG_ERR_INTERNAL_OOM));
+  }
+
+  for (size_t index = 0; index < depth; index++) {
+    token_ident_t *identifier =
+        tk_consume_ident_ctx(ctx->tokenizer_context);
+    frames[index].callee = parse_identifier_syntax(identifier, ctx);
+    frames[index].call_token = curtok(ctx);
+    tk_expect_ctx(ctx->tokenizer_context, '(');
+  }
+
+  node_t *argument = finish_deep_call_syntax_frame(
+      ctx, &frames[depth - 1], NULL);
+  for (size_t index = depth - 1; index > 0; index--) {
+    argument = finish_deep_call_syntax_frame(
+        ctx, &frames[index - 1], argument);
+  }
+  free(frames);
+  return argument;
+}
+
 static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   token_t *call_tok = curtok(ctx);
   tk_expect_ctx(ctx->tokenizer_context, '(');
@@ -676,7 +836,7 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   if (curtok(ctx)->kind == TK_RPAREN) {
     set_curtok(ctx, curtok(ctx)->next);
   } else {
-    node->arguments[nargs++] = assign_ctx(ctx);
+    node->arguments[nargs++] = parse_call_argument(ctx);
     while (curtok(ctx)->kind == TK_COMMA) {
       set_curtok(ctx, curtok(ctx)->next);
       if (nargs >= arg_cap) {
@@ -686,12 +846,21 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
             diagnostics(ctx), node->arguments,
             (size_t)arg_cap, sizeof(node_t *));
       }
-      node->arguments[nargs++] = assign_ctx(ctx);
+      node->arguments[nargs++] = parse_call_argument(ctx);
     }
     tk_expect_ctx(ctx->tokenizer_context, ')');
   }
   node->argument_count = nargs;
   return (node_t *)node;
+}
+
+static node_t *parse_call_argument(expr_parse_ctx_t *ctx) {
+  size_t deep_call_depth =
+      deep_first_argument_call_chain_depth(ctx);
+  return deep_call_depth
+             ? parse_deep_first_argument_call_chain(
+                   ctx, deep_call_depth)
+             : assign_ctx(ctx);
 }
 
 // TK_LPAREN を見たときの compound literal `(T){...}` 試行。

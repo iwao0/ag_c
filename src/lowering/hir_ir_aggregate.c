@@ -388,7 +388,7 @@ ir_val_t hir_ir_aggregate_value_address(
     return hir_ir_aggregate_value_address(context, value);
   }
   if (kind == PSX_HIR_CALL)
-    return hir_ir_build_call(context, node, type);
+    return hir_ir_build_call_iterative(context, node);
   if (kind == PSX_HIR_CAST) {
     const psx_hir_node_t *operand = hir_ir_child_for_edge(
         context, node, PSX_HIR_EDGE_LHS, 0);

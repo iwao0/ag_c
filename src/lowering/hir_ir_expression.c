@@ -656,17 +656,24 @@ static ir_val_t materialize_direct_value_as_complex(
   return destination;
 }
 
-ir_val_t hir_ir_materialize_complex_operand(
+ir_val_t hir_ir_materialize_prebuilt_complex_operand(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_mir_type_info_t target_type) {
+    ir_mir_type_info_t target_type, ir_val_t source) {
   ir_mir_type_info_t source_type = hir_ir_classify_node_type(context, node);
-  ir_val_t source = hir_ir_build_expr(context, node);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   if (hir_ir_is_complex_type(source_type))
     return convert_complex_pointer(
         context, source, source_type, target_type);
   return materialize_direct_value_as_complex(
       context, source, source_type, target_type);
+}
+
+ir_val_t hir_ir_materialize_complex_operand(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t target_type) {
+  ir_val_t source = hir_ir_build_expr(context, node);
+  return hir_ir_materialize_prebuilt_complex_operand(
+      context, node, target_type, source);
 }
 
 static ir_val_t emit_complex_binary_values(
@@ -4576,6 +4583,10 @@ static ir_val_t hir_ir_build_expr_impl(
 
 ir_val_t hir_ir_build_expr(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
+  if (!context || !node || context->status != IR_HIR_BUILD_OK)
+    return ir_val_none();
+  if (psx_hir_node_kind(node) == PSX_HIR_CALL)
+    return hir_ir_build_call_iterative(context, node);
   return can_iterate_eager_scalar_binary(context, node)
              ? build_eager_scalar_binary_iterative(context, node)
              : hir_ir_build_expr_impl(context, node);

@@ -47,6 +47,20 @@ if (!(coldDeepBinaryResult.object instanceof Uint8Array) ||
   );
 }
 
+const coldCallToolchain = await makeToolchain();
+const coldDeepCallSource = await readFile(
+  "test/fixtures/probes_found_bugs/deep_call_expression_pipeline.c",
+  "utf8",
+);
+const coldDeepCallResult =
+  coldCallToolchain.compileObjectWithDiagnostics(coldDeepCallSource);
+if (!(coldDeepCallResult.object instanceof Uint8Array) ||
+    coldDeepCallResult.diagnostics.length !== 0) {
+  throw new Error(
+    `cold deep call compile failed: ${JSON.stringify(coldDeepCallResult.diagnostics)}`,
+  );
+}
+
 const coldConstantToolchain = await makeToolchain();
 const coldDeepConstantSource = await readFile(
   "test/fixtures/probes_found_bugs/deep_integer_constant_expression.c",

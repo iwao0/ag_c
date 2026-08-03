@@ -123,6 +123,8 @@ ir_val_t hir_ir_build_condition_value(
 ir_val_t hir_ir_build_call(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_mir_type_info_t result_type);
+ir_val_t hir_ir_build_call_iterative(
+    hir_ir_context_t *context, const psx_hir_node_t *node);
 int hir_ir_setup_parameter_bindings(
     hir_ir_context_t *context, const psx_hir_node_t *root,
     const ir_function_type_t *function_type);
@@ -161,6 +163,9 @@ const psx_hir_symbol_t *hir_ir_resolved_global_symbol(
 ir_val_t hir_ir_materialize_complex_operand(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_mir_type_info_t target_type);
+ir_val_t hir_ir_materialize_prebuilt_complex_operand(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t target_type, ir_val_t source);
 ir_val_t hir_ir_aggregate_value_address(
     hir_ir_context_t *context, const psx_hir_node_t *node);
 int hir_ir_atomic_object_storage_width(

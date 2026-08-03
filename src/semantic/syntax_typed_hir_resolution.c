@@ -648,6 +648,7 @@ static int mark_direct_out_argument_initialization(
 static int resolve_direct_function_call(
     direct_resolution_context_t *context,
     const node_function_call_t *call,
+    int children_preflighted,
     direct_call_binding_t **out_binding) {
   if (out_binding) *out_binding = NULL;
   if (!context || !call || !call->callee)
@@ -657,7 +658,9 @@ static int resolve_direct_function_call(
     if (binding->syntax == call) {
       if (context->initialization_replay) {
         psx_qual_type_t ignored;
-        if (call->callee->kind == ND_IDENTIFIER) {
+        if (children_preflighted) {
+          /* The iterative caller already replayed callee and arguments. */
+        } else if (call->callee->kind == ND_IDENTIFIER) {
           psx_identifier_expression_resolution_t callee_resolution;
           if (!resolve_direct_call_identifier(
                   context,
@@ -721,8 +724,11 @@ static int resolve_direct_function_call(
         callee_resolution.symbol.kind == PSX_IDENTIFIER_FUNCTION &&
         ps_function_symbol_is_noreturn(
             callee_resolution.symbol.function);
-  } else if (!preflight_direct_expression(
-                 context, call->callee, &callee_type)) {
+  } else if (!(children_preflighted
+                   ? find_direct_expression_type(
+                         context, call->callee, &callee_type)
+                   : preflight_direct_expression(
+                         context, call->callee, &callee_type))) {
     return 0;
   }
   psx_call_types_resolution_t resolution;
@@ -752,8 +758,11 @@ static int resolve_direct_function_call(
   unsigned char atomic_argument_is_null[3] = {0};
   for (int i = 0; i < call->argument_count; i++) {
     psx_qual_type_t argument_type;
-    if (!preflight_direct_expression(
-            context, call->arguments[i], &argument_type))
+    if (!(children_preflighted
+              ? find_direct_expression_type(
+                    context, call->arguments[i], &argument_type)
+              : preflight_direct_expression(
+                    context, call->arguments[i], &argument_type)))
       return 0;
     int argument_is_null_pointer_constant =
         direct_null_pointer_constant(
@@ -1065,6 +1074,9 @@ static psx_semantic_node_t *build_direct_ternary_expression(
     direct_resolution_context_t *context,
     const node_t *syntax);
 static psx_semantic_node_t *build_direct_unary_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax);
+static psx_semantic_node_t *build_direct_call_expression(
     direct_resolution_context_t *context,
     const node_t *syntax);
 static psx_semantic_node_t *apply_direct_expression_decay(
@@ -3790,6 +3802,146 @@ fail:
       context, failure_syntax, 0, invalid, NULL);
 }
 
+typedef struct {
+  const node_function_call_t *call;
+  size_t next_child;
+  psx_qual_type_t child_type;
+} direct_call_preflight_frame_t;
+
+static int push_direct_call_preflight_frame(
+    direct_resolution_context_t *context,
+    direct_call_preflight_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  if (!context || !frames || !count || !capacity || !syntax ||
+      syntax->kind != ND_FUNCALL)
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    direct_call_preflight_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] = (direct_call_preflight_frame_t){
+      .call = (const node_function_call_t *)syntax,
+      .child_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  return 1;
+}
+
+static const node_t *direct_call_preflight_child(
+    const node_function_call_t *call, size_t index,
+    size_t *child_count) {
+  if (child_count) *child_count = 0;
+  if (!call || !call->callee) return NULL;
+  if (psx_function_call_builtin_kind(call) ==
+      PSX_BUILTIN_CALL_EXPECT) {
+    const node_t *value = psx_builtin_expect_value_operand(call);
+    if (child_count) *child_count = value ? 1 : 0;
+    return index == 0 ? value : NULL;
+  }
+
+  size_t callee_count = call->callee->kind == ND_IDENTIFIER ? 0 : 1;
+  size_t total = callee_count + (size_t)call->argument_count;
+  if (child_count) *child_count = total;
+  if (index >= total) return NULL;
+  if (callee_count && index == 0) return call->callee;
+  return call->arguments[index - callee_count];
+}
+
+static int preflight_direct_call_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_qual_type_t *qual_type) {
+  direct_call_preflight_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  const node_t *failure_syntax = syntax;
+  if (!push_direct_call_preflight_frame(
+          context, &frames, &count, &capacity, syntax))
+    goto fail;
+
+  while (count > 0) {
+    direct_call_preflight_frame_t *frame = &frames[count - 1];
+    const node_function_call_t *call = frame->call;
+    failure_syntax = &call->base;
+    size_t child_count = 0;
+    const node_t *child = direct_call_preflight_child(
+        call, frame->next_child, &child_count);
+
+    if (psx_function_call_builtin_kind(call) ==
+            PSX_BUILTIN_CALL_EXPECT &&
+        child_count == 0) {
+      note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
+          &call->base);
+      goto fail;
+    }
+
+    if (frame->next_child < child_count) {
+      frame->next_child++;
+      if (child && child->kind == ND_FUNCALL) {
+        if (!push_direct_call_preflight_frame(
+                context, &frames, &count, &capacity, child))
+          goto fail;
+        continue;
+      }
+      if (!preflight_direct_expression(
+              context, child, &frame->child_type))
+        goto fail;
+      continue;
+    }
+
+    psx_qual_type_t completed_type = {
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+    if (psx_function_call_builtin_kind(call) ==
+        PSX_BUILTIN_CALL_EXPECT) {
+      completed_type = frame->child_type;
+    } else {
+      direct_call_binding_t *binding = NULL;
+      if (!resolve_direct_function_call(
+              context, call, 1, &binding) || !binding)
+        goto fail;
+      completed_type = binding->resolution.return_qual_type;
+    }
+    if (!finish_preflight_direct_expression(
+            context, &call->base, 1,
+            completed_type, &completed_type))
+      goto fail;
+
+    count--;
+    if (count == 0) {
+      free(frames);
+      if (qual_type) *qual_type = completed_type;
+      return 1;
+    }
+    frames[count - 1].child_type = completed_type;
+  }
+
+fail:
+  free(frames);
+  psx_qual_type_t invalid = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  return finish_preflight_direct_expression(
+      context, failure_syntax, 0, invalid, NULL);
+}
+
 static int preflight_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax,
@@ -3805,6 +3957,9 @@ static int preflight_direct_expression(
         context, syntax, qual_type);
   if (syntax && syntax->kind == ND_TERNARY)
     return preflight_direct_ternary_expression(
+        context, syntax, qual_type);
+  if (syntax && syntax->kind == ND_FUNCALL)
+    return preflight_direct_call_expression(
         context, syntax, qual_type);
   psx_qual_type_t resolved_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
@@ -3938,7 +4093,7 @@ static int preflight_direct_expression_impl(
     }
     direct_call_binding_t *binding = NULL;
     if (!resolve_direct_function_call(
-            context, call,
+            context, call, 0,
             &binding))
       return 0;
     if (qual_type)
@@ -4808,6 +4963,8 @@ static psx_semantic_node_t *build_direct_expression(
     expression = build_direct_unary_expression(context, syntax);
   else if (syntax && syntax->kind == ND_TERNARY)
     expression = build_direct_ternary_expression(context, syntax);
+  else if (syntax && syntax->kind == ND_FUNCALL)
+    expression = build_direct_call_expression(context, syntax);
   else
     expression = build_direct_expression_impl(context, syntax);
   expression = apply_direct_expression_decay(
@@ -5117,6 +5274,215 @@ static psx_semantic_node_t *apply_direct_default_argument_promotion(
   return psx_semantic_node_builder_expression(
       &context->builder, &spec, promoted_type,
       children, edges, 1, NULL, syntax->kind);
+}
+
+typedef struct {
+  const node_function_call_t *call;
+  direct_call_binding_t *binding;
+  psx_type_shape_t function_shape;
+  psx_semantic_node_t **children;
+  psx_hir_edge_kind_t *edges;
+  size_t child_count;
+  size_t next_child;
+  psx_semantic_node_t *builtin_value;
+} direct_call_build_frame_t;
+
+static int push_direct_call_build_frame(
+    direct_resolution_context_t *context,
+    direct_call_build_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  if (!context || !frames || !count || !capacity || !syntax ||
+      syntax->kind != ND_FUNCALL)
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    direct_call_build_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+
+  const node_function_call_t *call =
+      (const node_function_call_t *)syntax;
+  direct_call_build_frame_t frame = {.call = call};
+  if (psx_function_call_builtin_kind(call) ==
+      PSX_BUILTIN_CALL_EXPECT) {
+    if (!psx_builtin_expect_value_operand(call)) return 0;
+    frame.child_count = 1;
+  } else {
+    if (!resolve_direct_function_call(
+            context, call, 0, &frame.binding) || !frame.binding ||
+        !direct_describe_qual_type(
+            context, frame.binding->resolution.function_qual_type,
+            &frame.function_shape) ||
+        frame.function_shape.kind != PSX_TYPE_FUNCTION)
+      return 0;
+    frame.child_count = (size_t)call->argument_count +
+                        (frame.binding->direct_identifier ? 0u : 1u);
+    frame.children = frame.child_count
+        ? arena_alloc_in(
+              ps_ctx_arena(context->semantic_context),
+              frame.child_count * sizeof(*frame.children))
+        : NULL;
+    frame.edges = frame.child_count
+        ? arena_alloc_in(
+              ps_ctx_arena(context->semantic_context),
+              frame.child_count * sizeof(*frame.edges))
+        : NULL;
+    if (frame.child_count && (!frame.children || !frame.edges)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+  }
+  (*frames)[(*count)++] = frame;
+  return 1;
+}
+
+static const node_t *direct_call_build_child(
+    const direct_call_build_frame_t *frame, size_t index) {
+  if (!frame || !frame->call || index >= frame->child_count)
+    return NULL;
+  if (psx_function_call_builtin_kind(frame->call) ==
+      PSX_BUILTIN_CALL_EXPECT)
+    return index == 0
+               ? psx_builtin_expect_value_operand(frame->call)
+               : NULL;
+  size_t callee_count = frame->binding->direct_identifier ? 0 : 1;
+  if (callee_count && index == 0) return frame->call->callee;
+  return frame->call->arguments[index - callee_count];
+}
+
+static int store_direct_call_build_child(
+    direct_resolution_context_t *context,
+    direct_call_build_frame_t *frame, size_t index,
+    psx_semantic_node_t *child) {
+  if (!context || !frame || !frame->call || !child ||
+      index >= frame->child_count)
+    return 0;
+  if (psx_function_call_builtin_kind(frame->call) ==
+      PSX_BUILTIN_CALL_EXPECT) {
+    frame->builtin_value = child;
+    return 1;
+  }
+
+  size_t callee_count = frame->binding->direct_identifier ? 0 : 1;
+  if (callee_count && index == 0) {
+    frame->children[index] = child;
+    frame->edges[index] = PSX_HIR_EDGE_CALLEE;
+    return 1;
+  }
+
+  size_t argument_index = index - callee_count;
+  if (!frame->function_shape.has_function_prototype ||
+      frame->function_shape.parameter_count < 0 ||
+      argument_index >=
+          (size_t)frame->function_shape.parameter_count) {
+    child = apply_direct_default_argument_promotion(
+        context, frame->call->arguments[argument_index], child);
+    if (!child) return 0;
+  }
+  frame->children[index] = child;
+  frame->edges[index] = PSX_HIR_EDGE_ARGUMENT;
+  return 1;
+}
+
+static psx_semantic_node_t *finish_direct_call_build_frame(
+    direct_resolution_context_t *context,
+    const direct_call_build_frame_t *frame) {
+  if (!context || !frame || !frame->call) return NULL;
+  if (psx_function_call_builtin_kind(frame->call) ==
+      PSX_BUILTIN_CALL_EXPECT)
+    return frame->builtin_value;
+
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_CALL,
+      .attached_qual_type =
+          frame->binding->resolution.function_qual_type,
+      .is_implicit_call = frame->binding->is_implicit,
+      .is_noreturn_call = frame->binding->is_noreturn,
+  };
+  if (frame->binding->direct_identifier) {
+    spec.name = frame->binding->direct_identifier->name;
+    spec.name_length =
+        frame->binding->direct_identifier->name_len > 0
+            ? (size_t)frame->binding->direct_identifier->name_len
+            : 0;
+  }
+  return psx_semantic_node_builder_expression(
+      &context->builder, &spec,
+      frame->binding->resolution.return_qual_type,
+      frame->children, frame->edges, frame->child_count,
+      NULL, frame->call->base.kind);
+}
+
+static psx_semantic_node_t *build_direct_call_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
+  direct_call_build_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_direct_call_build_frame(
+          context, &frames, &count, &capacity, syntax))
+    return NULL;
+
+  while (count > 0) {
+    direct_call_build_frame_t *frame = &frames[count - 1];
+    if (frame->next_child < frame->child_count) {
+      size_t child_index = frame->next_child++;
+      const node_t *child_syntax = direct_call_build_child(
+          frame, child_index);
+      if (!child_syntax) break;
+      if (child_syntax->kind == ND_FUNCALL) {
+        if (!push_direct_call_build_frame(
+                context, &frames, &count, &capacity,
+                child_syntax))
+          break;
+        continue;
+      }
+      psx_semantic_node_t *child = build_direct_expression(
+          context, child_syntax);
+      if (!store_direct_call_build_child(
+              context, frame, child_index, child))
+        break;
+      continue;
+    }
+
+    const node_t *completed_syntax = &frame->call->base;
+    psx_semantic_node_t *completed =
+        finish_direct_call_build_frame(context, frame);
+    if (!completed) break;
+    count--;
+    if (count == 0) {
+      free(frames);
+      return completed;
+    }
+    completed = apply_direct_expression_decay(
+        context, completed_syntax, completed);
+    if (!completed ||
+        !store_direct_call_build_child(
+            context, &frames[count - 1],
+            frames[count - 1].next_child - 1, completed))
+      break;
+  }
+
+  free(frames);
+  return NULL;
 }
 
 static psx_semantic_node_t *build_direct_binary_node(
@@ -5496,7 +5862,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
     }
     direct_call_binding_t *binding = NULL;
     if (!resolve_direct_function_call(
-            context, call, &binding))
+            context, call, 0, &binding))
       return NULL;
     psx_type_shape_t function_shape = {0};
     if (!direct_describe_qual_type(
