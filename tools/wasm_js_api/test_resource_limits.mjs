@@ -75,6 +75,20 @@ if (!(coldDeepShortCircuitResult.object instanceof Uint8Array) ||
   );
 }
 
+const coldTernaryToolchain = await makeToolchain();
+const coldDeepTernarySource = await readFile(
+  "test/fixtures/probes_found_bugs/deep_ternary_expression_pipeline.c",
+  "utf8",
+);
+const coldDeepTernaryResult =
+  coldTernaryToolchain.compileObjectWithDiagnostics(coldDeepTernarySource);
+if (!(coldDeepTernaryResult.object instanceof Uint8Array) ||
+    coldDeepTernaryResult.diagnostics.length !== 0) {
+  throw new Error(
+    `cold deep ternary compile failed: ${JSON.stringify(coldDeepTernaryResult.diagnostics)}`,
+  );
+}
+
 const coldUnaryToolchain = await makeToolchain();
 const coldDeepUnarySource = await readFile(
   "test/fixtures/probes_found_bugs/deep_unary_constant_expression.c",

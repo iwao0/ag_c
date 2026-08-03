@@ -1061,6 +1061,9 @@ static psx_semantic_node_t *build_direct_expression_impl(
 static psx_semantic_node_t *build_direct_binary_expression(
     direct_resolution_context_t *context,
     const node_t *syntax);
+static psx_semantic_node_t *build_direct_ternary_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax);
 static psx_semantic_node_t *build_direct_unary_expression(
     direct_resolution_context_t *context,
     const node_t *syntax);
@@ -4803,6 +4806,8 @@ static psx_semantic_node_t *build_direct_expression(
   else if (syntax && direct_iterative_unary_kind(
                          syntax->kind))
     expression = build_direct_unary_expression(context, syntax);
+  else if (syntax && syntax->kind == ND_TERNARY)
+    expression = build_direct_ternary_expression(context, syntax);
   else
     expression = build_direct_expression_impl(context, syntax);
   expression = apply_direct_expression_decay(
@@ -4822,6 +4827,14 @@ typedef struct direct_binary_build_frame_t {
   psx_semantic_node_t *rhs;
   unsigned char state;
 } direct_binary_build_frame_t;
+
+typedef struct {
+  const node_t *syntax;
+  psx_semantic_node_t *condition;
+  psx_semantic_node_t *then_value;
+  psx_semantic_node_t *else_value;
+  unsigned char state;
+} direct_ternary_build_frame_t;
 
 typedef struct {
   const node_t *syntax;
@@ -4897,6 +4910,40 @@ static int push_direct_binary_build_frame(
       .syntax = syntax,
       .hir_kind = hir_kind,
       .type_operator = type_operator,
+  };
+  return 1;
+}
+
+static int push_direct_ternary_build_frame(
+    direct_resolution_context_t *context,
+    direct_ternary_build_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  if (!context || !frames || !count || !capacity || !syntax ||
+      syntax->kind != ND_TERNARY)
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    direct_ternary_build_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] = (direct_ternary_build_frame_t){
+      .syntax = syntax,
   };
   return 1;
 }
@@ -5114,6 +5161,59 @@ static psx_semantic_node_t *build_direct_binary_node(
       children, edges, 2, NULL, syntax->kind);
 }
 
+static psx_semantic_node_t *build_direct_ternary_node(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_semantic_node_t *condition,
+    psx_semantic_node_t *then_value,
+    psx_semantic_node_t *else_value) {
+  if (!context || !syntax || syntax->kind != ND_TERNARY ||
+      !condition || !then_value || !else_value)
+    return NULL;
+  const node_ctrl_t *ternary = (const node_ctrl_t *)syntax;
+  then_value = apply_direct_bitfield_promotion(
+      context, syntax->rhs, then_value);
+  else_value = apply_direct_bitfield_promotion(
+      context, ternary->els, else_value);
+  if (!then_value || !else_value) return NULL;
+  int then_is_null_pointer_constant =
+      direct_null_pointer_constant(
+          context, syntax->rhs,
+          psx_semantic_node_expression_qual_type(then_value));
+  int else_is_null_pointer_constant =
+      direct_null_pointer_constant(
+          context, ternary->els,
+          psx_semantic_node_expression_qual_type(else_value));
+  psx_conditional_types_resolution_t resolution;
+  psx_resolve_conditional_qual_types_in(
+      context->semantic_context,
+      psx_semantic_node_expression_qual_type(condition),
+      psx_semantic_node_expression_qual_type(then_value),
+      psx_semantic_node_expression_qual_type(else_value),
+      then_is_null_pointer_constant,
+      else_is_null_pointer_constant, &resolution);
+  if (resolution.status != PSX_CONDITIONAL_TYPES_OK) {
+    set_failure(
+        context->failure,
+        PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
+    return NULL;
+  }
+  psx_semantic_node_t *children[] = {
+      condition, then_value, else_value};
+  psx_hir_edge_kind_t edges[] = {
+      PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS, PSX_HIR_EDGE_ELSE};
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_TERNARY,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  apply_direct_vla_runtime_view(
+      context, syntax, resolution.result_qual_type, &spec);
+  return psx_semantic_node_builder_expression(
+      &context->builder, &spec, resolution.result_qual_type,
+      children, edges, 3, NULL, syntax->kind);
+}
+
 static psx_semantic_node_t *build_direct_unary_expression(
     direct_resolution_context_t *context,
     const node_t *syntax) {
@@ -5222,6 +5322,88 @@ static psx_semantic_node_t *build_direct_binary_expression(
       parent->lhs = completed;
     else
       parent->rhs = completed;
+  }
+
+  free(frames);
+  return NULL;
+}
+
+static psx_semantic_node_t *build_direct_ternary_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
+  direct_ternary_build_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_direct_ternary_build_frame(
+          context, &frames, &count, &capacity, syntax))
+    return NULL;
+
+  while (count > 0) {
+    direct_ternary_build_frame_t *frame = &frames[count - 1];
+    const node_ctrl_t *ternary =
+        (const node_ctrl_t *)frame->syntax;
+    if (frame->state == 0) {
+      frame->state = 1;
+      if (frame->syntax->lhs &&
+          frame->syntax->lhs->kind == ND_TERNARY) {
+        if (!push_direct_ternary_build_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->lhs))
+          break;
+        continue;
+      }
+      frame->condition = build_direct_expression(
+          context, frame->syntax->lhs);
+      if (!frame->condition) break;
+    }
+    if (frame->state == 1) {
+      frame->state = 2;
+      if (frame->syntax->rhs &&
+          frame->syntax->rhs->kind == ND_TERNARY) {
+        if (!push_direct_ternary_build_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->rhs))
+          break;
+        continue;
+      }
+      frame->then_value = build_direct_expression(
+          context, frame->syntax->rhs);
+      if (!frame->then_value) break;
+    }
+    if (frame->state == 2) {
+      frame->state = 3;
+      if (ternary->els && ternary->els->kind == ND_TERNARY) {
+        if (!push_direct_ternary_build_frame(
+                context, &frames, &count, &capacity,
+                ternary->els))
+          break;
+        continue;
+      }
+      frame->else_value = build_direct_expression(
+          context, ternary->els);
+      if (!frame->else_value) break;
+    }
+
+    const node_t *completed_syntax = frame->syntax;
+    psx_semantic_node_t *completed = build_direct_ternary_node(
+        context, completed_syntax, frame->condition,
+        frame->then_value, frame->else_value);
+    if (!completed) break;
+    count--;
+    if (count == 0) {
+      free(frames);
+      return completed;
+    }
+    completed = apply_direct_expression_decay(
+        context, completed_syntax, completed);
+    if (!completed) break;
+    direct_ternary_build_frame_t *parent = &frames[count - 1];
+    if (parent->state == 1)
+      parent->condition = completed;
+    else if (parent->state == 2)
+      parent->then_value = completed;
+    else
+      parent->else_value = completed;
   }
 
   free(frames);
@@ -5677,58 +5859,6 @@ static psx_semantic_node_t *build_direct_expression_impl(
     return psx_semantic_node_builder_expression(
         &context->builder, &spec, result_qual_type,
         children, edges, 1, NULL, syntax->kind);
-  }
-
-  if (syntax->kind == ND_TERNARY) {
-    const node_ctrl_t *ternary = (const node_ctrl_t *)syntax;
-    psx_semantic_node_t *condition =
-        build_direct_expression(context, syntax->lhs);
-    psx_semantic_node_t *then_value =
-        build_direct_expression(context, syntax->rhs);
-    psx_semantic_node_t *else_value =
-        build_direct_expression(context, ternary->els);
-    if (!condition || !then_value || !else_value) return NULL;
-    then_value = apply_direct_bitfield_promotion(
-        context, syntax->rhs, then_value);
-    else_value = apply_direct_bitfield_promotion(
-        context, ternary->els, else_value);
-    if (!then_value || !else_value) return NULL;
-    int then_is_null_pointer_constant =
-        direct_null_pointer_constant(
-            context, syntax->rhs,
-            psx_semantic_node_expression_qual_type(then_value));
-    int else_is_null_pointer_constant =
-        direct_null_pointer_constant(
-            context, ternary->els,
-            psx_semantic_node_expression_qual_type(else_value));
-    psx_conditional_types_resolution_t resolution;
-    psx_resolve_conditional_qual_types_in(
-        context->semantic_context,
-        psx_semantic_node_expression_qual_type(condition),
-        psx_semantic_node_expression_qual_type(then_value),
-        psx_semantic_node_expression_qual_type(else_value),
-        then_is_null_pointer_constant,
-        else_is_null_pointer_constant, &resolution);
-    if (resolution.status != PSX_CONDITIONAL_TYPES_OK) {
-      set_failure(
-          context->failure,
-          PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
-      return NULL;
-    }
-    psx_semantic_node_t *children[] = {
-        condition, then_value, else_value};
-    psx_hir_edge_kind_t edges[] = {
-        PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS, PSX_HIR_EDGE_ELSE};
-    psx_hir_node_spec_t spec = {
-        .kind = PSX_HIR_TERNARY,
-        .attached_qual_type = {
-            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-    };
-    apply_direct_vla_runtime_view(
-        context, syntax, resolution.result_qual_type, &spec);
-    return psx_semantic_node_builder_expression(
-        &context->builder, &spec, resolution.result_qual_type,
-        children, edges, 3, NULL, syntax->kind);
   }
 
   return NULL;
