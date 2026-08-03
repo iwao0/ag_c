@@ -61,6 +61,20 @@ if (!(coldDeepCallResult.object instanceof Uint8Array) ||
   );
 }
 
+const coldCastToolchain = await makeToolchain();
+const coldDeepCastSource = await readFile(
+  "test/fixtures/probes_found_bugs/deep_cast_expression_pipeline.c",
+  "utf8",
+);
+const coldDeepCastResult =
+  coldCastToolchain.compileObjectWithDiagnostics(coldDeepCastSource);
+if (!(coldDeepCastResult.object instanceof Uint8Array) ||
+    coldDeepCastResult.diagnostics.length !== 0) {
+  throw new Error(
+    `cold deep cast compile failed: ${JSON.stringify(coldDeepCastResult.diagnostics)}`,
+  );
+}
+
 const coldConstantToolchain = await makeToolchain();
 const coldDeepConstantSource = await readFile(
   "test/fixtures/probes_found_bugs/deep_integer_constant_expression.c",

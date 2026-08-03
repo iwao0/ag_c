@@ -620,6 +620,54 @@ static int note_direct_source_cast_rejection(
       context, rejection, syntax, resolution->target_type_kind);
 }
 
+static int resolve_direct_source_cast_preflight_type(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_qual_type_t operand_type,
+    psx_qual_type_t *target_type) {
+  if (target_type)
+    *target_type = (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!context || !syntax || syntax->kind != ND_SOURCE_CAST ||
+      !target_type ||
+      !resolve_direct_source_cast(
+          context, (const node_source_cast_t *)syntax,
+          target_type))
+    return 0;
+  direct_cast_binding_t *binding = find_direct_cast_binding(
+      context, (const node_source_cast_t *)syntax);
+  if (!binding) return 0;
+  if (!binding->types_resolved) {
+    psx_resolve_source_cast_qual_types(
+        ps_ctx_semantic_type_table_in(context->semantic_context),
+        ps_ctx_record_decl_table_in(context->semantic_context),
+        ps_ctx_record_layout_table_in(context->semantic_context),
+        context->lowering_context
+            ? ps_lowering_data_layout(context->lowering_context)
+            : NULL,
+        *target_type, operand_type, context->options,
+        &binding->type_resolution);
+    binding->types_resolved = 1;
+  }
+  if (binding->type_resolution.status !=
+      PSX_SOURCE_CAST_TYPES_OK)
+    return note_direct_source_cast_rejection(
+        context, syntax, &binding->type_resolution);
+  if (binding->type_resolution.target_is_aggregate) {
+    if (!context->lowering_context || !context->options) return 0;
+    if (context->unevaluated_depth == 0 &&
+        !binding->aggregate_plan.temporary &&
+        binding->type_resolution.aggregate.mode ==
+            PSX_AGGREGATE_CAST_INITIALIZE_MEMBER &&
+        !psx_plan_aggregate_source_cast_resolution(
+            context->lowering_context, context->local_registry,
+            &binding->type_resolution.aggregate,
+            &binding->aggregate_plan))
+      return 0;
+  }
+  return 1;
+}
+
 static int mark_direct_out_argument_initialization(
     direct_resolution_context_t *context,
     const node_t *argument,
@@ -1077,6 +1125,9 @@ static psx_semantic_node_t *build_direct_unary_expression(
     direct_resolution_context_t *context,
     const node_t *syntax);
 static psx_semantic_node_t *build_direct_call_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax);
+static psx_semantic_node_t *build_direct_cast_expression(
     direct_resolution_context_t *context,
     const node_t *syntax);
 static psx_semantic_node_t *apply_direct_expression_decay(
@@ -3803,6 +3854,102 @@ fail:
 }
 
 typedef struct {
+  const node_t *syntax;
+  psx_qual_type_t operand_type;
+} direct_cast_preflight_frame_t;
+
+static int push_direct_cast_preflight_frame(
+    direct_resolution_context_t *context,
+    direct_cast_preflight_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  if (!context || !frames || !count || !capacity || !syntax ||
+      syntax->kind != ND_SOURCE_CAST)
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    direct_cast_preflight_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] = (direct_cast_preflight_frame_t){
+      .syntax = syntax,
+      .operand_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  return 1;
+}
+
+static int preflight_direct_cast_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_qual_type_t *qual_type) {
+  direct_cast_preflight_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  const node_t *failure_syntax = syntax;
+  if (!push_direct_cast_preflight_frame(
+          context, &frames, &count, &capacity, syntax))
+    goto fail;
+
+  while (count > 0) {
+    direct_cast_preflight_frame_t *frame = &frames[count - 1];
+    failure_syntax = frame->syntax;
+    if (frame->operand_type.type_id == PSX_TYPE_ID_INVALID) {
+      const node_t *operand = frame->syntax->lhs;
+      if (operand && operand->kind == ND_SOURCE_CAST) {
+        if (!push_direct_cast_preflight_frame(
+                context, &frames, &count, &capacity, operand))
+          goto fail;
+        continue;
+      }
+      if (!preflight_direct_expression(
+              context, operand, &frame->operand_type))
+        goto fail;
+    }
+
+    psx_qual_type_t completed_type = {
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+    if (!resolve_direct_source_cast_preflight_type(
+            context, frame->syntax, frame->operand_type,
+            &completed_type) ||
+        !finish_preflight_direct_expression(
+            context, frame->syntax, 1,
+            completed_type, &completed_type))
+      goto fail;
+
+    count--;
+    if (count == 0) {
+      free(frames);
+      if (qual_type) *qual_type = completed_type;
+      return 1;
+    }
+    frames[count - 1].operand_type = completed_type;
+  }
+
+fail:
+  free(frames);
+  psx_qual_type_t invalid = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  return finish_preflight_direct_expression(
+      context, failure_syntax, 0, invalid, NULL);
+}
+
+typedef struct {
   const node_function_call_t *call;
   size_t next_child;
   psx_qual_type_t child_type;
@@ -3958,6 +4105,9 @@ static int preflight_direct_expression(
   if (syntax && syntax->kind == ND_TERNARY)
     return preflight_direct_ternary_expression(
         context, syntax, qual_type);
+  if (syntax && syntax->kind == ND_SOURCE_CAST)
+    return preflight_direct_cast_expression(
+        context, syntax, qual_type);
   if (syntax && syntax->kind == ND_FUNCALL)
     return preflight_direct_call_expression(
         context, syntax, qual_type);
@@ -4040,41 +4190,9 @@ static int preflight_direct_expression_impl(
     psx_qual_type_t target_type;
     if (!preflight_direct_expression(
             context, syntax->lhs, &operand_type) ||
-        !resolve_direct_source_cast(
-            context, (const node_source_cast_t *)syntax,
-            &target_type))
+        !resolve_direct_source_cast_preflight_type(
+            context, syntax, operand_type, &target_type))
       return 0;
-    direct_cast_binding_t *binding = find_direct_cast_binding(
-        context, (const node_source_cast_t *)syntax);
-    if (!binding) return 0;
-    if (!binding->types_resolved) {
-      psx_resolve_source_cast_qual_types(
-          ps_ctx_semantic_type_table_in(context->semantic_context),
-          ps_ctx_record_decl_table_in(context->semantic_context),
-          ps_ctx_record_layout_table_in(context->semantic_context),
-          context->lowering_context
-              ? ps_lowering_data_layout(context->lowering_context)
-              : NULL,
-          target_type, operand_type, context->options,
-          &binding->type_resolution);
-      binding->types_resolved = 1;
-    }
-    if (binding->type_resolution.status !=
-        PSX_SOURCE_CAST_TYPES_OK)
-      return note_direct_source_cast_rejection(
-          context, syntax, &binding->type_resolution);
-    if (binding->type_resolution.target_is_aggregate) {
-      if (!context->lowering_context || !context->options) return 0;
-      if (context->unevaluated_depth == 0 &&
-          !binding->aggregate_plan.temporary &&
-          binding->type_resolution.aggregate.mode ==
-              PSX_AGGREGATE_CAST_INITIALIZE_MEMBER &&
-          !psx_plan_aggregate_source_cast_resolution(
-              context->lowering_context, context->local_registry,
-              &binding->type_resolution.aggregate,
-              &binding->aggregate_plan))
-        return 0;
-    }
     if (qual_type) *qual_type = target_type;
     return 1;
   }
@@ -4903,6 +5021,45 @@ static psx_semantic_node_t *build_direct_comma(
       children, edges, 2, NULL, syntax->kind);
 }
 
+static psx_semantic_node_t *build_direct_source_cast_node(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_semantic_node_t *operand) {
+  if (!context || !syntax || syntax->kind != ND_SOURCE_CAST ||
+      !operand)
+    return NULL;
+  psx_qual_type_t target_type;
+  if (!resolve_direct_source_cast(
+          context, (const node_source_cast_t *)syntax,
+          &target_type))
+    return NULL;
+  direct_cast_binding_t *binding = find_direct_cast_binding(
+      context, (const node_source_cast_t *)syntax);
+  if (binding && binding->type_resolution.target_is_aggregate &&
+      binding->aggregate_plan.temporary) {
+    psx_semantic_node_t *initialization = NULL;
+    psx_semantic_node_t *object = NULL;
+    if (!build_direct_aggregate_cast_temporary_parts(
+            context, syntax, binding, operand, target_type,
+            &initialization, &object))
+      return NULL;
+    return build_direct_comma(
+        context, syntax, initialization, object, target_type);
+  }
+  psx_semantic_node_t *children[] = {operand};
+  psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_CAST,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  apply_direct_vla_runtime_view(
+      context, syntax, target_type, &spec);
+  return psx_semantic_node_builder_expression(
+      &context->builder, &spec, target_type,
+      children, edges, 1, NULL, syntax->kind);
+}
+
 static psx_semantic_node_t *build_direct_lvalue(
     direct_resolution_context_t *context,
     const node_t *syntax) {
@@ -4963,6 +5120,8 @@ static psx_semantic_node_t *build_direct_expression(
     expression = build_direct_unary_expression(context, syntax);
   else if (syntax && syntax->kind == ND_TERNARY)
     expression = build_direct_ternary_expression(context, syntax);
+  else if (syntax && syntax->kind == ND_SOURCE_CAST)
+    expression = build_direct_cast_expression(context, syntax);
   else if (syntax && syntax->kind == ND_FUNCALL)
     expression = build_direct_call_expression(context, syntax);
   else
@@ -4998,6 +5157,11 @@ typedef struct {
   psx_semantic_node_t *operand;
 } direct_unary_build_frame_t;
 
+typedef struct {
+  const node_t *syntax;
+  psx_semantic_node_t *operand;
+} direct_cast_build_frame_t;
+
 static int push_direct_unary_build_frame(
     direct_resolution_context_t *context,
     direct_unary_build_frame_t **frames,
@@ -5027,6 +5191,40 @@ static int push_direct_unary_build_frame(
     *capacity = next_capacity;
   }
   (*frames)[(*count)++] = (direct_unary_build_frame_t){
+      .syntax = syntax,
+  };
+  return 1;
+}
+
+static int push_direct_cast_build_frame(
+    direct_resolution_context_t *context,
+    direct_cast_build_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  if (!context || !frames || !count || !capacity || !syntax ||
+      syntax->kind != ND_SOURCE_CAST)
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    direct_cast_build_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] = (direct_cast_build_frame_t){
       .syntax = syntax,
   };
   return 1;
@@ -5580,6 +5778,52 @@ static psx_semantic_node_t *build_direct_ternary_node(
       children, edges, 3, NULL, syntax->kind);
 }
 
+static psx_semantic_node_t *build_direct_cast_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
+  direct_cast_build_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_direct_cast_build_frame(
+          context, &frames, &count, &capacity, syntax))
+    return NULL;
+
+  while (count > 0) {
+    direct_cast_build_frame_t *frame = &frames[count - 1];
+    if (!frame->operand) {
+      if (frame->syntax->lhs &&
+          frame->syntax->lhs->kind == ND_SOURCE_CAST) {
+        if (!push_direct_cast_build_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->lhs))
+          break;
+        continue;
+      }
+      frame->operand = build_direct_expression(
+          context, frame->syntax->lhs);
+      if (!frame->operand) break;
+    }
+
+    const node_t *completed_syntax = frame->syntax;
+    psx_semantic_node_t *completed =
+        build_direct_source_cast_node(
+            context, completed_syntax, frame->operand);
+    if (!completed) break;
+    count--;
+    if (count == 0) {
+      free(frames);
+      return completed;
+    }
+    completed = apply_direct_expression_decay(
+        context, completed_syntax, completed);
+    if (!completed) break;
+    frames[count - 1].operand = completed;
+  }
+
+  free(frames);
+  return NULL;
+}
+
 static psx_semantic_node_t *build_direct_unary_expression(
     direct_resolution_context_t *context,
     const node_t *syntax) {
@@ -5819,37 +6063,8 @@ static psx_semantic_node_t *build_direct_expression_impl(
   if (syntax->kind == ND_SOURCE_CAST) {
     psx_semantic_node_t *operand =
         build_direct_expression(context, syntax->lhs);
-    psx_qual_type_t target_type;
-    if (!operand ||
-        !resolve_direct_source_cast(
-            context, (const node_source_cast_t *)syntax,
-            &target_type))
-      return NULL;
-    direct_cast_binding_t *binding = find_direct_cast_binding(
-        context, (const node_source_cast_t *)syntax);
-    if (binding && binding->type_resolution.target_is_aggregate &&
-        binding->aggregate_plan.temporary) {
-      psx_semantic_node_t *initialization = NULL;
-      psx_semantic_node_t *object = NULL;
-      if (!build_direct_aggregate_cast_temporary_parts(
-              context, syntax, binding, operand, target_type,
-              &initialization, &object))
-        return NULL;
-      return build_direct_comma(
-          context, syntax, initialization, object, target_type);
-    }
-    psx_semantic_node_t *children[] = {operand};
-    psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
-    psx_hir_node_spec_t spec = {
-        .kind = PSX_HIR_CAST,
-        .attached_qual_type = {
-            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-    };
-    apply_direct_vla_runtime_view(
-        context, syntax, target_type, &spec);
-    return psx_semantic_node_builder_expression(
-        &context->builder, &spec, target_type,
-        children, edges, 1, NULL, syntax->kind);
+    return build_direct_source_cast_node(
+        context, syntax, operand);
   }
 
   if (syntax->kind == ND_FUNCALL) {

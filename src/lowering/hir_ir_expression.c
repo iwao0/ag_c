@@ -4581,10 +4581,141 @@ static ir_val_t build_eager_scalar_binary_iterative(
 static ir_val_t hir_ir_build_expr_impl(
     hir_ir_context_t *context, const psx_hir_node_t *node);
 
+static int hir_ir_iterative_cast_kind(psx_hir_node_kind_t kind) {
+  return kind == PSX_HIR_CAST ||
+         kind == PSX_HIR_FP_TO_INT ||
+         kind == PSX_HIR_INT_TO_FP;
+}
+
+static ir_val_t build_cast_from_prebuilt_value(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    const psx_hir_node_t *operand, ir_val_t value,
+    ir_mir_type_info_t target_type) {
+  if (!context || !node || !operand)
+    return hir_ir_unsupported_expr(context);
+  if (hir_ir_node_type_kind(context, node) == PSX_TYPE_VOID)
+    return ir_val_none();
+
+  ir_mir_type_info_t source_type =
+      hir_ir_classify_node_type(context, operand);
+  if (target_type.type_class == IR_MIR_TYPE_AGGREGATE) {
+    if (source_type.type_class != IR_MIR_TYPE_AGGREGATE ||
+        source_type.source_size != target_type.source_size ||
+        value.type != IR_TY_PTR)
+      return hir_ir_unsupported_expr(context);
+    return value;
+  }
+  if (hir_ir_is_complex_type(target_type))
+    return hir_ir_materialize_prebuilt_complex_operand(
+        context, operand, target_type, value);
+  if (!hir_ir_is_direct_value_type(target_type))
+    return hir_ir_unsupported_expr(context);
+  if (hir_ir_is_complex_type(source_type))
+    return coerce_complex_pointer_to_direct_value(
+        context, value, source_type, target_type,
+        psx_hir_node_qual_type(node),
+        psx_hir_node_kind(node) == PSX_HIR_CAST);
+  return psx_hir_node_kind(node) == PSX_HIR_CAST
+             ? coerce_explicit_cast_value(
+                   context, value, source_type, target_type,
+                   psx_hir_node_qual_type(node))
+             : hir_ir_coerce_direct_value(
+                   context, value, source_type, target_type);
+}
+
+typedef struct {
+  const psx_hir_node_t *node;
+  const psx_hir_node_t *operand;
+  ir_mir_type_info_t target_type;
+  ir_val_t operand_value;
+  unsigned char operand_built;
+} hir_ir_cast_build_frame_t;
+
+static int push_hir_ir_cast_build_frame(
+    hir_ir_context_t *context,
+    hir_ir_cast_build_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const psx_hir_node_t *node) {
+  if (!context || !frames || !count || !capacity || !node ||
+      !hir_ir_iterative_cast_kind(psx_hir_node_kind(node)))
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+    hir_ir_cast_build_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  const psx_hir_node_t *operand = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  if (!operand) return 0;
+  (*frames)[(*count)++] = (hir_ir_cast_build_frame_t){
+      .node = node,
+      .operand = operand,
+      .target_type = hir_ir_classify_node_type(context, node),
+      .operand_value = ir_val_none(),
+  };
+  return 1;
+}
+
+static ir_val_t build_cast_iterative(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  hir_ir_cast_build_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_hir_ir_cast_build_frame(
+          context, &frames, &count, &capacity, node))
+    goto fail;
+
+  while (count > 0) {
+    hir_ir_cast_build_frame_t *frame = &frames[count - 1];
+    if (!frame->operand_built) {
+      frame->operand_built = 1;
+      if (hir_ir_iterative_cast_kind(
+              psx_hir_node_kind(frame->operand))) {
+        if (!push_hir_ir_cast_build_frame(
+                context, &frames, &count, &capacity,
+                frame->operand))
+          goto fail;
+        continue;
+      }
+      frame->operand_value = hir_ir_build_expr(
+          context, frame->operand);
+      if (context->status != IR_HIR_BUILD_OK) goto fail;
+    }
+
+    ir_val_t completed = build_cast_from_prebuilt_value(
+        context, frame->node, frame->operand,
+        frame->operand_value, frame->target_type);
+    if (context->status != IR_HIR_BUILD_OK) goto fail;
+    count--;
+    if (count == 0) {
+      free(frames);
+      return completed;
+    }
+    frames[count - 1].operand_value = completed;
+  }
+
+fail:
+  free(frames);
+  return ir_val_none();
+}
+
 ir_val_t hir_ir_build_expr(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   if (!context || !node || context->status != IR_HIR_BUILD_OK)
     return ir_val_none();
+  if (hir_ir_iterative_cast_kind(psx_hir_node_kind(node)))
+    return build_cast_iterative(context, node);
   if (psx_hir_node_kind(node) == PSX_HIR_CALL)
     return hir_ir_build_call_iterative(context, node);
   return can_iterate_eager_scalar_binary(context, node)
@@ -4857,19 +4988,8 @@ static ir_val_t hir_ir_build_expr_impl(
     if (!operand) return hir_ir_unsupported_expr(context);
     ir_val_t value = hir_ir_build_expr(context, operand);
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-    ir_mir_type_info_t source_type =
-        hir_ir_classify_node_type(context, operand);
-    if (hir_ir_is_complex_type(source_type))
-      return coerce_complex_pointer_to_direct_value(
-          context, value, source_type, type,
-          psx_hir_node_qual_type(node),
-          psx_hir_node_kind(node) == PSX_HIR_CAST);
-    return psx_hir_node_kind(node) == PSX_HIR_CAST
-               ? coerce_explicit_cast_value(
-                     context, value, source_type, type,
-                     psx_hir_node_qual_type(node))
-               : hir_ir_coerce_direct_value(
-                     context, value, source_type, type);
+    return build_cast_from_prebuilt_value(
+        context, node, operand, value, type);
   }
 
   if (psx_hir_node_kind(node) == PSX_HIR_UNARY_PLUS)
