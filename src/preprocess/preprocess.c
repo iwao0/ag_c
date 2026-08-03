@@ -3454,6 +3454,22 @@ static cond_incl_t *pps_conditional_boundary(const pp_stream_t *s) {
 static void pps_require_conditional_balance(pp_stream_t *s) {
   ag_preprocessor_context_t *context = s->context;
   if (cond_incl != pps_conditional_boundary(s)) {
+    if (context->language_analysis_mode) {
+      diag_report_tokf_in(
+          context->diagnostic_context,
+          DIAG_ERR_PREPROCESS_UNTERMINATED_CONDITIONAL,
+          cond_incl->directive_tok, "%s",
+          diag_message_for_in(
+              context->diagnostic_context,
+              DIAG_ERR_PREPROCESS_UNTERMINATED_CONDITIONAL));
+      cond_incl_t *boundary = pps_conditional_boundary(s);
+      while (cond_incl != boundary) {
+        cond_incl_t *entry = cond_incl;
+        cond_incl = entry->next;
+        free(entry);
+      }
+      return;
+    }
     pp_error_tok(
         context, DIAG_ERR_PREPROCESS_UNTERMINATED_CONDITIONAL,
         cond_incl->directive_tok, NULL);

@@ -443,7 +443,8 @@ static int enum_enumerator_bounds(
 }
 
 static char *build_enum_declaration_recovery_source(
-    const char *source, size_t length, size_t cursor, int *changed) {
+    const char *source, size_t length, size_t cursor, int *changed,
+    size_t *source_consumed) {
   const char *name = NULL;
   size_t name_length = 0;
   identifier_at(source, length, cursor, &name, &name_length);
@@ -484,6 +485,7 @@ static char *build_enum_declaration_recovery_source(
   }
   result[output] = '\0';
   if (changed) *changed = 1;
+  if (source_consumed) *source_consumed = item_end;
   return result;
 }
 
@@ -853,7 +855,8 @@ typedef enum {
 } ag_language_recovery_flags_t;
 
 static char *build_function_declaration_recovery_source(
-    const char *source, size_t length, size_t cursor, int *changed) {
+    const char *source, size_t length, size_t cursor, int *changed,
+    size_t *source_consumed) {
   const char *name = NULL;
   size_t name_length = 0;
   identifier_at(source, length, cursor, &name, &name_length);
@@ -898,11 +901,13 @@ static char *build_function_declaration_recovery_source(
   }
   result[output] = '\0';
   if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+  if (source_consumed) *source_consumed = declaration_end;
   return result;
 }
 
 static char *build_object_declaration_recovery_source(
-    const char *source, size_t length, size_t cursor, int *changed) {
+    const char *source, size_t length, size_t cursor, int *changed,
+    size_t *source_consumed) {
   const char *name = NULL;
   size_t name_length = 0;
   identifier_at(source, length, cursor, &name, &name_length);
@@ -953,22 +958,135 @@ static char *build_object_declaration_recovery_source(
   }
   result[output] = '\0';
   if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+  if (source_consumed) *source_consumed = declarator_end;
+  return result;
+}
+
+static int is_conditional_directive_line(
+    const char *source, size_t start, size_t end) {
+  while (start < end &&
+         (source[start] == ' ' || source[start] == '\t' ||
+          source[start] == '\r'))
+    start++;
+  if (start >= end || source[start++] != '#') return 0;
+  while (start < end &&
+         (source[start] == ' ' || source[start] == '\t' ||
+          source[start] == '\r'))
+    start++;
+  size_t word_start = start;
+  while (start < end &&
+         is_identifier_byte((unsigned char)source[start]))
+    start++;
+  size_t word_length = start - word_start;
+  static const char *const directives[] = {
+      "if", "ifdef", "ifndef", "elif", "else", "endif",
+  };
+  for (size_t i = 0; i < sizeof(directives) / sizeof(directives[0]); i++)
+    if (analysis_word_is(
+            source, word_start, word_length, directives[i]))
+      return 1;
+  return 0;
+}
+
+static size_t analysis_logical_line_end(
+    const char *source, size_t length, size_t start) {
+  size_t cursor = start;
+  for (;;) {
+    while (cursor < length && source[cursor] != '\n') cursor++;
+    size_t content_end = cursor;
+    if (content_end > start && source[content_end - 1] == '\r')
+      content_end--;
+    int continued =
+        content_end > start && source[content_end - 1] == '\\';
+    if (cursor < length) cursor++;
+    if (!continued || cursor >= length) return cursor;
+    start = cursor;
+  }
+}
+
+static char *append_conditional_validation_tail(
+    char *recovery, const char *source, size_t source_length,
+    size_t source_consumed) {
+  if (!recovery || source_consumed >= source_length) return recovery;
+  size_t scan = source_consumed;
+  if (scan > 0 && source[scan - 1] != '\n')
+    scan = analysis_logical_line_end(source, source_length, scan);
+  int has_conditional = 0;
+  for (size_t line = scan; line < source_length;) {
+    size_t physical_end = line;
+    while (physical_end < source_length && source[physical_end] != '\n')
+      physical_end++;
+    size_t logical_end = analysis_logical_line_end(
+        source, source_length, line);
+    if (is_conditional_directive_line(
+            source, line, physical_end)) {
+      has_conditional = 1;
+      break;
+    }
+    line = logical_end;
+  }
+  if (!has_conditional) return recovery;
+
+  size_t recovery_length = strlen(recovery);
+  size_t tail_length = source_length - source_consumed;
+  int needs_newline =
+      recovery_length > 0 && recovery[recovery_length - 1] != '\n';
+  if (recovery_length > SIZE_MAX - tail_length -
+                            (size_t)needs_newline - 1) {
+    free(recovery);
+    return NULL;
+  }
+  char *result = malloc(
+      recovery_length + (size_t)needs_newline + tail_length + 1);
+  if (!result) {
+    free(recovery);
+    return NULL;
+  }
+  memcpy(result, recovery, recovery_length);
+  size_t output = recovery_length;
+  if (needs_newline) result[output++] = '\n';
+  memset(result + output, ' ', tail_length);
+  for (size_t i = source_consumed; i < source_length; i++)
+    if (source[i] == '\n')
+      result[output + i - source_consumed] = '\n';
+  for (size_t line = scan; line < source_length;) {
+    size_t physical_end = line;
+    while (physical_end < source_length && source[physical_end] != '\n')
+      physical_end++;
+    size_t logical_end = analysis_logical_line_end(
+        source, source_length, line);
+    if (is_conditional_directive_line(
+            source, line, physical_end))
+      memcpy(result + output + line - source_consumed,
+             source + line, logical_end - line);
+    line = logical_end;
+  }
+  output += tail_length;
+  result[output] = '\0';
+  free(recovery);
   return result;
 }
 
 static char *build_recovery_source(const char *source, size_t source_length,
                                    size_t cursor,
                                    int *changed) {
+  size_t source_consumed = cursor;
   char *enum_recovery = build_enum_declaration_recovery_source(
-      source, source_length, cursor, changed);
-  if (enum_recovery) return enum_recovery;
+      source, source_length, cursor, changed, &source_consumed);
+  if (enum_recovery)
+    return append_conditional_validation_tail(
+        enum_recovery, source, source_length, source_consumed);
   char *function_recovery =
       build_function_declaration_recovery_source(
-          source, source_length, cursor, changed);
-  if (function_recovery) return function_recovery;
+          source, source_length, cursor, changed, &source_consumed);
+  if (function_recovery)
+    return append_conditional_validation_tail(
+        function_recovery, source, source_length, source_consumed);
   char *object_recovery = build_object_declaration_recovery_source(
-      source, source_length, cursor, changed);
-  if (object_recovery) return object_recovery;
+      source, source_length, cursor, changed, &source_consumed);
+  if (object_recovery)
+    return append_conditional_validation_tail(
+        object_recovery, source, source_length, source_consumed);
   int has_complete_identifier = 0;
   const char *cursor_name = NULL;
   size_t cursor_name_length = 0;
@@ -1123,7 +1241,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
                       : AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER;
     }
   }
-  return result;
+  return append_conditional_validation_tail(
+      result, source, source_length, cursor);
 }
 
 static uint32_t read_u32_le(const unsigned char *bytes) {
@@ -2356,6 +2475,8 @@ int ag_language_analyze_source(
               "AGC_LANGUAGE_ANALYSIS_SESSION_RESET_FAILED", NULL, 0, 0);
     return 0;
   }
+  diag_reset_records_in(
+      ag_compilation_session_diagnostic_context(session));
   if (!snapshot || !request || !request->source_name ||
       !request->source_name[0] || !request->source ||
       !request->cursor_source_name ||

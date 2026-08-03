@@ -875,6 +875,244 @@ assert.throws(
   /duplicate project source name/,
 );
 
+const guardedProjectHeaders = {
+  "move.h":
+    "#ifndef MOVE_H\n" +
+    "#define MOVE_H\n\n" +
+    "/* 日本語 */\n" +
+    "void move_and_draw(void);\n\n" +
+    "#endif\n",
+  "other.h":
+    "#ifndef OTHER_H\n" +
+    "#define OTHER_H\n" +
+    "void other_action(void);\n" +
+    "#endif\n",
+};
+const guardedMoveSource = {
+  name: "move.c",
+  source: "#include \"move.h\"\n\nvoid move_and_draw(void) {}\n",
+};
+const guardedOtherSource = {
+  name: "other.c",
+  source: "#include \"other.h\"\n\nvoid other_action(void) {}\n",
+};
+const guardedMainSource = {
+  name: "main.c",
+  source:
+    "#include \"move.h\"\n" +
+    "#include \"other.h\"\n\n" +
+    "int main(void) { move_and_draw(); other_action(); return 0; }\n",
+};
+const guardedHeaderSource = {
+  name: "move.h",
+  source: guardedProjectHeaders["move.h"],
+};
+const guardedOtherHeaderSource = {
+  name: "other.h",
+  source: guardedProjectHeaders["other.h"],
+};
+const guardedProjectSources = [
+  guardedMoveSource,
+  guardedOtherSource,
+  guardedMainSource,
+];
+const guardedDeclarationStart = Buffer.byteLength(
+  guardedHeaderSource.source.slice(
+    0, guardedHeaderSource.source.indexOf(moveName),
+  ),
+);
+const guardedDefinitionStart = Buffer.byteLength(
+  guardedMoveSource.source.slice(
+    0, guardedMoveSource.source.indexOf(moveName),
+  ),
+);
+const wasmGuardedProjectParity = compiler.analyzeProjectSource(
+  guardedHeaderSource,
+  {
+    projectRevision: 34,
+    projectSources: guardedProjectSources,
+    headers: guardedProjectHeaders,
+    cursor: {
+      sourceName: guardedHeaderSource.name,
+      byteOffset: guardedDeclarationStart + 1,
+    },
+  },
+);
+const nativeGuardedProjectParity = JSON.parse(execFileSync(
+  nativeAnalysisPath,
+  ["--project-header-guard-parity-json"],
+  { encoding: "utf8" },
+));
+assert.deepStrictEqual(
+  wasmGuardedProjectParity,
+  nativeGuardedProjectParity,
+  "native and Wasm guarded-header project snapshots differ",
+);
+
+for (const cursorDelta of functionCursorDeltas) {
+  const result = compiler.analyzeProjectSource(guardedHeaderSource, {
+    projectRevision: 34,
+    projectSources: guardedProjectSources,
+    headers: guardedProjectHeaders,
+    cursor: {
+      sourceName: guardedHeaderSource.name,
+      byteOffset: guardedDeclarationStart + cursorDelta,
+    },
+  });
+  if (result.hover?.name !== moveName ||
+      result.hover.declaration.sourceName !== "move.h" ||
+      result.hover.declaration.start.offset !== guardedDeclarationStart ||
+      result.hover.definition?.sourceName !== "move.c" ||
+      result.hover.definition.start.offset !== guardedDefinitionStart ||
+      result.hover.definition.end.offset !==
+        guardedDefinitionStart + Buffer.byteLength(moveName) ||
+      result.hover.definitionConflict ||
+      result.hover.definitionCandidates.length !== 1 ||
+      result.partial || result.diagnostics.length !== 0) {
+    throw new Error(
+      `guarded header project hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+const guardedMainUse = guardedMainSource.source.indexOf(moveName);
+const guardedMainResult = compiler.analyzeProjectSource(guardedMainSource, {
+  projectRevision: 34,
+  projectSources: guardedProjectSources,
+  headers: guardedProjectHeaders,
+  cursor: {
+    sourceName: guardedMainSource.name,
+    byteOffset: guardedMainUse + 1,
+  },
+});
+assert.equal(guardedMainResult.hover?.declaration.sourceName, "move.h");
+assert.equal(guardedMainResult.hover?.definition?.sourceName, "move.c");
+
+const otherName = "other_action";
+const guardedOtherDeclarationStart = Buffer.byteLength(
+  guardedOtherHeaderSource.source.slice(
+    0, guardedOtherHeaderSource.source.indexOf(otherName),
+  ),
+);
+const guardedOtherResult = compiler.analyzeProjectSource(
+  guardedOtherHeaderSource,
+  {
+    projectRevision: 34,
+    projectSources: guardedProjectSources,
+    headers: guardedProjectHeaders,
+    cursor: {
+      sourceName: guardedOtherHeaderSource.name,
+      byteOffset: guardedOtherDeclarationStart + 1,
+    },
+  },
+);
+assert.equal(guardedOtherResult.hover?.name, otherName);
+assert.equal(guardedOtherResult.hover?.declaration.sourceName, "other.h");
+assert.equal(guardedOtherResult.hover?.definition?.sourceName, "other.c");
+assert.equal(guardedOtherResult.partial, false);
+assert.deepStrictEqual(guardedOtherResult.diagnostics, []);
+
+const movedGuardedMoveSource = {
+  name: "move.c",
+  source: "#include \"move.h\"\n\n\n\nvoid move_and_draw(void) {}\n",
+};
+const movedGuardedProjectSources = [
+  movedGuardedMoveSource,
+  guardedOtherSource,
+  guardedMainSource,
+];
+const movedGuardedDefinitionStart = Buffer.byteLength(
+  movedGuardedMoveSource.source.slice(
+    0, movedGuardedMoveSource.source.indexOf(moveName),
+  ),
+);
+const cachedGuardedResult = compiler.analyzeProjectSource(
+  guardedHeaderSource,
+  {
+    projectRevision: 34,
+    projectSources: movedGuardedProjectSources,
+    headers: guardedProjectHeaders,
+    cursor: {
+      sourceName: guardedHeaderSource.name,
+      byteOffset: guardedDeclarationStart + 1,
+    },
+  },
+);
+assert.equal(
+  cachedGuardedResult.hover?.definition?.start.offset,
+  guardedDefinitionStart,
+);
+const rebuiltGuardedResult = compiler.analyzeProjectSource(
+  guardedHeaderSource,
+  {
+    projectRevision: 35,
+    projectSources: movedGuardedProjectSources,
+    headers: guardedProjectHeaders,
+    cursor: {
+      sourceName: guardedHeaderSource.name,
+      byteOffset: guardedDeclarationStart + 1,
+    },
+  },
+);
+assert.equal(
+  rebuiltGuardedResult.hover?.definition?.start.offset,
+  movedGuardedDefinitionStart,
+);
+
+const unterminatedGuardedHeaderSource = {
+  name: "move.h",
+  source:
+    "#ifndef MOVE_H\n" +
+    "#define MOVE_H\n\n" +
+    "void move_and_draw(void);\n",
+};
+const unterminatedDeclarationStart =
+  unterminatedGuardedHeaderSource.source.indexOf(moveName);
+const unterminatedGuardedResult = compiler.analyzeProjectSource(
+  unterminatedGuardedHeaderSource,
+  {
+    projectRevision: 35,
+    projectSources: movedGuardedProjectSources,
+    headers: guardedProjectHeaders,
+    cursor: {
+      sourceName: unterminatedGuardedHeaderSource.name,
+      byteOffset: unterminatedDeclarationStart + 1,
+    },
+  },
+);
+if (!unterminatedGuardedResult.partial ||
+    !unterminatedGuardedResult.diagnostics.some(
+      (diagnostic) => diagnostic.code === "E1053",
+    )) {
+  throw new Error(
+    `unterminated guard lost E1053: ${JSON.stringify(unterminatedGuardedResult)}`,
+  );
+}
+const nativeUnterminatedGuardedResult = JSON.parse(execFileSync(
+  nativeAnalysisPath,
+  ["--project-header-guard-error-parity-json"],
+  { encoding: "utf8" },
+));
+assert.deepStrictEqual(
+  unterminatedGuardedResult,
+  nativeUnterminatedGuardedResult,
+  "native and Wasm unterminated guarded-header snapshots differ",
+);
+const recoveredGuardedResult = compiler.analyzeProjectSource(
+  guardedHeaderSource,
+  {
+    projectRevision: 35,
+    projectSources: movedGuardedProjectSources,
+    headers: guardedProjectHeaders,
+    cursor: {
+      sourceName: guardedHeaderSource.name,
+      byteOffset: guardedDeclarationStart + 1,
+    },
+  },
+);
+assert.equal(recoveredGuardedResult.partial, false);
+assert.deepStrictEqual(recoveredGuardedResult.diagnostics, []);
+
 const objectDeclarationCases = [
   {
     name: "explicit_value",

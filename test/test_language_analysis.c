@@ -40,6 +40,67 @@ static header_bundle_t make_bundle(const char **paths, const char **sources,
   return (header_bundle_t){bytes, length};
 }
 
+static const char project_guard_move_header[] =
+    "#ifndef MOVE_H\n"
+    "#define MOVE_H\n"
+    "\n"
+    "/* 日本語 */\n"
+    "void move_and_draw(void);\n"
+    "\n"
+    "#endif\n";
+static const char project_guard_other_header[] =
+    "#ifndef OTHER_H\n"
+    "#define OTHER_H\n"
+    "void other_action(void);\n"
+    "#endif\n";
+static const char project_guard_move_source[] =
+    "#include \"move.h\"\n\n"
+    "void move_and_draw(void) {}\n";
+static const char project_guard_moved_move_source[] =
+    "#include \"move.h\"\n\n\n\n"
+    "void move_and_draw(void) {}\n";
+static const char project_guard_other_source[] =
+    "#include \"other.h\"\n\n"
+    "void other_action(void) {}\n";
+static const char project_guard_main_source[] =
+    "#include \"move.h\"\n"
+    "#include \"other.h\"\n\n"
+    "int main(void) { move_and_draw(); other_action(); return 0; }\n";
+static const char project_guard_unterminated_header[] =
+    "#ifndef MOVE_H\n"
+    "#define MOVE_H\n\n"
+    "void move_and_draw(void);\n";
+
+static int update_guard_project(
+    ag_compilation_session_t *session,
+    ag_language_project_index_t *project, unsigned int revision,
+    const char *move_source, header_bundle_t bundle,
+    ag_language_analysis_limits_t limits,
+    ag_language_analysis_error_t *error) {
+  ag_language_project_source_t sources[] = {
+      {"move.c", move_source, strlen(move_source)},
+      {"other.c", project_guard_other_source,
+       strlen(project_guard_other_source)},
+      {"main.c", project_guard_main_source,
+       strlen(project_guard_main_source)},
+  };
+  return ag_language_project_index_update(
+      session, project,
+      &(ag_language_project_update_request_t){
+          .revision = revision,
+          .sources = sources,
+          .source_count = 3,
+          .virtual_header_bundle = bundle.bytes,
+          .virtual_header_bundle_length = bundle.length,
+          .max_header_files = 32,
+          .max_header_file_bytes = 1024 * 1024,
+          .max_header_total_bytes = 4 * 1024 * 1024,
+          .max_include_depth = 16,
+          .limits = limits,
+      },
+      error);
+}
+
 static int analyze_named(
     ag_compilation_session_t *session, const char *source_name,
     const char *source, size_t cursor, header_bundle_t bundle,
@@ -501,6 +562,62 @@ static int print_project_function_parity_snapshot(void) {
   return result;
 }
 
+static int print_project_header_guard_parity_snapshot(int unterminated) {
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  if (!session || !project) {
+    ag_language_project_index_destroy(project);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  const char *paths[] = {"move.h", "other.h"};
+  const char *headers[] = {
+      project_guard_move_header, project_guard_other_header,
+  };
+  header_bundle_t bundle = make_bundle(paths, headers, 2);
+  ag_language_analysis_limits_t limits =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_error_t error = {0};
+  const char *move_source = unterminated
+                                ? project_guard_moved_move_source
+                                : project_guard_move_source;
+  if (!update_guard_project(
+          session, project, unterminated ? 35 : 34, move_source,
+          bundle, limits, &error)) {
+    free(bundle.bytes);
+    ag_language_project_index_destroy(project);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  const char *current_header = unterminated
+                                   ? project_guard_unterminated_header
+                                   : project_guard_move_header;
+  const char *declaration = strstr(current_header, "move_and_draw");
+  ag_language_analysis_snapshot_t snapshot = {0};
+  int ok = analyze_project_named(
+      session, project, "move.h", current_header,
+      (size_t)(declaration - current_header) + 1,
+      bundle, limits, &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  int result = 1;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  free(bundle.bytes);
+  ag_language_project_index_destroy(project);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--parity-json") == 0)
     return print_parity_snapshot();
@@ -516,6 +633,12 @@ int main(int argc, char **argv) {
   if (argc == 2 &&
       strcmp(argv[1], "--project-function-parity-json") == 0)
     return print_project_function_parity_snapshot();
+  if (argc == 2 &&
+      strcmp(argv[1], "--project-header-guard-parity-json") == 0)
+    return print_project_header_guard_parity_snapshot(0);
+  if (argc == 2 &&
+      strcmp(argv[1], "--project-header-guard-error-parity-json") == 0)
+    return print_project_header_guard_parity_snapshot(1);
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "session");
@@ -1388,6 +1511,134 @@ int main(int argc, char **argv) {
   free(project_bundle.bytes);
   free(function_bundle.bytes);
 
+  const char *guard_header_paths[] = {"move.h", "other.h"};
+  const char *guard_header_sources[] = {
+      project_guard_move_header, project_guard_other_header,
+  };
+  header_bundle_t guard_bundle = make_bundle(
+      guard_header_paths, guard_header_sources, 2);
+  ag_language_project_index_t *guard_project =
+      ag_language_project_index_create();
+  CHECK(guard_project != NULL, "guarded header project index");
+  CHECK(update_guard_project(
+            session, guard_project, 34, project_guard_move_source,
+            guard_bundle, defaults, &error),
+        "build guarded header project index");
+  const char *guard_declaration = strstr(
+      project_guard_move_header, "move_and_draw");
+  const char *guard_definition = strstr(
+      project_guard_move_source, "move_and_draw");
+  size_t guard_cursor_deltas[] = {
+      0, 1, strlen("move_and_draw") / 2, strlen("move_and_draw"),
+  };
+  for (size_t cursor_index = 0;
+       cursor_index < sizeof(guard_cursor_deltas) /
+                          sizeof(guard_cursor_deltas[0]);
+       cursor_index++) {
+    CHECK(analyze_project_named(
+              session, guard_project, "move.h",
+              project_guard_move_header,
+              (size_t)(guard_declaration - project_guard_move_header) +
+                  guard_cursor_deltas[cursor_index],
+              guard_bundle, defaults, &snapshot, &error),
+          "guarded header project hover");
+    const ag_language_symbol_t *guard_hover = hover_symbol(&snapshot);
+    CHECK(guard_hover &&
+              strcmp(guard_hover->name, "move_and_draw") == 0 &&
+              strcmp(guard_hover->declaration.source_name, "move.h") == 0 &&
+              guard_hover->declaration.start.offset ==
+                  (int)(guard_declaration - project_guard_move_header) &&
+              guard_hover->has_definition &&
+              strcmp(guard_hover->definition.source_name, "move.c") == 0 &&
+              guard_hover->definition.start.offset ==
+                  (int)(guard_definition - project_guard_move_source) &&
+              !guard_hover->definition_conflict &&
+              guard_hover->definition_candidate_count == 1 &&
+              !snapshot.partial && snapshot.diagnostic_count == 0,
+          "guarded header declaration and definition ranges");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+
+  const char *guard_main_use = strstr(
+      project_guard_main_source, "move_and_draw");
+  CHECK(analyze_project_named(
+            session, guard_project, "main.c", project_guard_main_source,
+            (size_t)(guard_main_use - project_guard_main_source) + 1,
+            guard_bundle, defaults, &snapshot, &error),
+        "guard macro isolation across project translation units");
+  CHECK(hover_symbol(&snapshot) &&
+            strcmp(hover_symbol(&snapshot)->declaration.source_name,
+                   "move.h") == 0 &&
+            hover_symbol(&snapshot)->has_definition,
+        "project translation units retain independent guard state");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *other_declaration = strstr(
+      project_guard_other_header, "other_action");
+  CHECK(analyze_project_named(
+            session, guard_project, "other.h", project_guard_other_header,
+            (size_t)(other_declaration - project_guard_other_header) + 1,
+            guard_bundle, defaults, &snapshot, &error),
+        "distinct guarded header hover");
+  CHECK(hover_symbol(&snapshot) &&
+            strcmp(hover_symbol(&snapshot)->name, "other_action") == 0 &&
+            strcmp(hover_symbol(&snapshot)->declaration.source_name,
+                   "other.h") == 0 &&
+            hover_symbol(&snapshot)->has_definition &&
+            strcmp(hover_symbol(&snapshot)->definition.source_name,
+                   "other.c") == 0 &&
+            !snapshot.partial && snapshot.diagnostic_count == 0,
+        "distinct guarded headers keep separate macro state");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  CHECK(update_guard_project(
+            session, guard_project, 34,
+            project_guard_moved_move_source,
+            guard_bundle, defaults, &error),
+        "reuse guarded project revision");
+  CHECK(analyze_project_named(
+            session, guard_project, "move.h", project_guard_move_header,
+            (size_t)(guard_declaration - project_guard_move_header) + 1,
+            guard_bundle, defaults, &snapshot, &error),
+        "cached guarded header hover");
+  CHECK(hover_symbol(&snapshot) &&
+            hover_symbol(&snapshot)->definition.start.offset ==
+                (int)(guard_definition - project_guard_move_source),
+        "same revision preserves guarded project index");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  CHECK(update_guard_project(
+            session, guard_project, 35,
+            project_guard_moved_move_source,
+            guard_bundle, defaults, &error),
+        "rebuild guarded project revision");
+  CHECK(analyze_project_named(
+            session, guard_project, "move.h", project_guard_move_header,
+            (size_t)(guard_declaration - project_guard_move_header) + 1,
+            guard_bundle, defaults, &snapshot, &error),
+        "rebuilt guarded header hover");
+  CHECK(hover_symbol(&snapshot) &&
+            hover_symbol(&snapshot)->definition.start.offset ==
+                (int)(strstr(project_guard_moved_move_source,
+                             "move_and_draw") -
+                      project_guard_moved_move_source),
+        "new revision rebuilds guarded project index");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *unterminated_declaration = strstr(
+      project_guard_unterminated_header, "move_and_draw");
+  CHECK(analyze_project_named(
+            session, guard_project, "move.h",
+            project_guard_unterminated_header,
+            (size_t)(unterminated_declaration -
+                     project_guard_unterminated_header) + 1,
+            guard_bundle, defaults, &snapshot, &error),
+        "unterminated guarded header analysis");
+  CHECK(snapshot.partial && find_diagnostic(&snapshot, "E1053"),
+        "unterminated guarded header retains E1053");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_language_project_index_destroy(guard_project);
+  free(guard_bundle.bytes);
+
   struct {
     const char *label;
     const char *source;
@@ -1972,6 +2223,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (33 scenarios)");
+  puts("language analysis tests passed (34 scenarios)");
   return 0;
 }
