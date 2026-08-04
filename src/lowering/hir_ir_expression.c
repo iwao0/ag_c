@@ -4623,21 +4623,29 @@ static ir_val_t build_cast_from_prebuilt_value(
                    context, value, source_type, target_type);
 }
 
+static int hir_ir_iterative_expression_pipeline_kind(
+    psx_hir_node_kind_t kind) {
+  return kind == PSX_HIR_COMMA ||
+         hir_ir_iterative_cast_kind(kind);
+}
+
 typedef struct {
   const psx_hir_node_t *node;
-  const psx_hir_node_t *operand;
+  const psx_hir_node_t *first_child;
+  const psx_hir_node_t *second_child;
   ir_mir_type_info_t target_type;
-  ir_val_t operand_value;
-  unsigned char operand_built;
-} hir_ir_cast_build_frame_t;
+  ir_val_t value;
+  unsigned char state;
+} hir_ir_expression_pipeline_frame_t;
 
-static int push_hir_ir_cast_build_frame(
+static int push_hir_ir_expression_pipeline_frame(
     hir_ir_context_t *context,
-    hir_ir_cast_build_frame_t **frames,
+    hir_ir_expression_pipeline_frame_t **frames,
     size_t *count, size_t *capacity,
     const psx_hir_node_t *node) {
   if (!context || !frames || !count || !capacity || !node ||
-      !hir_ir_iterative_cast_kind(psx_hir_node_kind(node)))
+      !hir_ir_iterative_expression_pipeline_kind(
+          psx_hir_node_kind(node)))
     return 0;
   if (*count == *capacity) {
     size_t next_capacity = *capacity ? *capacity * 2 : 32;
@@ -4646,7 +4654,7 @@ static int push_hir_ir_cast_build_frame(
       context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
       return 0;
     }
-    hir_ir_cast_build_frame_t *next = realloc(
+    hir_ir_expression_pipeline_frame_t *next = realloc(
         *frames, next_capacity * sizeof(*next));
     if (!next) {
       context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
@@ -4655,54 +4663,89 @@ static int push_hir_ir_cast_build_frame(
     *frames = next;
     *capacity = next_capacity;
   }
-  const psx_hir_node_t *operand = hir_ir_child_for_edge(
+  const psx_hir_node_t *first_child = hir_ir_child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
-  if (!operand) return 0;
-  (*frames)[(*count)++] = (hir_ir_cast_build_frame_t){
+  const psx_hir_node_t *second_child =
+      psx_hir_node_kind(node) == PSX_HIR_COMMA
+          ? hir_ir_child_for_edge(
+                context, node, PSX_HIR_EDGE_RHS, 0)
+          : NULL;
+  if (!first_child ||
+      (psx_hir_node_kind(node) == PSX_HIR_COMMA &&
+       !second_child)) {
+    (void)hir_ir_unsupported_expr(context);
+    return 0;
+  }
+  (*frames)[(*count)++] = (hir_ir_expression_pipeline_frame_t){
       .node = node,
-      .operand = operand,
+      .first_child = first_child,
+      .second_child = second_child,
       .target_type = hir_ir_classify_node_type(context, node),
-      .operand_value = ir_val_none(),
+      .value = ir_val_none(),
   };
   return 1;
 }
 
-static ir_val_t build_cast_iterative(
+static ir_val_t build_expression_pipeline_iterative(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
-  hir_ir_cast_build_frame_t *frames = NULL;
+  hir_ir_expression_pipeline_frame_t *frames = NULL;
   size_t count = 0;
   size_t capacity = 0;
-  if (!push_hir_ir_cast_build_frame(
+  if (!push_hir_ir_expression_pipeline_frame(
           context, &frames, &count, &capacity, node))
     goto fail;
 
   while (count > 0) {
-    hir_ir_cast_build_frame_t *frame = &frames[count - 1];
-    if (!frame->operand_built) {
-      frame->operand_built = 1;
-      if (hir_ir_iterative_cast_kind(
-              psx_hir_node_kind(frame->operand))) {
-        if (!push_hir_ir_cast_build_frame(
-                context, &frames, &count, &capacity,
-                frame->operand))
+    hir_ir_expression_pipeline_frame_t *frame =
+        &frames[count - 1];
+    psx_hir_node_kind_t kind = psx_hir_node_kind(frame->node);
+    if (frame->state == 0) {
+      frame->state = 1;
+      const psx_hir_node_t *child = frame->first_child;
+      if (hir_ir_iterative_expression_pipeline_kind(
+              psx_hir_node_kind(child))) {
+        if (!push_hir_ir_expression_pipeline_frame(
+                context, &frames, &count, &capacity, child))
           goto fail;
         continue;
       }
-      frame->operand_value = hir_ir_build_expr(
-          context, frame->operand);
+      ir_val_t value = hir_ir_build_expr(context, child);
       if (context->status != IR_HIR_BUILD_OK) goto fail;
+      if (kind != PSX_HIR_COMMA) frame->value = value;
+      continue;
+    }
+    if (kind == PSX_HIR_COMMA && frame->state == 1) {
+      frame->state = 2;
+      const psx_hir_node_t *child = frame->second_child;
+      if (hir_ir_iterative_expression_pipeline_kind(
+              psx_hir_node_kind(child))) {
+        if (!push_hir_ir_expression_pipeline_frame(
+                context, &frames, &count, &capacity, child))
+          goto fail;
+        continue;
+      }
+      frame->value = hir_ir_build_expr(context, child);
+      if (context->status != IR_HIR_BUILD_OK) goto fail;
+      continue;
     }
 
-    ir_val_t completed = build_cast_from_prebuilt_value(
-        context, frame->node, frame->operand,
-        frame->operand_value, frame->target_type);
+    ir_val_t completed =
+        kind == PSX_HIR_COMMA
+            ? frame->value
+            : build_cast_from_prebuilt_value(
+                  context, frame->node, frame->first_child,
+                  frame->value, frame->target_type);
     if (context->status != IR_HIR_BUILD_OK) goto fail;
     count--;
     if (count == 0) {
       free(frames);
       return completed;
     }
-    frames[count - 1].operand_value = completed;
+    hir_ir_expression_pipeline_frame_t *parent =
+        &frames[count - 1];
+    if (psx_hir_node_kind(parent->node) != PSX_HIR_COMMA ||
+        parent->state == 2)
+      parent->value = completed;
   }
 
 fail:
@@ -4710,10 +4753,28 @@ fail:
   return ir_val_none();
 }
 
+ir_val_t hir_ir_build_comma_iterative(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  if (!context || !node ||
+      psx_hir_node_kind(node) != PSX_HIR_COMMA)
+    return hir_ir_unsupported_expr(context);
+  return build_expression_pipeline_iterative(context, node);
+}
+
+static ir_val_t build_cast_iterative(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  if (!context || !node ||
+      !hir_ir_iterative_cast_kind(psx_hir_node_kind(node)))
+    return hir_ir_unsupported_expr(context);
+  return build_expression_pipeline_iterative(context, node);
+}
+
 ir_val_t hir_ir_build_expr(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   if (!context || !node || context->status != IR_HIR_BUILD_OK)
     return ir_val_none();
+  if (psx_hir_node_kind(node) == PSX_HIR_COMMA)
+    return hir_ir_build_comma_iterative(context, node);
   if (hir_ir_iterative_cast_kind(psx_hir_node_kind(node)))
     return build_cast_iterative(context, node);
   if (psx_hir_node_kind(node) == PSX_HIR_CALL)

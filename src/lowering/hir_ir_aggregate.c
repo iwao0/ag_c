@@ -407,14 +407,7 @@ ir_val_t hir_ir_aggregate_value_address(
     return build_aggregate_ternary_address(
         context, node, hir_ir_classify_node_type(context, node));
   if (kind == PSX_HIR_COMMA) {
-    const psx_hir_node_t *left = hir_ir_child_for_edge(
-        context, node, PSX_HIR_EDGE_LHS, 0);
-    const psx_hir_node_t *right = hir_ir_child_for_edge(
-        context, node, PSX_HIR_EDGE_RHS, 0);
-    if (!left || !right) return hir_ir_unsupported_expr(context);
-    (void)hir_ir_build_expr(context, left);
-    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-    return hir_ir_aggregate_value_address(context, right);
+    return hir_ir_build_comma_iterative(context, node);
   }
   return hir_ir_unsupported_expr(context);
 }

@@ -75,6 +75,20 @@ if (!(coldDeepCastResult.object instanceof Uint8Array) ||
   );
 }
 
+const coldCommaToolchain = await makeToolchain();
+const coldDeepCommaSource = await readFile(
+  "test/fixtures/probes_found_bugs/deep_comma_expression_pipeline.c",
+  "utf8",
+);
+const coldDeepCommaResult =
+  coldCommaToolchain.compileObjectWithDiagnostics(coldDeepCommaSource);
+if (!(coldDeepCommaResult.object instanceof Uint8Array) ||
+    coldDeepCommaResult.diagnostics.length !== 0) {
+  throw new Error(
+    `cold deep comma compile failed: ${JSON.stringify(coldDeepCommaResult.diagnostics)}`,
+  );
+}
+
 const coldConstantToolchain = await makeToolchain();
 const coldDeepConstantSource = await readFile(
   "test/fixtures/probes_found_bugs/deep_integer_constant_expression.c",

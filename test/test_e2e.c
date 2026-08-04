@@ -1792,6 +1792,7 @@ static const test_case_t test_cases[] = {
     {"probes", "deep_binary_expression_pipeline", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_binary_expression_pipeline.c", 0, 0},
     {"probes", "deep_call_expression_pipeline", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_call_expression_pipeline.c", 0, 0},
     {"probes", "deep_cast_expression_pipeline", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_cast_expression_pipeline.c", 0, 0},
+    {"probes", "deep_comma_expression_pipeline", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_comma_expression_pipeline.c", 0, 0},
     {"probes", "deep_integer_constant_expression", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_integer_constant_expression.c", 0, 0},
     {"probes", "deep_short_circuit_constant_expression", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_short_circuit_constant_expression.c", 0, 0},
     {"probes", "deep_ternary_expression_pipeline", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deep_ternary_expression_pipeline.c", 0, 0},
