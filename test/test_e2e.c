@@ -1560,6 +1560,7 @@ static const test_case_t test_cases[] = {
     {"probes", "incomplete_record_parameter_prototype", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_record_parameter_prototype.c", 0, 0},
     {"probes", "prototype_scope_tag_parameter_visibility", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/prototype_scope_tag_parameter_visibility.c", 0, 0},
     {"probes", "prototype_scope_type_query_visibility", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/prototype_scope_type_query_visibility.c", 0, 0},
+    {"probes", "prototype_scope_repeated_enumerator_names", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/prototype_scope_repeated_enumerator_names.c", 0, 0},
     {"probes", "block_scope_extern_visibility", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_scope_extern_visibility.c", 0, 0},
     {"probes", "incomplete_array_pointer_parameter", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_array_pointer_parameter.c", 0, 0},
     {"probes", "array_parameter_outer_qualifiers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_parameter_outer_qualifiers.c", 0, 0},
@@ -2407,6 +2408,10 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "repeated_prototype_scope_tag_declarations.c",
      "E3064"},
+    {"prototype_scope_enumerator_file_use_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "prototype_scope_enumerator_file_use.c",
+     "E3066"},
     {"incomplete_record_return_definition_rejected",
      "fixture:test/fixtures/should_reject/incomplete_record_return_definition.c",
      "E3064"},
