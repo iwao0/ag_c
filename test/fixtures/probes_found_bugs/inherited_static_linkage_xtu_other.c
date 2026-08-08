@@ -1,3 +1,5 @@
+int s = 99;
+
 int shared_name(void) {
   return 99;
 }
