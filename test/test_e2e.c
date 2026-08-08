@@ -797,6 +797,7 @@ static const test_case_t test_cases[] = {
     {"probes", "uchar_function_pointer_state_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/uchar_function_pointer_state_boundaries.c", 0, 0},
     {"probes", "mbstate_target_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mbstate_target_abi_boundaries.c", 0, 0},
     {"probes", "standard_header_shared_definition_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/standard_header_shared_definition_boundaries.c", 0, 0},
+    {"probes", "public_header_composition_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/public_header_composition_boundaries.c", 0, 0},
     {"probes", "inttypes_function_pointer_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_function_pointer_abi_boundaries.c", 0, 0},
     {"probes", "inttypes_wide_conversion_function_pointer_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/inttypes_wide_conversion_function_pointer_boundaries.c", 0, 0},
     {"probes", "aggregate_return_register_width_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_return_register_width_boundaries.c", 0, 0},
