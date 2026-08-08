@@ -6700,6 +6700,17 @@ if (!functionDeclarationPipelineRequest ||
     "function declaration pipeline must resolve names from semantic context only",
   );
 }
+const blockExternDeclarationPipeline = declarationPipelineSource.match(
+  /int\s+psx_apply_block_extern_declaration_pipeline\s*\([^]*?\n\}/,
+);
+if (!blockExternDeclarationPipeline ||
+    !/if\s*\(\s*request->has_initializer\s*\)\s*\{[^}]*ps_diag_ctx_in\s*\([^}]*return\s+0\s*;[^}]*\}/.test(
+      blockExternDeclarationPipeline[0],
+    )) {
+  throw new Error(
+    "block-scope extern initializer diagnostics must fail the declaration pipeline",
+  );
+}
 if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(
       declarationPipelineSource,
     ) ||

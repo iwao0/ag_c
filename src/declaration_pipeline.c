@@ -1786,6 +1786,7 @@ int psx_apply_block_extern_declaration_pipeline(
         request->diag_tok, "decl",
         "block scope extern declaration '%.*s' cannot have an initializer",
         request->name_len, request->name);
+    return 0;
   }
 
   psx_type_shape_t declaration_shape = {0};

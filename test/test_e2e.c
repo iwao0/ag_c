@@ -1535,6 +1535,7 @@ static const test_case_t test_cases[] = {
     {"probes", "tentative_definition_with_initializer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_definition_with_initializer.c", 0, 0},
     {"probes", "function_parameter_adjustment_redeclaration", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_parameter_adjustment_redeclaration.c", 0, 0},
     {"probes", "block_scope_extern_binding", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_scope_extern_binding.c", 0, 0},
+    {"probes", "block_scope_extern_alignment_redeclaration", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_scope_extern_alignment_redeclaration.c", 0, 0},
     {"probes", "tentative_incomplete_record_completion", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_incomplete_record_completion.c", 0, 0},
     {"probes", "tentative_incomplete_record_address", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_incomplete_record_address.c", 0, 0},
     {"probes", "extern_incomplete_record_declaration", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/extern_incomplete_record_declaration.c", 0, 0},
@@ -3847,6 +3848,18 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "alignas_definition_then_aligned_extern.c",
      "E3064"},
+    {"alignas_block_scope_function_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "alignas_block_scope_function_declaration.c",
+     "E3064"},
+    {"block_scope_extern_alignment_conflict_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "block_scope_extern_alignment_conflict.c",
+     "E3064"},
+    {"block_scope_extern_alignment_missing_definition_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "block_scope_extern_alignment_missing_definition.c",
+     "E3064"},
     {"inline_object_rejected",
      "fixture:test/fixtures/should_reject/inline_object.c",
      "E3064"},
@@ -3906,6 +3919,10 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "E3064"},
     {"block_static_function_declaration_rejected",
      "fixture:test/fixtures/should_reject/block_static_function.c",
+     "E3064"},
+    {"block_scope_extern_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "block_scope_extern_initializer.c",
      "E3064"},
     {"for_initializer_typedef_declaration_rejected",
      "fixture:test/fixtures/should_reject/"
