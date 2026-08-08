@@ -481,6 +481,20 @@ static int resolve_direct_declarator_application(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application);
 
+static psx_type_name_ref_t direct_type_name_ref(
+    const direct_resolution_context_t *context,
+    const psx_type_name_ref_t *type_name) {
+  psx_type_name_ref_t resolved = type_name
+                                     ? *type_name
+                                     : (psx_type_name_ref_t){0};
+  if (context && context->identifier_lookup_point) {
+    resolved.scope_seq = context->identifier_lookup_point->scope_id;
+    resolved.declaration_seq =
+        context->identifier_lookup_point->declaration_order;
+  }
+  return resolved;
+}
+
 static int record_direct_expression_type(
     direct_resolution_context_t *context,
     const node_t *syntax, psx_qual_type_t qual_type) {
@@ -538,9 +552,11 @@ static int resolve_direct_source_cast(
     }
   }
   psx_qual_type_t resolved;
+  psx_type_name_ref_t type_name =
+      direct_type_name_ref(context, &cast->type_name);
   if (!psx_resolve_type_name_qual_type_in_contexts(
           context->semantic_context, context->global_registry,
-          context->local_registry, &cast->type_name, &resolved))
+          context->local_registry, &type_name, &resolved))
     return 0;
   if (!direct_qual_type_is_valid(context, resolved)) return 0;
   direct_cast_binding_t *binding = arena_alloc_in(
@@ -1011,10 +1027,12 @@ static int resolve_direct_generic_selection(
     const psx_generic_association_t *association =
         &selection->associations[i];
     is_default[i] = association->is_default ? 1 : 0;
+    psx_type_name_ref_t type_name =
+        direct_type_name_ref(context, &association->type_name);
     if (!association->is_default &&
         !psx_resolve_type_name_qual_type_in_contexts(
             context->semantic_context, context->global_registry,
-            context->local_registry, &association->type_name,
+            context->local_registry, &type_name,
             &association_types[i]))
       return note_direct_semantic_rejection(
           context,
@@ -1848,9 +1866,11 @@ static int resolve_direct_sizeof_type_name(
   if (!context || !query || !query->type_name.syntax || !binding)
     return 0;
   psx_type_name_base_resolution_t base_resolution = {0};
+  psx_type_name_ref_t type_name =
+      direct_type_name_ref(context, &query->type_name);
   if (!psx_resolve_type_name_base_in_contexts(
           context->semantic_context, context->global_registry,
-          context->local_registry, &query->type_name,
+          context->local_registry, &type_name,
           &base_resolution))
     return 0;
   psx_qual_type_t base_qual_type =
@@ -2150,9 +2170,11 @@ static int resolve_direct_alignof_type_name(
   if (!context || !query || !query->type_name.syntax || !binding)
     return 0;
   psx_type_name_base_resolution_t base_resolution = {0};
+  psx_type_name_ref_t type_name =
+      direct_type_name_ref(context, &query->type_name);
   if (!psx_resolve_type_name_base_in_contexts(
           context->semantic_context, context->global_registry,
-          context->local_registry, &query->type_name,
+          context->local_registry, &type_name,
           &base_resolution))
     return 0;
   psx_runtime_declarator_application_t application;
@@ -2182,9 +2204,11 @@ static int resolve_direct_offsetof_query(
 
   psx_qual_type_t queried_qual_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  psx_type_name_ref_t type_name =
+      direct_type_name_ref(context, &query->type_name);
   if (!psx_resolve_type_name_qual_type_in_contexts(
           context->semantic_context, context->global_registry,
-          context->local_registry, &query->type_name,
+          context->local_registry, &type_name,
           &queried_qual_type))
     return 0;
 
@@ -8345,9 +8369,11 @@ static int resolve_direct_compound_literal(
   }
 
   psx_qual_type_t object_qual_type;
+  psx_type_name_ref_t type_name =
+      direct_type_name_ref(context, &compound->type_name);
   if (!psx_resolve_type_name_qual_type_in_contexts(
           context->semantic_context, context->global_registry,
-          context->local_registry, &compound->type_name,
+          context->local_registry, &type_name,
           &object_qual_type))
     return note_direct_semantic_rejection(
         context,
