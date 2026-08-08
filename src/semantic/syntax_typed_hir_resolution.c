@@ -8546,7 +8546,8 @@ static int resolve_direct_compound_literal(
 
 static int preflight_direct_local_declaration(
     direct_resolution_context_t *context,
-    const node_local_declaration_t *syntax) {
+    const node_local_declaration_t *syntax,
+    psx_declaration_context_t declaration_context) {
   if (!context || !context->lowering_context || !syntax ||
       !syntax->declaration || context->block_depth == 0)
     return 0;
@@ -8625,6 +8626,15 @@ static int preflight_direct_local_declaration(
     return 0;
   }
   if (declaration->is_standalone_tag) {
+    if (declaration_context ==
+        PSX_DECLARATION_CONTEXT_FOR_INITIALIZER) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(context->semantic_context),
+          declaration->diagnostic_token, "declaration-specifier",
+          "for initializer declaration may only declare objects with "
+          "'auto' or 'register' storage");
+      return 0;
+    }
     if (declaration->specifier.alignas_specifier_count > 0 ||
         declaration->specifier.type_spec.is_inline ||
         declaration->specifier.type_spec.is_noreturn ||
@@ -8698,7 +8708,7 @@ static int preflight_direct_local_declaration(
       if (!psx_validate_parsed_decl_specifier_constraints_in_context(
               context->semantic_context, &declaration->specifier,
               decl_qual_type, specifier_resolution.requested_alignment,
-              1, PSX_DECLARATION_CONTEXT_BLOCK,
+              1, declaration_context,
               declarator->has_bitfield,
               declarator->diagnostic_token))
         return 0;
@@ -8779,7 +8789,7 @@ static int preflight_direct_local_declaration(
         !psx_validate_parsed_decl_specifier_constraints_in_context(
             context->semantic_context, &declaration->specifier,
             decl_qual_type, specifier_resolution.requested_alignment,
-            0, PSX_DECLARATION_CONTEXT_BLOCK,
+            0, declaration_context,
             declarator->has_bitfield,
             declarator->diagnostic_token))
       return 0;
@@ -9139,7 +9149,8 @@ static int preflight_direct_statement_impl(
     }
     case ND_LOCAL_DECLARATION:
       return preflight_direct_local_declaration(
-          context, (const node_local_declaration_t *)syntax);
+          context, (const node_local_declaration_t *)syntax,
+          PSX_DECLARATION_CONTEXT_BLOCK);
     case ND_NULL_STMT:
       return 1;
     case ND_STATIC_ASSERT: {
@@ -9400,12 +9411,21 @@ static int preflight_direct_statement_impl(
       if (registry_scope) {
         ps_decl_enter_scope_in(context->local_registry);
       }
-      int resolved = !control->init ||
-          (declaration_scope
-               ? preflight_direct_statement(
-                     context, control->init)
-               : preflight_direct_expression(
-                     context, control->init, NULL));
+      int resolved = 1;
+      if (control->init) {
+        if (control->init->kind == ND_LOCAL_DECLARATION) {
+          resolved = preflight_direct_local_declaration(
+              context,
+              (const node_local_declaration_t *)control->init,
+              PSX_DECLARATION_CONTEXT_FOR_INITIALIZER);
+        } else if (declaration_scope) {
+          resolved = preflight_direct_statement(
+              context, control->init);
+        } else {
+          resolved = preflight_direct_expression(
+              context, control->init, NULL);
+        }
+      }
       if (resolved && syntax->lhs)
         resolved = preflight_direct_control_expression(
             context, syntax, syntax->lhs,

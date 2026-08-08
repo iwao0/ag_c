@@ -681,6 +681,17 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
         "'typedef' cannot be combined with another storage class");
     return 0;
   }
+  if (declaration_context ==
+          PSX_DECLARATION_CONTEXT_FOR_INITIALIZER &&
+      (has_typedef || is_function || type_spec->is_extern ||
+       type_spec->is_static || type_spec->is_thread_local)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "for initializer declaration may only declare objects with "
+        "'auto' or 'register' storage");
+    return 0;
+  }
   if (declaration_context == PSX_DECLARATION_CONTEXT_MEMBER &&
       psx_decl_specifier_has_storage_class(specifier)) {
     ps_diag_ctx_in(
