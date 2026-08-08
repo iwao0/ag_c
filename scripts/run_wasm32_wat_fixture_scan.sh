@@ -52,6 +52,8 @@ skip_reason() {
   case "$1" in
     test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c|\
     test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c|\
+    test/fixtures/probes_found_bugs/file_scope_const_external_linkage_xtu_main.c|\
+    test/fixtures/probes_found_bugs/file_scope_const_external_linkage_xtu_other.c|\
     test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_main.c|\
     test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_other.c|\
     test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c|\
