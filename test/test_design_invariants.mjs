@@ -567,6 +567,8 @@ const wasmMultiTuProbeFixtures = [
   "static_internal_linkage_xtu_other.c",
   "file_scope_const_external_linkage_xtu_main.c",
   "file_scope_const_external_linkage_xtu_other.c",
+  "qualified_external_objects_xtu_main.c",
+  "qualified_external_objects_xtu_other.c",
 ];
 const missingNativeProbeRegistrations = probeFixtureNames.filter(
   (name) =>

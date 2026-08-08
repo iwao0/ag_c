@@ -97,6 +97,9 @@ skip_reason() {
     test/fixtures/probes_found_bugs/file_scope_const_external_linkage_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
+    test/fixtures/probes_found_bugs/qualified_external_objects_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
@@ -737,6 +740,9 @@ link_companion() {
     test/fixtures/probes_found_bugs/file_scope_const_external_linkage_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/file_scope_const_external_linkage_xtu_other.c"
       ;;
+    test/fixtures/probes_found_bugs/qualified_external_objects_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/qualified_external_objects_xtu_other.c"
+      ;;
     test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_other.c"
       ;;
@@ -1043,6 +1049,9 @@ expected_result() {
       echo 42
       ;;
     test/fixtures/probes_found_bugs/file_scope_const_external_linkage_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/qualified_external_objects_xtu_main.c)
       echo 42
       ;;
     test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_main.c)
