@@ -1,6 +1,7 @@
 #include "enum_constant_resolution.h"
 
 #include "scope_graph.h"
+#include "semantic_tree_resolution.h"
 #include "syntax_typed_hir_resolution.h"
 #include "typed_hir_materialization.h"
 
@@ -103,6 +104,10 @@ int psx_resolve_enum_initializer_syntax_in_contexts(
   }
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
+  if (status == PSX_SYNTAX_TYPED_HIR_REJECTED &&
+      psx_diagnose_syntax_typed_hir_rejection_in_context(
+          semantic_context, &failure, diagnostic_token))
+    return 0;
   if (status == PSX_SYNTAX_TYPED_HIR_FAILED) {
     diag_emit_internalf_in(
         diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
