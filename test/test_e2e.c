@@ -2397,6 +2397,10 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "incomplete_record_parameter_definition.c",
      "E3064"},
+    {"prototype_scope_tag_file_definition_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "prototype_scope_tag_file_definition.c",
+     "E3064"},
     {"incomplete_record_return_definition_rejected",
      "fixture:test/fixtures/should_reject/incomplete_record_return_definition.c",
      "E3064"},
