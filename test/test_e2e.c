@@ -1559,6 +1559,7 @@ static const test_case_t test_cases[] = {
     {"probes", "incomplete_return_prototype", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_return_prototype.c", 0, 0},
     {"probes", "incomplete_record_parameter_prototype", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_record_parameter_prototype.c", 0, 0},
     {"probes", "prototype_scope_tag_parameter_visibility", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/prototype_scope_tag_parameter_visibility.c", 0, 0},
+    {"probes", "prototype_scope_type_query_visibility", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/prototype_scope_type_query_visibility.c", 0, 0},
     {"probes", "block_scope_extern_visibility", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_scope_extern_visibility.c", 0, 0},
     {"probes", "incomplete_array_pointer_parameter", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_array_pointer_parameter.c", 0, 0},
     {"probes", "array_parameter_outer_qualifiers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_parameter_outer_qualifiers.c", 0, 0},
