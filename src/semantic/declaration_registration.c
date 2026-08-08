@@ -30,13 +30,49 @@ static void note_current_declaration_source(
       token->source_input, token->byte_offset, token->byte_length);
 }
 
+void psx_diagnose_typedef_declaration_resolution_in(
+    psx_semantic_context_t *semantic_context,
+    const psx_typedef_declaration_resolution_t *resolution,
+    const char *name, int name_len, token_t *diag_tok) {
+  if (!semantic_context || !resolution || !name || name_len <= 0) return;
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
+  switch (resolution->status) {
+  case PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT:
+    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
+                   "typedef名 '%.*s' の型が以前の宣言と異なります (C11 6.7p3)",
+                   name_len, name);
+    return;
+  case PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT:
+    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
+                   "'%.*s' はオブジェクトとして既に宣言されています (C11 6.7p4)",
+                   name_len, name);
+    return;
+  case PSX_TYPEDEF_DECLARATION_FUNCTION_NAME_CONFLICT:
+    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
+                   "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
+                   name_len, name);
+    return;
+  case PSX_TYPEDEF_DECLARATION_ENUM_NAME_CONFLICT:
+    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
+                   "'%.*s' はenum定数として既に宣言されています (C11 6.7p4)",
+                   name_len, name);
+    return;
+  case PSX_TYPEDEF_DECLARATION_OK:
+    return;
+  case PSX_TYPEDEF_DECLARATION_INVALID:
+    break;
+  }
+  ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
+                 "canonical typedef declaration resolution failed for '%.*s'",
+                 name_len, name);
+}
+
 void psx_apply_parsed_typedef_declaration_in(
     psx_semantic_context_t *semantic_context,
     char *name, int name_len, psx_qual_type_t decl_qual_type,
     token_t *diag_tok) {
   if (!semantic_context) return;
-  ag_diagnostic_context_t *diagnostics =
-      ps_ctx_diagnostics(semantic_context);
   psx_typedef_declaration_resolution_t resolution;
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
@@ -53,29 +89,8 @@ void psx_apply_parsed_typedef_declaration_in(
           name, name_len, diag_tok);
     return;
   }
-  if (resolution.status == PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT) {
-    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
-                 "typedef名 '%.*s' の型が以前の宣言と異なります (C11 6.7p3)",
-                 name_len, name);
-  }
-  if (resolution.status == PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT) {
-    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
-                 "'%.*s' はオブジェクトとして既に宣言されています (C11 6.7p4)",
-                 name_len, name);
-  }
-  if (resolution.status == PSX_TYPEDEF_DECLARATION_FUNCTION_NAME_CONFLICT) {
-    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
-                 "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
-                 name_len, name);
-  }
-  if (resolution.status == PSX_TYPEDEF_DECLARATION_ENUM_NAME_CONFLICT) {
-    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
-                 "'%.*s' はenum定数として既に宣言されています (C11 6.7p4)",
-                 name_len, name);
-  }
-  ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
-               "canonical typedef declaration resolution failed for '%.*s'",
-               name_len, name);
+  psx_diagnose_typedef_declaration_resolution_in(
+      semantic_context, &resolution, name, name_len, diag_tok);
 }
 
 void psx_apply_parsed_enum_constant_in(

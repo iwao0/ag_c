@@ -4,6 +4,7 @@
 #include "../parser/ast.h"
 #include "aggregate_member_resolution.h"
 #include "tag_declaration_resolution.h"
+#include "typedef_declaration_resolution.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
@@ -13,6 +14,10 @@ void psx_apply_parsed_typedef_declaration_in(
     psx_semantic_context_t *semantic_context,
     char *name, int name_len, psx_qual_type_t decl_qual_type,
     token_t *diag_tok);
+void psx_diagnose_typedef_declaration_resolution_in(
+    psx_semantic_context_t *semantic_context,
+    const psx_typedef_declaration_resolution_t *resolution,
+    const char *name, int name_len, token_t *diag_tok);
 void psx_apply_parsed_enum_constant_in(
     psx_semantic_context_t *semantic_context,
     char *name, int name_len, long long value, token_t *diag_tok);

@@ -27,6 +27,9 @@ void psx_resolve_typedef_declaration(
       psx_scope_graph_lookup_declaration_in_scope(
           scope_graph, psx_scope_graph_current_scope(scope_graph),
           PSX_NAMESPACE_ORDINARY, request->name, request->name_len);
+  if (existing && existing->kind == PSX_DECL_LINKAGE_ALIAS)
+    existing = psx_scope_graph_declaration(
+        scope_graph, existing->aliased_declaration_id);
   if (existing) {
     switch (existing->kind) {
     case PSX_DECL_ENUM_CONSTANT:

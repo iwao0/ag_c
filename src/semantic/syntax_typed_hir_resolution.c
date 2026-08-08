@@ -29,6 +29,7 @@
 #include "character_array_initializer.h"
 #include "compound_literal_semantics.h"
 #include "declaration_application.h"
+#include "declaration_registration.h"
 #include "declaration_specifier_resolution.h"
 #include "typedef_declaration_resolution.h"
 #include "expression_operand_resolution.h"
@@ -8679,10 +8680,17 @@ static int preflight_direct_local_declaration(
       const psx_parsed_initializer_t *initializer =
           &declaration->initializers[i];
       token_ident_t *name = declarator->identifier;
-      if (!name || initializer->has_initializer ||
-          reject_direct_predefined_function_name_declaration(
-              context, name))
+      if (!name || reject_direct_predefined_function_name_declaration(
+                       context, name))
         return 0;
+      if (initializer->has_initializer) {
+        ps_diag_ctx_in(
+            ps_ctx_diagnostics(context->semantic_context),
+            (token_t *)name, "typedef",
+            "typedef declaration '%.*s' cannot have an initializer",
+            name->len, name->str);
+        return 0;
+      }
       psx_runtime_declarator_application_t application;
       if (!resolve_direct_declarator_application(
               context, declarator, &application))
@@ -8728,7 +8736,12 @@ static int preflight_direct_local_declaration(
                       : NULL,
           },
           &resolution);
-      if (resolution.status != PSX_TYPEDEF_DECLARATION_OK) return 0;
+      if (resolution.status != PSX_TYPEDEF_DECLARATION_OK) {
+        psx_diagnose_typedef_declaration_resolution_in(
+            context->semantic_context, &resolution,
+            name->str, name->len, (token_t *)name);
+        return 0;
+      }
       if (psx_semantic_type_table_contains_vla_array(
               ps_ctx_semantic_type_table_in(
                   context->semantic_context),

@@ -4644,6 +4644,9 @@ if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test
 if (!/psx_apply_parsed_typedef_declaration_in\s*\(/.test(
       declarationRegistrationSource,
     ) ||
+    !/psx_diagnose_typedef_declaration_resolution_in\s*\(/.test(
+      declarationRegistrationSource + declarationRegistrationHeader,
+    ) ||
     !/psx_apply_parsed_enum_constant_in\s*\(/.test(
       declarationRegistrationSource,
     ) ||
@@ -4658,6 +4661,15 @@ if (!/psx_apply_parsed_typedef_declaration_in\s*\(/.test(
     )) {
   throw new Error(
     "semantic namespace registration adapters must use semantic context only",
+  );
+}
+if (![enumConstantResolutionSource, typedefDeclarationResolutionSource]
+      .every((source) =>
+        /existing->kind\s*==\s*PSX_DECL_LINKAGE_ALIAS[^]*?psx_scope_graph_declaration\s*\([^]*?existing->aliased_declaration_id/.test(
+          source,
+        ))) {
+  throw new Error(
+    "ordinary namespace conflicts must resolve block-scope linkage aliases",
   );
 }
 const ordinaryNamespaceResolutionSources = [
@@ -5498,6 +5510,16 @@ const syntaxTypedHirResolutionSource = await readFile(
   "src/semantic/syntax_typed_hir_resolution.c",
   "utf8",
 );
+if (!/if\s*\(\s*declaration->is_typedef\s*\)\s*\{[^]*?if\s*\(\s*initializer->has_initializer\s*\)\s*\{[^]*?ps_diag_ctx_in\s*\([^]*?return\s+0\s*;[^]*?psx_runtime_declarator_application_t\s+application/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/resolution\.status\s*!=\s*PSX_TYPEDEF_DECLARATION_OK\s*\)\s*\{[^]*?psx_diagnose_typedef_declaration_resolution_in\s*\([^]*?return\s+0\s*;/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "direct typedef rejection must emit semantic diagnostics before failing",
+  );
+}
 if (/\bpsx_type_t\b|\bps_ctx_type_by_id_in\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||

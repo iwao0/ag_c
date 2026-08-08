@@ -1569,6 +1569,7 @@ static const test_case_t test_cases[] = {
     {"probes", "typedef_enumerator_declaration_point", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_enumerator_declaration_point.c", 0, 0},
     {"probes", "typedef_for_scope_shadow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_for_scope_shadow.c", 0, 0},
     {"probes", "block_scope_extern_visibility", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_scope_extern_visibility.c", 0, 0},
+    {"probes", "block_function_nested_typedef_shadow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_function_nested_typedef_shadow.c", 0, 0},
     {"probes", "incomplete_array_pointer_parameter", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_array_pointer_parameter.c", 0, 0},
     {"probes", "array_parameter_outer_qualifiers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_parameter_outer_qualifiers.c", 0, 0},
     {"probes", "conditional_void_pointer_null", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/conditional_void_pointer_null.c", 0, 0},
@@ -3923,6 +3924,28 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"block_scope_extern_initializer_rejected",
      "fixture:test/fixtures/should_reject/"
      "block_scope_extern_initializer.c",
+     "E3064"},
+    {"automatic_after_block_function_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "automatic_after_block_function.c",
+     "E3067"},
+    {"typedef_after_block_function_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "typedef_after_block_function.c",
+     "E3064"},
+    {"enum_constant_after_block_function_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "enum_constant_after_block_function.c",
+     "E3064"},
+    {"block_function_after_block_extern_object_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "block_function_after_block_extern_object.c",
+     "E3064"},
+    {"block_typedef_initializer_rejected",
+     "fixture:test/fixtures/should_reject/block_typedef_initializer.c",
+     "E3064"},
+    {"typedef_after_parameter_rejected",
+     "fixture:test/fixtures/should_reject/typedef_after_parameter.c",
      "E3064"},
     {"for_initializer_typedef_declaration_rejected",
      "fixture:test/fixtures/should_reject/"
