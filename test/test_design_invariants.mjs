@@ -479,8 +479,12 @@ const expectedNativeOnlyPositiveFixtures =
   expectedWasmProbeRegistrationExclusions
     .map((name) => `probes_found_bugs/${name}`)
     .sort();
-const standaloneWasmFixtureNames = (await readdir("test/fixtures/wasm32"))
+const wasm32FixtureNames = await readdir("test/fixtures/wasm32");
+const standaloneWasmFixtureNames = wasm32FixtureNames
   .filter((name) => name.endsWith(".c") && !/_(main|other)\.c$/.test(name));
+const wasm32MultiTuFixtureNames = wasm32FixtureNames
+  .filter((name) => /_(main|other)\.c$/.test(name))
+  .sort();
 const expectedWasmOnlyPositiveFixtures = [
   ...expectedNativeProbeRegistrationExclusions.map(
     (name) => `probes_found_bugs/${name}`,
@@ -709,6 +713,56 @@ const wasm32WatFixtureScan = await readFile(
   "scripts/run_wasm32_wat_fixture_scan.sh",
   "utf8",
 );
+const wasm32ObjectFixtureTestSource = await readFile(
+  "test/test_wasm32_object.c",
+  "utf8",
+);
+const wasm32MultiTuFixtureSet = new Set(wasm32MultiTuFixtureNames);
+const missingWasm32MultiTuCompanions = wasm32MultiTuFixtureNames.filter(
+  (name) => {
+    const companion = name.endsWith("_main.c")
+      ? name.replace(/_main\.c$/, "_other.c")
+      : name.replace(/_other\.c$/, "_main.c");
+    return !wasm32MultiTuFixtureSet.has(companion);
+  },
+);
+if (missingWasm32MultiTuCompanions.length) {
+  throw new Error(
+    "Wasm multi-TU fixture companion missing:\n" +
+      missingWasm32MultiTuCompanions.join("\n"),
+  );
+}
+function registeredWasm32MultiTuFixtures(source) {
+  const normalized = source.replace(/"\s*"/g, "");
+  return new Set([
+    ...normalized.matchAll(
+      /test\/fixtures\/wasm32\/([A-Za-z0-9_.-]+_(?:main|other)\.c)/g,
+    ),
+  ].map((match) => match[1]));
+}
+for (const [path, source] of [
+  ["test/test_wasm32_object.c", wasm32ObjectFixtureTestSource],
+  [
+    "scripts/run_wasm32_object_link_fixture_scan.sh",
+    wasm32ObjectLinkFixtureScan,
+  ],
+  ["scripts/run_wasm32_wat_fixture_scan.sh", wasm32WatFixtureScan],
+]) {
+  const registered = registeredWasm32MultiTuFixtures(source);
+  const missing = wasm32MultiTuFixtureNames.filter(
+    (name) => !registered.has(name),
+  );
+  const stale = [...registered]
+    .filter((name) => !wasm32MultiTuFixtureSet.has(name))
+    .sort();
+  if (missing.length || stale.length) {
+    throw new Error(
+      `${path} Wasm multi-TU fixture coverage drift\n` +
+        `missing: ${missing.join(", ") || "none"}\n` +
+        `stale: ${stale.join(", ") || "none"}`,
+    );
+  }
+}
 for (const [path, source] of [
   ["scripts/run_wasm32_object_fixture_scan.sh", wasm32ObjectFixtureScan],
   [
