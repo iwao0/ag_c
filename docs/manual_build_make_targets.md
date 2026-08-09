@@ -70,7 +70,8 @@ bash scripts/run_c_testsuite.sh --list-fail
 `test/external/c-testsuite` は submodule。初回や未取得の環境では先に
 `git submodule update --init` が必要。各 runner は開始前に、共有の非対応 ID が
 実在することと、対象 `.c` / `.c.expected` が一対一に対応することを検証する。
-`make test` には含まれない。
+Native runner は `AG_C` と `C_TESTSUITE_DIR` で実行対象を差し替えられ、対象ケースに
+失敗があれば終了コード 1 を返す。`make test` には含まれない。
 
 ## 言語とビルドオプション
 

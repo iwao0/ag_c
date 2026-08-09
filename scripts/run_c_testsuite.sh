@@ -12,8 +12,8 @@
 
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-AGC="$ROOT/build/ag_c"
-SUITE="$ROOT/test/external/c-testsuite/tests/single-exec"
+AGC=${AG_C:-"$ROOT/build/ag_c"}
+SUITE=${C_TESTSUITE_DIR:-"$ROOT/test/external/c-testsuite/tests/single-exec"}
 . "$ROOT/scripts/c_testsuite_unsupported_cases.sh"
 
 VERBOSE=0
@@ -24,6 +24,7 @@ for arg in "$@"; do
     --list-fail) LIST_FAIL=1 ;;
     -h|--help)
       echo "Usage: $0 [--verbose] [--list-fail]"
+      echo "Set AG_C or C_TESTSUITE_DIR to override the compiler or input directory."
       exit 0 ;;
   esac
 done
@@ -174,3 +175,10 @@ if [ "$target_total" -gt 0 ]; then
   target_pct=$(awk "BEGIN { printf \"%.1f\", $pass * 100 / $target_total }")
   printf "対象Pass率:      %s%%\n" "$target_pct"
 fi
+
+fail_total=$((fail_compile + fail_assemble + fail_runtime + fail_stdout + fail_timeout))
+if [ "$fail_total" -ne 0 ]; then
+  exit 1
+fi
+
+exit 0

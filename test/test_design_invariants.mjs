@@ -871,6 +871,17 @@ for (const [path, source] of cTestsuiteRunnerSources) {
     );
   }
 }
+const nativeCTestsuiteRunnerSource = cTestsuiteRunnerSources[0][1];
+if (
+  !nativeCTestsuiteRunnerSource.includes("AG_C:-") ||
+  !nativeCTestsuiteRunnerSource.includes("C_TESTSUITE_DIR:-") ||
+  !nativeCTestsuiteRunnerSource.includes("fail_total=$((") ||
+  !nativeCTestsuiteRunnerSource.includes('[ "$fail_total" -ne 0 ]')
+) {
+  throw new Error(
+    "the Native c-testsuite runner must support isolated failure tests and fail on any failed case",
+  );
+}
 const wasm32ObjectFixtureTestSource = await readFile(
   "test/test_wasm32_object.c",
   "utf8",
