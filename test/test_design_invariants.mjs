@@ -535,7 +535,8 @@ if (JSON.stringify(nativeOnlyPositiveFixtures) !==
       `wasm-only: ${wasmOnlyPositiveFixtures.join(", ") || "none"}`,
   );
 }
-const allCFixturePaths = (await sourceFilesUnder("test/fixtures"))
+const allFixtureSourceFiles = await sourceFilesUnder("test/fixtures");
+const allCFixturePaths = allFixtureSourceFiles
   .filter((path) => path.endsWith(".c"))
   .map((path) => path.slice("test/fixtures/".length))
   .sort();
@@ -590,6 +591,36 @@ if (unclassifiedCFixtures.length || multiplyClassifiedCFixtures.length ||
       `unclassified: ${unclassifiedCFixtures.join(", ") || "none"}\n` +
       `multiple: ${multiplyClassifiedCFixtures.join(", ") || "none"}\n` +
       `stale: ${staleCFixtureClassifications.join(", ") || "none"}`,
+  );
+}
+const allFixtureHeaderPaths = allFixtureSourceFiles
+  .filter((path) => path.endsWith(".h"))
+  .sort();
+const fixtureHeaderBasenames = allFixtureHeaderPaths.map(
+  (path) => path.slice(path.lastIndexOf("/") + 1),
+);
+const duplicateFixtureHeaderBasenames = fixtureHeaderBasenames.filter(
+  (name, index) => fixtureHeaderBasenames.indexOf(name) !== index,
+);
+const allCFixtureSources = await Promise.all(
+  allCFixturePaths.map((path) =>
+    readFile(`test/fixtures/${path}`, "utf8")
+  ),
+);
+const unreferencedFixtureHeaders = allFixtureHeaderPaths.filter(
+  (path, index) =>
+    !allCFixtureSources.some((source) =>
+      source.includes(path) || source.includes(fixtureHeaderBasenames[index])
+    ),
+);
+if (duplicateFixtureHeaderBasenames.length ||
+    unreferencedFixtureHeaders.length) {
+  throw new Error(
+    "fixture helper-header coverage drift\n" +
+      `duplicate basenames: ${[
+        ...new Set(duplicateFixtureHeaderBasenames),
+      ].sort().join(", ") || "none"}\n` +
+      `unreferenced: ${unreferencedFixtureHeaders.join(", ") || "none"}`,
   );
 }
 const wasmJsPipelineTestSource = await readFile(
