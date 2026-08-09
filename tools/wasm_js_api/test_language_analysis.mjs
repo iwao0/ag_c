@@ -1145,6 +1145,9 @@ const genericSource = {
   name: "generic.c",
   source: "#define GENERIC_MACRO 9\n" +
     "typedef int GenericScore;\n" +
+    "struct GenericPlayer { int score; };\n" +
+    "union GenericPayload { int score; };\n" +
+    "enum GenericState { GENERIC_IDLE = 0 };\n" +
     "enum { GENERIC_MODE = 3 };\n" +
     "int generic_value;\n" +
     "int generic_identity(int value) { return value; }\n" +
@@ -1154,6 +1157,11 @@ const genericSource = {
     "  result += _Generic(GENERIC_MODE, int: 3, default: 0);\n" +
     "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n" +
     "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n" +
+    "  result += (int)_Alignof /* query */ (const GenericScore *);\n" +
+    "  result += (int)_Alignof(int [1 + GENERIC_MODE]);\n" +
+    "  result += (int)sizeof /* query */ (const struct /* tag */ GenericPlayer);\n" +
+    "  result += (int)_Alignof(union /* tag */ GenericPayload);\n" +
+    "  result += (int)sizeof(enum /* tag */ GenericState);\n" +
     "  return result + _Generic(1, int: generic_value, default: 0);\n" +
     "}\n",
 };
@@ -1166,6 +1174,9 @@ function findGenericName(name, from = 0) {
 
 const genericMacroDeclaration = findGenericName("GENERIC_MACRO");
 const genericTypedefDeclaration = findGenericName("GenericScore");
+const genericStructDeclaration = findGenericName("GenericPlayer");
+const genericUnionDeclaration = findGenericName("GenericPayload");
+const genericEnumTagDeclaration = findGenericName("GenericState");
 const genericEnumDeclaration = findGenericName("GENERIC_MODE");
 const genericObjectDeclaration = findGenericName("generic_value");
 const genericFunctionDeclaration = findGenericName("generic_identity");
@@ -1198,8 +1209,36 @@ const genericTypedefControl = findGenericName(
 const genericTypedefUse = findGenericName(
   "GenericScore", genericTypedefControl,
 );
+const genericAlignof = findGenericName(
+  "_Alignof /* query */ (const GenericScore",
+  genericTypedefUse + "GenericScore".length,
+);
+const genericAlignofTypedefUse = findGenericName(
+  "GenericScore", genericAlignof,
+);
+const genericAlignofBound = findGenericName(
+  "_Alignof(int [1 + GENERIC_MODE", genericAlignofTypedefUse,
+);
+const genericAlignofBoundUse = findGenericName(
+  "GENERIC_MODE", genericAlignofBound,
+);
+const genericStructQuery = findGenericName(
+  "sizeof /* query */ (const struct /* tag */ GenericPlayer",
+  genericAlignofBoundUse,
+);
+const genericStructUse = findGenericName("GenericPlayer", genericStructQuery);
+const genericUnionQuery = findGenericName(
+  "_Alignof(union /* tag */ GenericPayload", genericStructUse,
+);
+const genericUnionUse = findGenericName("GenericPayload", genericUnionQuery);
+const genericEnumTagQuery = findGenericName(
+  "sizeof(enum /* tag */ GenericState", genericUnionUse,
+);
+const genericEnumTagUse = findGenericName(
+  "GenericState", genericEnumTagQuery,
+);
 const genericAssociationValue = findGenericName(
-  "int: generic_value", genericTypedefUse,
+  "int: generic_value", genericEnumTagUse,
 );
 const genericAssociationValueUse = findGenericName(
   "generic_value", genericAssociationValue,
@@ -1213,6 +1252,13 @@ const genericHoverCases = [
   { name: "GENERIC_MACRO", kind: "macro", replacement: "9",
     index: genericMacroUse },
   { name: "GenericScore", kind: "typedef", index: genericTypedefUse },
+  { name: "GenericScore", kind: "typedef",
+    index: genericAlignofTypedefUse },
+  { name: "GENERIC_MODE", kind: "enumConstant", value: "3",
+    index: genericAlignofBoundUse },
+  { name: "GenericPlayer", kind: "tag", index: genericStructUse },
+  { name: "GenericPayload", kind: "tag", index: genericUnionUse },
+  { name: "GenericState", kind: "tag", index: genericEnumTagUse },
   { name: "generic_value", kind: "object",
     index: genericAssociationValueUse },
 ];
@@ -1222,6 +1268,9 @@ const genericDeclarations = new Map([
   ["GENERIC_MODE", genericEnumDeclaration],
   ["GENERIC_MACRO", genericMacroDeclaration],
   ["GenericScore", genericTypedefDeclaration],
+  ["GenericPlayer", genericStructDeclaration],
+  ["GenericPayload", genericUnionDeclaration],
+  ["GenericState", genericEnumTagDeclaration],
 ]);
 const nativeGenericSnapshots = new Map();
 

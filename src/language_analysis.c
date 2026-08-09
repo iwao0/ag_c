@@ -1081,6 +1081,8 @@ typedef struct {
   int is_generic_selection;
   size_t generic_separator_count;
   int generic_association_has_colon;
+  int is_sizeof_query;
+  int is_alignof_type_query;
   size_t pending_conditional_count;
 } recovery_delimiter_t;
 
@@ -1166,6 +1168,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int preprocessor_line = 0;
   int previous_token_is_for = 0;
   int previous_token_is_generic = 0;
+  int previous_token_is_sizeof = 0;
+  int previous_token_is_alignof = 0;
+  int previous_token_is_tag_keyword = 0;
   size_t root_pending_conditional_count = 0;
   char last_significant = 0;
   for (size_t i = 0; i < cursor; i++) {
@@ -1207,6 +1212,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
       at_line_start = 0;
       previous_token_is_for = 0;
       previous_token_is_generic = 0;
+      previous_token_is_sizeof = 0;
+      previous_token_is_alignof = 0;
+      previous_token_is_tag_keyword = 0;
       continue;
     }
     if (c == '\n') {
@@ -1220,6 +1228,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (preprocessor_line) continue;
     int opens_for_control = 0;
     int opens_generic_selection = 0;
+    int opens_sizeof_query = 0;
+    int opens_alignof_type_query = 0;
     if (is_identifier_byte((unsigned char)c)) {
       if (i == 0 ||
           !is_identifier_byte((unsigned char)result[i - 1])) {
@@ -1232,12 +1242,30 @@ static char *build_recovery_source(const char *source, size_t source_length,
         previous_token_is_generic =
             identifier_end - i == strlen("_Generic") &&
             memcmp(result + i, "_Generic", strlen("_Generic")) == 0;
+        previous_token_is_sizeof =
+            identifier_end - i == strlen("sizeof") &&
+            memcmp(result + i, "sizeof", strlen("sizeof")) == 0;
+        previous_token_is_alignof =
+            identifier_end - i == strlen("_Alignof") &&
+            memcmp(result + i, "_Alignof", strlen("_Alignof")) == 0;
+        previous_token_is_tag_keyword =
+            (identifier_end - i == strlen("struct") &&
+             memcmp(result + i, "struct", strlen("struct")) == 0) ||
+            (identifier_end - i == strlen("union") &&
+             memcmp(result + i, "union", strlen("union")) == 0) ||
+            (identifier_end - i == strlen("enum") &&
+             memcmp(result + i, "enum", strlen("enum")) == 0);
       }
     } else if (!isspace((unsigned char)c)) {
       opens_for_control = c == '(' && previous_token_is_for;
       opens_generic_selection = c == '(' && previous_token_is_generic;
+      opens_sizeof_query = c == '(' && previous_token_is_sizeof;
+      opens_alignof_type_query = c == '(' && previous_token_is_alignof;
       previous_token_is_for = 0;
       previous_token_is_generic = 0;
+      previous_token_is_sizeof = 0;
+      previous_token_is_alignof = 0;
+      previous_token_is_tag_keyword = 0;
     }
     if (c == '(' || c == '[' || c == '{') {
       stack[stack_count++] = (recovery_delimiter_t){
@@ -1247,6 +1275,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
           .is_generic_selection = opens_generic_selection,
           .generic_separator_count = 0,
           .generic_association_has_colon = 0,
+          .is_sizeof_query = opens_sizeof_query,
+          .is_alignof_type_query = opens_alignof_type_query,
           .pending_conditional_count = 0,
       };
     } else if ((c == ')' || c == ']' || c == '}') && stack_count > 0) {
@@ -1310,7 +1340,18 @@ static char *build_recovery_source(const char *source, size_t source_length,
         !stack[i - 1].generic_association_has_colon;
     break;
   }
-  if (!cursor_in_generic_association_type &&
+  int cursor_in_alignof_type =
+      stack_count > 0 && stack[stack_count - 1].is_alignof_type_query;
+  int cursor_in_complete_tag_query =
+      has_complete_identifier && previous_token_is_tag_keyword &&
+      stack_count > 0 &&
+      (stack[stack_count - 1].is_sizeof_query ||
+       stack[stack_count - 1].is_alignof_type_query);
+  if (cursor_in_complete_tag_query) {
+    APPEND_BYTES(cursor_name, cursor_name_length);
+  } else if (cursor_in_alignof_type) {
+    APPEND_LITERAL(" int");
+  } else if (!cursor_in_generic_association_type &&
       (cursor_identifier_starts_conditional ||
       last_significant == '=' || last_significant == ',' ||
       last_significant == '(' || last_significant == '[' ||
@@ -1506,6 +1547,20 @@ static void locate_declaration(snapshot_builder_t *builder,
     size_t start = (size_t)declaration->source_byte_offset;
     size_t end = start + (size_t)declaration->source_byte_length;
     if (start <= source_length && end <= source_length) {
+      if (declaration->kind == PSX_DECL_TAG) {
+        size_t tag_name_start = skip_analysis_space_and_comments(
+            declaration->source_input, source_length, end);
+        if (tag_name_start <= source_length &&
+            name_len <= source_length - tag_name_start &&
+            memcmp(declaration->source_input + tag_name_start,
+                   name, name_len) == 0 &&
+            (tag_name_start + name_len == source_length ||
+             !is_identifier_byte((unsigned char)
+                 declaration->source_input[tag_name_start + name_len]))) {
+          start = tag_name_start;
+          end = tag_name_start + name_len;
+        }
+      }
       range->source_name = snapshot_copy(builder, declaration->source_name);
       range->start = position_at(
           declaration->source_input, source_length, start);

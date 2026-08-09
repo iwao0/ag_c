@@ -124,6 +124,9 @@ static const char conditional_hover_source[] =
 static const char generic_hover_source[] =
     "#define GENERIC_MACRO 9\n"
     "typedef int GenericScore;\n"
+    "struct GenericPlayer { int score; };\n"
+    "union GenericPayload { int score; };\n"
+    "enum GenericState { GENERIC_IDLE = 0 };\n"
     "enum { GENERIC_MODE = 3 };\n"
     "int generic_value;\n"
     "int generic_identity(int value) { return value; }\n"
@@ -133,6 +136,11 @@ static const char generic_hover_source[] =
     "  result += _Generic(GENERIC_MODE, int: 3, default: 0);\n"
     "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n"
     "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n"
+    "  result += (int)_Alignof /* query */ (const GenericScore *);\n"
+    "  result += (int)_Alignof(int [1 + GENERIC_MODE]);\n"
+    "  result += (int)sizeof /* query */ (const struct /* tag */ GenericPlayer);\n"
+    "  result += (int)_Alignof(union /* tag */ GenericPayload);\n"
+    "  result += (int)sizeof(enum /* tag */ GenericState);\n"
     "  return result + _Generic(1, int: generic_value, default: 0);\n"
     "}\n";
 static const char documentation_hover_source[] =
@@ -2223,6 +2231,12 @@ int main(int argc, char **argv) {
       generic_hover_source, "GENERIC_MACRO");
   const char *generic_typedef_declaration = strstr(
       generic_hover_source, "GenericScore");
+  const char *generic_struct_declaration = strstr(
+      generic_hover_source, "GenericPlayer");
+  const char *generic_union_declaration = strstr(
+      generic_hover_source, "GenericPayload");
+  const char *generic_enum_tag_declaration = strstr(
+      generic_hover_source, "GenericState");
   const char *generic_enum_declaration = strstr(
       generic_hover_source, "GENERIC_MODE");
   const char *generic_object_declaration = strstr(
@@ -2251,11 +2265,35 @@ int main(int argc, char **argv) {
       generic_macro_use, "_Generic(generic_value, GenericScore");
   const char *generic_typedef_use = strstr(
       generic_typedef_control, "GenericScore");
+  const char *generic_alignof = strstr(
+      generic_typedef_use + strlen("GenericScore"),
+      "_Alignof /* query */ (const GenericScore");
+  const char *generic_alignof_typedef_use = strstr(
+      generic_alignof, "GenericScore");
+  const char *generic_alignof_bound = strstr(
+      generic_alignof_typedef_use, "_Alignof(int [1 + GENERIC_MODE");
+  const char *generic_alignof_bound_use = strstr(
+      generic_alignof_bound, "GENERIC_MODE");
+  const char *generic_struct_query = strstr(
+      generic_alignof_bound_use,
+      "sizeof /* query */ (const struct /* tag */ GenericPlayer");
+  const char *generic_struct_use = strstr(
+      generic_struct_query, "GenericPlayer");
+  const char *generic_union_query = strstr(
+      generic_struct_use, "_Alignof(union /* tag */ GenericPayload");
+  const char *generic_union_use = strstr(
+      generic_union_query, "GenericPayload");
+  const char *generic_enum_tag_query = strstr(
+      generic_union_use, "sizeof(enum /* tag */ GenericState");
+  const char *generic_enum_tag_use = strstr(
+      generic_enum_tag_query, "GenericState");
   const char *generic_value_association = strstr(
-      generic_typedef_use, "int: generic_value");
+      generic_enum_tag_use, "int: generic_value");
   const char *generic_association_value_use = strstr(
       generic_value_association, "generic_value");
   CHECK(generic_macro_declaration && generic_typedef_declaration &&
+            generic_struct_declaration && generic_union_declaration &&
+            generic_enum_tag_declaration &&
             generic_enum_declaration && generic_object_declaration &&
             generic_function_declaration && generic_first_control &&
             generic_first_object_use && generic_call_control &&
@@ -2263,6 +2301,11 @@ int main(int argc, char **argv) {
             generic_enum_control && generic_enum_use &&
             generic_macro_control && generic_macro_use &&
             generic_typedef_control && generic_typedef_use &&
+            generic_alignof && generic_alignof_typedef_use &&
+            generic_alignof_bound && generic_alignof_bound_use &&
+            generic_struct_query && generic_struct_use &&
+            generic_union_query && generic_union_use &&
+            generic_enum_tag_query && generic_enum_tag_use &&
             generic_value_association && generic_association_value_use,
         "generic hover source anchors");
   struct {
@@ -2285,6 +2328,16 @@ int main(int argc, char **argv) {
        generic_macro_declaration, "", "9"},
       {generic_typedef_use, "GenericScore", AG_LANGUAGE_SYMBOL_TYPEDEF,
        generic_typedef_declaration, "", ""},
+      {generic_alignof_typedef_use, "GenericScore", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       generic_typedef_declaration, "", ""},
+      {generic_alignof_bound_use, "GENERIC_MODE",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, generic_enum_declaration, "3", ""},
+      {generic_struct_use, "GenericPlayer", AG_LANGUAGE_SYMBOL_TAG,
+       generic_struct_declaration, "", ""},
+      {generic_union_use, "GenericPayload", AG_LANGUAGE_SYMBOL_TAG,
+       generic_union_declaration, "", ""},
+      {generic_enum_tag_use, "GenericState", AG_LANGUAGE_SYMBOL_TAG,
+       generic_enum_tag_declaration, "", ""},
       {generic_association_value_use, "generic_value",
        AG_LANGUAGE_SYMBOL_OBJECT, generic_object_declaration, "", ""},
   };
