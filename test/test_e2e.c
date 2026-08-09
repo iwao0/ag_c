@@ -2179,6 +2179,33 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"void_value_used_rejected",
      "fixture:test/fixtures/should_reject/void_value_used.c",
      "E3099"},
+    {"struct_with_const_member_assignment_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "struct_with_const_member_assignment.c",
+     "E3077"},
+    {"nested_struct_with_const_member_assignment_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "nested_struct_with_const_member_assignment.c",
+     "E3077"},
+    {"struct_with_const_array_member_assignment_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "struct_with_const_array_member_assignment.c",
+     "E3077"},
+    {"union_with_const_member_assignment_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "union_with_const_member_assignment.c",
+     "E3077"},
+    {"typedef_const_member_assignment_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "typedef_const_member_assignment.c",
+     "E3077"},
+    {"anonymous_union_const_member_assignment_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "anonymous_union_const_member_assignment.c",
+     "E3077"},
+    {"const_pointer_member_assignment_rejected",
+     "fixture:test/fixtures/should_reject/const_pointer_member_assignment.c",
+     "E3077"},
     {"const_struct_member_assign_rejected",
      "fixture:test/fixtures/should_reject/assign_member_of_const_struct.c",
      "E3077"},
@@ -2788,6 +2815,10 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"stdatomic_fetch_pointer_bitwise_rejected",
      "fixture:test/fixtures/should_reject/stdatomic_pointer_bitwise.c",
      "E3120"},
+    {"stdatomic_pointer_incomplete_fetch_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "stdatomic_pointer_incomplete_fetch.c",
+     "E3120"},
     {"stdatomic_store_struct_order_rejected",
      "fixture:test/fixtures/should_reject/stdatomic_store_struct_order.c",
      "E3099"},
@@ -3283,6 +3314,30 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"block_static_complex_function_value_initializer_rejected",
      "fixture:test/fixtures/should_reject/"
      "block_static_complex_function_value_initializer.c",
+     "E3116"},
+    {"static_address_selected_assignment_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_address_selected_assignment.c",
+     "E3116"},
+    {"static_address_selected_function_call_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_address_selected_function_call.c",
+     "E3116"},
+    {"static_cross_symbol_one_past_comparison_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_cross_symbol_one_past_comparison.c",
+     "E3116"},
+    {"static_cross_symbol_order_comparison_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_cross_symbol_order_comparison.c",
+     "E3116"},
+    {"static_pointer_to_narrow_integer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_pointer_to_narrow_integer.c",
+     "E3116"},
+    {"static_string_pointer_comparisons_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_string_pointer_comparisons.c",
      "E3116"},
     {"sizeof_incomplete_type_rejected",
      "fixture:test/fixtures/should_reject/sizeof_incomplete_type.c",
