@@ -1692,8 +1692,10 @@ int psx_begin_automatic_local_declaration_hir_pipeline(
           .has_initializer = request->initializer->has_initializer,
       },
       &resolution);
-  if (resolution.status != PSX_LOCAL_DECLARATION_OK)
+  if (resolution.status != PSX_LOCAL_DECLARATION_OK) {
     diagnose_local_declaration(request, resolution.status);
+    return 0;
+  }
 
   psx_vla_lowering_result_t vla = {0};
   switch (resolution.storage_kind) {

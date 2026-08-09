@@ -8979,8 +8979,6 @@ static int preflight_direct_local_declaration(
     int has_vla_type = has_type &&
         psx_semantic_type_table_contains_vla_array(
             semantic_types, decl_qual_type.type_id);
-    int is_vla_object =
-        has_vla_type && type_shape.kind == PSX_TYPE_ARRAY;
     if (has_type && type_shape.kind == PSX_TYPE_VOID)
       return note_direct_named_rejection(
           context,
@@ -8989,8 +8987,6 @@ static int preflight_direct_local_declaration(
     if (!has_type || (!psx_type_kind_is_scalar(type_shape.kind) &&
                   !is_complete_fixed_array &&
                   !is_complete_aggregate && !has_vla_type))
-      return 0;
-    if (is_vla_object && initializer->has_initializer)
       return 0;
     psx_automatic_local_declaration_pipeline_request_t request = {
         .semantic_context = context->semantic_context,

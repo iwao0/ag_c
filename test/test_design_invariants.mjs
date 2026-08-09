@@ -6733,6 +6733,17 @@ if (!blockExternDeclarationPipeline ||
     "block-scope extern initializer diagnostics must fail the declaration pipeline",
   );
 }
+const automaticLocalDeclarationPipelineFailure = declarationPipelineSource.match(
+  /int\s+psx_begin_automatic_local_declaration_hir_pipeline\s*\([^]*?\n\}/,
+);
+if (!automaticLocalDeclarationPipelineFailure ||
+    !/if\s*\(\s*resolution\.status\s*!=\s*PSX_LOCAL_DECLARATION_OK\s*\)\s*\{[^}]*diagnose_local_declaration\s*\([^}]*return\s+0\s*;[^}]*\}/.test(
+      automaticLocalDeclarationPipelineFailure[0],
+    )) {
+  throw new Error(
+    "invalid automatic local declaration diagnostics must fail the declaration pipeline",
+  );
+}
 if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(
       declarationPipelineSource,
     ) ||
