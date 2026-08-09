@@ -7312,14 +7312,22 @@ if (!/^check-should-reject:\s*\$\(TARGET\)\s+\$\(WASM_TARGET\)$/m.test(
     !/dir=test\/fixtures\/should_reject/.test(
       shouldRejectGateSource,
     ) ||
-    !/\.\/build\/ag_c_wasm[\s\S]*?-c -o \/dev\/null/.test(
-      shouldRejectGateSource,
-    ) ||
+    !shouldRejectGateSource.includes("tool_timeout.sh") ||
+    !shouldRejectGateSource.includes("AG_C:-./build/ag_c") ||
+    !shouldRejectGateSource.includes("AG_C_WASM:-./build/ag_c_wasm") ||
+    !shouldRejectGateSource.includes("SHOULD_REJECT_TIMEOUT_SEC:-") ||
+    !shouldRejectGateSource.includes("run_with_timeout") ||
+    !shouldRejectGateSource.includes("host_timeout=") ||
+    !shouldRejectGateSource.includes("native_timeout=") ||
+    !shouldRejectGateSource.includes("wasm_timeout=") ||
     !/\*E0006\*/.test(shouldRejectGateSource) ||
     !/\[ "\$native_missed" -ne 0 \]/.test(shouldRejectGateSource) ||
-    !/\[ "\$wasm_missed" -ne 0 \]/.test(shouldRejectGateSource)) {
+    !/\[ "\$wasm_missed" -ne 0 \]/.test(shouldRejectGateSource) ||
+    !/\[ "\$host_timeout" -ne 0 \]/.test(shouldRejectGateSource) ||
+    !/\[ "\$native_timeout" -ne 0 \]/.test(shouldRejectGateSource) ||
+    !/\[ "\$wasm_timeout" -ne 0 \]/.test(shouldRejectGateSource)) {
   throw new Error(
-    "should_reject fixtures must gate native and Wasm object rejection without E0006",
+    "should_reject fixtures must bound and gate native and Wasm object rejection without E0006",
   );
 }
 if (/alignas_value(?:\.o|\.h)/.test(

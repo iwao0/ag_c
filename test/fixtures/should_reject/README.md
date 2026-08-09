@@ -15,16 +15,19 @@ make check-should-reject
 - `./build/ag_c <file>` → rc != 0、かつ`E0006`ではないこと
 - `./build/ag_c_wasm -c -o /dev/null <file>` → rc != 0、かつ`E0006`ではないこと
 
+各compiler呼び出しは既定で10秒に制限され、`SHOULD_REJECT_TIMEOUT_SEC`で変更できます。
+`CC`、`AG_C`、`AG_C_WASM`で検査するcompilerを個別に差し替えられます。
+
 出力例:
 
 ```
-should_reject summary: total=N host_accepted=0
-native: rejected=N missed=0 internal=0
-wasm:   rejected=N missed=0 internal=0
+should_reject summary: total=N host_accepted=0 host_timeout=0
+native: rejected=N missed=0 internal=0 timeout=0
+wasm:   rejected=N missed=0 internal=0 timeout=0
 ```
 
 host compilerが受理するfixture、ag_cのどちらかのmodeが受理するfixture、
-または`E0006`内部不変条件違反へ落ちるfixtureが1件でもあれば失敗します。
+timeout、または`E0006`内部不変条件違反へ落ちるfixtureが1件でもあれば失敗します。
 `make test`からも実行されます。個別の診断コードを固定する重要境界は、
 これに加えて`test/test_e2e.c`のcompile-fail registryへ登録します。
 
