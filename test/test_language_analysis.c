@@ -93,6 +93,34 @@ static const char for_control_hover_source[] =
     "  outer += LOOP_LIMIT;\n"
     "  return outer;\n"
     "}\n";
+static const char conditional_hover_source[] =
+    "/* 日本語 */\n"
+    "#define CHOICE_MACRO 7\n"
+    "#if 1 ? 1 : 0\n"
+    "#define ACTIVE_BRANCH 1\n"
+    "#endif\n"
+    "enum { FIRST = 1, SECOND = 2, THIRD = 3 };\n"
+    "struct Flags { unsigned ready : 1; };\n"
+    "int choose(int left, ...) { return left; }\n"
+    "int frame(int alternate, int other) {\n"
+    "  int local = 4;\n"
+    "  const char *text = \"? : \\\"quoted\\\"\";\n"
+    "  // ? : ignored\n"
+    "  /* ? : ignored */\n"
+    "  switch (alternate) { case 0: break; default: break; }\n"
+    "conditional_label:\n"
+    "  local += choose(alternate ? FIRST : SECOND, "
+    "other ? SECOND : THIRD);\n"
+    "  local += (alternate ? FIRST : SECOND);\n"
+    "  int values[2] = { FIRST, SECOND };\n"
+    "  local += values[alternate ? 0 : 1];\n"
+    "  local += alternate ? (choose(local, FIRST), SECOND) :\n"
+    "                       (choose(local, SECOND), THIRD);\n"
+    "  local += alternate ? other ? FIRST : SECOND : THIRD;\n"
+    "  local += alternate ? FIRST : other ? SECOND : THIRD;\n"
+    "  return alternate ? other ? FIRST : SECOND :\n"
+    "         local ? CHOICE_MACRO : THIRD;\n"
+    "}\n";
 
 static int update_guard_project(
     ag_compilation_session_t *session,
@@ -672,6 +700,38 @@ static int print_for_control_hover_parity_snapshot(const char *cursor_text) {
   return result;
 }
 
+static int print_conditional_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(conditional_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  if (!session) return 1;
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = analyze_named(
+      session, "conditional.c", conditional_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0},
+      ag_language_analysis_default_limits(), &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  int result = 1;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--parity-json") == 0)
     return print_parity_snapshot();
@@ -696,6 +756,9 @@ int main(int argc, char **argv) {
   if (argc == 3 &&
       strcmp(argv[1], "--for-control-hover-parity-json") == 0)
     return print_for_control_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--conditional-hover-parity-json") == 0)
+    return print_conditional_hover_parity_snapshot(argv[2]);
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "session");
@@ -1087,6 +1150,254 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&enum_baseline_snapshot);
   ag_language_analysis_snapshot_dispose(&inner_baseline_snapshot);
   ag_language_analysis_snapshot_dispose(&outer_baseline_snapshot);
+
+  const char *conditional_macro_declaration = strstr(
+      conditional_hover_source, "CHOICE_MACRO");
+  const char *conditional_first_declaration = strstr(
+      conditional_hover_source, "FIRST");
+  const char *conditional_second_declaration = strstr(
+      conditional_hover_source, "SECOND");
+  const char *conditional_third_declaration = strstr(
+      conditional_hover_source, "THIRD");
+  const char *conditional_alternate_declaration = strstr(
+      conditional_hover_source, "alternate,");
+  const char *conditional_other_declaration = strstr(
+      conditional_alternate_declaration, "other)");
+  const char *conditional_local_declaration = strstr(
+      conditional_hover_source, "local = 4");
+  const char *conditional_direct = strstr(
+      conditional_hover_source, "choose(alternate ? FIRST : SECOND");
+  const char *conditional_direct_alternate = strstr(
+      conditional_direct, "alternate");
+  const char *conditional_direct_first = strstr(
+      conditional_direct_alternate, "FIRST");
+  const char *conditional_direct_second = strstr(
+      conditional_direct_first, "SECOND");
+  const char *conditional_direct_other = strstr(
+      conditional_direct_second, "other ?");
+  const char *conditional_parenthesized = strstr(
+      conditional_direct_other, "local += (alternate");
+  const char *conditional_parenthesized_alternate = strstr(
+      conditional_parenthesized, "alternate");
+  const char *conditional_subscript = strstr(
+      conditional_parenthesized_alternate, "values[alternate");
+  const char *conditional_subscript_alternate = strstr(
+      conditional_subscript, "alternate");
+  const char *conditional_comma = strstr(
+      conditional_subscript_alternate,
+      "local += alternate ? (choose(local, FIRST), SECOND)");
+  const char *conditional_comma_alternate = strstr(
+      conditional_comma, "alternate");
+  const char *conditional_comma_local = strstr(
+      conditional_comma_alternate, "local");
+  const char *conditional_comma_first = strstr(
+      conditional_comma_local, "FIRST");
+  const char *conditional_comma_second = strstr(
+      conditional_comma_first, "SECOND");
+  const char *conditional_comma_false_local = strstr(
+      conditional_comma_second, "local");
+  const char *conditional_comma_third = strstr(
+      conditional_comma_false_local, "THIRD");
+  const char *conditional_nested_true = strstr(
+      conditional_comma_third,
+      "local += alternate ? other ? FIRST : SECOND : THIRD");
+  const char *conditional_nested_true_alternate = strstr(
+      conditional_nested_true, "alternate");
+  const char *conditional_nested_true_other = strstr(
+      conditional_nested_true_alternate, "other");
+  const char *conditional_nested_true_first = strstr(
+      conditional_nested_true_other, "FIRST");
+  const char *conditional_nested_true_second = strstr(
+      conditional_nested_true_first, "SECOND");
+  const char *conditional_nested_true_third = strstr(
+      conditional_nested_true_second, "THIRD");
+  const char *conditional_nested_false = strstr(
+      conditional_nested_true_third,
+      "local += alternate ? FIRST : other ? SECOND : THIRD");
+  const char *conditional_nested_false_alternate = strstr(
+      conditional_nested_false, "alternate");
+  const char *conditional_nested_false_first = strstr(
+      conditional_nested_false_alternate, "FIRST");
+  const char *conditional_nested_false_other = strstr(
+      conditional_nested_false_first, "other");
+  const char *conditional_nested_false_second = strstr(
+      conditional_nested_false_other, "SECOND");
+  const char *conditional_nested_false_third = strstr(
+      conditional_nested_false_second, "THIRD");
+  const char *conditional_return = strstr(
+      conditional_nested_false_third,
+      "return alternate ? other ? FIRST : SECOND");
+  const char *conditional_return_alternate = strstr(
+      conditional_return, "alternate");
+  const char *conditional_return_other = strstr(
+      conditional_return_alternate, "other");
+  const char *conditional_return_first = strstr(
+      conditional_return_other, "FIRST");
+  const char *conditional_return_second = strstr(
+      conditional_return_first, "SECOND");
+  const char *conditional_return_local = strstr(
+      conditional_return_second, "local ?");
+  const char *conditional_return_macro = strstr(
+      conditional_return_local, "CHOICE_MACRO");
+  const char *conditional_return_third = strstr(
+      conditional_return_macro, "THIRD");
+  CHECK(conditional_macro_declaration && conditional_first_declaration &&
+            conditional_second_declaration && conditional_third_declaration &&
+            conditional_alternate_declaration &&
+            conditional_other_declaration && conditional_local_declaration &&
+            conditional_direct && conditional_direct_alternate &&
+            conditional_direct_first && conditional_direct_second &&
+            conditional_direct_other && conditional_parenthesized &&
+            conditional_parenthesized_alternate && conditional_subscript &&
+            conditional_subscript_alternate && conditional_comma &&
+            conditional_comma_alternate && conditional_comma_local &&
+            conditional_comma_first && conditional_comma_second &&
+            conditional_comma_false_local && conditional_comma_third &&
+            conditional_nested_true && conditional_nested_true_alternate &&
+            conditional_nested_true_other && conditional_nested_true_first &&
+            conditional_nested_true_second && conditional_nested_true_third &&
+            conditional_nested_false && conditional_nested_false_alternate &&
+            conditional_nested_false_first && conditional_nested_false_other &&
+            conditional_nested_false_second && conditional_nested_false_third &&
+            conditional_return && conditional_return_alternate &&
+            conditional_return_other && conditional_return_first &&
+            conditional_return_second && conditional_return_local &&
+            conditional_return_macro && conditional_return_third,
+        "conditional hover source anchors");
+  struct {
+    const char *use;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration;
+    const char *constant_value;
+    const char *macro_replacement;
+    int check_all_positions;
+  } conditional_cases[] = {
+      {conditional_direct_alternate, "alternate", AG_LANGUAGE_SYMBOL_PARAMETER,
+       conditional_alternate_declaration, "", "", 1},
+      {conditional_direct_first, "FIRST", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       conditional_first_declaration, "1", "", 1},
+      {conditional_direct_second, "SECOND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       conditional_second_declaration, "2", "", 1},
+      {conditional_direct_other, "other", AG_LANGUAGE_SYMBOL_PARAMETER,
+       conditional_other_declaration, "", "", 0},
+      {conditional_parenthesized_alternate, "alternate",
+       AG_LANGUAGE_SYMBOL_PARAMETER, conditional_alternate_declaration,
+       "", "", 0},
+      {conditional_subscript_alternate, "alternate",
+       AG_LANGUAGE_SYMBOL_PARAMETER, conditional_alternate_declaration,
+       "", "", 0},
+      {conditional_comma_alternate, "alternate", AG_LANGUAGE_SYMBOL_PARAMETER,
+       conditional_alternate_declaration, "", "", 0},
+      {conditional_comma_local, "local", AG_LANGUAGE_SYMBOL_OBJECT,
+       conditional_local_declaration, "", "", 0},
+      {conditional_comma_first, "FIRST", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       conditional_first_declaration, "1", "", 0},
+      {conditional_comma_second, "SECOND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       conditional_second_declaration, "2", "", 0},
+      {conditional_comma_false_local, "local", AG_LANGUAGE_SYMBOL_OBJECT,
+       conditional_local_declaration, "", "", 0},
+      {conditional_comma_third, "THIRD", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       conditional_third_declaration, "3", "", 0},
+      {conditional_nested_true_alternate, "alternate",
+       AG_LANGUAGE_SYMBOL_PARAMETER, conditional_alternate_declaration,
+       "", "", 0},
+      {conditional_nested_true_other, "other", AG_LANGUAGE_SYMBOL_PARAMETER,
+       conditional_other_declaration, "", "", 0},
+      {conditional_nested_true_first, "FIRST", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       conditional_first_declaration, "1", "", 0},
+      {conditional_nested_true_second, "SECOND",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, conditional_second_declaration,
+       "2", "", 0},
+      {conditional_nested_true_third, "THIRD", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       conditional_third_declaration, "3", "", 0},
+      {conditional_nested_false_alternate, "alternate",
+       AG_LANGUAGE_SYMBOL_PARAMETER, conditional_alternate_declaration,
+       "", "", 0},
+      {conditional_nested_false_first, "FIRST",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, conditional_first_declaration,
+       "1", "", 0},
+      {conditional_nested_false_other, "other", AG_LANGUAGE_SYMBOL_PARAMETER,
+       conditional_other_declaration, "", "", 0},
+      {conditional_nested_false_second, "SECOND",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, conditional_second_declaration,
+       "2", "", 0},
+      {conditional_nested_false_third, "THIRD",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, conditional_third_declaration,
+       "3", "", 0},
+      {conditional_return_alternate, "alternate", AG_LANGUAGE_SYMBOL_PARAMETER,
+       conditional_alternate_declaration, "", "", 0},
+      {conditional_return_other, "other", AG_LANGUAGE_SYMBOL_PARAMETER,
+       conditional_other_declaration, "", "", 0},
+      {conditional_return_first, "FIRST", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       conditional_first_declaration, "1", "", 0},
+      {conditional_return_second, "SECOND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       conditional_second_declaration, "2", "", 0},
+      {conditional_return_local, "local", AG_LANGUAGE_SYMBOL_OBJECT,
+       conditional_local_declaration, "", "", 0},
+      {conditional_return_macro, "CHOICE_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       conditional_macro_declaration, "", "7", 0},
+      {conditional_return_third, "THIRD", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       conditional_third_declaration, "3", "", 0},
+  };
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(conditional_cases) /
+                          sizeof(conditional_cases[0]);
+         case_index++) {
+      size_t name_length = strlen(conditional_cases[case_index].name);
+      size_t cursor_deltas[] = {
+          conditional_cases[case_index].check_all_positions
+              ? 0 : name_length / 2,
+          name_length / 2,
+          name_length,
+      };
+      size_t cursor_count =
+          conditional_cases[case_index].check_all_positions ? 3 : 1;
+      for (size_t cursor_index = 0; cursor_index < cursor_count;
+           cursor_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh conditional hover session");
+        }
+        size_t cursor =
+            (size_t)(conditional_cases[case_index].use -
+                     conditional_hover_source) +
+            cursor_deltas[cursor_index];
+        CHECK(analyze_named(
+                  analysis_session, "conditional.c",
+                  conditional_hover_source, cursor, (header_bundle_t){0},
+                  defaults, &snapshot, &error),
+              "conditional hover analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        CHECK(hover && hover->kind == conditional_cases[case_index].kind &&
+                  strcmp(hover->name, conditional_cases[case_index].name) == 0 &&
+                  ((hover->kind != AG_LANGUAGE_SYMBOL_PARAMETER &&
+                    hover->kind != AG_LANGUAGE_SYMBOL_OBJECT) ||
+                   strcmp(hover->type, "int") == 0) &&
+                  (hover->kind != AG_LANGUAGE_SYMBOL_ENUM_CONSTANT ||
+                   strcmp(hover->constant_value,
+                          conditional_cases[case_index].constant_value) == 0) &&
+                  (hover->kind != AG_LANGUAGE_SYMBOL_MACRO ||
+                   strcmp(hover->macro_replacement,
+                          conditional_cases[case_index].macro_replacement) == 0) &&
+                  strcmp(hover->declaration.source_name, "conditional.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(conditional_cases[case_index].declaration -
+                            conditional_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(conditional_cases[case_index].declaration -
+                            conditional_hover_source + name_length) &&
+                  !snapshot.partial && snapshot.diagnostic_count == 0,
+              "conditional hover fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
 
   const char *enum_source =
       "enum {\n"

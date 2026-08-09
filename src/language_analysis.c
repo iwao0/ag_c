@@ -1071,6 +1071,7 @@ typedef struct {
   char open;
   int is_for_control;
   size_t for_separator_count;
+  size_t pending_conditional_count;
 } recovery_delimiter_t;
 
 static char *build_recovery_source(const char *source, size_t source_length,
@@ -1107,6 +1108,14 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (name_end < source_length &&
         cursor >= name_start && cursor <= name_end)
       has_complete_identifier = 1;
+  }
+  int cursor_identifier_starts_conditional = 0;
+  if (has_complete_identifier) {
+    size_t name_end = (size_t)(cursor_name - source) + cursor_name_length;
+    size_t after_name = skip_analysis_space_and_comments(
+        source, source_length, name_end);
+    cursor_identifier_starts_conditional =
+        after_name < source_length && source[after_name] == '?';
   }
   size_t capacity = cursor * 2 + 8192;
   if (capacity < cursor || capacity > (size_t)INT_MAX) return NULL;
@@ -1146,6 +1155,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int at_line_start = 1;
   int preprocessor_line = 0;
   int previous_token_is_for = 0;
+  size_t root_pending_conditional_count = 0;
   char last_significant = 0;
   for (size_t i = 0; i < cursor; i++) {
     char c = result[i];
@@ -1216,6 +1226,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
           .open = c,
           .is_for_control = opens_for_control,
           .for_separator_count = 0,
+          .pending_conditional_count = 0,
       };
     } else if ((c == ')' || c == ']' || c == '}') && stack_count > 0) {
       char open = stack[stack_count - 1].open;
@@ -1225,6 +1236,17 @@ static char *build_recovery_source(const char *source, size_t source_length,
                stack[stack_count - 1].open == '(' &&
                stack[stack_count - 1].is_for_control) {
       stack[stack_count - 1].for_separator_count++;
+    }
+    size_t *pending_conditional_count =
+        stack_count > 0
+            ? &stack[stack_count - 1].pending_conditional_count
+            : &root_pending_conditional_count;
+    if (c == '?') {
+      (*pending_conditional_count)++;
+    } else if (c == ':' && *pending_conditional_count > 0) {
+      (*pending_conditional_count)--;
+    } else if (c == ';') {
+      *pending_conditional_count = 0;
     }
     if (!isspace((unsigned char)c)) last_significant = c;
   }
@@ -1241,7 +1263,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
   if (block_comment) APPEND_LITERAL("*/\n");
   if (quote) APPEND_LITERAL(quote == '\'' ? "'\n" : "\"\n");
   if (preprocessor_line) APPEND_LITERAL("\n");
-  if (last_significant == '=' || last_significant == ',' ||
+  if (cursor_identifier_starts_conditional ||
+      last_significant == '=' || last_significant == ',' ||
       last_significant == '(' || last_significant == '[' ||
       last_significant == '+' || last_significant == '-' ||
       last_significant == '*' || last_significant == '/' ||
@@ -1251,8 +1274,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
       last_significant == '<' || last_significant == '>' ||
       last_significant == '?' || last_significant == ':')
     APPEND_LITERAL(" 0");
+#define APPEND_PENDING_CONDITIONALS(count)                                      \
+  do {                                                                           \
+    size_t pending_count = (count);                                               \
+    while (pending_count-- > 0) APPEND_LITERAL(" : 0");                         \
+  } while (0)
   int cursor_marker_appended = 0;
   for (size_t i = stack_count; i > 0; i--) {
+    APPEND_PENDING_CONDITIONALS(
+        stack[i - 1].pending_conditional_count);
     if (stack[i - 1].open == '(') {
       if (stack[i - 1].is_for_control) {
         size_t separator_count = stack[i - 1].for_separator_count;
@@ -1268,6 +1298,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       }
     } else if (stack[i - 1].open == '[') APPEND_LITERAL("]");
   }
+  APPEND_PENDING_CONDITIONALS(root_pending_conditional_count);
   if (!cursor_marker_appended) {
     if (last_significant != 0 && last_significant != ';' &&
         last_significant != '}')
@@ -1277,6 +1308,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
   for (size_t i = stack_count; i > 0; i--)
     if (stack[i - 1].open == '{') APPEND_LITERAL("}\n");
   result[length] = '\0';
+#undef APPEND_PENDING_CONDITIONALS
 #undef APPEND_LITERAL
   free(stack);
   if (changed) {

@@ -370,6 +370,293 @@ for (const analysisCase of [
   }
 }
 
+const conditionalSource = {
+  name: "conditional.c",
+  source: "/* 日本語 */\n" +
+    "#define CHOICE_MACRO 7\n" +
+    "#if 1 ? 1 : 0\n" +
+    "#define ACTIVE_BRANCH 1\n" +
+    "#endif\n" +
+    "enum { FIRST = 1, SECOND = 2, THIRD = 3 };\n" +
+    "struct Flags { unsigned ready : 1; };\n" +
+    "int choose(int left, ...) { return left; }\n" +
+    "int frame(int alternate, int other) {\n" +
+    "  int local = 4;\n" +
+    "  const char *text = \"? : \\\"quoted\\\"\";\n" +
+    "  // ? : ignored\n" +
+    "  /* ? : ignored */\n" +
+    "  switch (alternate) { case 0: break; default: break; }\n" +
+    "conditional_label:\n" +
+    "  local += choose(alternate ? FIRST : SECOND, " +
+    "other ? SECOND : THIRD);\n" +
+    "  local += (alternate ? FIRST : SECOND);\n" +
+    "  int values[2] = { FIRST, SECOND };\n" +
+    "  local += values[alternate ? 0 : 1];\n" +
+    "  local += alternate ? (choose(local, FIRST), SECOND) :\n" +
+    "                       (choose(local, SECOND), THIRD);\n" +
+    "  local += alternate ? other ? FIRST : SECOND : THIRD;\n" +
+    "  local += alternate ? FIRST : other ? SECOND : THIRD;\n" +
+    "  return alternate ? other ? FIRST : SECOND :\n" +
+    "         local ? CHOICE_MACRO : THIRD;\n" +
+    "}\n",
+};
+
+function findConditionalName(name, from) {
+  const index = conditionalSource.source.indexOf(name, from);
+  assert.notEqual(index, -1, `missing conditional anchor: ${name}`);
+  return index;
+}
+
+const conditionalDirect = findConditionalName(
+  "choose(alternate ? FIRST : SECOND", 0,
+);
+const conditionalDirectAlternate = findConditionalName(
+  "alternate", conditionalDirect,
+);
+const conditionalDirectFirst = findConditionalName(
+  "FIRST", conditionalDirectAlternate,
+);
+const conditionalDirectSecond = findConditionalName(
+  "SECOND", conditionalDirectFirst,
+);
+const conditionalDirectOther = findConditionalName(
+  "other ?", conditionalDirectSecond,
+);
+const conditionalParenthesized = findConditionalName(
+  "local += (alternate", conditionalDirectOther,
+);
+const conditionalParenthesizedAlternate = findConditionalName(
+  "alternate", conditionalParenthesized,
+);
+const conditionalSubscript = findConditionalName(
+  "values[alternate", conditionalParenthesizedAlternate,
+);
+const conditionalSubscriptAlternate = findConditionalName(
+  "alternate", conditionalSubscript,
+);
+const conditionalComma = findConditionalName(
+  "local += alternate ? (choose(local, FIRST), SECOND)",
+  conditionalSubscriptAlternate,
+);
+const conditionalCommaAlternate = findConditionalName(
+  "alternate", conditionalComma,
+);
+const conditionalCommaLocal = findConditionalName(
+  "local", conditionalCommaAlternate,
+);
+const conditionalCommaFirst = findConditionalName(
+  "FIRST", conditionalCommaLocal,
+);
+const conditionalCommaSecond = findConditionalName(
+  "SECOND", conditionalCommaFirst,
+);
+const conditionalCommaFalseLocal = findConditionalName(
+  "local", conditionalCommaSecond,
+);
+const conditionalCommaThird = findConditionalName(
+  "THIRD", conditionalCommaFalseLocal,
+);
+const conditionalNestedTrue = findConditionalName(
+  "local += alternate ? other ? FIRST : SECOND : THIRD",
+  conditionalCommaThird,
+);
+const conditionalNestedTrueAlternate = findConditionalName(
+  "alternate", conditionalNestedTrue,
+);
+const conditionalNestedTrueOther = findConditionalName(
+  "other", conditionalNestedTrueAlternate,
+);
+const conditionalNestedTrueFirst = findConditionalName(
+  "FIRST", conditionalNestedTrueOther,
+);
+const conditionalNestedTrueSecond = findConditionalName(
+  "SECOND", conditionalNestedTrueFirst,
+);
+const conditionalNestedTrueThird = findConditionalName(
+  "THIRD", conditionalNestedTrueSecond,
+);
+const conditionalNestedFalse = findConditionalName(
+  "local += alternate ? FIRST : other ? SECOND : THIRD",
+  conditionalNestedTrueThird,
+);
+const conditionalNestedFalseAlternate = findConditionalName(
+  "alternate", conditionalNestedFalse,
+);
+const conditionalNestedFalseFirst = findConditionalName(
+  "FIRST", conditionalNestedFalseAlternate,
+);
+const conditionalNestedFalseOther = findConditionalName(
+  "other", conditionalNestedFalseFirst,
+);
+const conditionalNestedFalseSecond = findConditionalName(
+  "SECOND", conditionalNestedFalseOther,
+);
+const conditionalNestedFalseThird = findConditionalName(
+  "THIRD", conditionalNestedFalseSecond,
+);
+const conditionalReturn = findConditionalName(
+  "return alternate ? other ? FIRST : SECOND", conditionalNestedFalseThird,
+);
+const conditionalReturnAlternate = findConditionalName(
+  "alternate", conditionalReturn,
+);
+const conditionalReturnOther = findConditionalName(
+  "other", conditionalReturnAlternate,
+);
+const conditionalReturnFirst = findConditionalName(
+  "FIRST", conditionalReturnOther,
+);
+const conditionalReturnSecond = findConditionalName(
+  "SECOND", conditionalReturnFirst,
+);
+const conditionalReturnLocal = findConditionalName(
+  "local ?", conditionalReturnSecond,
+);
+const conditionalReturnMacro = findConditionalName(
+  "CHOICE_MACRO", conditionalReturnLocal,
+);
+const conditionalReturnThird = findConditionalName(
+  "THIRD", conditionalReturnMacro,
+);
+
+const conditionalHoverCases = [
+  { name: "alternate", kind: "parameter", index: conditionalDirectAlternate,
+    allPositions: true },
+  { name: "FIRST", kind: "enumConstant", value: "1",
+    index: conditionalDirectFirst, allPositions: true },
+  { name: "SECOND", kind: "enumConstant", value: "2",
+    index: conditionalDirectSecond, allPositions: true },
+  { name: "other", kind: "parameter", index: conditionalDirectOther },
+  { name: "alternate", kind: "parameter",
+    index: conditionalParenthesizedAlternate },
+  { name: "alternate", kind: "parameter",
+    index: conditionalSubscriptAlternate },
+  { name: "alternate", kind: "parameter", index: conditionalCommaAlternate },
+  { name: "local", kind: "object", index: conditionalCommaLocal },
+  { name: "FIRST", kind: "enumConstant", value: "1",
+    index: conditionalCommaFirst },
+  { name: "SECOND", kind: "enumConstant", value: "2",
+    index: conditionalCommaSecond },
+  { name: "local", kind: "object", index: conditionalCommaFalseLocal },
+  { name: "THIRD", kind: "enumConstant", value: "3",
+    index: conditionalCommaThird },
+  { name: "alternate", kind: "parameter",
+    index: conditionalNestedTrueAlternate },
+  { name: "other", kind: "parameter", index: conditionalNestedTrueOther },
+  { name: "FIRST", kind: "enumConstant", value: "1",
+    index: conditionalNestedTrueFirst },
+  { name: "SECOND", kind: "enumConstant", value: "2",
+    index: conditionalNestedTrueSecond },
+  { name: "THIRD", kind: "enumConstant", value: "3",
+    index: conditionalNestedTrueThird },
+  { name: "alternate", kind: "parameter",
+    index: conditionalNestedFalseAlternate },
+  { name: "FIRST", kind: "enumConstant", value: "1",
+    index: conditionalNestedFalseFirst },
+  { name: "other", kind: "parameter", index: conditionalNestedFalseOther },
+  { name: "SECOND", kind: "enumConstant", value: "2",
+    index: conditionalNestedFalseSecond },
+  { name: "THIRD", kind: "enumConstant", value: "3",
+    index: conditionalNestedFalseThird },
+  { name: "alternate", kind: "parameter", index: conditionalReturnAlternate },
+  { name: "other", kind: "parameter", index: conditionalReturnOther },
+  { name: "FIRST", kind: "enumConstant", value: "1",
+    index: conditionalReturnFirst },
+  { name: "SECOND", kind: "enumConstant", value: "2",
+    index: conditionalReturnSecond },
+  { name: "local", kind: "object", index: conditionalReturnLocal },
+  { name: "CHOICE_MACRO", kind: "macro", replacement: "7",
+    index: conditionalReturnMacro },
+  { name: "THIRD", kind: "enumConstant", value: "3",
+    index: conditionalReturnThird },
+];
+const conditionalDeclarations = new Map();
+const nativeConditionalSnapshots = new Map();
+
+function conditionalByteOffset(analysisCase, delta) {
+  return Buffer.byteLength(
+    conditionalSource.source.slice(0, analysisCase.index),
+  ) + delta;
+}
+
+function assertConditionalHover(result, analysisCase, lifecycle) {
+  const hover = result.hover;
+  if (result.partial || result.diagnostics.length !== 0 ||
+      hover?.name !== analysisCase.name || hover.kind !== analysisCase.kind ||
+      (["parameter", "object"].includes(analysisCase.kind) &&
+       hover.type !== "int") ||
+      (analysisCase.kind === "enumConstant" &&
+       hover.initializer.constantValue !== analysisCase.value) ||
+      (analysisCase.kind === "macro" &&
+       hover.macro?.replacement !== analysisCase.replacement)) {
+    throw new Error(
+      `${lifecycle} conditional hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+  const declaration = conditionalDeclarations.get(analysisCase.name);
+  if (declaration) {
+    assert.deepStrictEqual(
+      hover.declaration,
+      declaration,
+      `${lifecycle} ${analysisCase.name} declaration range differs`,
+    );
+  } else {
+    conditionalDeclarations.set(analysisCase.name, hover.declaration);
+  }
+}
+
+for (const analysisCase of conditionalHoverCases) {
+  const deltas = analysisCase.allPositions
+    ? [0, Math.floor(analysisCase.name.length / 2),
+      Buffer.byteLength(analysisCase.name)]
+    : [Math.floor(analysisCase.name.length / 2)];
+  for (const delta of deltas) {
+    const byteOffset = conditionalByteOffset(analysisCase, delta);
+    const wasmResult = compiler.analyzeSource(conditionalSource, {
+      cursor: { sourceName: conditionalSource.name, byteOffset },
+    });
+    assertConditionalHover(wasmResult, analysisCase, "reused instance");
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--conditional-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm conditional snapshots differ at byte ${byteOffset}`,
+    );
+    nativeConditionalSnapshots.set(byteOffset, nativeResult);
+  }
+}
+
+for (const analysisCase of [
+  conditionalHoverCases[0],
+  conditionalHoverCases[1],
+  conditionalHoverCases[2],
+  conditionalHoverCases[14],
+  conditionalHoverCases[20],
+  conditionalHoverCases[27],
+  conditionalHoverCases[28],
+]) {
+  const delta = Math.floor(analysisCase.name.length / 2);
+  const byteOffset = conditionalByteOffset(analysisCase, delta);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(conditionalSource, {
+      cursor: { sourceName: conditionalSource.name, byteOffset },
+    });
+    assertConditionalHover(freshResult, analysisCase, "fresh instance");
+    assert.deepStrictEqual(
+      freshResult,
+      nativeConditionalSnapshots.get(byteOffset),
+      `fresh native/Wasm conditional snapshot differs at byte ${byteOffset}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
 const enumParitySource = {
   name: "main.c",
   source: "enum {\n" +
