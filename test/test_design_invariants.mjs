@@ -426,6 +426,77 @@ const expectedWasmProbeRegistrationExclusions = [
   "nested_anonymous_global_union_signature_xtu_main.c",
   "nested_anonymous_global_union_signature_xtu_other.c",
 ];
+const nativePositiveCaseMarker =
+  "static const test_case_t test_cases[] = {";
+const nativePositiveCaseStart = nativeE2ESource.indexOf(
+  nativePositiveCaseMarker,
+);
+const nativePositiveCaseEnd = nativeE2ESource.indexOf(
+  "\n};",
+  nativePositiveCaseStart,
+);
+const nativeLink2CaseMarker =
+  "static const link2_case_t link2_cases[] = {";
+const nativeLink2CaseStart = nativeE2ESource.indexOf(nativeLink2CaseMarker);
+const nativeLink2CaseEnd = nativeE2ESource.indexOf(
+  "\n};",
+  nativeLink2CaseStart,
+);
+if (nativePositiveCaseStart < 0 || nativePositiveCaseEnd < 0 ||
+    nativeLink2CaseStart < 0 || nativeLink2CaseEnd < 0) {
+  throw new Error("cannot locate native E2E positive fixture tables");
+}
+const nativePositiveFixtureList = [
+  ...nativeE2ESource
+    .slice(nativePositiveCaseStart, nativePositiveCaseEnd)
+    .matchAll(/"test\/fixtures\/([^"\n]+\.c)"/g),
+  ...nativeE2ESource
+    .slice(nativeLink2CaseStart, nativeLink2CaseEnd)
+    .matchAll(/"test\/fixtures\/([^"\n]+\.c)"/g),
+].map((match) => match[1]);
+const duplicateNativePositiveFixtures = nativePositiveFixtureList.filter(
+  (path, index) => nativePositiveFixtureList.indexOf(path) !== index,
+);
+if (duplicateNativePositiveFixtures.length) {
+  throw new Error(
+    "duplicate native E2E positive fixture registration:\n" +
+      [...new Set(duplicateNativePositiveFixtures)].sort().join("\n"),
+  );
+}
+const nativePositiveFixtureSet = new Set(nativePositiveFixtureList);
+const wasmPositiveFixtureSet = new Set([
+  ...wasm32E2EStaticCaseList,
+  ...wasm32E2ELink2CaseList,
+  ...wasm32E2EExtraCaseList,
+]);
+const nativeOnlyPositiveFixtures = [...nativePositiveFixtureSet]
+  .filter((path) => !wasmPositiveFixtureSet.has(path))
+  .sort();
+const wasmOnlyPositiveFixtures = [...wasmPositiveFixtureSet]
+  .filter((path) => !nativePositiveFixtureSet.has(path))
+  .sort();
+const expectedNativeOnlyPositiveFixtures =
+  expectedWasmProbeRegistrationExclusions
+    .map((name) => `probes_found_bugs/${name}`)
+    .sort();
+const standaloneWasmFixtureNames = (await readdir("test/fixtures/wasm32"))
+  .filter((name) => name.endsWith(".c") && !/_(main|other)\.c$/.test(name));
+const expectedWasmOnlyPositiveFixtures = [
+  ...expectedNativeProbeRegistrationExclusions.map(
+    (name) => `probes_found_bugs/${name}`,
+  ),
+  ...standaloneWasmFixtureNames.map((name) => `wasm32/${name}`),
+].sort();
+if (JSON.stringify(nativeOnlyPositiveFixtures) !==
+      JSON.stringify(expectedNativeOnlyPositiveFixtures) ||
+    JSON.stringify(wasmOnlyPositiveFixtures) !==
+      JSON.stringify(expectedWasmOnlyPositiveFixtures)) {
+  throw new Error(
+    "native/Wasm E2E positive fixture parity drift\n" +
+      `native-only: ${nativeOnlyPositiveFixtures.join(", ") || "none"}\n` +
+      `wasm-only: ${wasmOnlyPositiveFixtures.join(", ") || "none"}`,
+  );
+}
 const wasmMultiTuProbeFixtures = [
   "aligned_global_data_reloc_xtu_main.c",
   "aligned_global_data_reloc_xtu_other.c",
