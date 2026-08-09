@@ -2237,6 +2237,35 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "static_local_fixed_array_array_initializer.c",
      "E3099"},
+    {"file_scope_fixed_array_scalar_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "file_scope_fixed_array_scalar_initializer.c",
+     "E3099"},
+    {"file_scope_fixed_array_array_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "file_scope_fixed_array_array_initializer.c",
+     "E3099"},
+    {"file_scope_incomplete_array_scalar_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "file_scope_incomplete_array_scalar_initializer.c",
+     "E3064"},
+    {"file_scope_incomplete_array_array_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "file_scope_incomplete_array_array_initializer.c",
+     "E3064"},
+    {"local_fixed_array_mismatched_compound_literal_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "local_fixed_array_mismatched_compound_literal_initializer.c",
+     "E3099"},
+    {"assignment_fixed_array_rejected",
+     "fixture:test/fixtures/should_reject/assignment_fixed_array.c",
+     "E3098"},
+    {"assignment_string_to_array_rejected",
+     "fixture:test/fixtures/should_reject/assignment_string_to_array.c",
+     "E3098"},
+    {"assignment_incomplete_array_rejected",
+     "fixture:test/fixtures/should_reject/assignment_incomplete_array.c",
+     "E3098"},
     {"block_extern_vla_object_rejected",
      "fixture:test/fixtures/should_reject/extern_vla_object.c",
      "E3064"},
