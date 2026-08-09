@@ -6764,6 +6764,13 @@ if (!directLocalDeclarationPreflight ||
     "direct local incomplete arrays must reach declaration diagnostics or record initializer incompatibility",
   );
 }
+if (!/initializer->kind\s*==\s*PSX_DECL_INIT_EXPR\s*\)\s*\{[^]*?type_shape\.kind\s*==\s*PSX_TYPE_ARRAY\s*\)[^]*?initializer->value->kind\s*!=\s*ND_COMPOUND_LITERAL[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES[^]*?is_object_copy_initializer\s*=\s*1/.test(
+      directLocalDeclarationPreflight[0],
+    )) {
+  throw new Error(
+    "direct local array object-copy initialization must be limited to matching compound literals",
+  );
+}
 if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(
       declarationPipelineSource,
     ) ||

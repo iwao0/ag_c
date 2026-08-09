@@ -9070,11 +9070,14 @@ static int preflight_direct_local_declaration(
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
       if (type_shape.kind == PSX_TYPE_ARRAY) {
         if (!initializer->value ||
+            initializer->value->kind != ND_COMPOUND_LITERAL ||
             !resolve_direct_initializer_value_type(
                 context, initializer->value, &value_type) ||
             value_type.type_id != declaration_qual_type.type_id)
-          return note_direct_rejection(
-              context, initializer->value);
+          return note_direct_initializer_rejection(
+              context,
+              PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
+              &syntax->base, initializer->value_tok);
         is_object_copy_initializer = 1;
       } else {
         if (!initializer->value ||

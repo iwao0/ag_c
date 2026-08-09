@@ -2221,6 +2221,22 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "static_local_incomplete_array_array_initializer.c",
      "E3099"},
+    {"local_fixed_array_scalar_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "local_fixed_array_scalar_initializer.c",
+     "E3099"},
+    {"local_fixed_array_array_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "local_fixed_array_array_initializer.c",
+     "E3099"},
+    {"static_local_fixed_array_scalar_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_local_fixed_array_scalar_initializer.c",
+     "E3099"},
+    {"static_local_fixed_array_array_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_local_fixed_array_array_initializer.c",
+     "E3099"},
     {"block_extern_vla_object_rejected",
      "fixture:test/fixtures/should_reject/extern_vla_object.c",
      "E3064"},
