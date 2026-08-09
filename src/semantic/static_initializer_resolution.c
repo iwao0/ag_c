@@ -154,8 +154,12 @@ void psx_resolve_static_initializer(
     }
 
     const node_init_list_t *list = (const node_init_list_t *)initializer;
-    if (list->entry_count != 1 || !list->entries ||
-        list->entries[0].designator_count > 0 ||
+    if (list->entry_count != 1) {
+      resolution->status =
+          PSX_STATIC_INITIALIZER_SCALAR_TOO_MANY_ELEMENTS;
+      return;
+    }
+    if (!list->entries || list->entries[0].designator_count > 0 ||
         !list->entries[0].value ||
         list->entries[0].value->kind == ND_INIT_LIST) {
       resolution->status = PSX_STATIC_INITIALIZER_INVALID_SCALAR_LIST;

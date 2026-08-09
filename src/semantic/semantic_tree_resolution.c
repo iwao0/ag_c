@@ -550,6 +550,27 @@ int psx_diagnose_syntax_typed_hir_rejection_in_context(
                            diagnostics,
                            DIAG_ERR_PARSER_COMPOUND_LITERAL_INVALID_OBJECT_TYPE));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_SCALAR_TOO_MANY_ELEMENTS:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_ARRAY_TOO_MANY_ELEMENTS:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_STRUCT_TOO_MANY_MEMBERS:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_UNION_TOO_MANY_ELEMENTS:
       diag_emit_tokf_in(
           diagnostics, DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY,

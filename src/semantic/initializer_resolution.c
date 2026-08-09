@@ -64,6 +64,20 @@ static int flat_initializer_fail(
   return 0;
 }
 
+static psx_local_initializer_status_t
+flat_initializer_excess_status(psx_type_kind_t object_kind) {
+  switch (object_kind) {
+    case PSX_TYPE_ARRAY:
+      return PSX_LOCAL_INITIALIZER_ARRAY_TOO_MANY_ELEMENTS;
+    case PSX_TYPE_STRUCT:
+      return PSX_LOCAL_INITIALIZER_STRUCT_TOO_MANY_MEMBERS;
+    case PSX_TYPE_UNION:
+      return PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS;
+    default:
+      return PSX_LOCAL_INITIALIZER_SCALAR_TOO_MANY_ELEMENTS;
+  }
+}
+
 static const psx_record_member_layout_t *initializer_member_layout(
     const psx_record_layout_table_t *record_layouts,
     psx_record_id_t record_id, const ag_data_layout_t *data_layout,
@@ -998,9 +1012,10 @@ static int flat_initializer_apply_list(
           (positional_shape.kind == PSX_TYPE_ARRAY ||
            psx_type_kind_is_aggregate(positional_shape.kind));
       if (!positional_aggregate_active) {
-        context->failure_status =
-            PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS;
-        return 0;
+        return flat_initializer_fail(
+            context,
+            PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS,
+            entry->tok);
       }
     }
     int range_count = 0;
@@ -1065,10 +1080,10 @@ static int flat_initializer_apply_list(
           context, cursor_object, cursor);
       if (cursor < cursor_object->leaf_begin ||
           cursor >= cursor_object->leaf_end) {
-        if (object_shape.kind == PSX_TYPE_UNION)
-          context->failure_status =
-              PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS;
-        return 0;
+        return flat_initializer_fail(
+            context,
+            flat_initializer_excess_status(object_shape.kind),
+            entry->tok);
       }
       if (entry->value->kind == ND_STRING &&
           flat_initializer_activate_positional_unions_at_cursor(

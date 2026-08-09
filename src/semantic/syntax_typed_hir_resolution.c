@@ -8028,11 +8028,26 @@ static int preflight_direct_flat_initializer(
         initializer->value);
     return 0;
   }
+  if (status == PSX_LOCAL_INITIALIZER_SCALAR_TOO_MANY_ELEMENTS)
+    return note_direct_initializer_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_SCALAR_TOO_MANY_ELEMENTS,
+        initializer->value, plan->failure_token);
+  if (status == PSX_LOCAL_INITIALIZER_ARRAY_TOO_MANY_ELEMENTS)
+    return note_direct_initializer_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_ARRAY_TOO_MANY_ELEMENTS,
+        initializer->value, plan->failure_token);
+  if (status == PSX_LOCAL_INITIALIZER_STRUCT_TOO_MANY_MEMBERS)
+    return note_direct_initializer_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_STRUCT_TOO_MANY_MEMBERS,
+        initializer->value, plan->failure_token);
   if (status == PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS)
-    return note_direct_semantic_rejection(
+    return note_direct_initializer_rejection(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_UNION_TOO_MANY_ELEMENTS,
-        initializer->value);
+        initializer->value, plan->failure_token);
   if (status == PSX_LOCAL_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY)
     return note_direct_initializer_rejection(
         context,

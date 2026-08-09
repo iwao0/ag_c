@@ -2266,6 +2266,70 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"assignment_incomplete_array_rejected",
      "fixture:test/fixtures/should_reject/assignment_incomplete_array.c",
      "E3098"},
+    {"excess_scalar_initializer_file_scope_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_scalar_initializer_file_scope.c",
+     "E3025"},
+    {"excess_scalar_initializer_local_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_scalar_initializer_local.c",
+     "E3025"},
+    {"excess_scalar_initializer_static_local_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_scalar_initializer_static_local.c",
+     "E3025"},
+    {"excess_scalar_compound_literal_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_scalar_compound_literal_initializer.c",
+     "E3025"},
+    {"excess_array_initializer_file_scope_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_array_initializer_file_scope.c",
+     "E3027"},
+    {"excess_array_initializer_local_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_array_initializer_local.c",
+     "E3027"},
+    {"excess_array_initializer_static_local_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_array_initializer_static_local.c",
+     "E3027"},
+    {"excess_array_compound_literal_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_array_compound_literal_initializer.c",
+     "E3027"},
+    {"excess_struct_initializer_file_scope_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_struct_initializer_file_scope.c",
+     "E3032"},
+    {"excess_struct_initializer_local_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_struct_initializer_local.c",
+     "E3032"},
+    {"excess_struct_initializer_static_local_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_struct_initializer_static_local.c",
+     "E3032"},
+    {"excess_struct_compound_literal_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_struct_compound_literal_initializer.c",
+     "E3032"},
+    {"excess_union_initializer_file_scope_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_union_initializer_file_scope.c",
+     "E3036"},
+    {"excess_union_initializer_local_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_union_initializer_local.c",
+     "E3036"},
+    {"excess_union_initializer_static_local_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_union_initializer_static_local.c",
+     "E3036"},
+    {"excess_union_compound_literal_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "excess_union_compound_literal_initializer.c",
+     "E3036"},
     {"block_extern_vla_object_rejected",
      "fixture:test/fixtures/should_reject/extern_vla_object.c",
      "E3064"},
