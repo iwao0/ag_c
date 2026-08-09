@@ -1154,6 +1154,10 @@ const genericSource = {
     "int generic_score(struct GenericPlayer value) { return value.score; }\n" +
     "int generic_pointer_score(const struct GenericPlayer *value) { return value ? value->score : 0; }\n" +
     "int generic_pointer_present(const void *value) { return value != 0; }\n" +
+    "int generic_array_pointer_present(struct GenericPlayer (*value)[2]) { return value != 0; }\n" +
+    "int generic_factory_present(struct GenericPlayer (*value)(void)) { return value != 0; }\n" +
+    "const struct GenericPlayer *generic_player_pointer;\n" +
+    "struct GenericPlayer (*generic_player_array_pointer)[2];\n" +
     "int main(void) {\n" +
     "  int result = _Generic(generic_value, int: 1, default: 0);\n" +
     "  result += _Generic(generic_identity(generic_value), int: 2, default: 0);\n" +
@@ -1171,6 +1175,13 @@ const genericSource = {
     "  result += generic_pointer_score((const struct /* pointer cast */ GenericPlayer * const)0);\n" +
     "  result += generic_pointer_present((const struct /* pointer chain */ GenericPlayer * /* inner */ const * restrict)0);\n" +
     "  result += _Generic((struct GenericPlayer){ 0 }, struct /* association */ GenericPlayer: 8, default: 0);\n" +
+    "  result += _Generic(generic_player_pointer, struct GenericPlayer: 0, const struct /* pointer association */ GenericPlayer * const: 9, default: 0);\n" +
+    "  result += _Generic(generic_player_pointer, default: 0, const struct /* default first association */ GenericPlayer *: 11);\n" +
+    "  result += _Generic(generic_player_array_pointer, struct GenericPlayer *: 0, struct /* array pointer association */ GenericPlayer (*)[2]: 10, default: 0);\n" +
+    "  result += generic_array_pointer_present((struct /* array pointer cast */ GenericPlayer (*)[2])0);\n" +
+    "  result += generic_array_pointer_present((struct /* quoted array bound */ GenericPlayer (*)[sizeof(\")\")])0);\n" +
+    "  result += generic_factory_present((struct /* function pointer cast */ GenericPlayer (*)(void))0);\n" +
+    "  result += generic_array_pointer_present(&(struct /* array literal */ GenericPlayer [2]){{ 1 }, { 2 }});\n" +
     "  return result + _Generic(1, int: generic_value, default: 0);\n" +
     "}\n",
 };
@@ -1285,8 +1296,57 @@ const genericTagAssociation = findGenericName(
 const genericTagAssociationUse = findGenericName(
   "GenericPlayer", genericTagAssociation,
 );
+const genericPointerAssociation = findGenericName(
+  "struct /* pointer association */ GenericPlayer * const",
+  genericTagAssociationUse,
+);
+const genericPointerAssociationUse = findGenericName(
+  "GenericPlayer", genericPointerAssociation,
+);
+const genericDefaultFirstAssociation = findGenericName(
+  "struct /* default first association */ GenericPlayer *",
+  genericPointerAssociationUse,
+);
+const genericDefaultFirstAssociationUse = findGenericName(
+  "GenericPlayer", genericDefaultFirstAssociation,
+);
+const genericArrayPointerAssociation = findGenericName(
+  "struct /* array pointer association */ GenericPlayer (*)[2]",
+  genericDefaultFirstAssociationUse,
+);
+const genericArrayPointerAssociationUse = findGenericName(
+  "GenericPlayer", genericArrayPointerAssociation,
+);
+const genericArrayPointerCast = findGenericName(
+  "struct /* array pointer cast */ GenericPlayer (*)[2]",
+  genericArrayPointerAssociationUse,
+);
+const genericArrayPointerCastUse = findGenericName(
+  "GenericPlayer", genericArrayPointerCast,
+);
+const genericQuotedArrayBound = findGenericName(
+  "struct /* quoted array bound */ GenericPlayer (*)[sizeof(\")\")]",
+  genericArrayPointerCastUse,
+);
+const genericQuotedArrayBoundUse = findGenericName(
+  "GenericPlayer", genericQuotedArrayBound,
+);
+const genericFunctionPointerCast = findGenericName(
+  "struct /* function pointer cast */ GenericPlayer (*)(void)",
+  genericQuotedArrayBoundUse,
+);
+const genericFunctionPointerCastUse = findGenericName(
+  "GenericPlayer", genericFunctionPointerCast,
+);
+const genericArrayLiteral = findGenericName(
+  "struct /* array literal */ GenericPlayer [2]",
+  genericFunctionPointerCastUse,
+);
+const genericArrayLiteralUse = findGenericName(
+  "GenericPlayer", genericArrayLiteral,
+);
 const genericAssociationValue = findGenericName(
-  "int: generic_value", genericTagAssociationUse,
+  "int: generic_value", genericArrayLiteralUse,
 );
 const genericAssociationValueUse = findGenericName(
   "generic_value", genericAssociationValue,
@@ -1314,6 +1374,19 @@ const genericHoverCases = [
   { name: "GenericPlayer", kind: "tag", index: genericPointerCastUse },
   { name: "GenericPlayer", kind: "tag", index: genericPointerChainUse },
   { name: "GenericPlayer", kind: "tag", index: genericTagAssociationUse },
+  { name: "GenericPlayer", kind: "tag",
+    index: genericPointerAssociationUse },
+  { name: "GenericPlayer", kind: "tag",
+    index: genericDefaultFirstAssociationUse },
+  { name: "GenericPlayer", kind: "tag",
+    index: genericArrayPointerAssociationUse },
+  { name: "GenericPlayer", kind: "tag",
+    index: genericArrayPointerCastUse },
+  { name: "GenericPlayer", kind: "tag",
+    index: genericQuotedArrayBoundUse },
+  { name: "GenericPlayer", kind: "tag",
+    index: genericFunctionPointerCastUse },
+  { name: "GenericPlayer", kind: "tag", index: genericArrayLiteralUse },
   { name: "generic_value", kind: "object",
     index: genericAssociationValueUse },
 ];

@@ -133,6 +133,10 @@ static const char generic_hover_source[] =
     "int generic_score(struct GenericPlayer value) { return value.score; }\n"
     "int generic_pointer_score(const struct GenericPlayer *value) { return value ? value->score : 0; }\n"
     "int generic_pointer_present(const void *value) { return value != 0; }\n"
+    "int generic_array_pointer_present(struct GenericPlayer (*value)[2]) { return value != 0; }\n"
+    "int generic_factory_present(struct GenericPlayer (*value)(void)) { return value != 0; }\n"
+    "const struct GenericPlayer *generic_player_pointer;\n"
+    "struct GenericPlayer (*generic_player_array_pointer)[2];\n"
     "int main(void) {\n"
     "  int result = _Generic(generic_value, int: 1, default: 0);\n"
     "  result += _Generic(generic_identity(generic_value), int: 2, default: 0);\n"
@@ -150,6 +154,13 @@ static const char generic_hover_source[] =
     "  result += generic_pointer_score((const struct /* pointer cast */ GenericPlayer * const)0);\n"
     "  result += generic_pointer_present((const struct /* pointer chain */ GenericPlayer * /* inner */ const * restrict)0);\n"
     "  result += _Generic((struct GenericPlayer){ 0 }, struct /* association */ GenericPlayer: 8, default: 0);\n"
+    "  result += _Generic(generic_player_pointer, struct GenericPlayer: 0, const struct /* pointer association */ GenericPlayer * const: 9, default: 0);\n"
+    "  result += _Generic(generic_player_pointer, default: 0, const struct /* default first association */ GenericPlayer *: 11);\n"
+    "  result += _Generic(generic_player_array_pointer, struct GenericPlayer *: 0, struct /* array pointer association */ GenericPlayer (*)[2]: 10, default: 0);\n"
+    "  result += generic_array_pointer_present((struct /* array pointer cast */ GenericPlayer (*)[2])0);\n"
+    "  result += generic_array_pointer_present((struct /* quoted array bound */ GenericPlayer (*)[sizeof(\")\")])0);\n"
+    "  result += generic_factory_present((struct /* function pointer cast */ GenericPlayer (*)(void))0);\n"
+    "  result += generic_array_pointer_present(&(struct /* array literal */ GenericPlayer [2]){{ 1 }, { 2 }});\n"
     "  return result + _Generic(1, int: generic_value, default: 0);\n"
     "}\n";
 static const char documentation_hover_source[] =
@@ -2326,8 +2337,43 @@ int main(int argc, char **argv) {
       "struct /* association */ GenericPlayer");
   const char *generic_tag_association_use = strstr(
       generic_tag_association, "GenericPlayer");
+  const char *generic_pointer_association = strstr(
+      generic_tag_association_use,
+      "struct /* pointer association */ GenericPlayer * const");
+  const char *generic_pointer_association_use = strstr(
+      generic_pointer_association, "GenericPlayer");
+  const char *generic_default_first_association = strstr(
+      generic_pointer_association_use,
+      "struct /* default first association */ GenericPlayer *");
+  const char *generic_default_first_association_use = strstr(
+      generic_default_first_association, "GenericPlayer");
+  const char *generic_array_pointer_association = strstr(
+      generic_default_first_association_use,
+      "struct /* array pointer association */ GenericPlayer (*)[2]");
+  const char *generic_array_pointer_association_use = strstr(
+      generic_array_pointer_association, "GenericPlayer");
+  const char *generic_array_pointer_cast = strstr(
+      generic_array_pointer_association_use,
+      "struct /* array pointer cast */ GenericPlayer (*)[2]");
+  const char *generic_array_pointer_cast_use = strstr(
+      generic_array_pointer_cast, "GenericPlayer");
+  const char *generic_quoted_array_bound = strstr(
+      generic_array_pointer_cast_use,
+      "struct /* quoted array bound */ GenericPlayer (*)[sizeof(\")\")]");
+  const char *generic_quoted_array_bound_use = strstr(
+      generic_quoted_array_bound, "GenericPlayer");
+  const char *generic_function_pointer_cast = strstr(
+      generic_quoted_array_bound_use,
+      "struct /* function pointer cast */ GenericPlayer (*)(void)");
+  const char *generic_function_pointer_cast_use = strstr(
+      generic_function_pointer_cast, "GenericPlayer");
+  const char *generic_array_literal = strstr(
+      generic_function_pointer_cast_use,
+      "struct /* array literal */ GenericPlayer [2]");
+  const char *generic_array_literal_use = strstr(
+      generic_array_literal, "GenericPlayer");
   const char *generic_value_association = strstr(
-      generic_tag_association_use, "int: generic_value");
+      generic_array_literal_use, "int: generic_value");
   const char *generic_association_value_use = strstr(
       generic_value_association, "generic_value");
   CHECK(generic_macro_declaration && generic_typedef_declaration &&
@@ -2351,6 +2397,16 @@ int main(int argc, char **argv) {
             generic_pointer_cast && generic_pointer_cast_use &&
             generic_pointer_chain && generic_pointer_chain_use &&
             generic_tag_association && generic_tag_association_use &&
+            generic_pointer_association && generic_pointer_association_use &&
+            generic_default_first_association &&
+            generic_default_first_association_use &&
+            generic_array_pointer_association &&
+            generic_array_pointer_association_use &&
+            generic_array_pointer_cast && generic_array_pointer_cast_use &&
+            generic_quoted_array_bound && generic_quoted_array_bound_use &&
+            generic_function_pointer_cast &&
+            generic_function_pointer_cast_use &&
+            generic_array_literal && generic_array_literal_use &&
             generic_value_association && generic_association_value_use,
         "generic hover source anchors");
   struct {
@@ -2394,6 +2450,20 @@ int main(int argc, char **argv) {
       {generic_pointer_chain_use, "GenericPlayer", AG_LANGUAGE_SYMBOL_TAG,
        generic_struct_declaration, "", ""},
       {generic_tag_association_use, "GenericPlayer", AG_LANGUAGE_SYMBOL_TAG,
+       generic_struct_declaration, "", ""},
+      {generic_pointer_association_use, "GenericPlayer",
+       AG_LANGUAGE_SYMBOL_TAG, generic_struct_declaration, "", ""},
+      {generic_default_first_association_use, "GenericPlayer",
+       AG_LANGUAGE_SYMBOL_TAG, generic_struct_declaration, "", ""},
+      {generic_array_pointer_association_use, "GenericPlayer",
+       AG_LANGUAGE_SYMBOL_TAG, generic_struct_declaration, "", ""},
+      {generic_array_pointer_cast_use, "GenericPlayer",
+       AG_LANGUAGE_SYMBOL_TAG, generic_struct_declaration, "", ""},
+      {generic_quoted_array_bound_use, "GenericPlayer",
+       AG_LANGUAGE_SYMBOL_TAG, generic_struct_declaration, "", ""},
+      {generic_function_pointer_cast_use, "GenericPlayer",
+       AG_LANGUAGE_SYMBOL_TAG, generic_struct_declaration, "", ""},
+      {generic_array_literal_use, "GenericPlayer", AG_LANGUAGE_SYMBOL_TAG,
        generic_struct_declaration, "", ""},
       {generic_association_value_use, "generic_value",
        AG_LANGUAGE_SYMBOL_OBJECT, generic_object_declaration, "", ""},

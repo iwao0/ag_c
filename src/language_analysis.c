@@ -537,46 +537,82 @@ static int analysis_declaration_modifier_word(
   return 0;
 }
 
-static int analysis_pointer_qualifier_word(
-    const char *source, size_t start, size_t length) {
-  static const char *const words[] = {
-      "const", "volatile", "restrict", "_Atomic",
-  };
-  for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++)
-    if (analysis_word_is(source, start, length, words[i])) return 1;
-  return 0;
-}
-
-static int analysis_parenthesized_pointer_tail(
+static int analysis_type_name_tail_end(
     const char *source, size_t source_length, size_t start,
-    size_t *close_offset, size_t *pointer_depth) {
-  size_t cursor = skip_analysis_space_and_comments(
-      source, source_length, start);
-  size_t depth = 0;
-  while (cursor < source_length && source[cursor] == '*') {
-    depth++;
-    cursor++;
-    for (;;) {
-      cursor = skip_analysis_space_and_comments(
-          source, source_length, cursor);
-      if (cursor >= source_length || source[cursor] == '*' ||
-          source[cursor] == ')')
-        break;
-      if (!is_identifier_byte((unsigned char)source[cursor])) return 0;
-      size_t word_start = cursor;
-      while (cursor < source_length &&
-             is_identifier_byte((unsigned char)source[cursor]))
+    char terminator, size_t *tail_end) {
+  size_t paren_depth = 0;
+  size_t bracket_depth = 0;
+  size_t brace_depth = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  for (size_t cursor = start; cursor < source_length; cursor++) {
+    char c = source[cursor];
+    char next = cursor + 1 < source_length ? source[cursor + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') line_comment = 0;
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
         cursor++;
-      if (!analysis_pointer_qualifier_word(
-              source, word_start, cursor - word_start))
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      cursor++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      cursor++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      continue;
+    }
+    if (terminator == ':' && c == ':' && paren_depth == 0 &&
+        bracket_depth == 0 && brace_depth == 0) {
+      if (tail_end) *tail_end = cursor;
+      return 1;
+    }
+    if (c == '(') {
+      paren_depth++;
+    } else if (c == ')') {
+      if (paren_depth == 0) {
+        if (terminator == ')' && bracket_depth == 0 && brace_depth == 0) {
+          if (tail_end) *tail_end = cursor;
+          return 1;
+        }
         return 0;
+      }
+      paren_depth--;
+    } else if (c == '[') {
+      bracket_depth++;
+    } else if (c == ']') {
+      if (bracket_depth == 0) return 0;
+      bracket_depth--;
+    } else if (c == '{') {
+      brace_depth++;
+    } else if (c == '}') {
+      if (brace_depth == 0) return 0;
+      brace_depth--;
+    } else if ((c == ';' || c == ',') && paren_depth == 0 &&
+               bracket_depth == 0 && brace_depth == 0) {
+      return 0;
     }
   }
-  if (depth == 0 || cursor >= source_length || source[cursor] != ')')
-    return 0;
-  if (close_offset) *close_offset = cursor;
-  if (pointer_depth) *pointer_depth = depth;
-  return 1;
+  return 0;
 }
 
 static int object_declaration_prefix(
@@ -1123,6 +1159,7 @@ typedef struct {
   int is_generic_selection;
   size_t generic_separator_count;
   int generic_association_has_colon;
+  int generic_has_default_association;
   int requires_type_name;
   size_t pending_conditional_count;
 } recovery_delimiter_t;
@@ -1172,8 +1209,11 @@ static char *build_recovery_source(const char *source, size_t source_length,
     cursor_identifier_starts_conditional =
         after_name < source_length && source[after_name] == '?';
   }
-  size_t capacity = cursor * 2 + 8192;
-  if (capacity < cursor || capacity > (size_t)INT_MAX) return NULL;
+  if (cursor > SIZE_MAX - 8192 ||
+      source_length > SIZE_MAX - cursor - 8192)
+    return NULL;
+  size_t capacity = source_length + cursor + 8192;
+  if (capacity > (size_t)INT_MAX) return NULL;
   char *result = calloc(capacity, 1);
   recovery_delimiter_t *stack = calloc(cursor + 1, sizeof(*stack));
   if (!result || !stack) {
@@ -1270,6 +1310,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     int opens_for_control = 0;
     int opens_generic_selection = 0;
     int opens_type_name_context = 0;
+    int current_identifier_is_default = 0;
     if (is_identifier_byte((unsigned char)c)) {
       if (i == 0 ||
           !is_identifier_byte((unsigned char)result[i - 1])) {
@@ -1294,6 +1335,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
              memcmp(result + i, "union", strlen("union")) == 0) ||
             (identifier_end - i == strlen("enum") &&
              memcmp(result + i, "enum", strlen("enum")) == 0);
+        current_identifier_is_default =
+            identifier_end - i == strlen("default") &&
+            memcmp(result + i, "default", strlen("default")) == 0;
       }
     } else if (!isspace((unsigned char)c)) {
       opens_for_control = c == '(' && previous_token_is_for;
@@ -1313,6 +1357,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
           .is_generic_selection = opens_generic_selection,
           .generic_separator_count = 0,
           .generic_association_has_colon = 0,
+          .generic_has_default_association = 0,
           .requires_type_name = opens_type_name_context,
           .pending_conditional_count = 0,
       };
@@ -1331,6 +1376,10 @@ static char *build_recovery_source(const char *source, size_t source_length,
             : &root_pending_conditional_count;
     if (stack_count > 0 && stack[stack_count - 1].is_generic_selection) {
       recovery_delimiter_t *generic = &stack[stack_count - 1];
+      if (current_identifier_is_default &&
+          generic->generic_separator_count > 0 &&
+          !generic->generic_association_has_colon)
+        generic->generic_has_default_association = 1;
       if (c == ',') {
         generic->generic_separator_count++;
         generic->generic_association_has_colon = 0;
@@ -1381,21 +1430,24 @@ static char *build_recovery_source(const char *source, size_t source_length,
       stack_count > 0 && stack[stack_count - 1].requires_type_name;
   int cursor_on_complete_tag_name =
       has_complete_identifier && previous_token_is_tag_keyword;
-  size_t cursor_tag_pointer_depth = 0;
+  size_t cursor_tag_tail_end = cursor_name_end;
+  int cursor_tag_has_tail = 0;
   int cursor_tag_compound_literal = 0;
   int cursor_tag_cast_operand = 0;
-  if (cursor_on_complete_tag_name && stack_count > 0 &&
-      stack[stack_count - 1].open == '(') {
-    size_t after_tag = skip_analysis_space_and_comments(
-        source, source_length, cursor_name_end);
-    size_t pointer_close = 0;
-    if (analysis_parenthesized_pointer_tail(
-            source, source_length, cursor_name_end,
-            &pointer_close, &cursor_tag_pointer_depth))
-      after_tag = pointer_close;
-    if (after_tag < source_length && source[after_tag] == ')') {
+  if (cursor_on_complete_tag_name && stack_count > 0) {
+    char tail_terminator = 0;
+    if (cursor_in_generic_association_type)
+      tail_terminator = ':';
+    else if (stack[stack_count - 1].open == '(')
+      tail_terminator = ')';
+    if (tail_terminator && analysis_type_name_tail_end(
+            source, source_length, cursor_name_end, tail_terminator,
+            &cursor_tag_tail_end)) {
+      cursor_tag_has_tail = 1;
+    }
+    if (cursor_tag_has_tail && tail_terminator == ')') {
       size_t after_type = skip_analysis_space_and_comments(
-          source, source_length, after_tag + 1);
+          source, source_length, cursor_tag_tail_end + 1);
       if (after_type < source_length && source[after_type] == '{') {
         cursor_tag_compound_literal = 1;
       } else if (after_type < source_length &&
@@ -1408,8 +1460,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
   }
   if (cursor_on_complete_tag_name) {
     APPEND_BYTES(cursor_name, cursor_name_length);
-    for (size_t i = 0; i < cursor_tag_pointer_depth; i++)
-      APPEND_LITERAL(" *");
+    if (cursor_tag_has_tail && cursor_tag_tail_end > cursor_name_end)
+      APPEND_BYTES(source + cursor_name_end,
+                   cursor_tag_tail_end - cursor_name_end);
   } else if (cursor_in_required_type_name) {
     APPEND_LITERAL(" int");
   } else if (!cursor_in_generic_association_type &&
@@ -1447,6 +1500,12 @@ static char *build_recovery_source(const char *source, size_t source_length,
             }
           }
           APPEND_LITERAL(": 0");
+          int cursor_association_is_default =
+              has_complete_identifier && cursor_name_length == 7 &&
+              memcmp(cursor_name, "default", 7) == 0;
+          if (!stack[i - 1].generic_has_default_association &&
+              !cursor_association_is_default)
+            APPEND_LITERAL(", default: 0");
         }
       }
       if (stack[i - 1].is_for_control) {
