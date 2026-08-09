@@ -57,6 +57,10 @@ if [ ! -d "$suite" ]; then
   exit 2
 fi
 
+if ! validate_c_testsuite_manifest "$suite"; then
+  exit 2
+fi
+
 if [ "$validate" = "auto" ]; then
   if command -v wasm-validate >/dev/null 2>&1; then
     validate=1

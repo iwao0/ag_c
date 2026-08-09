@@ -34,6 +34,10 @@ if [ ! -d "$SUITE" ]; then
   exit 1
 fi
 
+if ! validate_c_testsuite_manifest "$SUITE"; then
+  exit 1
+fi
+
 if [ ! -x "$AGC" ]; then
   echo "error: ag_c が見つかりません ($AGC)。先に make してください。"
   exit 1

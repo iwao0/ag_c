@@ -14,3 +14,52 @@ unsupported_reason() {
     *) return 1 ;;
   esac
 }
+
+validate_c_testsuite_manifest() {
+  local suite=$1
+  local manifest=${BASH_SOURCE[0]}
+  local unsupported_ids duplicate_ids id src expected
+
+  unsupported_ids=$(sed -n \
+    's/^[[:space:]]*\([0-9][0-9]*\)).*/\1/p' "$manifest")
+  if [ -z "$unsupported_ids" ]; then
+    echo "c-testsuite unsupported manifest is empty: $manifest" >&2
+    return 1
+  fi
+
+  duplicate_ids=$(printf '%s\n' "$unsupported_ids" | LC_ALL=C sort | uniq -d)
+  if [ -n "$duplicate_ids" ]; then
+    echo "duplicate c-testsuite unsupported case IDs: $duplicate_ids" >&2
+    return 1
+  fi
+
+  for id in $unsupported_ids; do
+    case "$id" in
+      [0-9][0-9][0-9][0-9][0-9]) ;;
+      *)
+        echo "invalid c-testsuite unsupported case ID: $id" >&2
+        return 1
+        ;;
+    esac
+    if [ ! -f "$suite/$id.c" ]; then
+      echo "stale c-testsuite unsupported case ID: $id" >&2
+      return 1
+    fi
+  done
+
+  for src in "$suite"/[0-9]*.c; do
+    [ -f "$src" ] || continue
+    if [ ! -f "$src.expected" ]; then
+      echo "missing c-testsuite expected output: $src.expected" >&2
+      return 1
+    fi
+  done
+  for expected in "$suite"/[0-9]*.c.expected; do
+    [ -f "$expected" ] || continue
+    src=${expected%.expected}
+    if [ ! -f "$src" ]; then
+      echo "stale c-testsuite expected output: $expected" >&2
+      return 1
+    fi
+  done
+}

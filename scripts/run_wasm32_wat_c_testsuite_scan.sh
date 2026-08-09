@@ -58,6 +58,10 @@ if [ ! -d "$suite" ]; then
   exit 2
 fi
 
+if ! validate_c_testsuite_manifest "$suite"; then
+  exit 2
+fi
+
 wat2wasm_available=0
 if command -v wat2wasm >/dev/null 2>&1; then
   wat2wasm_available=1

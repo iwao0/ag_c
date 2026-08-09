@@ -846,6 +846,31 @@ const wasm32WatFixtureScan = await readFile(
   "scripts/run_wasm32_wat_fixture_scan.sh",
   "utf8",
 );
+const cTestsuiteManifestSource = await readFile(
+  "scripts/c_testsuite_unsupported_cases.sh",
+  "utf8",
+);
+const cTestsuiteRunnerSources = await Promise.all([
+  "scripts/run_c_testsuite.sh",
+  "scripts/run_wasm32_object_c_testsuite_scan.sh",
+  "scripts/run_wasm32_wat_c_testsuite_scan.sh",
+  "scripts/run_wasm32_object_link_c_testsuite_scan.sh",
+].map(async (path) => [path, await readFile(path, "utf8")]));
+if (!cTestsuiteManifestSource.includes("validate_c_testsuite_manifest()")) {
+  throw new Error(
+    "the shared c-testsuite manifest must validate unsupported IDs and expected outputs",
+  );
+}
+for (const [path, source] of cTestsuiteRunnerSources) {
+  if (
+    !source.includes("c_testsuite_unsupported_cases.sh") ||
+    !source.includes("validate_c_testsuite_manifest")
+  ) {
+    throw new Error(
+      `${path} must validate the shared c-testsuite manifest before scanning`,
+    );
+  }
+}
 const wasm32ObjectFixtureTestSource = await readFile(
   "test/test_wasm32_object.c",
   "utf8",
