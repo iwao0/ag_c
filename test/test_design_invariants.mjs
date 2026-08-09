@@ -851,6 +851,7 @@ const cTestsuiteManifestSource = await readFile(
   "scripts/c_testsuite_unsupported_cases.sh",
   "utf8",
 );
+const toolTimeoutSource = await readFile("scripts/tool_timeout.sh", "utf8");
 const cTestsuiteRunnerSources = await Promise.all([
   "scripts/run_c_testsuite.sh",
   "scripts/run_wasm32_object_c_testsuite_scan.sh",
@@ -863,43 +864,44 @@ if (!cTestsuiteManifestSource.includes("validate_c_testsuite_manifest()")) {
   );
 }
 if (
-  !cTestsuiteManifestSource.includes("validate_c_testsuite_timeout_sec()") ||
-  !cTestsuiteManifestSource.includes("c_testsuite_run_with_timeout()")
+  !toolTimeoutSource.includes("validate_tool_timeout_sec()") ||
+  !toolTimeoutSource.includes("run_with_timeout()")
 ) {
-  throw new Error("c-testsuite runners must share a portable timeout helper");
+  throw new Error("test runners must share a portable timeout helper");
 }
-const cTestsuiteTimeoutProbe = spawnSync(
+const toolTimeoutProbe = spawnSync(
   "bash",
   [
     "-c",
     [
       "set -u",
-      ". scripts/c_testsuite_unsupported_cases.sh",
-      "validate_c_testsuite_timeout_sec 10",
-      "if validate_c_testsuite_timeout_sec 0 >/dev/null 2>&1; then exit 1; fi",
-      "c_testsuite_run_with_timeout 1 /usr/bin/true",
+      ". scripts/tool_timeout.sh",
+      "validate_tool_timeout_sec 10",
+      "if validate_tool_timeout_sec 0 >/dev/null 2>&1; then exit 1; fi",
+      "run_with_timeout 1 /usr/bin/true",
       "status=0",
-      "c_testsuite_run_with_timeout 1 /usr/bin/false || status=$?",
+      "run_with_timeout 1 /usr/bin/false || status=$?",
       '[ "$status" -eq 1 ] || exit 1',
       "status=0",
-      "c_testsuite_run_with_timeout 1 perl -e 'select undef, undef, undef, 2' || status=$?",
+      "run_with_timeout 1 perl -e 'select undef, undef, undef, 2' || status=$?",
       '[ "$status" -eq 124 ]',
     ].join("\n"),
   ],
   { encoding: "utf8", timeout: 5000 },
 );
-if (cTestsuiteTimeoutProbe.status !== 0) {
+if (toolTimeoutProbe.status !== 0) {
   throw new Error(
-    "c-testsuite timeout helper probe failed:\n" +
-      (cTestsuiteTimeoutProbe.stderr || cTestsuiteTimeoutProbe.error || "unknown error"),
+    "tool timeout helper probe failed:\n" +
+      (toolTimeoutProbe.stderr || toolTimeoutProbe.error || "unknown error"),
   );
 }
 for (const [path, source] of cTestsuiteRunnerSources) {
   if (
     !source.includes("c_testsuite_unsupported_cases.sh") ||
+    !source.includes("tool_timeout.sh") ||
     !source.includes("validate_c_testsuite_manifest") ||
     !source.includes("C_TESTSUITE_TIMEOUT_SEC:-") ||
-    !source.includes("c_testsuite_run_with_timeout")
+    !source.includes("run_with_timeout")
   ) {
     throw new Error(
       `${path} must validate the manifest and bound long-running tool stages`,
@@ -911,7 +913,7 @@ if (
   !nativeCTestsuiteRunnerSource.includes("AG_C:-") ||
   !nativeCTestsuiteRunnerSource.includes("C_TESTSUITE_DIR:-") ||
   !nativeCTestsuiteRunnerSource.includes("C_TESTSUITE_TIMEOUT_SEC:-") ||
-  !nativeCTestsuiteRunnerSource.includes("c_testsuite_run_with_timeout") ||
+  !nativeCTestsuiteRunnerSource.includes("run_with_timeout") ||
   !nativeCTestsuiteRunnerSource.includes('printf "Fail (timeout):') ||
   !nativeCTestsuiteRunnerSource.includes("fail_total=$((") ||
   !nativeCTestsuiteRunnerSource.includes('[ "$fail_total" -ne 0 ]')

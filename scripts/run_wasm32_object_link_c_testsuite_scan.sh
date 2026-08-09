@@ -9,6 +9,7 @@ out_dir=${WASM32_OBJECT_LINK_C_TESTSUITE_SCAN_DIR:-"$root/build/wasm32_obj_link_
 tool_timeout_sec=${C_TESTSUITE_TIMEOUT_SEC:-10}
 interp_timeout_sec=${WASM32_OBJECT_LINK_SCAN_TIMEOUT_SEC:-60}
 . "$root/scripts/c_testsuite_unsupported_cases.sh"
+. "$root/scripts/tool_timeout.sh"
 list_fail=0
 verbose=0
 
@@ -68,8 +69,8 @@ if ! validate_c_testsuite_manifest "$suite"; then
   exit 2
 fi
 
-if ! validate_c_testsuite_timeout_sec "$tool_timeout_sec" ||
-   ! validate_c_testsuite_timeout_sec "$interp_timeout_sec"; then
+if ! validate_tool_timeout_sec "$tool_timeout_sec" ||
+   ! validate_tool_timeout_sec "$interp_timeout_sec"; then
   exit 2
 fi
 
@@ -116,7 +117,7 @@ for src in "$suite"/[0-9]*.c; do
   interp="$out_dir/$base.interp"
 
   compile_status=0
-  c_testsuite_run_with_timeout "$tool_timeout_sec" \
+  run_with_timeout "$tool_timeout_sec" \
     "$agc_wasm" -c -o "$obj" "$src" >/dev/null 2>"$err" || compile_status=$?
   if [ "$compile_status" -ne 0 ]; then
     failed=$((failed + 1))
@@ -133,7 +134,7 @@ for src in "$suite"/[0-9]*.c; do
   fi
 
   link_status=0
-  c_testsuite_run_with_timeout "$tool_timeout_sec" \
+  run_with_timeout "$tool_timeout_sec" \
     "$ag_wasm_link" --no-entry --export=main -o "$wasm" "$obj" \
     >/dev/null 2>"$err" || link_status=$?
   if [ "$link_status" -ne 0 ]; then
@@ -152,7 +153,7 @@ for src in "$suite"/[0-9]*.c; do
 
   if [ "$validate" -ne 0 ]; then
     validate_status=0
-    c_testsuite_run_with_timeout "$tool_timeout_sec" \
+    run_with_timeout "$tool_timeout_sec" \
       wasm-validate "$wasm" >/dev/null 2>"$err" || validate_status=$?
     if [ "$validate_status" -ne 0 ]; then
       failed=$((failed + 1))
@@ -177,7 +178,7 @@ for src in "$suite"/[0-9]*.c; do
   fi
 
   objdump_status=0
-  c_testsuite_run_with_timeout "$tool_timeout_sec" \
+  run_with_timeout "$tool_timeout_sec" \
     wasm-objdump -x "$wasm" > "$dump" 2>"$err" || objdump_status=$?
   if [ "$objdump_status" -ne 0 ]; then
     failed=$((failed + 1))
@@ -201,7 +202,7 @@ for src in "$suite"/[0-9]*.c; do
 
   runnable=$((runnable + 1))
   interp_status=0
-  c_testsuite_run_with_timeout "$interp_timeout_sec" \
+  run_with_timeout "$interp_timeout_sec" \
     wasm-interp "$wasm" --run-all-exports > "$interp" 2>"$err" ||
     interp_status=$?
   if [ "$interp_status" -ne 0 ]; then

@@ -16,6 +16,7 @@ AGC=${AG_C:-"$ROOT/build/ag_c"}
 SUITE=${C_TESTSUITE_DIR:-"$ROOT/test/external/c-testsuite/tests/single-exec"}
 TIMEOUT_SEC=${C_TESTSUITE_TIMEOUT_SEC:-10}
 . "$ROOT/scripts/c_testsuite_unsupported_cases.sh"
+. "$ROOT/scripts/tool_timeout.sh"
 
 VERBOSE=0
 LIST_FAIL=0
@@ -40,7 +41,7 @@ if ! validate_c_testsuite_manifest "$SUITE"; then
   exit 1
 fi
 
-if ! validate_c_testsuite_timeout_sec "$TIMEOUT_SEC"; then
+if ! validate_tool_timeout_sec "$TIMEOUT_SEC"; then
   exit 1
 fi
 
@@ -88,7 +89,7 @@ for cfile in "$SUITE"/[0-9]*.c; do
   # ag_c は CWD 相対の include/ を見るため ROOT に cd して実行
   compile_status=0
   ( cd "$ROOT" &&
-    c_testsuite_run_with_timeout "$TIMEOUT_SEC" "$AGC" "$cfile" > "$sfile" ) \
+    run_with_timeout "$TIMEOUT_SEC" "$AGC" "$cfile" > "$sfile" ) \
     2>/dev/null || compile_status=$?
   if [ "$compile_status" -eq 124 ]; then
     fail_timeout=$((fail_timeout + 1))
@@ -103,7 +104,7 @@ for cfile in "$SUITE"/[0-9]*.c; do
 
   # cc で link (-arch arm64 を明示)
   link_status=0
-  c_testsuite_run_with_timeout "$TIMEOUT_SEC" \
+  run_with_timeout "$TIMEOUT_SEC" \
     cc -arch arm64 -o "$exe" "$sfile" 2>/dev/null || link_status=$?
   if [ "$link_status" -eq 124 ]; then
     fail_timeout=$((fail_timeout + 1))
@@ -119,7 +120,7 @@ for cfile in "$SUITE"/[0-9]*.c; do
   # 実行 (CWD を TMPDIR にして相対パスのファイル書き込みを ROOT に漏らさない)
   rc=0
   actual=$( ( cd "$TMPDIR" &&
-    c_testsuite_run_with_timeout "$TIMEOUT_SEC" "$exe" ) 2>/dev/null ) || rc=$?
+    run_with_timeout "$TIMEOUT_SEC" "$exe" ) 2>/dev/null ) || rc=$?
 
   if [ "$rc" -eq 124 ]; then
     fail_timeout=$((fail_timeout + 1))

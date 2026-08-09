@@ -7,6 +7,7 @@ suite=${C_TESTSUITE_DIR:-"$root/test/external/c-testsuite/tests/single-exec"}
 out_dir=${WASM32_OBJECT_C_TESTSUITE_SCAN_DIR:-"$root/build/wasm32_obj_cts_scan"}
 timeout_sec=${C_TESTSUITE_TIMEOUT_SEC:-10}
 . "$root/scripts/c_testsuite_unsupported_cases.sh"
+. "$root/scripts/tool_timeout.sh"
 list_fail=0
 verbose=0
 validate=auto
@@ -63,7 +64,7 @@ if ! validate_c_testsuite_manifest "$suite"; then
   exit 2
 fi
 
-if ! validate_c_testsuite_timeout_sec "$timeout_sec"; then
+if ! validate_tool_timeout_sec "$timeout_sec"; then
   exit 2
 fi
 
@@ -101,7 +102,7 @@ for src in "$suite"/[0-9]*.c; do
   err="$out_dir/$base.err"
 
   compile_status=0
-  c_testsuite_run_with_timeout "$timeout_sec" \
+  run_with_timeout "$timeout_sec" \
     "$agc_wasm" -c -o "$obj" "$src" >/dev/null 2>"$err" || compile_status=$?
   if [ "$compile_status" -ne 0 ]; then
     failed=$((failed + 1))
@@ -121,7 +122,7 @@ for src in "$suite"/[0-9]*.c; do
 
   if [ "$validate" -ne 0 ]; then
     validate_status=0
-    c_testsuite_run_with_timeout "$timeout_sec" \
+    run_with_timeout "$timeout_sec" \
       wasm-validate "$obj" >/dev/null 2>"$err" || validate_status=$?
     if [ "$validate_status" -ne 0 ]; then
       failed=$((failed + 1))
