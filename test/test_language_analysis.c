@@ -163,6 +163,28 @@ static const char generic_hover_source[] =
     "  result += generic_array_pointer_present(&(struct /* array literal */ GenericPlayer [2]){{ 1 }, { 2 }});\n"
     "  return result + _Generic(1, int: generic_value, default: 0);\n"
     "}\n";
+static const char function_declarator_hover_source[] =
+    "int increment(int value) { return value + 1; }\n"
+    "int old_sum(left, right) /* ; { comment } */\n"
+    "int left, right;\n"
+    "{ return left + right; }\n"
+    "int old_apply(callback, value)\n"
+    "int callback(int);\n"
+    "register int value;\n"
+    "{ return callback(value); }\n"
+    "int old_member(value)\n"
+    "struct LocalValue { int member; } value;\n"
+    "{ return value.member; }\n"
+    "int old_array(values)\n"
+    "int values[';'];\n"
+    "{ return values[0]; }\n"
+    "int first(void), second(void);\n"
+    "int third(void), brace_values[2] = { 1, 2 };\n"
+    "typedef int Scalar;\n"
+    "int takes_scalar(Scalar);\n"
+    "int (parenthesized)(int value) { return value + 1; }\n"
+    "int target(int value);\n"
+    "int (*(factory(void)))(int) { return target; }\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -1087,6 +1109,38 @@ static int print_generic_hover_parity_snapshot(const char *cursor_text) {
   return result;
 }
 
+static int print_function_declarator_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(function_declarator_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  if (!session) return 1;
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = analyze_named(
+      session, "function-declarator.c", function_declarator_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0},
+      ag_language_analysis_default_limits(), &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  int result = 1;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
 static int print_documentation_hover_parity_snapshot(
     const char *cursor_text) {
   char *end = NULL;
@@ -1594,6 +1648,9 @@ int main(int argc, char **argv) {
   if (argc == 3 &&
       strcmp(argv[1], "--generic-hover-parity-json") == 0)
     return print_generic_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--function-declarator-hover-parity-json") == 0)
+    return print_function_declarator_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
       strcmp(argv[1], "--documentation-hover-parity-json") == 0)
     return print_documentation_hover_parity_snapshot(argv[2]);
@@ -2755,6 +2812,68 @@ int main(int argc, char **argv) {
     ag_language_analysis_snapshot_dispose(&snapshot);
   }
   ag_language_analysis_snapshot_dispose(&function_use_snapshot);
+
+  struct {
+    const char *name;
+    const char *return_type;
+    int parameter_count;
+    int has_prototype;
+    int has_definition;
+  } function_declarator_cases[] = {
+      {"old_sum", "int", 2, 0, 1},
+      {"old_apply", "int", 2, 0, 1},
+      {"old_member", "int", 1, 0, 1},
+      {"old_array", "int", 1, 0, 1},
+      {"first", "int", 0, 1, 0},
+      {"second", "int", 0, 1, 0},
+      {"third", "int", 0, 1, 0},
+      {"takes_scalar", "int", 1, 1, 0},
+      {"parenthesized", "int", 1, 1, 1},
+      {"factory", "int (*)(int)", 0, 1, 1},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(function_declarator_cases) /
+                        sizeof(function_declarator_cases[0]);
+       case_index++) {
+    const char *name = function_declarator_cases[case_index].name;
+    const char *declaration = strstr(
+        function_declarator_hover_source, name);
+    size_t name_length = strlen(name);
+    size_t cursor_deltas[] = {0, name_length / 2, name_length};
+    CHECK(declaration != NULL, "function declarator hover anchor");
+    for (size_t cursor_index = 0;
+         cursor_index < sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+         cursor_index++) {
+      CHECK(analyze_named(
+                session, "function-declarator.c",
+                function_declarator_hover_source,
+                (size_t)(declaration - function_declarator_hover_source) +
+                    cursor_deltas[cursor_index],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "function declarator hover analysis");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      CHECK(hover && hover->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
+                strcmp(hover->name, name) == 0 &&
+                strcmp(hover->return_type,
+                       function_declarator_cases[case_index].return_type) ==
+                    0 &&
+                hover->parameter_count ==
+                    function_declarator_cases[case_index].parameter_count &&
+                hover->has_function_prototype ==
+                    function_declarator_cases[case_index].has_prototype &&
+                hover->has_definition ==
+                    function_declarator_cases[case_index].has_definition &&
+                hover->declaration.start.offset ==
+                    (int)(declaration - function_declarator_hover_source) &&
+                (!hover->has_definition ||
+                 hover->definition.start.offset ==
+                     (int)(declaration -
+                           function_declarator_hover_source)) &&
+                !snapshot.partial && snapshot.diagnostic_count == 0,
+            "function declarator hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
 
   const char *function_forms_source =
       "extern int declared_only(int value);\n"
@@ -3950,6 +4069,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (35 scenarios)");
+  puts("language analysis tests passed (36 scenarios)");
   return 0;
 }

@@ -1470,6 +1470,131 @@ for (const analysisCase of genericHoverCases) {
   }
 }
 
+const functionDeclaratorSource = {
+  name: "function-declarator.c",
+  source: "int increment(int value) { return value + 1; }\n" +
+    "int old_sum(left, right) /* ; { comment } */\n" +
+    "int left, right;\n" +
+    "{ return left + right; }\n" +
+    "int old_apply(callback, value)\n" +
+    "int callback(int);\n" +
+    "register int value;\n" +
+    "{ return callback(value); }\n" +
+    "int old_member(value)\n" +
+    "struct LocalValue { int member; } value;\n" +
+    "{ return value.member; }\n" +
+    "int old_array(values)\n" +
+    "int values[';'];\n" +
+    "{ return values[0]; }\n" +
+    "int first(void), second(void);\n" +
+    "int third(void), brace_values[2] = { 1, 2 };\n" +
+    "typedef int Scalar;\n" +
+    "int takes_scalar(Scalar);\n" +
+    "int (parenthesized)(int value) { return value + 1; }\n" +
+    "int target(int value);\n" +
+    "int (*(factory(void)))(int) { return target; }\n",
+};
+const functionDeclaratorCases = [
+  { name: "old_sum", returnType: "int", parameterCount: 2, hasPrototype: false,
+    hasDefinition: true },
+  { name: "old_apply", returnType: "int", parameterCount: 2, hasPrototype: false,
+    hasDefinition: true },
+  { name: "old_member", returnType: "int", parameterCount: 1, hasPrototype: false,
+    hasDefinition: true },
+  { name: "old_array", returnType: "int", parameterCount: 1, hasPrototype: false,
+    hasDefinition: true },
+  { name: "first", returnType: "int", parameterCount: 0, hasPrototype: true,
+    hasDefinition: false },
+  { name: "second", returnType: "int", parameterCount: 0, hasPrototype: true,
+    hasDefinition: false },
+  { name: "third", returnType: "int", parameterCount: 0, hasPrototype: true,
+    hasDefinition: false },
+  { name: "takes_scalar", returnType: "int", parameterCount: 1, hasPrototype: true,
+    hasDefinition: false },
+  { name: "parenthesized", returnType: "int", parameterCount: 1,
+    hasPrototype: true, hasDefinition: true },
+  { name: "factory", returnType: "int (*)(int)", parameterCount: 0,
+    hasPrototype: true, hasDefinition: true },
+];
+const nativeFunctionDeclaratorSnapshots = new Map();
+
+function assertFunctionDeclaratorHover(result, analysisCase, lifecycle) {
+  const declarationStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.name,
+  );
+  const hover = result.hover;
+  if (declarationStart < 0 || result.partial ||
+      result.diagnostics.length !== 0 ||
+      hover?.name !== analysisCase.name || hover.kind !== "function" ||
+      hover.declaration.sourceName !== functionDeclaratorSource.name ||
+      hover.declaration.start.offset !== declarationStart ||
+      hover.function?.returnType !== analysisCase.returnType ||
+      hover.function.hasPrototype !== analysisCase.hasPrototype ||
+      hover.function.parameters.length !== analysisCase.parameterCount ||
+      (analysisCase.hasDefinition
+        ? hover.definition?.start.offset !== declarationStart
+        : hover.definition !== null)) {
+    throw new Error(
+      `${lifecycle} function declarator hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+for (const analysisCase of functionDeclaratorCases) {
+  const declarationStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.name,
+  );
+  for (const delta of [
+    0,
+    Math.floor(analysisCase.name.length / 2),
+    Buffer.byteLength(analysisCase.name),
+  ]) {
+    const byteOffset = declarationStart + delta;
+    const wasmResult = compiler.analyzeSource(functionDeclaratorSource, {
+      cursor: { sourceName: functionDeclaratorSource.name, byteOffset },
+    });
+    assertFunctionDeclaratorHover(
+      wasmResult, analysisCase, "reused instance",
+    );
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--function-declarator-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm function declarator snapshots differ at byte ${byteOffset}`,
+    );
+    nativeFunctionDeclaratorSnapshots.set(byteOffset, nativeResult);
+  }
+}
+
+for (const analysisCase of functionDeclaratorCases) {
+  const declarationStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.name,
+  );
+  const byteOffset = declarationStart +
+    Math.floor(analysisCase.name.length / 2);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(
+      functionDeclaratorSource,
+      { cursor: { sourceName: functionDeclaratorSource.name, byteOffset } },
+    );
+    assertFunctionDeclaratorHover(
+      freshResult, analysisCase, "fresh instance",
+    );
+    assert.deepStrictEqual(
+      freshResult,
+      nativeFunctionDeclaratorSnapshots.get(byteOffset),
+      `fresh native/Wasm function declarator snapshot differs at byte ${byteOffset}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
 const enumParitySource = {
   name: "main.c",
   source: "enum {\n" +

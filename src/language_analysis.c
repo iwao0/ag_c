@@ -840,15 +840,53 @@ static int object_declarator_end(
   return 0;
 }
 
+static int analysis_old_style_identifier_list_at(
+    const char *source, size_t length, size_t open) {
+  if (!source || open >= length || source[open] != '(') return 0;
+  size_t cursor = skip_analysis_space_and_comments(
+      source, length, open + 1);
+  if (cursor < length && source[cursor] == ')') return 1;
+  for (;;) {
+    if (cursor >= length ||
+        !(source[cursor] == '_' ||
+          (unsigned char)source[cursor] >= 0x80 ||
+          isalpha((unsigned char)source[cursor])))
+      return 0;
+    cursor++;
+    while (cursor < length &&
+           is_identifier_byte((unsigned char)source[cursor]))
+      cursor++;
+    cursor = skip_analysis_space_and_comments(
+        source, length, cursor);
+    if (cursor < length && source[cursor] == ')') return 1;
+    if (cursor >= length || source[cursor] != ',') return 0;
+    cursor = skip_analysis_space_and_comments(
+        source, length, cursor + 1);
+  }
+}
+
 static int function_declaration_recovery_end(
     const char *source, size_t length, size_t name_end,
+    int initial_paren_depth, int initial_bracket_depth,
     size_t *declaration_end, int *is_definition) {
-  size_t cursor = skip_analysis_space_and_comments(
-      source, length, name_end);
-  if (cursor >= length || source[cursor] != '(') return 0;
-  int paren_depth = 0;
-  int bracket_depth = 0;
+  size_t cursor = name_end;
+  int direct_function_name =
+      initial_paren_depth == 0 && initial_bracket_depth == 0;
+  if (direct_function_name) {
+    cursor = skip_analysis_space_and_comments(
+        source, length, cursor);
+    if (cursor >= length || source[cursor] != '(') return 0;
+  }
+  int old_style_identifier_list = direct_function_name &&
+      analysis_old_style_identifier_list_at(source, length, cursor);
+  int paren_depth = initial_paren_depth;
+  int bracket_depth = initial_bracket_depth;
   int body_depth = 0;
+  int declaration_brace_depth = 0;
+  int initial_parameter_list_closed = 0;
+  int parameter_declaration_has_tokens = 0;
+  int multi_declarator_tail = 0;
+  int declarator_has_assignment = 0;
   int line_comment = 0;
   int block_comment = 0;
   int quote = 0;
@@ -916,19 +954,54 @@ static int function_declaration_recovery_end(
       }
       continue;
     }
+    if (declaration_brace_depth > 0) {
+      if (c == '{') declaration_brace_depth++;
+      else if (c == '}') declaration_brace_depth--;
+      continue;
+    }
+    int closed_initial_parameter_list = 0;
     if (c == '(') paren_depth++;
-    else if (c == ')' && paren_depth > 0) paren_depth--;
-    else if (c == '[') bracket_depth++;
+    else if (c == ')' && paren_depth > 0) {
+      paren_depth--;
+      if (paren_depth == 0 && !initial_parameter_list_closed) {
+        initial_parameter_list_closed = 1;
+        closed_initial_parameter_list = 1;
+      }
+    } else if (c == '[') bracket_depth++;
     else if (c == ']' && bracket_depth > 0) bracket_depth--;
     else if (paren_depth == 0 && bracket_depth == 0 && c == ';') {
+      if (!multi_declarator_tail && old_style_identifier_list &&
+          initial_parameter_list_closed &&
+          parameter_declaration_has_tokens) {
+        parameter_declaration_has_tokens = 0;
+        declarator_has_assignment = 0;
+        continue;
+      }
       *declaration_end = i + 1;
       *is_definition = 0;
       return 1;
     } else if (paren_depth == 0 && bracket_depth == 0 && c == '{') {
-      body_depth = 1;
+      if (declarator_has_assignment || multi_declarator_tail ||
+          (old_style_identifier_list && initial_parameter_list_closed &&
+           parameter_declaration_has_tokens)) {
+        declaration_brace_depth = 1;
+      } else {
+        body_depth = 1;
+      }
     } else if (paren_depth == 0 && bracket_depth == 0 && c == ',') {
-      return 0;
+      if (!(old_style_identifier_list && initial_parameter_list_closed &&
+            parameter_declaration_has_tokens)) {
+        multi_declarator_tail = 1;
+        declarator_has_assignment = 0;
+      }
+    } else if (paren_depth == 0 && bracket_depth == 0 && c == '=') {
+      declarator_has_assignment = 1;
     }
+    if (!multi_declarator_tail && old_style_identifier_list &&
+        initial_parameter_list_closed &&
+        !closed_initial_parameter_list &&
+        !isspace((unsigned char)c) && c != ';' && c != ',' && c != '{')
+      parameter_declaration_has_tokens = 1;
   }
   return 0;
 }
@@ -955,12 +1028,12 @@ static char *build_function_declaration_recovery_source(
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
           &bracket_depth, &brace_depth) ||
-      paren_depth != 0 || bracket_depth != 0 || brace_depth != 0)
+      brace_depth != 0 || (paren_depth == 0 && bracket_depth != 0))
     return NULL;
   size_t declaration_end = 0;
   int is_definition = 0;
   if (!function_declaration_recovery_end(
-          source, length, name_end,
+          source, length, name_end, paren_depth, bracket_depth,
           &declaration_end, &is_definition) ||
       (is_definition && outer_brace_count != 0))
     return NULL;
