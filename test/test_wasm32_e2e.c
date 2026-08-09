@@ -884,6 +884,8 @@ static const wasm_e2e_case_t cases[] = {
      "test/fixtures/probes_found_bugs/macro_generated_declarator_boundaries.c"},
     {"probes_found_bugs", "macro_generated_initializer_boundaries",
      "test/fixtures/probes_found_bugs/macro_generated_initializer_boundaries.c"},
+    {"probes_found_bugs", "ordinary_character_array_exact_boundaries",
+     "test/fixtures/probes_found_bugs/ordinary_character_array_exact_boundaries.c"},
     {"func_name", "each_func_distinct", "test/fixtures/func_name/each_func_distinct.c"},
     {"func_name", "first_char_helper", "test/fixtures/func_name/first_char_helper.c"},
     {"func_name", "first_char_main", "test/fixtures/func_name/first_char_main.c"},
