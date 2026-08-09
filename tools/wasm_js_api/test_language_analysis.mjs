@@ -1151,17 +1151,26 @@ const genericSource = {
     "enum { GENERIC_MODE = 3 };\n" +
     "int generic_value;\n" +
     "int generic_identity(int value) { return value; }\n" +
+    "int generic_score(struct GenericPlayer value) { return value.score; }\n" +
+    "int generic_pointer_score(const struct GenericPlayer *value) { return value ? value->score : 0; }\n" +
+    "int generic_pointer_present(const void *value) { return value != 0; }\n" +
     "int main(void) {\n" +
     "  int result = _Generic(generic_value, int: 1, default: 0);\n" +
     "  result += _Generic(generic_identity(generic_value), int: 2, default: 0);\n" +
     "  result += _Generic(GENERIC_MODE, int: 3, default: 0);\n" +
     "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n" +
     "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n" +
+    "  result += (int)sizeof(_Atomic /* type */ (GenericScore));\n" +
     "  result += (int)_Alignof /* query */ (const GenericScore *);\n" +
     "  result += (int)_Alignof(int [1 + GENERIC_MODE]);\n" +
     "  result += (int)sizeof /* query */ (const struct /* tag */ GenericPlayer);\n" +
     "  result += (int)_Alignof(union /* tag */ GenericPayload);\n" +
     "  result += (int)sizeof(enum /* tag */ GenericState);\n" +
+    "  result += generic_score((struct /* literal */ GenericPlayer){ 7 });\n" +
+    "  result += (int)(enum /* cast */ GenericState)GENERIC_IDLE;\n" +
+    "  result += generic_pointer_score((const struct /* pointer cast */ GenericPlayer * const)0);\n" +
+    "  result += generic_pointer_present((const struct /* pointer chain */ GenericPlayer * /* inner */ const * restrict)0);\n" +
+    "  result += _Generic((struct GenericPlayer){ 0 }, struct /* association */ GenericPlayer: 8, default: 0);\n" +
     "  return result + _Generic(1, int: generic_value, default: 0);\n" +
     "}\n",
 };
@@ -1209,9 +1218,16 @@ const genericTypedefControl = findGenericName(
 const genericTypedefUse = findGenericName(
   "GenericScore", genericTypedefControl,
 );
+const genericAtomicQuery = findGenericName(
+  "_Atomic /* type */ (GenericScore",
+  genericTypedefUse + "GenericScore".length,
+);
+const genericAtomicTypedefUse = findGenericName(
+  "GenericScore", genericAtomicQuery,
+);
 const genericAlignof = findGenericName(
   "_Alignof /* query */ (const GenericScore",
-  genericTypedefUse + "GenericScore".length,
+  genericAtomicTypedefUse + "GenericScore".length,
 );
 const genericAlignofTypedefUse = findGenericName(
   "GenericScore", genericAlignof,
@@ -1237,8 +1253,40 @@ const genericEnumTagQuery = findGenericName(
 const genericEnumTagUse = findGenericName(
   "GenericState", genericEnumTagQuery,
 );
+const genericStructLiteral = findGenericName(
+  "generic_score((struct /* literal */ GenericPlayer)", genericEnumTagUse,
+);
+const genericStructLiteralUse = findGenericName(
+  "GenericPlayer", genericStructLiteral,
+);
+const genericEnumCast = findGenericName(
+  "(enum /* cast */ GenericState)", genericStructLiteralUse,
+);
+const genericEnumCastUse = findGenericName(
+  "GenericState", genericEnumCast,
+);
+const genericPointerCast = findGenericName(
+  "(const struct /* pointer cast */ GenericPlayer * const)0",
+  genericEnumCastUse,
+);
+const genericPointerCastUse = findGenericName(
+  "GenericPlayer", genericPointerCast,
+);
+const genericPointerChain = findGenericName(
+  "(const struct /* pointer chain */ GenericPlayer * /* inner */ const * restrict)0",
+  genericPointerCastUse,
+);
+const genericPointerChainUse = findGenericName(
+  "GenericPlayer", genericPointerChain,
+);
+const genericTagAssociation = findGenericName(
+  "struct /* association */ GenericPlayer", genericPointerChainUse,
+);
+const genericTagAssociationUse = findGenericName(
+  "GenericPlayer", genericTagAssociation,
+);
 const genericAssociationValue = findGenericName(
-  "int: generic_value", genericEnumTagUse,
+  "int: generic_value", genericTagAssociationUse,
 );
 const genericAssociationValueUse = findGenericName(
   "generic_value", genericAssociationValue,
@@ -1253,12 +1301,19 @@ const genericHoverCases = [
     index: genericMacroUse },
   { name: "GenericScore", kind: "typedef", index: genericTypedefUse },
   { name: "GenericScore", kind: "typedef",
+    index: genericAtomicTypedefUse },
+  { name: "GenericScore", kind: "typedef",
     index: genericAlignofTypedefUse },
   { name: "GENERIC_MODE", kind: "enumConstant", value: "3",
     index: genericAlignofBoundUse },
   { name: "GenericPlayer", kind: "tag", index: genericStructUse },
   { name: "GenericPayload", kind: "tag", index: genericUnionUse },
   { name: "GenericState", kind: "tag", index: genericEnumTagUse },
+  { name: "GenericPlayer", kind: "tag", index: genericStructLiteralUse },
+  { name: "GenericState", kind: "tag", index: genericEnumCastUse },
+  { name: "GenericPlayer", kind: "tag", index: genericPointerCastUse },
+  { name: "GenericPlayer", kind: "tag", index: genericPointerChainUse },
+  { name: "GenericPlayer", kind: "tag", index: genericTagAssociationUse },
   { name: "generic_value", kind: "object",
     index: genericAssociationValueUse },
 ];

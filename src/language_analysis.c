@@ -537,6 +537,48 @@ static int analysis_declaration_modifier_word(
   return 0;
 }
 
+static int analysis_pointer_qualifier_word(
+    const char *source, size_t start, size_t length) {
+  static const char *const words[] = {
+      "const", "volatile", "restrict", "_Atomic",
+  };
+  for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++)
+    if (analysis_word_is(source, start, length, words[i])) return 1;
+  return 0;
+}
+
+static int analysis_parenthesized_pointer_tail(
+    const char *source, size_t source_length, size_t start,
+    size_t *close_offset, size_t *pointer_depth) {
+  size_t cursor = skip_analysis_space_and_comments(
+      source, source_length, start);
+  size_t depth = 0;
+  while (cursor < source_length && source[cursor] == '*') {
+    depth++;
+    cursor++;
+    for (;;) {
+      cursor = skip_analysis_space_and_comments(
+          source, source_length, cursor);
+      if (cursor >= source_length || source[cursor] == '*' ||
+          source[cursor] == ')')
+        break;
+      if (!is_identifier_byte((unsigned char)source[cursor])) return 0;
+      size_t word_start = cursor;
+      while (cursor < source_length &&
+             is_identifier_byte((unsigned char)source[cursor]))
+        cursor++;
+      if (!analysis_pointer_qualifier_word(
+              source, word_start, cursor - word_start))
+        return 0;
+    }
+  }
+  if (depth == 0 || cursor >= source_length || source[cursor] != ')')
+    return 0;
+  if (close_offset) *close_offset = cursor;
+  if (pointer_depth) *pointer_depth = depth;
+  return 1;
+}
+
 static int object_declaration_prefix(
     const char *source, size_t name_start, size_t *outer_brace_count,
     int *paren_depth, int *bracket_depth, int *brace_depth) {
@@ -1081,8 +1123,7 @@ typedef struct {
   int is_generic_selection;
   size_t generic_separator_count;
   int generic_association_has_colon;
-  int is_sizeof_query;
-  int is_alignof_type_query;
+  int requires_type_name;
   size_t pending_conditional_count;
 } recovery_delimiter_t;
 
@@ -1109,12 +1150,14 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int has_complete_identifier = 0;
   const char *cursor_name = NULL;
   size_t cursor_name_length = 0;
+  size_t cursor_name_end = 0;
   identifier_at(
       source, source_length, cursor,
       &cursor_name, &cursor_name_length);
   if (cursor_name && cursor_name_length > 0) {
     size_t name_start = (size_t)(cursor_name - source);
     size_t name_end = name_start + cursor_name_length;
+    cursor_name_end = name_end;
     /* A delimiter after the name proves that this is a complete source token,
      * rather than an identifier prefix still being typed at EOF. */
     if (name_end < source_length &&
@@ -1168,8 +1211,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int preprocessor_line = 0;
   int previous_token_is_for = 0;
   int previous_token_is_generic = 0;
-  int previous_token_is_sizeof = 0;
-  int previous_token_is_alignof = 0;
+  int previous_token_requires_type_name = 0;
   int previous_token_is_tag_keyword = 0;
   size_t root_pending_conditional_count = 0;
   char last_significant = 0;
@@ -1212,8 +1254,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       at_line_start = 0;
       previous_token_is_for = 0;
       previous_token_is_generic = 0;
-      previous_token_is_sizeof = 0;
-      previous_token_is_alignof = 0;
+      previous_token_requires_type_name = 0;
       previous_token_is_tag_keyword = 0;
       continue;
     }
@@ -1228,8 +1269,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (preprocessor_line) continue;
     int opens_for_control = 0;
     int opens_generic_selection = 0;
-    int opens_sizeof_query = 0;
-    int opens_alignof_type_query = 0;
+    int opens_type_name_context = 0;
     if (is_identifier_byte((unsigned char)c)) {
       if (i == 0 ||
           !is_identifier_byte((unsigned char)result[i - 1])) {
@@ -1242,12 +1282,11 @@ static char *build_recovery_source(const char *source, size_t source_length,
         previous_token_is_generic =
             identifier_end - i == strlen("_Generic") &&
             memcmp(result + i, "_Generic", strlen("_Generic")) == 0;
-        previous_token_is_sizeof =
-            identifier_end - i == strlen("sizeof") &&
-            memcmp(result + i, "sizeof", strlen("sizeof")) == 0;
-        previous_token_is_alignof =
-            identifier_end - i == strlen("_Alignof") &&
-            memcmp(result + i, "_Alignof", strlen("_Alignof")) == 0;
+        previous_token_requires_type_name =
+            (identifier_end - i == strlen("_Alignof") &&
+             memcmp(result + i, "_Alignof", strlen("_Alignof")) == 0) ||
+            (identifier_end - i == strlen("_Atomic") &&
+             memcmp(result + i, "_Atomic", strlen("_Atomic")) == 0);
         previous_token_is_tag_keyword =
             (identifier_end - i == strlen("struct") &&
              memcmp(result + i, "struct", strlen("struct")) == 0) ||
@@ -1259,12 +1298,11 @@ static char *build_recovery_source(const char *source, size_t source_length,
     } else if (!isspace((unsigned char)c)) {
       opens_for_control = c == '(' && previous_token_is_for;
       opens_generic_selection = c == '(' && previous_token_is_generic;
-      opens_sizeof_query = c == '(' && previous_token_is_sizeof;
-      opens_alignof_type_query = c == '(' && previous_token_is_alignof;
+      opens_type_name_context =
+          c == '(' && previous_token_requires_type_name;
       previous_token_is_for = 0;
       previous_token_is_generic = 0;
-      previous_token_is_sizeof = 0;
-      previous_token_is_alignof = 0;
+      previous_token_requires_type_name = 0;
       previous_token_is_tag_keyword = 0;
     }
     if (c == '(' || c == '[' || c == '{') {
@@ -1275,8 +1313,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
           .is_generic_selection = opens_generic_selection,
           .generic_separator_count = 0,
           .generic_association_has_colon = 0,
-          .is_sizeof_query = opens_sizeof_query,
-          .is_alignof_type_query = opens_alignof_type_query,
+          .requires_type_name = opens_type_name_context,
           .pending_conditional_count = 0,
       };
     } else if ((c == ')' || c == ']' || c == '}') && stack_count > 0) {
@@ -1340,16 +1377,40 @@ static char *build_recovery_source(const char *source, size_t source_length,
         !stack[i - 1].generic_association_has_colon;
     break;
   }
-  int cursor_in_alignof_type =
-      stack_count > 0 && stack[stack_count - 1].is_alignof_type_query;
-  int cursor_in_complete_tag_query =
-      has_complete_identifier && previous_token_is_tag_keyword &&
-      stack_count > 0 &&
-      (stack[stack_count - 1].is_sizeof_query ||
-       stack[stack_count - 1].is_alignof_type_query);
-  if (cursor_in_complete_tag_query) {
+  int cursor_in_required_type_name =
+      stack_count > 0 && stack[stack_count - 1].requires_type_name;
+  int cursor_on_complete_tag_name =
+      has_complete_identifier && previous_token_is_tag_keyword;
+  size_t cursor_tag_pointer_depth = 0;
+  int cursor_tag_compound_literal = 0;
+  int cursor_tag_cast_operand = 0;
+  if (cursor_on_complete_tag_name && stack_count > 0 &&
+      stack[stack_count - 1].open == '(') {
+    size_t after_tag = skip_analysis_space_and_comments(
+        source, source_length, cursor_name_end);
+    size_t pointer_close = 0;
+    if (analysis_parenthesized_pointer_tail(
+            source, source_length, cursor_name_end,
+            &pointer_close, &cursor_tag_pointer_depth))
+      after_tag = pointer_close;
+    if (after_tag < source_length && source[after_tag] == ')') {
+      size_t after_type = skip_analysis_space_and_comments(
+          source, source_length, after_tag + 1);
+      if (after_type < source_length && source[after_type] == '{') {
+        cursor_tag_compound_literal = 1;
+      } else if (after_type < source_length &&
+                 (is_identifier_byte((unsigned char)source[after_type]) ||
+                  source[after_type] == '\'' || source[after_type] == '"' ||
+                  source[after_type] == '(')) {
+        cursor_tag_cast_operand = 1;
+      }
+    }
+  }
+  if (cursor_on_complete_tag_name) {
     APPEND_BYTES(cursor_name, cursor_name_length);
-  } else if (cursor_in_alignof_type) {
+    for (size_t i = 0; i < cursor_tag_pointer_depth; i++)
+      APPEND_LITERAL(" *");
+  } else if (cursor_in_required_type_name) {
     APPEND_LITERAL(" int");
   } else if (!cursor_in_generic_association_type &&
       (cursor_identifier_starts_conditional ||
@@ -1377,11 +1438,13 @@ static char *build_recovery_source(const char *source, size_t source_length,
         if (stack[i - 1].generic_separator_count == 0) {
           APPEND_LITERAL(", default: 0");
         } else if (!stack[i - 1].generic_association_has_colon) {
-          if (has_complete_identifier && cursor_name &&
-              cursor_name_length > 0) {
-            APPEND_BYTES(cursor_name, cursor_name_length);
-          } else {
-            APPEND_LITERAL("int");
+          if (!cursor_on_complete_tag_name) {
+            if (has_complete_identifier && cursor_name &&
+                cursor_name_length > 0) {
+              APPEND_BYTES(cursor_name, cursor_name_length);
+            } else {
+              APPEND_LITERAL("int");
+            }
           }
           APPEND_LITERAL(": 0");
         }
@@ -1394,6 +1457,10 @@ static char *build_recovery_source(const char *source, size_t source_length,
         }
       }
       APPEND_LITERAL(")");
+      if (i == stack_count && cursor_tag_compound_literal)
+        APPEND_LITERAL("{ 0 }");
+      else if (i == stack_count && cursor_tag_cast_operand)
+        APPEND_LITERAL("0");
       if (stack[i - 1].is_for_control) {
         APPEND_LITERAL(" {\nint " AG_LANGUAGE_CURSOR_MARKER ";\n}\n");
         cursor_marker_appended = 1;

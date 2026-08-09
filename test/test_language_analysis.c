@@ -130,17 +130,26 @@ static const char generic_hover_source[] =
     "enum { GENERIC_MODE = 3 };\n"
     "int generic_value;\n"
     "int generic_identity(int value) { return value; }\n"
+    "int generic_score(struct GenericPlayer value) { return value.score; }\n"
+    "int generic_pointer_score(const struct GenericPlayer *value) { return value ? value->score : 0; }\n"
+    "int generic_pointer_present(const void *value) { return value != 0; }\n"
     "int main(void) {\n"
     "  int result = _Generic(generic_value, int: 1, default: 0);\n"
     "  result += _Generic(generic_identity(generic_value), int: 2, default: 0);\n"
     "  result += _Generic(GENERIC_MODE, int: 3, default: 0);\n"
     "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n"
     "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n"
+    "  result += (int)sizeof(_Atomic /* type */ (GenericScore));\n"
     "  result += (int)_Alignof /* query */ (const GenericScore *);\n"
     "  result += (int)_Alignof(int [1 + GENERIC_MODE]);\n"
     "  result += (int)sizeof /* query */ (const struct /* tag */ GenericPlayer);\n"
     "  result += (int)_Alignof(union /* tag */ GenericPayload);\n"
     "  result += (int)sizeof(enum /* tag */ GenericState);\n"
+    "  result += generic_score((struct /* literal */ GenericPlayer){ 7 });\n"
+    "  result += (int)(enum /* cast */ GenericState)GENERIC_IDLE;\n"
+    "  result += generic_pointer_score((const struct /* pointer cast */ GenericPlayer * const)0);\n"
+    "  result += generic_pointer_present((const struct /* pointer chain */ GenericPlayer * /* inner */ const * restrict)0);\n"
+    "  result += _Generic((struct GenericPlayer){ 0 }, struct /* association */ GenericPlayer: 8, default: 0);\n"
     "  return result + _Generic(1, int: generic_value, default: 0);\n"
     "}\n";
 static const char documentation_hover_source[] =
@@ -2265,8 +2274,13 @@ int main(int argc, char **argv) {
       generic_macro_use, "_Generic(generic_value, GenericScore");
   const char *generic_typedef_use = strstr(
       generic_typedef_control, "GenericScore");
-  const char *generic_alignof = strstr(
+  const char *generic_atomic_query = strstr(
       generic_typedef_use + strlen("GenericScore"),
+      "_Atomic /* type */ (GenericScore");
+  const char *generic_atomic_typedef_use = strstr(
+      generic_atomic_query, "GenericScore");
+  const char *generic_alignof = strstr(
+      generic_atomic_typedef_use + strlen("GenericScore"),
       "_Alignof /* query */ (const GenericScore");
   const char *generic_alignof_typedef_use = strstr(
       generic_alignof, "GenericScore");
@@ -2287,8 +2301,33 @@ int main(int argc, char **argv) {
       generic_union_use, "sizeof(enum /* tag */ GenericState");
   const char *generic_enum_tag_use = strstr(
       generic_enum_tag_query, "GenericState");
+  const char *generic_struct_literal = strstr(
+      generic_enum_tag_use,
+      "generic_score((struct /* literal */ GenericPlayer)");
+  const char *generic_struct_literal_use = strstr(
+      generic_struct_literal, "GenericPlayer");
+  const char *generic_enum_cast = strstr(
+      generic_struct_literal_use,
+      "(enum /* cast */ GenericState)");
+  const char *generic_enum_cast_use = strstr(
+      generic_enum_cast, "GenericState");
+  const char *generic_pointer_cast = strstr(
+      generic_enum_cast_use,
+      "(const struct /* pointer cast */ GenericPlayer * const)0");
+  const char *generic_pointer_cast_use = strstr(
+      generic_pointer_cast, "GenericPlayer");
+  const char *generic_pointer_chain = strstr(
+      generic_pointer_cast_use,
+      "(const struct /* pointer chain */ GenericPlayer * /* inner */ const * restrict)0");
+  const char *generic_pointer_chain_use = strstr(
+      generic_pointer_chain, "GenericPlayer");
+  const char *generic_tag_association = strstr(
+      generic_pointer_chain_use,
+      "struct /* association */ GenericPlayer");
+  const char *generic_tag_association_use = strstr(
+      generic_tag_association, "GenericPlayer");
   const char *generic_value_association = strstr(
-      generic_enum_tag_use, "int: generic_value");
+      generic_tag_association_use, "int: generic_value");
   const char *generic_association_value_use = strstr(
       generic_value_association, "generic_value");
   CHECK(generic_macro_declaration && generic_typedef_declaration &&
@@ -2301,11 +2340,17 @@ int main(int argc, char **argv) {
             generic_enum_control && generic_enum_use &&
             generic_macro_control && generic_macro_use &&
             generic_typedef_control && generic_typedef_use &&
+            generic_atomic_query && generic_atomic_typedef_use &&
             generic_alignof && generic_alignof_typedef_use &&
             generic_alignof_bound && generic_alignof_bound_use &&
             generic_struct_query && generic_struct_use &&
             generic_union_query && generic_union_use &&
             generic_enum_tag_query && generic_enum_tag_use &&
+            generic_struct_literal && generic_struct_literal_use &&
+            generic_enum_cast && generic_enum_cast_use &&
+            generic_pointer_cast && generic_pointer_cast_use &&
+            generic_pointer_chain && generic_pointer_chain_use &&
+            generic_tag_association && generic_tag_association_use &&
             generic_value_association && generic_association_value_use,
         "generic hover source anchors");
   struct {
@@ -2328,6 +2373,8 @@ int main(int argc, char **argv) {
        generic_macro_declaration, "", "9"},
       {generic_typedef_use, "GenericScore", AG_LANGUAGE_SYMBOL_TYPEDEF,
        generic_typedef_declaration, "", ""},
+      {generic_atomic_typedef_use, "GenericScore",
+       AG_LANGUAGE_SYMBOL_TYPEDEF, generic_typedef_declaration, "", ""},
       {generic_alignof_typedef_use, "GenericScore", AG_LANGUAGE_SYMBOL_TYPEDEF,
        generic_typedef_declaration, "", ""},
       {generic_alignof_bound_use, "GENERIC_MODE",
@@ -2338,6 +2385,16 @@ int main(int argc, char **argv) {
        generic_union_declaration, "", ""},
       {generic_enum_tag_use, "GenericState", AG_LANGUAGE_SYMBOL_TAG,
        generic_enum_tag_declaration, "", ""},
+      {generic_struct_literal_use, "GenericPlayer", AG_LANGUAGE_SYMBOL_TAG,
+       generic_struct_declaration, "", ""},
+      {generic_enum_cast_use, "GenericState", AG_LANGUAGE_SYMBOL_TAG,
+       generic_enum_tag_declaration, "", ""},
+      {generic_pointer_cast_use, "GenericPlayer", AG_LANGUAGE_SYMBOL_TAG,
+       generic_struct_declaration, "", ""},
+      {generic_pointer_chain_use, "GenericPlayer", AG_LANGUAGE_SYMBOL_TAG,
+       generic_struct_declaration, "", ""},
+      {generic_tag_association_use, "GenericPlayer", AG_LANGUAGE_SYMBOL_TAG,
+       generic_struct_declaration, "", ""},
       {generic_association_value_use, "generic_value",
        AG_LANGUAGE_SYMBOL_OBJECT, generic_object_declaration, "", ""},
   };
