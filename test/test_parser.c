@@ -10685,7 +10685,7 @@ static void test_direct_function_typed_hir_resolution_boundary(
       "int __direct_declared_function(int); "
       "for (int index = 0, limit = 2; index < limit; index++) "
       "sum += index; "
-      "int index = 30, scalar_braced = {{31}}; "
+      "int index = 30, scalar_braced = {31}; "
       "sum += index + scalar_braced; "
       "sum += sizeof((struct __direct_pair)pair); "
       "sum += values[0] + inferred[1] + matrix[1][0] + "
@@ -10980,14 +10980,8 @@ static void test_direct_function_typed_hir_resolution_boundary(
   const node_init_list_t *syntax_scalar_braced_outer =
       (const node_init_list_t *)syntax_scalar_braced_initializer->value;
   ASSERT_EQ(1, syntax_scalar_braced_outer->entry_count);
-  ASSERT_EQ(ND_INIT_LIST,
-            syntax_scalar_braced_outer->entries[0].value->kind);
-  const node_init_list_t *syntax_scalar_braced_inner =
-      (const node_init_list_t *)syntax_scalar_braced_outer
-          ->entries[0].value;
-  ASSERT_EQ(1, syntax_scalar_braced_inner->entry_count);
   const node_t *syntax_scalar_braced_value =
-      syntax_scalar_braced_inner->entries[0].value;
+      syntax_scalar_braced_outer->entries[0].value;
   ASSERT_TRUE(syntax_scalar_braced_value != NULL);
   ASSERT_EQ(ND_NUM, syntax_scalar_braced_value->kind);
   ASSERT_EQ(ND_COMPOUND_ASSIGN, nested_block->body[31]->kind);

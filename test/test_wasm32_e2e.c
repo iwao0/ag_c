@@ -643,6 +643,7 @@ static const wasm_e2e_case_t cases[] = {
     {"type_decl", "const_decl", "test/fixtures/type_decl/const_decl.c"},
     {"type_decl", "volatile_decl", "test/fixtures/type_decl/volatile_decl.c"},
     {"type_decl", "scalar_brace_init", "test/fixtures/type_decl/scalar_brace_init.c"},
+    {"type_decl", "scalar_subobject_brace_init", "test/fixtures/type_decl/scalar_subobject_brace_init.c"},
     {"type_decl", "static_assert_toplevel", "test/fixtures/type_decl/static_assert_toplevel.c"},
     {"type_decl", "static_assert_stmt", "test/fixtures/type_decl/static_assert_stmt.c"},
     {"type_decl", "typedef_array_1d_local", "test/fixtures/type_decl/typedef_array_1d_local.c"},

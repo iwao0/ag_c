@@ -557,6 +557,13 @@ int psx_diagnose_syntax_typed_hir_rejection_in_context(
                            diagnostics,
                            DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_SCALAR_INVALID_BRACE_NESTING:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_ARRAY_TOO_MANY_ELEMENTS:
       diag_emit_tokf_in(
           diagnostics, DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS,

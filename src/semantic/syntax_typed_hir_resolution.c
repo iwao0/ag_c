@@ -8033,6 +8033,11 @@ static int preflight_direct_flat_initializer(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_SCALAR_TOO_MANY_ELEMENTS,
         initializer->value, plan->failure_token);
+  if (status == PSX_LOCAL_INITIALIZER_SCALAR_INVALID_BRACE_NESTING)
+    return note_direct_initializer_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_SCALAR_INVALID_BRACE_NESTING,
+        initializer->value, plan->failure_token);
   if (status == PSX_LOCAL_INITIALIZER_ARRAY_TOO_MANY_ELEMENTS)
     return note_direct_initializer_rejection(
         context,

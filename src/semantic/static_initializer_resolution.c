@@ -160,9 +160,13 @@ void psx_resolve_static_initializer(
       return;
     }
     if (!list->entries || list->entries[0].designator_count > 0 ||
-        !list->entries[0].value ||
-        list->entries[0].value->kind == ND_INIT_LIST) {
+        !list->entries[0].value) {
       resolution->status = PSX_STATIC_INITIALIZER_INVALID_SCALAR_LIST;
+      return;
+    }
+    if (list->entries[0].value->kind == ND_INIT_LIST) {
+      resolution->status =
+          PSX_STATIC_INITIALIZER_SCALAR_INVALID_BRACE_NESTING;
       return;
     }
     resolution->scalar_list_value_selected = 1;

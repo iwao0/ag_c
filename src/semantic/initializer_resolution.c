@@ -1001,6 +1001,13 @@ static int flat_initializer_apply_list(
   for (int i = 0; i < list->entry_count; i++) {
     const psx_initializer_entry_t *entry = &list->entries[i];
     if (!entry->value) return 0;
+    if (psx_type_kind_is_scalar(object_shape.kind) &&
+        entry->value->kind == ND_INIT_LIST) {
+      return flat_initializer_fail(
+          context,
+          PSX_LOCAL_INITIALIZER_SCALAR_INVALID_BRACE_NESTING,
+          entry->value->tok ? entry->value->tok : entry->tok);
+    }
     if (object_shape.kind == PSX_TYPE_UNION &&
         entry->designator_count == 0 && positional_union_active) {
       psx_type_shape_t positional_shape = {0};
@@ -1117,7 +1124,6 @@ static int flat_initializer_apply_list(
       }
       if (entry->value->kind == ND_INIT_LIST &&
           !positional_union_active &&
-          cursor_object->leaf_end - cursor_object->leaf_begin > 1 &&
           !flat_initializer_child_containing_leaf(
               context, cursor_object, cursor, &target))
         return 0;
