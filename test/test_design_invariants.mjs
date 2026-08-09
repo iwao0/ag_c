@@ -535,6 +535,74 @@ if (JSON.stringify(nativeOnlyPositiveFixtures) !==
       `wasm-only: ${wasmOnlyPositiveFixtures.join(", ") || "none"}`,
   );
 }
+const allCFixturePaths = (await sourceFilesUnder("test/fixtures"))
+  .filter((path) => path.endsWith(".c"))
+  .map((path) => path.slice("test/fixtures/".length))
+  .sort();
+const fixturePartitions = [
+  ["native-positive", nativePositiveFixtureSet],
+  [
+    "should-reject",
+    new Set(shouldRejectFixtureNames.map((name) => `should_reject/${name}`)),
+  ],
+  [
+    "compiler-limits",
+    new Set(compilerLimitFixtureNames.map(
+      (name) => `compiler_limits/${name}`,
+    )),
+  ],
+  [
+    "strict-C-reject",
+    new Set(expectedNativeProbeRegistrationExclusions.map(
+      (name) => `probes_found_bugs/${name}`,
+    )),
+  ],
+  [
+    "wasm32-specific",
+    new Set(wasm32FixtureNames.map((name) => `wasm32/${name}`)),
+  ],
+  ["continuation-integration", new Set(["wasm_continuation_basic.c"])],
+];
+const allCFixturePathSet = new Set(allCFixturePaths);
+const fixturePartitionMembership = new Map();
+for (const [partition, paths] of fixturePartitions) {
+  for (const path of paths) {
+    const memberships = fixturePartitionMembership.get(path) ?? [];
+    memberships.push(partition);
+    fixturePartitionMembership.set(path, memberships);
+  }
+}
+const unclassifiedCFixtures = allCFixturePaths.filter(
+  (path) => !fixturePartitionMembership.has(path),
+);
+const multiplyClassifiedCFixtures = [
+  ...fixturePartitionMembership.entries(),
+].filter(([, memberships]) => memberships.length !== 1)
+  .map(([path, memberships]) => `${path} (${memberships.join(", ")})`)
+  .sort();
+const staleCFixtureClassifications = [
+  ...fixturePartitionMembership.keys(),
+].filter((path) => !allCFixturePathSet.has(path)).sort();
+if (unclassifiedCFixtures.length || multiplyClassifiedCFixtures.length ||
+    staleCFixtureClassifications.length) {
+  throw new Error(
+    "C fixture test-role partition drift\n" +
+      `unclassified: ${unclassifiedCFixtures.join(", ") || "none"}\n` +
+      `multiple: ${multiplyClassifiedCFixtures.join(", ") || "none"}\n` +
+      `stale: ${staleCFixtureClassifications.join(", ") || "none"}`,
+  );
+}
+const wasmJsPipelineTestSource = await readFile(
+  "tools/wasm_js_api/test_compile_link_pipeline.mjs",
+  "utf8",
+);
+if (!wasmJsPipelineTestSource.includes(
+      "../../test/fixtures/wasm_continuation_basic.c",
+    )) {
+  throw new Error(
+    "the continuation integration fixture must run in the Wasm JS pipeline",
+  );
+}
 const wasmMultiTuProbeFixtures = [
   "aligned_global_data_reloc_xtu_main.c",
   "aligned_global_data_reloc_xtu_other.c",

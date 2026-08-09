@@ -105,24 +105,18 @@ if (synchronousContinuation.main() !== 3 ||
   throw new Error("loop-free continuation did not complete exactly once");
 }
 
-const continuationProgram = await toolchain.instantiateLinkedWasm(`
-int game_running(void);
-static int observed;
-int main(void) {
-  int frame = 0;
-  while (game_running()) {
-    frame += 1;
-    observed = frame;
-  }
-  observed += 100;
-  return frame;
-}
-int read_observed(void) { return observed; }
-`, {
-  exports: ["main", "read_observed"],
-  useStdlib: false,
-  continuation: { entry: "main", frameCondition: "game_running" },
-});
+const continuationSource = await readFile(
+  new URL("../../test/fixtures/wasm_continuation_basic.c", import.meta.url),
+  "utf8",
+);
+const continuationProgram = await toolchain.instantiateLinkedWasm(
+  continuationSource,
+  {
+    exports: ["main", "read_observed"],
+    useStdlib: false,
+    continuation: { entry: "main", frameCondition: "game_running" },
+  },
+);
 const continuation = continuationProgram.instance.exports;
 if (continuation.main() !== 2 || continuation.read_observed() !== 0 ||
     continuation.__agc_continuation_status() !== 2) {
