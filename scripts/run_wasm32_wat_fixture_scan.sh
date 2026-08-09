@@ -3,6 +3,8 @@ set -u
 
 agc_wasm=${AG_C_WASM:-./build/ag_c_wasm}
 out_dir=${WASM32_WAT_SCAN_DIR:-build/wasm32_wat_scan}
+timeout_sec=${WASM32_FIXTURE_SCAN_TIMEOUT_SEC:-10}
+. "$(dirname "$0")/tool_timeout.sh"
 list_fail=0
 verbose=0
 validate=auto
@@ -18,6 +20,7 @@ compiles the fixture paths registered in test/test_e2e.c. If wat2wasm is availab
 WAT to a binary wasm module. If wasm-validate is available, validates the module.
 Set AG_C_WASM to override the compiler path.
 Set WASM32_WAT_SCAN_DIR to override the output directory.
+Set WASM32_FIXTURE_SCAN_TIMEOUT_SEC to override the per-tool timeout.
 EOF
 }
 
@@ -608,6 +611,10 @@ if [ ! -x "$agc_wasm" ]; then
   exit 2
 fi
 
+if ! validate_tool_timeout_sec "$timeout_sec"; then
+  exit 2
+fi
+
 wat2wasm_available=0
 if command -v wat2wasm >/dev/null 2>&1; then
   wat2wasm_available=1
@@ -628,6 +635,7 @@ failures="$out_dir/failures.txt"
 scanned=0
 failed=0
 skipped=0
+timed_out=0
 
 fixture_list="$out_dir/fixtures.txt"
 if [ "$fixture_source" = "e2e" ]; then
@@ -659,9 +667,18 @@ while IFS= read -r src; do
   wasm="$out_dir/${safe%.c}.wasm"
   err="$out_dir/${safe%.c}.err"
 
-  if ! "$agc_wasm" "$src" > "$wat" 2>"$err"; then
+  compile_status=0
+  run_with_timeout "$timeout_sec" \
+    "$agc_wasm" "$src" > "$wat" 2>"$err" || compile_status=$?
+  if [ "$compile_status" -ne 0 ]; then
     failed=$((failed + 1))
-    msg=$(sed -n '1p' "$err")
+    if [ "$compile_status" -eq 124 ]; then
+      timed_out=$((timed_out + 1))
+      msg="timed out after ${timeout_sec}s"
+    else
+      msg=$(sed -n '1p' "$err")
+      [ -n "$msg" ] || msg="exited with status $compile_status"
+    fi
     printf '%s\tcompile: %s\n' "$src" "$msg" >> "$failures"
     if [ "$verbose" -ne 0 ]; then
       printf 'FAIL %s\tcompile: %s\n' "$src" "$msg"
@@ -669,24 +686,46 @@ while IFS= read -r src; do
     continue
   fi
 
-  if [ "$wat2wasm_available" -ne 0 ] && ! wat2wasm "$wat" -o "$wasm" 2>"$err"; then
-    failed=$((failed + 1))
-    msg=$(sed -n '1p' "$err")
-    printf '%s\twat2wasm: %s\n' "$src" "$msg" >> "$failures"
-    if [ "$verbose" -ne 0 ]; then
-      printf 'FAIL %s\twat2wasm: %s\n' "$src" "$msg"
+  if [ "$wat2wasm_available" -ne 0 ]; then
+    wat2wasm_status=0
+    run_with_timeout "$timeout_sec" \
+      wat2wasm "$wat" -o "$wasm" 2>"$err" || wat2wasm_status=$?
+    if [ "$wat2wasm_status" -ne 0 ]; then
+      failed=$((failed + 1))
+      if [ "$wat2wasm_status" -eq 124 ]; then
+        timed_out=$((timed_out + 1))
+        msg="timed out after ${timeout_sec}s"
+      else
+        msg=$(sed -n '1p' "$err")
+        [ -n "$msg" ] || msg="exited with status $wat2wasm_status"
+      fi
+      printf '%s\twat2wasm: %s\n' "$src" "$msg" >> "$failures"
+      if [ "$verbose" -ne 0 ]; then
+        printf 'FAIL %s\twat2wasm: %s\n' "$src" "$msg"
+      fi
+      continue
     fi
-    continue
   fi
 
-  if [ "$validate" -ne 0 ] && ! wasm-validate "$wasm" >/dev/null 2>"$err"; then
-    failed=$((failed + 1))
-    msg=$(sed -n '1p' "$err")
-    printf '%s\tvalidate: %s\n' "$src" "$msg" >> "$failures"
-    if [ "$verbose" -ne 0 ]; then
-      printf 'FAIL %s\tvalidate: %s\n' "$src" "$msg"
+  if [ "$validate" -ne 0 ]; then
+    validate_status=0
+    run_with_timeout "$timeout_sec" \
+      wasm-validate "$wasm" >/dev/null 2>"$err" || validate_status=$?
+    if [ "$validate_status" -ne 0 ]; then
+      failed=$((failed + 1))
+      if [ "$validate_status" -eq 124 ]; then
+        timed_out=$((timed_out + 1))
+        msg="timed out after ${timeout_sec}s"
+      else
+        msg=$(sed -n '1p' "$err")
+        [ -n "$msg" ] || msg="exited with status $validate_status"
+      fi
+      printf '%s\tvalidate: %s\n' "$src" "$msg" >> "$failures"
+      if [ "$verbose" -ne 0 ]; then
+        printf 'FAIL %s\tvalidate: %s\n' "$src" "$msg"
+      fi
+      continue
     fi
-    continue
   fi
 
   if [ "$verbose" -ne 0 ]; then
@@ -699,6 +738,7 @@ printf 'Source:   %s\n' "$fixture_source"
 printf 'Total:    %d\n' "$scanned"
 printf 'Pass:     %d\n' "$((scanned - failed))"
 printf 'Fail:     %d\n' "$failed"
+printf 'Timeout:  %d\n' "$timed_out"
 printf 'Skip:     %d\n' "$skipped"
 printf 'Wat2wasm: %s\n' "$wat2wasm_available"
 printf 'Validate: %s\n' "$validate"

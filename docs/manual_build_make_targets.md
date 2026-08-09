@@ -59,6 +59,10 @@ make test-wasm-js-e2e
 | `make wasm32-wat-c-testsuite-scan` | c-testsuite を WAT 経路で確認。 |
 | `make wasm32-scans` | 上記 scan をまとめて実行。 |
 
+fixture scan の compile・変換・link・検証は既定で各 10 秒に制限され、
+`WASM32_FIXTURE_SCAN_TIMEOUT_SEC` で変更できる。object-link scan の
+`wasm-interp` は別に既定 5 秒で、`WASM32_OBJECT_LINK_SCAN_TIMEOUT_SEC` で変更できる。
+
 ## c-testsuite
 
 ```sh

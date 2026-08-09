@@ -4,6 +4,9 @@ set -u
 agc_wasm=${AG_C_WASM:-./build/ag_c_wasm}
 ag_wasm_link=${AG_WASM_LINK:-./build/ag_wasm_link}
 out_dir=${WASM32_OBJECT_LINK_SCAN_DIR:-build/wasm32_obj_link_scan}
+tool_timeout_sec=${WASM32_FIXTURE_SCAN_TIMEOUT_SEC:-10}
+interp_timeout_sec=${WASM32_OBJECT_LINK_SCAN_TIMEOUT_SEC:-5}
+. "$(dirname "$0")/tool_timeout.sh"
 list_fail=0
 verbose=0
 fixture_source=e2e
@@ -20,6 +23,7 @@ Compiler-limit and should-reject fixtures are excluded from positive scans.
 By default, scans fixture paths registered in test/test_e2e.c.
 Set AG_C_WASM / AG_WASM_LINK to override tool paths.
 Set WASM32_OBJECT_LINK_SCAN_DIR to override the output directory.
+Set WASM32_FIXTURE_SCAN_TIMEOUT_SEC to override the compile/link/tool timeout.
 Set WASM32_OBJECT_LINK_SCAN_TIMEOUT_SEC to override the wasm-interp timeout.
 EOF
 }
@@ -55,6 +59,11 @@ fi
 
 if [ ! -x "$ag_wasm_link" ]; then
   echo "missing executable: $ag_wasm_link" >&2
+  exit 2
+fi
+
+if ! validate_tool_timeout_sec "$tool_timeout_sec" ||
+   ! validate_tool_timeout_sec "$interp_timeout_sec"; then
   exit 2
 fi
 
@@ -1270,30 +1279,6 @@ run=0
 if command -v wasm-interp >/dev/null 2>&1 && command -v wasm-objdump >/dev/null 2>&1; then
   run=1
 fi
-interp_timeout_sec=${WASM32_OBJECT_LINK_SCAN_TIMEOUT_SEC:-5}
-
-run_with_timeout() {
-  local sec=$1
-  shift
-  perl -e '
-    my $sec = shift @ARGV;
-    my $pid = fork();
-    die "fork failed: $!\n" unless defined $pid;
-    if ($pid == 0) {
-      exec @ARGV or die "exec failed: $!\n";
-    }
-    $SIG{ALRM} = sub {
-      kill "TERM", $pid;
-      select undef, undef, undef, 0.1;
-      kill "KILL", $pid;
-      exit 124;
-    };
-    alarm $sec;
-    waitpid($pid, 0);
-    my $st = $?;
-    exit(($st & 127) ? 128 + ($st & 127) : ($st >> 8));
-  ' "$sec" "$@"
-}
 
 mkdir -p "$out_dir"
 failures="$out_dir/failures.txt"
@@ -1309,6 +1294,7 @@ fi
 
 scanned=0
 failed=0
+timed_out=0
 validated=0
 runnable=0
 ran=0
@@ -1341,9 +1327,18 @@ while IFS= read -r src; do
   extra_obj=
   expect=$(expected_result "$src")
 
-  if ! "$agc_wasm" -c -o "$obj" "$src" >/dev/null 2>"$err"; then
+  compile_status=0
+  run_with_timeout "$tool_timeout_sec" \
+    "$agc_wasm" -c -o "$obj" "$src" >/dev/null 2>"$err" || compile_status=$?
+  if [ "$compile_status" -ne 0 ]; then
     failed=$((failed + 1))
-    msg=$(sed -n '1p' "$err")
+    if [ "$compile_status" -eq 124 ]; then
+      timed_out=$((timed_out + 1))
+      msg="timed out after ${tool_timeout_sec}s"
+    else
+      msg=$(sed -n '1p' "$err")
+      [ -n "$msg" ] || msg="exited with status $compile_status"
+    fi
     printf '%s\tcompile: %s\n' "$src" "$msg" >> "$failures"
     [ "$verbose" -ne 0 ] && printf 'FAIL %s\tcompile: %s\n' "$src" "$msg"
     continue
@@ -1353,35 +1348,62 @@ while IFS= read -r src; do
     companion_rel=${companion#test/fixtures/}
     companion_safe=${companion_rel//\//__}
     extra_obj="$out_dir/${companion_safe%.c}.o"
-    if ! "$agc_wasm" -c -o "$extra_obj" "$companion" >/dev/null 2>"$err"; then
+    companion_status=0
+    run_with_timeout "$tool_timeout_sec" \
+      "$agc_wasm" -c -o "$extra_obj" "$companion" \
+      >/dev/null 2>"$err" || companion_status=$?
+    if [ "$companion_status" -ne 0 ]; then
       failed=$((failed + 1))
-      msg=$(sed -n '1p' "$err")
+      if [ "$companion_status" -eq 124 ]; then
+        timed_out=$((timed_out + 1))
+        msg="timed out after ${tool_timeout_sec}s"
+      else
+        msg=$(sed -n '1p' "$err")
+        [ -n "$msg" ] || msg="exited with status $companion_status"
+      fi
       printf '%s\tcompile companion %s: %s\n' "$src" "$companion" "$msg" >> "$failures"
       [ "$verbose" -ne 0 ] && printf 'FAIL %s\tcompile companion %s: %s\n' "$src" "$companion" "$msg"
       continue
     fi
   fi
 
+  link_status=0
   if [ -n "$extra_obj" ]; then
-    if ! "$ag_wasm_link" --no-entry --export=main -o "$wasm" "$obj" "$extra_obj" >/dev/null 2>"$err"; then
-      failed=$((failed + 1))
-      msg=$(sed -n '1p' "$err")
-      printf '%s\tlink: %s\n' "$src" "$msg" >> "$failures"
-      [ "$verbose" -ne 0 ] && printf 'FAIL %s\tlink: %s\n' "$src" "$msg"
-      continue
-    fi
-  elif ! "$ag_wasm_link" --no-entry --export=main -o "$wasm" "$obj" >/dev/null 2>"$err"; then
+    run_with_timeout "$tool_timeout_sec" \
+      "$ag_wasm_link" --no-entry --export=main -o "$wasm" "$obj" "$extra_obj" \
+      >/dev/null 2>"$err" || link_status=$?
+  else
+    run_with_timeout "$tool_timeout_sec" \
+      "$ag_wasm_link" --no-entry --export=main -o "$wasm" "$obj" \
+      >/dev/null 2>"$err" || link_status=$?
+  fi
+  if [ "$link_status" -ne 0 ]; then
     failed=$((failed + 1))
-    msg=$(sed -n '1p' "$err")
+    if [ "$link_status" -eq 124 ]; then
+      timed_out=$((timed_out + 1))
+      msg="timed out after ${tool_timeout_sec}s"
+    else
+      msg=$(sed -n '1p' "$err")
+      [ -n "$msg" ] || msg="exited with status $link_status"
+    fi
     printf '%s\tlink: %s\n' "$src" "$msg" >> "$failures"
     [ "$verbose" -ne 0 ] && printf 'FAIL %s\tlink: %s\n' "$src" "$msg"
     continue
   fi
 
   if [ "$validate" -ne 0 ]; then
-    if ! wasm-validate "$wasm" >/dev/null 2>"$err"; then
+    validate_status=0
+    run_with_timeout "$tool_timeout_sec" \
+      wasm-validate "$wasm" >/dev/null 2>"$err" || validate_status=$?
+    if [ "$validate_status" -ne 0 ]; then
       failed=$((failed + 1))
-      msg=$(sed -n '1p' "$err")
+      if [ "$validate_status" -eq 124 ]; then
+        timed_out=$((timed_out + 1))
+        msg="timed out after ${tool_timeout_sec}s"
+      else
+        msg=$(sed -n '1p' "$err")
+        [ -n "$msg" ] || msg="exited with status $validate_status"
+      fi
       printf '%s\tvalidate: %s\n' "$src" "$msg" >> "$failures"
       [ "$verbose" -ne 0 ] && printf 'FAIL %s\tvalidate: %s\n' "$src" "$msg"
       continue
@@ -1395,9 +1417,18 @@ while IFS= read -r src; do
     continue
   fi
 
-  if ! wasm-objdump -x "$wasm" > "$dump" 2>"$err"; then
+  objdump_status=0
+  run_with_timeout "$tool_timeout_sec" \
+    wasm-objdump -x "$wasm" > "$dump" 2>"$err" || objdump_status=$?
+  if [ "$objdump_status" -ne 0 ]; then
     failed=$((failed + 1))
-    msg=$(sed -n '1p' "$err")
+    if [ "$objdump_status" -eq 124 ]; then
+      timed_out=$((timed_out + 1))
+      msg="timed out after ${tool_timeout_sec}s"
+    else
+      msg=$(sed -n '1p' "$err")
+      [ -n "$msg" ] || msg="exited with status $objdump_status"
+    fi
     printf '%s\tobjdump: %s\n' "$src" "$msg" >> "$failures"
     [ "$verbose" -ne 0 ] && printf 'FAIL %s\tobjdump: %s\n' "$src" "$msg"
     continue
@@ -1416,6 +1447,7 @@ while IFS= read -r src; do
   if [ "$interp_status" -ne 0 ]; then
     failed=$((failed + 1))
     if [ "$interp_status" -eq 124 ]; then
+      timed_out=$((timed_out + 1))
       msg="wasm-interp timed out after ${interp_timeout_sec}s"
     else
       msg=$(sed -n '1p' "$err")
@@ -1442,6 +1474,7 @@ printf 'Source:           %s\n' "$fixture_source"
 printf 'Total:            %d\n' "$scanned"
 printf 'Pass:             %d\n' "$((scanned - failed))"
 printf 'Fail:             %d\n' "$failed"
+printf 'Timeout:          %d\n' "$timed_out"
 printf 'Skip:             %d\n' "$skipped"
 printf 'Validate:         %s\n' "$validate"
 printf 'Validated:        %d\n' "$validated"

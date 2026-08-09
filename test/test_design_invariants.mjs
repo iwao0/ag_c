@@ -847,6 +847,28 @@ const wasm32WatFixtureScan = await readFile(
   "scripts/run_wasm32_wat_fixture_scan.sh",
   "utf8",
 );
+for (const [path, source] of [
+  ["scripts/run_wasm32_object_fixture_scan.sh", wasm32ObjectFixtureScan],
+  ["scripts/run_wasm32_wat_fixture_scan.sh", wasm32WatFixtureScan],
+  [
+    "scripts/run_wasm32_object_link_fixture_scan.sh",
+    wasm32ObjectLinkFixtureScan,
+  ],
+]) {
+  if (
+    !source.includes("tool_timeout.sh") ||
+    !source.includes("WASM32_FIXTURE_SCAN_TIMEOUT_SEC:-") ||
+    !source.includes("validate_tool_timeout_sec") ||
+    !source.includes("run_with_timeout") ||
+    !source.includes("timed_out=") ||
+    !source.includes("printf 'Timeout:")
+  ) {
+    throw new Error(`${path} must bound and report long-running tool stages`);
+  }
+  if (/^run_with_timeout\(\)/m.test(source)) {
+    throw new Error(`${path} must not duplicate the shared timeout helper`);
+  }
+}
 const cTestsuiteManifestSource = await readFile(
   "scripts/c_testsuite_unsupported_cases.sh",
   "utf8",
