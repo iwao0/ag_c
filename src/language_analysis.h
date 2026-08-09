@@ -61,6 +61,10 @@ typedef struct {
   unsigned int declaration_order;
   /* The first declaration visible to this translation unit. */
   ag_language_source_range_t declaration;
+  /* Normalized UTF-8 plain text from an associated documentation comment. */
+  char *documentation;
+  int has_documentation_range;
+  ag_language_source_range_t documentation_range;
   /* Consumers should prefer this range for definition navigation. */
   int has_definition;
   ag_language_source_range_t definition;

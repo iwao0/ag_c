@@ -132,6 +132,490 @@ for (const [name, kind] of [
   }
 }
 
+const documentationSource = {
+  name: "documentation.c",
+  source:
+    "/** 敵の現在位置 */\n" +
+    "static int enemy_x;\n" +
+    "\n" +
+    "/// 歩行中の画像番号を返す\n" +
+    "/// alternateが0以外なら第一フレーム\n" +
+    "static int walk_frame(int alternate) {\n" +
+    "  return alternate ? 1 : 2;\n" +
+    "}\n" +
+    "\n" +
+    "/**\n" +
+    " * 読み取り専用の値\n" +
+    " *\n" +
+    " * 日本語の段落を維持する\n" +
+    " */\n" +
+    "static const int qualified_value = 3;\n" +
+    "\n" +
+    "/** 左右の座標 */\n" +
+    "int left_value, right_value;\n" +
+    "\n" +
+    "/** 外部オブジェクト */\n" +
+    "extern int external_value;\n" +
+    "\n" +
+    "/** prototype only */\n" +
+    "int prototype_only(int value);\n" +
+    "\n" +
+    "/** definition only */\n" +
+    "int definition_only(int value) { return value; }\n" +
+    "\n" +
+    "/** prototype wins */\n" +
+    "int documented_both(int value);\n" +
+    "/** definition loses */\n" +
+    "int documented_both(int value) { return value; }\n" +
+    "\n" +
+    "int fallback_definition(int value);\n" +
+    "/** definition fallback */\n" +
+    "int fallback_definition(int value) { return value; }\n" +
+    "\n" +
+    "/** 空行で切れる */\n" +
+    "\n" +
+    "int blank_gap;\n" +
+    "/** directiveで切れる */\n" +
+    "#define DOCUMENTATION_BREAK 1\n" +
+    "int directive_gap;\n" +
+    "#define DOCUMENTATION_CONTINUATION \\\r\n" +
+    "/** macro continuation */ 1\r\n" +
+    "int directive_continuation_gap;\n" +
+    "/** 最初の宣言だけ */\n" +
+    "int first_only;\n" +
+    "int declaration_after;\n" +
+    "/* 通常block comment */\n" +
+    "int ordinary_block;\n" +
+    "// 通常line comment\n" +
+    "int ordinary_line;\n" +
+    "const char *comment_text = \"/** fake */\";\n" +
+    "int string_after;\n" +
+    "int comment_character = '/';\n" +
+    "int character_after;\n" +
+    "\n" +
+    "/**\r\n" +
+    "\t * CRLFの説明\r\n" +
+    "\t * 二行目\r\n" +
+    "\t */\r\n" +
+    "static const int crlf_value = 5;\n" +
+    "\n" +
+    "int documentation_main(void) {\n" +
+    "  /** local object */\n" +
+    "  int local_value = 1;\n" +
+    "  enemy_x = walk_frame(local_value);\n" +
+    "  return enemy_x + qualified_value + left_value + right_value +\n" +
+    "         external_value + prototype_only(local_value) +\n" +
+    "         definition_only(local_value) + documented_both(local_value) +\n" +
+    "         fallback_definition(local_value) + crlf_value;\n" +
+    "}\n",
+};
+
+function documentationByteOffset(index) {
+  return Buffer.byteLength(documentationSource.source.slice(0, index));
+}
+
+function assertDocumentation(result, documentationCase, lifecycle) {
+  const hover = result.hover;
+  const commentIndex = documentationSource.source.indexOf(
+    documentationCase.comment,
+  );
+  assert.notEqual(commentIndex, -1, `${lifecycle} comment anchor`);
+  const expectedRange = documentationCase.documentation
+    ? {
+      sourceName: documentationSource.name,
+      start: documentationByteOffset(commentIndex),
+      end: documentationByteOffset(
+        commentIndex + documentationCase.comment.length,
+      ),
+    }
+    : null;
+  if (hover?.name !== documentationCase.name ||
+      hover.kind !== documentationCase.kind ||
+      hover.documentation !== documentationCase.documentation ||
+      (expectedRange === null && hover.documentationRange !== null) ||
+      (expectedRange !== null &&
+       (hover.documentationRange?.sourceName !== expectedRange.sourceName ||
+        hover.documentationRange.start.offset !== expectedRange.start ||
+        hover.documentationRange.end.offset !== expectedRange.end))) {
+    throw new Error(
+      `${lifecycle} documentation hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+  const completion = symbol(result, documentationCase.name,
+    documentationCase.kind);
+  if (completion?.documentation !== documentationCase.documentation) {
+    throw new Error(
+      `${lifecycle} completion documentation differs: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!Object.isFrozen(result) || !Object.isFrozen(hover) ||
+      (hover.documentationRange !== null &&
+       (!Object.isFrozen(hover.documentationRange) ||
+        !Object.isFrozen(hover.documentationRange.start)))) {
+    throw new Error(`${lifecycle} documentation snapshot is mutable`);
+  }
+}
+
+const documentationCases = [
+  { name: "enemy_x", kind: "object", documentation: "敵の現在位置",
+    comment: "/** 敵の現在位置 */" },
+  { name: "walk_frame", kind: "function",
+    documentation: "歩行中の画像番号を返す\nalternateが0以外なら第一フレーム",
+    comment: "/// 歩行中の画像番号を返す\n" +
+      "/// alternateが0以外なら第一フレーム" },
+  { name: "qualified_value", kind: "object",
+    documentation: "読み取り専用の値\n\n日本語の段落を維持する",
+    comment: "/**\n * 読み取り専用の値\n *\n * 日本語の段落を維持する\n */" },
+  { name: "left_value", kind: "object", documentation: "左右の座標",
+    comment: "/** 左右の座標 */" },
+  { name: "right_value", kind: "object", documentation: "左右の座標",
+    comment: "/** 左右の座標 */" },
+  { name: "external_value", kind: "object",
+    documentation: "外部オブジェクト", comment: "/** 外部オブジェクト */" },
+  { name: "prototype_only", kind: "function",
+    documentation: "prototype only", comment: "/** prototype only */" },
+  { name: "definition_only", kind: "function",
+    documentation: "definition only", comment: "/** definition only */" },
+  { name: "documented_both", kind: "function",
+    documentation: "prototype wins", comment: "/** prototype wins */" },
+  { name: "fallback_definition", kind: "function",
+    documentation: "definition fallback",
+    comment: "/** definition fallback */" },
+  { name: "first_only", kind: "object", documentation: "最初の宣言だけ",
+    comment: "/** 最初の宣言だけ */" },
+  { name: "crlf_value", kind: "object",
+    documentation: "CRLFの説明\n二行目",
+    comment: "/**\r\n\t * CRLFの説明\r\n\t * 二行目\r\n\t */" },
+  { name: "local_value", kind: "object", documentation: "local object",
+    comment: "/** local object */" },
+];
+
+const nativeDocumentationSnapshots = new Map();
+for (const documentationCase of documentationCases) {
+  const useIndex = documentationSource.source.lastIndexOf(
+    documentationCase.name,
+  );
+  assert.notEqual(useIndex, -1, `missing ${documentationCase.name} use`);
+  const byteOffset = documentationByteOffset(useIndex) +
+    Math.floor(Buffer.byteLength(documentationCase.name) / 2);
+  const wasmResult = compiler.analyzeSource(documentationSource, {
+    cursor: { sourceName: documentationSource.name, byteOffset },
+  });
+  assertDocumentation(wasmResult, documentationCase, "reused instance");
+  const nativeResult = JSON.parse(execFileSync(
+    nativeAnalysisPath,
+    ["--documentation-hover-parity-json", String(byteOffset)],
+    { encoding: "utf8" },
+  ));
+  assert.deepStrictEqual(
+    wasmResult,
+    nativeResult,
+    `native and Wasm documentation snapshots differ for ${documentationCase.name}`,
+  );
+  nativeDocumentationSnapshots.set(byteOffset, nativeResult);
+}
+
+for (const documentationCase of documentationCases.slice(0, 2)) {
+  const declarationIndex = documentationSource.source.indexOf(
+    documentationCase.name,
+  );
+  const useIndex = documentationSource.source.lastIndexOf(
+    documentationCase.name,
+  );
+  for (const occurrence of [declarationIndex, useIndex]) {
+    for (const delta of [
+      0,
+      Math.floor(Buffer.byteLength(documentationCase.name) / 2),
+      Buffer.byteLength(documentationCase.name),
+    ]) {
+      const byteOffset = documentationByteOffset(occurrence) + delta;
+      const wasmResult = compiler.analyzeSource(documentationSource, {
+        cursor: { sourceName: documentationSource.name, byteOffset },
+      });
+      assertDocumentation(
+        wasmResult, documentationCase, "reused declaration/use instance",
+      );
+      const nativeResult = JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--documentation-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      ));
+      assert.deepStrictEqual(
+        wasmResult,
+        nativeResult,
+        `native and Wasm documentation snapshots differ at byte ${byteOffset}`,
+      );
+      nativeDocumentationSnapshots.set(byteOffset, nativeResult);
+    }
+  }
+}
+
+for (const documentationCase of documentationCases.slice(0, 2)) {
+  const useIndex = documentationSource.source.lastIndexOf(
+    documentationCase.name,
+  );
+  const byteOffset = documentationByteOffset(useIndex) +
+    Math.floor(Buffer.byteLength(documentationCase.name) / 2);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(documentationSource, {
+      cursor: { sourceName: documentationSource.name, byteOffset },
+    });
+    assertDocumentation(freshResult, documentationCase, "fresh instance");
+    assert.deepStrictEqual(
+      freshResult,
+      nativeDocumentationSnapshots.get(byteOffset),
+      `fresh documentation snapshot differs for ${documentationCase.name}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
+for (const name of [
+  "blank_gap", "directive_gap", "directive_continuation_gap",
+  "declaration_after", "ordinary_block", "ordinary_line", "comment_text",
+  "string_after", "comment_character", "character_after",
+  "documentation_main",
+]) {
+  const index = documentationSource.source.indexOf(name);
+  const byteOffset = documentationByteOffset(index) + 1;
+  const undocumentedResult = compiler.analyzeSource(documentationSource, {
+    cursor: { sourceName: documentationSource.name, byteOffset },
+  });
+  if (undocumentedResult.hover?.name !== name ||
+      undocumentedResult.hover.documentation !== "" ||
+      undocumentedResult.hover.documentationRange !== null) {
+    throw new Error(
+      `non-documentation comment leaked for ${name}: ${JSON.stringify(undocumentedResult)}`,
+    );
+  }
+}
+
+try {
+  compiler.analyzeSource(
+    { name: "d.c", source: "/** 12345678901234 */\nint x;\n" },
+    {
+      cursor: { sourceName: "d.c", byteOffset: 28 },
+      limits: { maxAnalysisStringBytes: 13 },
+    },
+  );
+  throw new Error("documentation string limit unexpectedly succeeded");
+} catch (error) {
+  if (!(error instanceof AgcResourceLimitError) ||
+      error.code !== "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES" ||
+      error.limit !== "maxAnalysisStringBytes" || error.max !== 13 ||
+      error.actual !== 14) {
+    throw error;
+  }
+}
+const documentationAfterLimit = compiler.analyzeSource(
+  { name: "d.c", source: "int x;" },
+  { cursor: { sourceName: "d.c", byteOffset: 5 } },
+);
+assert.equal(documentationAfterLimit.hover?.documentation, "");
+
+function documentationSnapshotSucceeds(input, maxAnalysisSnapshotBytes) {
+  try {
+    compiler.analyzeSource(input, {
+      cursor: {
+        sourceName: input.name,
+        byteOffset: Buffer.byteLength(input.source),
+      },
+      limits: { maxAnalysisSnapshotBytes },
+    });
+    return true;
+  } catch (error) {
+    if (!(error instanceof AgcResourceLimitError) ||
+        error.code !== "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES" ||
+        error.limit !== "maxAnalysisSnapshotBytes") {
+      throw error;
+    }
+    return false;
+  }
+}
+
+function minimumDocumentationSnapshotLimit(input) {
+  let low = 1;
+  let high = 64 * 1024;
+  assert.equal(documentationSnapshotSucceeds(input, high), true);
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (documentationSnapshotSucceeds(input, middle)) high = middle;
+    else low = middle + 1;
+  }
+  return low;
+}
+
+const plainSnapshotInput = { name: "s.c", source: "int bounded;\n" };
+const documentedSnapshotInput = {
+  name: "s.c",
+  source: "/** bounded doc */\nint bounded;\n",
+};
+const plainSnapshotMinimum = minimumDocumentationSnapshotLimit(
+  plainSnapshotInput,
+);
+const documentedSnapshotMinimum = minimumDocumentationSnapshotLimit(
+  documentedSnapshotInput,
+);
+assert.ok(documentedSnapshotMinimum > plainSnapshotMinimum,
+  "documentation did not contribute to the Wasm snapshot byte limit");
+assert.equal(documentationSnapshotSucceeds(
+  plainSnapshotInput, documentedSnapshotMinimum - 1,
+), true);
+assert.equal(documentationSnapshotSucceeds(
+  documentedSnapshotInput, documentedSnapshotMinimum - 1,
+), false);
+assert.equal(documentationSnapshotSucceeds(
+  plainSnapshotInput, documentedSnapshotMinimum - 1,
+), true, "Wasm session was not reusable after documentation snapshot limit");
+
+const documentationProjectCompiler = await createCompiler(wasmModule);
+try {
+  const projectCallSource = {
+    name: "main.c",
+    source: "#include \"player.h\"\n" +
+      "void update(void) { update_player(); }\n",
+  };
+  const definitionV1 = {
+    name: "player.c",
+    source: "#include \"player.h\"\n" +
+      "/** definition v1 */\nvoid update_player(void) {}\n",
+  };
+  const definitionV2 = {
+    name: "player.c",
+    source: "#include \"player.h\"\n" +
+      "/** definition v2 */\nvoid update_player(void) {}\n",
+  };
+  const callIndex = projectCallSource.source.lastIndexOf("update_player");
+  const projectCases = [
+    {
+      revision: 1,
+      headers: {
+        "player.h": "/** header prototype */\nvoid update_player(void);\n",
+      },
+      sources: [definitionV1, projectCallSource],
+      documentation: "header prototype",
+      sourceName: "player.h",
+    },
+    {
+      revision: 2,
+      headers: { "player.h": "void update_player(void);\n" },
+      sources: [definitionV1, projectCallSource],
+      documentation: "definition v1",
+      sourceName: "player.c",
+    },
+    {
+      revision: 3,
+      headers: { "player.h": "void update_player(void);\n" },
+      sources: [definitionV2, projectCallSource],
+      documentation: "definition v2",
+      sourceName: "player.c",
+    },
+    {
+      revision: 4,
+      headers: { "player.h": "void update_player(void);\n" },
+      sources: [projectCallSource],
+      documentation: "",
+      sourceName: null,
+    },
+  ];
+  for (const projectCase of projectCases) {
+    const projectResult = documentationProjectCompiler.analyzeProjectSource(
+      projectCallSource,
+      {
+        projectRevision: projectCase.revision,
+        projectSources: projectCase.sources,
+        headers: projectCase.headers,
+        cursor: {
+          sourceName: projectCallSource.name,
+          byteOffset: callIndex + 3,
+        },
+      },
+    );
+    if (projectResult.hover?.name !== "update_player" ||
+        projectResult.hover.documentation !== projectCase.documentation ||
+        (projectCase.sourceName === null
+          ? projectResult.hover.documentationRange !== null
+          : projectResult.hover.documentationRange?.sourceName !==
+              projectCase.sourceName)) {
+      throw new Error(
+        `project documentation revision ${projectCase.revision} failed: ` +
+        JSON.stringify(projectResult),
+      );
+    }
+    const nativeProjectResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--documentation-project-parity-json", String(projectCase.revision)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      projectResult,
+      nativeProjectResult,
+      `native and Wasm project documentation snapshots differ at revision ${projectCase.revision}`,
+    );
+    if (projectCase.revision === 1) {
+      const headerSource = {
+        name: "player.h",
+        source: projectCase.headers["player.h"],
+      };
+      const definitionIndex = definitionV1.source.indexOf("update_player");
+      for (const [input, index] of [
+        [headerSource, headerSource.source.indexOf("update_player")],
+        [definitionV1, definitionIndex],
+      ]) {
+        for (const delta of [0, 6, "update_player".length]) {
+          const locationResult =
+            documentationProjectCompiler.analyzeProjectSource(input, {
+              projectRevision: 1,
+              projectSources: projectCase.sources,
+              headers: projectCase.headers,
+              cursor: {
+                sourceName: input.name,
+                byteOffset: index + delta,
+              },
+            });
+          if (locationResult.hover?.documentation !== "header prototype" ||
+              locationResult.hover.documentationRange?.sourceName !==
+                "player.h") {
+            throw new Error(
+              `project documentation location failed: ${JSON.stringify(locationResult)}`,
+            );
+          }
+        }
+      }
+    }
+  }
+  const visibleSource = {
+    name: "visible.c",
+    source: "/** visible prototype */\nvoid update_player(void);\n" +
+      "void update(void) { update_player(); }\n",
+  };
+  const visibleResult = documentationProjectCompiler.analyzeProjectSource(
+    visibleSource,
+    {
+      projectRevision: 5,
+      projectSources: [definitionV1, visibleSource],
+      headers: {
+        "player.h":
+          "/** project prototype */\nvoid update_player(void);\n",
+      },
+      cursor: {
+        sourceName: visibleSource.name,
+        byteOffset: visibleSource.source.lastIndexOf("update_player") + 3,
+      },
+    },
+  );
+  if (visibleResult.hover?.documentation !== "visible prototype" ||
+      visibleResult.hover.documentationRange?.sourceName !== "visible.c") {
+    throw new Error(
+      `visible prototype documentation lost: ${JSON.stringify(visibleResult)}`,
+    );
+  }
+} finally {
+  documentationProjectCompiler.dispose();
+}
+
 const starterSource = {
   name: "starter.c",
   source: "#include <game.h>\n" +

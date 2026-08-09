@@ -121,6 +121,80 @@ static const char conditional_hover_source[] =
     "  return alternate ? other ? FIRST : SECOND :\n"
     "         local ? CHOICE_MACRO : THIRD;\n"
     "}\n";
+static const char documentation_hover_source[] =
+    "/** 敵の現在位置 */\n"
+    "static int enemy_x;\n"
+    "\n"
+    "/// 歩行中の画像番号を返す\n"
+    "/// alternateが0以外なら第一フレーム\n"
+    "static int walk_frame(int alternate) {\n"
+    "  return alternate ? 1 : 2;\n"
+    "}\n"
+    "\n"
+    "/**\n"
+    " * 読み取り専用の値\n"
+    " *\n"
+    " * 日本語の段落を維持する\n"
+    " */\n"
+    "static const int qualified_value = 3;\n"
+    "\n"
+    "/** 左右の座標 */\n"
+    "int left_value, right_value;\n"
+    "\n"
+    "/** 外部オブジェクト */\n"
+    "extern int external_value;\n"
+    "\n"
+    "/** prototype only */\n"
+    "int prototype_only(int value);\n"
+    "\n"
+    "/** definition only */\n"
+    "int definition_only(int value) { return value; }\n"
+    "\n"
+    "/** prototype wins */\n"
+    "int documented_both(int value);\n"
+    "/** definition loses */\n"
+    "int documented_both(int value) { return value; }\n"
+    "\n"
+    "int fallback_definition(int value);\n"
+    "/** definition fallback */\n"
+    "int fallback_definition(int value) { return value; }\n"
+    "\n"
+    "/** 空行で切れる */\n"
+    "\n"
+    "int blank_gap;\n"
+    "/** directiveで切れる */\n"
+    "#define DOCUMENTATION_BREAK 1\n"
+    "int directive_gap;\n"
+    "#define DOCUMENTATION_CONTINUATION \\\r\n"
+    "/** macro continuation */ 1\r\n"
+    "int directive_continuation_gap;\n"
+    "/** 最初の宣言だけ */\n"
+    "int first_only;\n"
+    "int declaration_after;\n"
+    "/* 通常block comment */\n"
+    "int ordinary_block;\n"
+    "// 通常line comment\n"
+    "int ordinary_line;\n"
+    "const char *comment_text = \"/** fake */\";\n"
+    "int string_after;\n"
+    "int comment_character = '/';\n"
+    "int character_after;\n"
+    "\n"
+    "/**\r\n"
+    "\t * CRLFの説明\r\n"
+    "\t * 二行目\r\n"
+    "\t */\r\n"
+    "static const int crlf_value = 5;\n"
+    "\n"
+    "int documentation_main(void) {\n"
+    "  /** local object */\n"
+    "  int local_value = 1;\n"
+    "  enemy_x = walk_frame(local_value);\n"
+    "  return enemy_x + qualified_value + left_value + right_value +\n"
+    "         external_value + prototype_only(local_value) +\n"
+    "         definition_only(local_value) + documented_both(local_value) +\n"
+    "         fallback_definition(local_value) + crlf_value;\n"
+    "}\n";
 
 static int update_guard_project(
     ag_compilation_session_t *session,
@@ -268,6 +342,18 @@ static int same_optional_definition(
   return 1;
 }
 
+static int same_documentation(
+    const ag_language_symbol_t *left,
+    const ag_language_symbol_t *right) {
+  if (!left || !right || !left->documentation || !right->documentation ||
+      strcmp(left->documentation, right->documentation) != 0 ||
+      left->has_documentation_range != right->has_documentation_range)
+    return 0;
+  return !left->has_documentation_range ||
+         same_range(&left->documentation_range,
+                    &right->documentation_range);
+}
+
 static int same_object_hover(
     const ag_language_symbol_t *left,
     const ag_language_symbol_t *right) {
@@ -278,6 +364,7 @@ static int same_object_hover(
       strcmp(left->type, right->type) != 0 ||
       strcmp(left->signature, right->signature) != 0 ||
       !same_range(&left->declaration, &right->declaration) ||
+      !same_documentation(left, right) ||
       left->initializer_state != right->initializer_state ||
       strcmp(left->constant_value, right->constant_value) != 0 ||
       left->has_initializer_range != right->has_initializer_range)
@@ -296,6 +383,7 @@ static int same_object_display(
          strcmp(left->name, right->name) == 0 &&
          strcmp(left->type, right->type) == 0 &&
          strcmp(left->signature, right->signature) == 0 &&
+         same_documentation(left, right) &&
          left->initializer_state == right->initializer_state &&
          strcmp(left->constant_value, right->constant_value) == 0;
 }
@@ -312,6 +400,7 @@ static int same_function_hover(
       strcmp(left->return_type, right->return_type) != 0 ||
       strcmp(left->storage_class, right->storage_class) != 0 ||
       !same_range(&left->declaration, &right->declaration) ||
+      !same_documentation(left, right) ||
       !same_optional_definition(left, right) ||
       left->has_function_prototype != right->has_function_prototype ||
       left->is_variadic != right->is_variadic ||
@@ -732,6 +821,483 @@ static int print_conditional_hover_parity_snapshot(
   return result;
 }
 
+static int print_documentation_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(documentation_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  if (!session) return 1;
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = analyze_named(
+      session, "documentation.c", documentation_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0},
+      ag_language_analysis_default_limits(), &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  int result = 1;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
+static int print_documentation_project_parity_snapshot(
+    const char *revision_text) {
+  char *end = NULL;
+  unsigned long parsed_revision = strtoul(revision_text, &end, 10);
+  if (!revision_text[0] || !end || *end != '\0' ||
+      parsed_revision < 1 || parsed_revision > 4)
+    return 1;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  if (!session || !project) {
+    ag_language_project_index_destroy(project);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  const char *header_paths[] = {"player.h"};
+  const char *header_with_documentation =
+      "/** header prototype */\nvoid update_player(void);\n";
+  const char *header_without_documentation =
+      "void update_player(void);\n";
+  const char *definition_v1 =
+      "#include \"player.h\"\n"
+      "/** definition v1 */\nvoid update_player(void) {}\n";
+  const char *definition_v2 =
+      "#include \"player.h\"\n"
+      "/** definition v2 */\nvoid update_player(void) {}\n";
+  const char *call_source =
+      "#include \"player.h\"\n"
+      "void update(void) { update_player(); }\n";
+  ag_language_analysis_limits_t limits =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_error_t error = {0};
+  ag_language_analysis_snapshot_t snapshot = {0};
+  int result = 1;
+  for (unsigned int revision = 1;
+       revision <= (unsigned int)parsed_revision; revision++) {
+    const char *header = revision == 1 ? header_with_documentation
+                                       : header_without_documentation;
+    const char *header_sources[] = {header};
+    header_bundle_t bundle = make_bundle(header_paths, header_sources, 1);
+    const char *definition = revision <= 2 ? definition_v1 : definition_v2;
+    ag_language_project_source_t sources[] = {
+        {"player.c", definition, strlen(definition)},
+        {"main.c", call_source, strlen(call_source)},
+    };
+    if (revision == 4) sources[0] = sources[1];
+    int ok = ag_language_project_index_update(
+        session, project,
+        &(ag_language_project_update_request_t){
+            .revision = revision,
+            .sources = sources,
+            .source_count = revision == 4 ? 1 : 2,
+            .virtual_header_bundle = bundle.bytes,
+            .virtual_header_bundle_length = bundle.length,
+            .max_header_files = 32,
+            .max_header_file_bytes = 1024 * 1024,
+            .max_header_total_bytes = 4 * 1024 * 1024,
+            .max_include_depth = 16,
+            .limits = limits,
+        },
+        &error);
+    if (ok && revision == (unsigned int)parsed_revision) {
+      const char *call = strstr(call_source, "update_player");
+      ok = analyze_project_named(
+          session, project, "main.c", call_source,
+          (size_t)(call - call_source) + 3, bundle, limits,
+          &snapshot, &error);
+      int length = ok ? ag_language_analysis_snapshot_write_json(
+                            &snapshot, NULL, 0) : -1;
+      char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+      if (json && ag_language_analysis_snapshot_write_json(
+                      &snapshot, json, (size_t)length + 1) == length) {
+        puts(json);
+        result = 0;
+      }
+      free(json);
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+    free(bundle.bytes);
+    if (!ok) break;
+  }
+  ag_language_project_index_destroy(project);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
+static const char *last_occurrence(const char *text, const char *needle) {
+  const char *result = NULL;
+  const char *cursor = text;
+  while ((cursor = strstr(cursor, needle)) != NULL) {
+    result = cursor;
+    cursor++;
+  }
+  return result;
+}
+
+static int check_documentation_symbol(
+    const ag_language_symbol_t *symbol, const char *expected,
+    const char *source_name, size_t comment_start, size_t comment_end) {
+  if (!symbol || !symbol->documentation ||
+      strcmp(symbol->documentation, expected) != 0)
+    return 0;
+  if (!expected[0]) return !symbol->has_documentation_range;
+  return symbol->has_documentation_range &&
+         strcmp(symbol->documentation_range.source_name, source_name) == 0 &&
+         symbol->documentation_range.start.offset == (int)comment_start &&
+         symbol->documentation_range.end.offset == (int)comment_end;
+}
+
+static int test_documentation_analysis(ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "documentation session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+
+  struct {
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *documentation;
+    const char *comment;
+  } documented[] = {
+      {"enemy_x", AG_LANGUAGE_SYMBOL_OBJECT, "敵の現在位置",
+       "/** 敵の現在位置 */"},
+      {"walk_frame", AG_LANGUAGE_SYMBOL_FUNCTION,
+       "歩行中の画像番号を返す\nalternateが0以外なら第一フレーム",
+       "/// 歩行中の画像番号を返す\n"
+       "/// alternateが0以外なら第一フレーム"},
+      {"qualified_value", AG_LANGUAGE_SYMBOL_OBJECT,
+       "読み取り専用の値\n\n日本語の段落を維持する",
+       "/**\n"
+       " * 読み取り専用の値\n"
+       " *\n"
+       " * 日本語の段落を維持する\n"
+       " */"},
+      {"left_value", AG_LANGUAGE_SYMBOL_OBJECT, "左右の座標",
+       "/** 左右の座標 */"},
+      {"right_value", AG_LANGUAGE_SYMBOL_OBJECT, "左右の座標",
+       "/** 左右の座標 */"},
+      {"external_value", AG_LANGUAGE_SYMBOL_OBJECT, "外部オブジェクト",
+       "/** 外部オブジェクト */"},
+      {"prototype_only", AG_LANGUAGE_SYMBOL_FUNCTION, "prototype only",
+       "/** prototype only */"},
+      {"definition_only", AG_LANGUAGE_SYMBOL_FUNCTION, "definition only",
+       "/** definition only */"},
+      {"documented_both", AG_LANGUAGE_SYMBOL_FUNCTION, "prototype wins",
+       "/** prototype wins */"},
+      {"fallback_definition", AG_LANGUAGE_SYMBOL_FUNCTION,
+       "definition fallback", "/** definition fallback */"},
+      {"first_only", AG_LANGUAGE_SYMBOL_OBJECT, "最初の宣言だけ",
+       "/** 最初の宣言だけ */"},
+      {"crlf_value", AG_LANGUAGE_SYMBOL_OBJECT, "CRLFの説明\n二行目",
+       "/**\r\n\t * CRLFの説明\r\n\t * 二行目\r\n\t */"},
+      {"local_value", AG_LANGUAGE_SYMBOL_OBJECT, "local object",
+       "/** local object */"},
+  };
+  for (size_t i = 0; i < sizeof(documented) / sizeof(documented[0]); i++) {
+    const char *use = last_occurrence(
+        documentation_hover_source, documented[i].name);
+    const char *comment = strstr(
+        documentation_hover_source, documented[i].comment);
+    CHECK(use && comment, "documentation fixture anchors");
+    CHECK(analyze_named(
+              session, "documentation.c", documentation_hover_source,
+              (size_t)(use - documentation_hover_source) +
+                  strlen(documented[i].name) / 2,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "documented symbol analysis");
+    const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+    const ag_language_symbol_t *symbol = find_symbol(
+        &snapshot, documented[i].name, documented[i].kind);
+    CHECK(hover && strcmp(hover->name, documented[i].name) == 0 &&
+              check_documentation_symbol(
+                  hover, documented[i].documentation, "documentation.c",
+                  (size_t)(comment - documentation_hover_source),
+                  (size_t)(comment - documentation_hover_source) +
+                      strlen(documented[i].comment)) &&
+              check_documentation_symbol(
+                  symbol, documented[i].documentation, "documentation.c",
+                  (size_t)(comment - documentation_hover_source),
+                  (size_t)(comment - documentation_hover_source) +
+                      strlen(documented[i].comment)),
+          "documented symbol fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+
+  const char *stable_names[] = {"enemy_x", "walk_frame"};
+  for (size_t name_index = 0;
+       name_index < sizeof(stable_names) / sizeof(stable_names[0]);
+       name_index++) {
+    const char *declaration = strstr(
+        documentation_hover_source, stable_names[name_index]);
+    const char *use = last_occurrence(
+        documentation_hover_source, stable_names[name_index]);
+    size_t deltas[] = {
+        0, strlen(stable_names[name_index]) / 2,
+        strlen(stable_names[name_index]),
+    };
+    for (int fresh = 0; fresh < 2; fresh++) {
+      for (int occurrence = 0; occurrence < 2; occurrence++) {
+        for (size_t delta = 0;
+             delta < sizeof(deltas) / sizeof(deltas[0]); delta++) {
+          ag_compilation_session_t *analysis_session = session;
+          if (fresh) {
+            analysis_session = ag_compilation_session_create(&target);
+            CHECK(analysis_session != NULL,
+                  "fresh documentation hover session");
+          }
+          const char *position = occurrence == 0 ? declaration : use;
+          CHECK(analyze_named(
+                    analysis_session, "documentation.c",
+                    documentation_hover_source,
+                    (size_t)(position - documentation_hover_source) +
+                        deltas[delta],
+                    (header_bundle_t){0}, defaults, &snapshot, &error),
+                "stable documentation hover analysis");
+          const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+          CHECK(hover && strcmp(hover->name, stable_names[name_index]) == 0 &&
+                    hover->documentation && hover->documentation[0],
+                "stable documentation hover fields");
+          ag_language_analysis_snapshot_dispose(&snapshot);
+          if (fresh) ag_compilation_session_destroy(analysis_session);
+        }
+      }
+    }
+  }
+
+  const char *undocumented[] = {
+      "blank_gap",       "directive_gap", "directive_continuation_gap",
+      "declaration_after",
+      "ordinary_block", "ordinary_line", "comment_text",
+      "string_after",   "comment_character", "character_after",
+      "documentation_main",
+  };
+  for (size_t i = 0;
+       i < sizeof(undocumented) / sizeof(undocumented[0]); i++) {
+    const char *declaration = strstr(
+        documentation_hover_source, undocumented[i]);
+    CHECK(declaration != NULL, "undocumented fixture anchor");
+    CHECK(analyze_named(
+              session, "documentation.c", documentation_hover_source,
+              (size_t)(declaration - documentation_hover_source) + 1,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "undocumented symbol analysis");
+    const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+    CHECK(hover && strcmp(hover->name, undocumented[i]) == 0 &&
+              hover->documentation && hover->documentation[0] == '\0' &&
+              !hover->has_documentation_range,
+          "undocumented symbol fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+
+  const char *header_paths[] = {"player.h"};
+  const char *header_with_documentation =
+      "/** header prototype */\nvoid update_player(void);\n";
+  const char *header_without_documentation =
+      "void update_player(void);\n";
+  const char *definition_v1 =
+      "#include \"player.h\"\n"
+      "/** definition v1 */\nvoid update_player(void) {}\n";
+  const char *definition_v2 =
+      "#include \"player.h\"\n"
+      "/** definition v2 */\nvoid update_player(void) {}\n";
+  const char *call_source =
+      "#include \"player.h\"\n"
+      "void update(void) { update_player(); }\n";
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  CHECK(project != NULL, "documentation project index");
+  for (unsigned int revision = 1; revision <= 4; revision++) {
+    const char *header = revision == 1 ? header_with_documentation
+                                       : header_without_documentation;
+    const char *header_sources[] = {header};
+    header_bundle_t bundle = make_bundle(header_paths, header_sources, 1);
+    const char *definition = revision <= 2 ? definition_v1 : definition_v2;
+    ag_language_project_source_t sources[] = {
+        {"player.c", definition, strlen(definition)},
+        {"main.c", call_source, strlen(call_source)},
+    };
+    ag_language_project_update_request_t update = {
+        .revision = revision,
+        .sources = sources,
+        .source_count = revision == 4 ? 1 : 2,
+        .virtual_header_bundle = bundle.bytes,
+        .virtual_header_bundle_length = bundle.length,
+        .max_header_files = 32,
+        .max_header_file_bytes = 1024 * 1024,
+        .max_header_total_bytes = 4 * 1024 * 1024,
+        .max_include_depth = 16,
+        .limits = defaults,
+    };
+    if (revision == 4) sources[0] = sources[1];
+    CHECK(ag_language_project_index_update(
+              session, project, &update, &error),
+          "documentation project update");
+    const char *call = last_occurrence(call_source, "update_player");
+    CHECK(analyze_project_named(
+              session, project, "main.c", call_source,
+              (size_t)(call - call_source) + 3, bundle, defaults,
+              &snapshot, &error),
+          "documentation project call analysis");
+    const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+    const char *expected = revision == 1   ? "header prototype"
+                           : revision == 2 ? "definition v1"
+                           : revision == 3 ? "definition v2"
+                                           : "";
+    const char *expected_source = revision == 1 ? "player.h" : "player.c";
+    CHECK(hover && strcmp(hover->name, "update_player") == 0 &&
+              strcmp(hover->documentation, expected) == 0 &&
+              (expected[0] ? hover->has_documentation_range &&
+                                 strcmp(hover->documentation_range.source_name,
+                                        expected_source) == 0
+                           : !hover->has_documentation_range),
+          "documentation project revision fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    free(bundle.bytes);
+  }
+  const char *visible_header_sources[] = {
+      "/** project prototype */\nvoid update_player(void);\n",
+  };
+  header_bundle_t visible_bundle = make_bundle(
+      header_paths, visible_header_sources, 1);
+  const char *visible_call_source =
+      "/** visible prototype */\nvoid update_player(void);\n"
+      "void update(void) { update_player(); }\n";
+  ag_language_project_source_t visible_sources[] = {
+      {"player.c", definition_v1, strlen(definition_v1)},
+      {"visible.c", visible_call_source, strlen(visible_call_source)},
+  };
+  CHECK(ag_language_project_index_update(
+            session, project,
+            &(ag_language_project_update_request_t){
+                .revision = 5,
+                .sources = visible_sources,
+                .source_count = 2,
+                .virtual_header_bundle = visible_bundle.bytes,
+                .virtual_header_bundle_length = visible_bundle.length,
+                .max_header_files = 32,
+                .max_header_file_bytes = 1024 * 1024,
+                .max_header_total_bytes = 4 * 1024 * 1024,
+                .max_include_depth = 16,
+                .limits = defaults,
+            },
+            &error),
+        "visible prototype documentation project update");
+  const char *visible_call = last_occurrence(
+      visible_call_source, "update_player");
+  CHECK(analyze_project_named(
+            session, project, "visible.c", visible_call_source,
+            (size_t)(visible_call - visible_call_source) + 3,
+            visible_bundle, defaults, &snapshot, &error),
+        "visible prototype documentation analysis");
+  CHECK(hover_symbol(&snapshot) &&
+            strcmp(hover_symbol(&snapshot)->documentation,
+                   "visible prototype") == 0 &&
+            strcmp(hover_symbol(&snapshot)->documentation_range.source_name,
+                   "visible.c") == 0,
+        "visible prototype documentation wins");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  free(visible_bundle.bytes);
+  ag_language_project_index_destroy(project);
+
+  const char *limited_source = "/** 12345678901234 */\nint x;\n";
+  ag_language_analysis_limits_t tiny = defaults;
+  tiny.max_string_bytes = 13;
+  CHECK(!analyze_named(
+            session, "d.c", limited_source,
+            strlen(limited_source), (header_bundle_t){0}, tiny,
+            &snapshot, &error),
+        "documentation string limit rejected");
+  CHECK(error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code, "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES") == 0 &&
+            strcmp(error.limit, "maxAnalysisStringBytes") == 0 &&
+            error.max == 13 && error.actual == 14,
+        "documentation string limit fields");
+  CHECK(analyze_named(
+            session, "d.c", "int x;", 6,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "documentation session reusable after string limit");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *snapshot_plain = "int bounded;\n";
+  const char *snapshot_documented = "/** bounded doc */\nint bounded;\n";
+  CHECK(analyze_named(
+            session, "documentation-snapshot.c", snapshot_plain,
+            strlen(snapshot_plain), (header_bundle_t){0}, defaults,
+            &snapshot, &error),
+        "plain documentation snapshot sizing");
+  size_t plain_snapshot_bytes = snapshot.allocated_bytes;
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  CHECK(analyze_named(
+            session, "documentation-snapshot.c", snapshot_documented,
+            strlen(snapshot_documented), (header_bundle_t){0}, defaults,
+            &snapshot, &error),
+        "documented snapshot sizing");
+  size_t documented_snapshot_bytes = snapshot.allocated_bytes;
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  CHECK(documented_snapshot_bytes > plain_snapshot_bytes,
+        "documentation contributes to snapshot limit");
+  tiny = defaults;
+  tiny.max_snapshot_bytes = documented_snapshot_bytes - 1;
+  CHECK(analyze_named(
+            session, "documentation-snapshot.c", snapshot_plain,
+            strlen(snapshot_plain), (header_bundle_t){0}, tiny,
+            &snapshot, &error),
+        "plain snapshot within documentation boundary");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  CHECK(!analyze_named(
+            session, "documentation-snapshot.c", snapshot_documented,
+            strlen(snapshot_documented), (header_bundle_t){0}, tiny,
+            &snapshot, &error),
+        "documented snapshot limit rejected");
+  CHECK(error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code,
+                   "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES") == 0 &&
+            strcmp(error.limit, "maxAnalysisSnapshotBytes") == 0,
+        "documentation snapshot limit fields");
+
+  const char *immutable_source = "/** immutable */\nint immutable_value;\n";
+  CHECK(analyze_named(
+            session, "immutable.c", immutable_source,
+            strlen(immutable_source), (header_bundle_t){0}, defaults,
+            &snapshot, &error),
+        "documentation immutable snapshot");
+  const ag_language_symbol_t *immutable = find_symbol(
+      &snapshot, "immutable_value", AG_LANGUAGE_SYMBOL_OBJECT);
+  CHECK(immutable && strcmp(immutable->documentation, "immutable") == 0,
+        "documentation immutable initial value");
+  ag_language_analysis_snapshot_t second = {0};
+  CHECK(analyze_named(
+            session, "immutable.c", "int replacement;", 16,
+            (header_bundle_t){0}, defaults, &second, &error),
+        "documentation immutable second analysis");
+  CHECK(strcmp(immutable->documentation, "immutable") == 0 &&
+            strcmp(immutable->documentation_range.source_name,
+                   "immutable.c") == 0,
+        "documentation survives reused session");
+  ag_language_analysis_snapshot_dispose(&second);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--parity-json") == 0)
     return print_parity_snapshot();
@@ -759,6 +1325,12 @@ int main(int argc, char **argv) {
   if (argc == 3 &&
       strcmp(argv[1], "--conditional-hover-parity-json") == 0)
     return print_conditional_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--documentation-hover-parity-json") == 0)
+    return print_documentation_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--documentation-project-parity-json") == 0)
+    return print_documentation_project_parity_snapshot(argv[2]);
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "session");
@@ -766,6 +1338,9 @@ int main(int argc, char **argv) {
       ag_language_analysis_default_limits();
   ag_language_analysis_snapshot_t snapshot = {0};
   ag_language_analysis_error_t error = {0};
+
+  CHECK(test_documentation_analysis(target) == 0,
+        "documentation analysis scenarios");
 
   const char *game_paths[] = {"game.h"};
   const char *game_sources[] = {
@@ -2835,6 +3410,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (34 scenarios)");
+  puts("language analysis tests passed (35 scenarios)");
   return 0;
 }

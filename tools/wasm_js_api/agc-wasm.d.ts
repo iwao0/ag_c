@@ -182,6 +182,10 @@ export interface AgcLanguageSymbol {
   readonly declarationOrder: number;
   /** The first declaration visible to the analyzed translation unit. */
   readonly declaration: AgcLanguageSourceRange;
+  /** Normalized UTF-8 plain text from an associated documentation comment. */
+  readonly documentation: string;
+  /** Original documentation-comment byte range, when documentation is set. */
+  readonly documentationRange: AgcLanguageSourceRange | null;
   /** Prefer this over declaration for definition navigation when non-null. */
   readonly definition: AgcLanguageSourceRange | null;
   /** True when no single definition was selected because multiple exist. */

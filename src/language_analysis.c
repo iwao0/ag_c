@@ -13,6 +13,7 @@
 #include "diag/diag.h"
 #include "frontend/translation_unit.h"
 #include "frontend/translation_unit_resolver.h"
+#include "language_documentation.h"
 #include "parser/function_public.h"
 #include "parser/gvar_public.h"
 #include "parser/local_registry.h"
@@ -34,6 +35,7 @@ typedef struct {
   ag_language_analysis_snapshot_t *snapshot;
   ag_language_analysis_error_t *error;
   ag_language_analysis_limits_t limits;
+  const ag_language_documentation_index_t *documentation_index;
   int failed;
 } snapshot_builder_t;
 
@@ -46,6 +48,10 @@ typedef struct {
 typedef struct {
   char *name;
   ag_language_source_range_t declaration;
+  char *documentation;
+  int has_documentation_range;
+  ag_language_source_range_t documentation_range;
+  int documentation_priority;
   ag_language_source_range_t *definitions;
   int definition_count;
   int definition_capacity;
@@ -1373,6 +1379,35 @@ static int source_at(const ag_language_analysis_request_t *request,
   return bundle_source_at(request, index - 1, view);
 }
 
+static int build_documentation_index(
+    const ag_language_analysis_request_t *request,
+    const ag_language_analysis_limits_t *limits,
+    ag_language_documentation_index_t *index,
+    ag_language_analysis_error_t *error) {
+  for (int source_index = 0; source_index < source_count(request);
+       source_index++) {
+    analysis_source_view_t source = {0};
+    if (!source_at(request, source_index, &source)) continue;
+    ag_language_documentation_status_t status =
+        ag_language_documentation_index_add_source(
+            index, source.name, source.source, source.length,
+            (size_t)limits->max_symbols);
+    if (status == AG_LANGUAGE_DOCUMENTATION_OK) continue;
+    ag_language_documentation_index_dispose(index);
+    if (status == AG_LANGUAGE_DOCUMENTATION_LIMIT) {
+      set_error(error, AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT,
+                "AGC_LIMIT_MAX_ANALYSIS_SYMBOLS", "maxAnalysisSymbols",
+                (size_t)limits->max_symbols,
+                (size_t)limits->max_symbols + 1);
+    } else {
+      set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
+                "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
+    }
+    return 0;
+  }
+  return 1;
+}
+
 static int find_identifier(const char *source, size_t length,
                            const char *name, size_t name_len,
                            size_t *offset) {
@@ -1933,6 +1968,77 @@ static int initializer_source_range(
   return !builder->failed;
 }
 
+static int source_ranges_identical(
+    const ag_language_source_range_t *left,
+    const ag_language_source_range_t *right) {
+  return left && right && left->source_name && right->source_name &&
+         strcmp(left->source_name, right->source_name) == 0 &&
+         left->start.offset == right->start.offset &&
+         left->end.offset == right->end.offset;
+}
+
+static const ag_language_documentation_entry_t *documentation_for_range(
+    const snapshot_builder_t *builder,
+    const ag_language_source_range_t *range) {
+  if (!builder || !builder->documentation_index || !range ||
+      !range->source_name || range->start.offset < 0)
+    return NULL;
+  return ag_language_documentation_find(
+      builder->documentation_index, range->source_name,
+      (size_t)range->start.offset);
+}
+
+static int set_symbol_documentation(
+    snapshot_builder_t *builder, ag_language_symbol_t *symbol,
+    const ag_language_documentation_entry_t *entry) {
+  if (!builder || !symbol || !entry) return 0;
+  size_t length = ag_language_documentation_normalized_length(entry);
+  if (length == 0) return 0;
+  if (length > (size_t)builder->limits.max_string_bytes) {
+    builder_limit(builder, "maxAnalysisStringBytes",
+                  "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES",
+                  (size_t)builder->limits.max_string_bytes, length);
+    return 0;
+  }
+  char *documentation = snapshot_alloc(builder, length + 1);
+  if (!documentation ||
+      !ag_language_documentation_normalize(
+          entry, documentation, length + 1))
+    return 0;
+  free(symbol->documentation);
+  symbol->documentation = documentation;
+  symbol->has_documentation_range = 1;
+  symbol->documentation_range.source_name = snapshot_copy(
+      builder, entry->source_name);
+  symbol->documentation_range.start = position_at(
+      entry->source, entry->source_length, entry->comment_start);
+  symbol->documentation_range.end = position_at(
+      entry->source, entry->source_length, entry->comment_end);
+  return !builder->failed;
+}
+
+static void fill_documentation(
+    snapshot_builder_t *builder, ag_language_symbol_t *symbol) {
+  if (!builder || !symbol ||
+      (symbol->kind != AG_LANGUAGE_SYMBOL_OBJECT &&
+       symbol->kind != AG_LANGUAGE_SYMBOL_FUNCTION))
+    return;
+  const ag_language_documentation_entry_t *declaration_entry =
+      documentation_for_range(builder, &symbol->declaration);
+  int declaration_is_definition =
+      symbol->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
+      symbol->has_definition &&
+      source_ranges_identical(&symbol->declaration, &symbol->definition);
+  if (set_symbol_documentation(builder, symbol, declaration_entry))
+    return;
+  if (symbol->kind != AG_LANGUAGE_SYMBOL_FUNCTION ||
+      !symbol->has_definition || declaration_is_definition)
+    return;
+  set_symbol_documentation(
+      builder, symbol,
+      documentation_for_range(builder, &symbol->definition));
+}
+
 static int add_declaration_symbol(
     snapshot_builder_t *builder,
     const ag_language_analysis_request_t *request,
@@ -1946,6 +2052,7 @@ static int add_declaration_symbol(
   builder->snapshot->completion_item_count++;
   symbol->name = snapshot_copy_n(
       builder, declaration->name, (size_t)declaration->name_len);
+  symbol->documentation = snapshot_copy(builder, "");
   symbol->kind = declaration_kind(declaration);
   symbol->name_space = declaration_namespace(declaration->name_space);
   symbol->scope_depth = psx_scope_graph_scope_depth(
@@ -2011,6 +2118,7 @@ static int add_declaration_symbol(
       !ps_lvar_is_param((const lvar_t *)declaration->payload) &&
       !ps_lvar_is_static_local((const lvar_t *)declaration->payload))
     symbol->initializer_state = AG_LANGUAGE_INITIALIZER_RUNTIME;
+  fill_documentation(builder, symbol);
   if (builder->failed) return 0;
   return 1;
 }
@@ -2032,6 +2140,7 @@ static int add_macro_symbols(snapshot_builder_t *builder,
         &builder->snapshot->completion_items[count];
     builder->snapshot->completion_item_count++;
     symbol->name = snapshot_copy_n(builder, view.name, (size_t)view.name_len);
+    symbol->documentation = snapshot_copy(builder, "");
     symbol->kind = AG_LANGUAGE_SYMBOL_MACRO;
     symbol->name_space = AG_LANGUAGE_NAMESPACE_MACRO;
     symbol->type = snapshot_copy(builder, "macro");
@@ -2172,6 +2281,7 @@ static int add_member_symbols(
     builder->snapshot->completion_item_count++;
     symbol->name = snapshot_copy_n(
         builder, member->name, (size_t)member->len);
+    symbol->documentation = snapshot_copy(builder, "");
     symbol->kind = AG_LANGUAGE_SYMBOL_MEMBER;
     symbol->name_space = AG_LANGUAGE_NAMESPACE_MEMBER;
     symbol->type = format_type(builder, types, member->decl_qual_type);
@@ -2600,7 +2710,16 @@ int ag_language_analyze_source(
               limits.max_total_source_bytes, total_source_bytes);
     return 0;
   }
-  snapshot_builder_t builder = {snapshot, error, limits, 0};
+  ag_language_documentation_index_t documentation_index = {0};
+  if (!build_documentation_index(
+          request, &limits, &documentation_index, error))
+    return 0;
+  snapshot_builder_t builder = {
+      .snapshot = snapshot,
+      .error = error,
+      .limits = limits,
+      .documentation_index = &documentation_index,
+  };
   static const unsigned char empty_virtual_headers[4] = {0, 0, 0, 0};
   const unsigned char *header_bundle = request->virtual_header_bundle
                                            ? request->virtual_header_bundle
@@ -2622,6 +2741,7 @@ int ag_language_analyze_source(
       request->source, request->source_length,
       request->cursor_byte_offset, &recovery_changed);
   if (!recovery_source) {
+    ag_language_documentation_index_dispose(&documentation_index);
     set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
               "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
     return 0;
@@ -2637,6 +2757,7 @@ int ag_language_analyze_source(
     if (parse_state.preprocessor_stream)
       pp_stream_close(parse_state.preprocessor_stream);
     free(recovery_source);
+    ag_language_documentation_index_dispose(&documentation_index);
     set_error(error, AG_LANGUAGE_ANALYSIS_FAILED,
               "AGC_LANGUAGE_ANALYSIS_PARSE_START_FAILED", NULL, 0, 0);
     return 0;
@@ -2718,6 +2839,8 @@ int ag_language_analyze_source(
     add_declaration_symbol(&builder, request, semantic_context,
                            declaration, point, &symbol_capacity);
   }
+  ag_language_documentation_index_dispose(&documentation_index);
+  builder.documentation_index = NULL;
   if (!builder.failed)
     add_member_symbols(&builder, request, semantic_context,
                        point, &symbol_capacity);
@@ -2811,7 +2934,9 @@ static void project_function_dispose(
     project_function_entry_t *function) {
   if (!function) return;
   free(function->name);
+  free(function->documentation);
   project_range_dispose(&function->declaration);
+  project_range_dispose(&function->documentation_range);
   for (int i = 0; i < function->definition_count; i++)
     project_range_dispose(&function->definitions[i]);
   free(function->definitions);
@@ -2862,6 +2987,55 @@ static const project_function_entry_t *project_find_function_const(
       (ag_language_project_index_t *)index, name);
 }
 
+static int symbol_documentation_is_from_definition(
+    const ag_language_symbol_t *symbol) {
+  if (!symbol || symbol->kind != AG_LANGUAGE_SYMBOL_FUNCTION ||
+      !symbol->documentation || !symbol->documentation[0] ||
+      !symbol->has_documentation_range || !symbol->has_definition)
+    return 0;
+  if (source_ranges_identical(&symbol->declaration, &symbol->definition))
+    return 1;
+  if (!symbol->documentation_range.source_name ||
+      !symbol->definition.source_name ||
+      strcmp(symbol->documentation_range.source_name,
+             symbol->definition.source_name) != 0)
+    return 0;
+  if (!symbol->declaration.source_name ||
+      strcmp(symbol->declaration.source_name,
+             symbol->definition.source_name) != 0)
+    return 1;
+  return symbol->documentation_range.start.offset >=
+         symbol->declaration.end.offset;
+}
+
+static int project_store_documentation(
+    project_function_entry_t *entry,
+    const ag_language_symbol_t *symbol) {
+  if (!entry || !symbol || !symbol->documentation ||
+      !symbol->documentation[0])
+    return 1;
+  int priority = symbol_documentation_is_from_definition(symbol) ? 1 : 2;
+  if (entry->documentation_priority >= priority) return 1;
+  size_t length = strlen(symbol->documentation);
+  char *documentation = malloc(length + 1);
+  ag_language_source_range_t range = {0};
+  if (!documentation ||
+      (symbol->has_documentation_range &&
+       !project_range_copy(&range, &symbol->documentation_range))) {
+    free(documentation);
+    project_range_dispose(&range);
+    return 0;
+  }
+  memcpy(documentation, symbol->documentation, length + 1);
+  free(entry->documentation);
+  project_range_dispose(&entry->documentation_range);
+  entry->documentation = documentation;
+  entry->has_documentation_range = symbol->has_documentation_range;
+  entry->documentation_range = range;
+  entry->documentation_priority = priority;
+  return 1;
+}
+
 static project_function_entry_t *project_add_function(
     ag_language_project_index_t *index,
     const ag_language_symbol_t *symbol,
@@ -2891,7 +3065,8 @@ static project_function_entry_t *project_add_function(
   entry->name = malloc(name_length + 1);
   if (!entry->name ||
       !project_range_copy(&entry->declaration,
-                          &symbol->declaration)) {
+                          &symbol->declaration) ||
+      !project_store_documentation(entry, symbol)) {
     project_function_dispose(entry);
     index->function_count--;
     return NULL;
@@ -2958,6 +3133,7 @@ static int project_merge_snapshot(
     if (!entry)
       entry = project_add_function(index, symbol, max_symbols);
     if (!entry) return 0;
+    if (!project_store_documentation(entry, symbol)) return 0;
     for (int candidate = 0;
          candidate < symbol->definition_candidate_count; candidate++)
       if (!project_add_definition(
@@ -3137,7 +3313,11 @@ int ag_language_analyze_project_source(
               "AGC_LANGUAGE_ANALYSIS_INVALID_LIMITS", NULL, 0, 0);
     return 0;
   }
-  snapshot_builder_t builder = {snapshot, error, limits, 0};
+  snapshot_builder_t builder = {
+      .snapshot = snapshot,
+      .error = error,
+      .limits = limits,
+  };
   for (int i = 0; i < snapshot->completion_item_count; i++) {
     ag_language_symbol_t *symbol = &snapshot->completion_items[i];
     if (symbol->kind != AG_LANGUAGE_SYMBOL_FUNCTION ||
@@ -3146,7 +3326,23 @@ int ag_language_analyze_project_source(
       continue;
     const project_function_entry_t *entry =
         project_find_function_const(index, symbol->name);
-    if (!entry || entry->definition_count == 0) continue;
+    if (!entry) continue;
+    int has_visible_prototype_documentation =
+        symbol->documentation && symbol->documentation[0] &&
+        !symbol_documentation_is_from_definition(symbol);
+    if (!has_visible_prototype_documentation &&
+        entry->documentation && entry->documentation[0]) {
+      free(symbol->documentation);
+      project_range_dispose(&symbol->documentation_range);
+      symbol->documentation = snapshot_copy(
+          &builder, entry->documentation);
+      symbol->has_documentation_range = entry->has_documentation_range;
+      if (entry->has_documentation_range)
+        snapshot_copy_project_range(
+            &builder, &symbol->documentation_range,
+            &entry->documentation_range);
+    }
+    if (entry->definition_count == 0) continue;
     project_range_dispose(&symbol->definition);
     for (int candidate = 0;
          candidate < symbol->definition_candidate_count; candidate++)
@@ -3193,9 +3389,11 @@ void ag_language_analysis_snapshot_dispose(
     free(symbol->signature);
     free(symbol->return_type);
     free(symbol->storage_class);
+    free(symbol->documentation);
     free(symbol->constant_value);
     free(symbol->macro_replacement);
     dispose_range(&symbol->declaration);
+    dispose_range(&symbol->documentation_range);
     dispose_range(&symbol->definition);
     for (int candidate = 0;
          candidate < symbol->definition_candidate_count; candidate++)
@@ -3311,6 +3509,13 @@ static void json_symbol(json_writer_t *writer,
   json_int(writer, symbol->declaration_order);
   json_literal(writer, ",\"declaration\":");
   json_range(writer, &symbol->declaration);
+  json_literal(writer, ",\"documentation\":");
+  json_string(writer, symbol->documentation);
+  json_literal(writer, ",\"documentationRange\":");
+  if (symbol->has_documentation_range)
+    json_range(writer, &symbol->documentation_range);
+  else
+    json_literal(writer, "null");
   json_literal(writer, ",\"definition\":");
   if (symbol->has_definition)
     json_range(writer, &symbol->definition);
