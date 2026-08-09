@@ -14,6 +14,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 AGC=${AG_C:-"$ROOT/build/ag_c"}
 SUITE=${C_TESTSUITE_DIR:-"$ROOT/test/external/c-testsuite/tests/single-exec"}
+TIMEOUT_SEC=${C_TESTSUITE_TIMEOUT_SEC:-10}
 . "$ROOT/scripts/c_testsuite_unsupported_cases.sh"
 
 VERBOSE=0
@@ -24,7 +25,7 @@ for arg in "$@"; do
     --list-fail) LIST_FAIL=1 ;;
     -h|--help)
       echo "Usage: $0 [--verbose] [--list-fail]"
-      echo "Set AG_C or C_TESTSUITE_DIR to override the compiler or input directory."
+      echo "Set AG_C, C_TESTSUITE_DIR, or C_TESTSUITE_TIMEOUT_SEC to override defaults."
       exit 0 ;;
   esac
 done
@@ -36,6 +37,10 @@ if [ ! -d "$SUITE" ]; then
 fi
 
 if ! validate_c_testsuite_manifest "$SUITE"; then
+  exit 1
+fi
+
+if ! validate_c_testsuite_timeout_sec "$TIMEOUT_SEC"; then
   exit 1
 fi
 
@@ -79,26 +84,49 @@ for cfile in "$SUITE"/[0-9]*.c; do
     continue
   fi
 
-  # ag_c で compile (タイムアウト 10s 程度の安全策)
+  # ag_c で compile
   # ag_c は CWD 相対の include/ を見るため ROOT に cd して実行
-  if ! ( cd "$ROOT" && "$AGC" "$cfile" > "$sfile" ) 2>/dev/null; then
+  compile_status=0
+  ( cd "$ROOT" &&
+    c_testsuite_run_with_timeout "$TIMEOUT_SEC" "$AGC" "$cfile" > "$sfile" ) \
+    2>/dev/null || compile_status=$?
+  if [ "$compile_status" -eq 124 ]; then
+    fail_timeout=$((fail_timeout + 1))
+    fail_timeout_list+=("$base (compile)")
+    continue
+  fi
+  if [ "$compile_status" -ne 0 ]; then
     fail_compile=$((fail_compile + 1))
     fail_compile_list+=("$base")
     continue
   fi
 
   # cc で link (-arch arm64 を明示)
-  if ! cc -arch arm64 -o "$exe" "$sfile" 2>/dev/null; then
+  link_status=0
+  c_testsuite_run_with_timeout "$TIMEOUT_SEC" \
+    cc -arch arm64 -o "$exe" "$sfile" 2>/dev/null || link_status=$?
+  if [ "$link_status" -eq 124 ]; then
+    fail_timeout=$((fail_timeout + 1))
+    fail_timeout_list+=("$base (link)")
+    continue
+  fi
+  if [ "$link_status" -ne 0 ]; then
     fail_assemble=$((fail_assemble + 1))
     fail_assemble_list+=("$base")
     continue
   fi
 
   # 実行 (CWD を TMPDIR にして相対パスのファイル書き込みを ROOT に漏らさない)
-  actual=$( ( cd "$TMPDIR" && "$exe" ) 2>/dev/null )
-  rc=$?
+  rc=0
+  actual=$( ( cd "$TMPDIR" &&
+    c_testsuite_run_with_timeout "$TIMEOUT_SEC" "$exe" ) 2>/dev/null ) || rc=$?
 
-  if [ $rc -ne 0 ]; then
+  if [ "$rc" -eq 124 ]; then
+    fail_timeout=$((fail_timeout + 1))
+    fail_timeout_list+=("$base (run)")
+    continue
+  fi
+  if [ "$rc" -ne 0 ]; then
     fail_runtime=$((fail_runtime + 1))
     fail_runtime_list+=("$base (rc=$rc)")
     continue
@@ -126,6 +154,8 @@ if [ "$LIST_FAIL" -eq 1 ]; then
   for t in "${fail_runtime_list[@]:-}"; do [ -n "$t" ] && echo "  $t"; done
   printf '\n== Stdout mismatch ==\n'
   for t in "${fail_stdout_list[@]:-}"; do [ -n "$t" ] && echo "  $t"; done
+  printf '\n== Timeout ==\n'
+  for t in "${fail_timeout_list[@]:-}"; do [ -n "$t" ] && echo "  $t"; done
   printf '\n== Unsupported GNU extension skip ==\n'
   for t in "${skip_unsupported_list[@]:-}"; do [ -n "$t" ] && echo "  $t"; done
 fi
@@ -151,6 +181,11 @@ if [ "$VERBOSE" -eq 1 ] && [ "$LIST_FAIL" -eq 0 ]; then
     printf '  %s\n' "${fail_stdout_list[@]:0:20}"
     [ "${#fail_stdout_list[@]}" -gt 20 ] && printf '  ... %d more\n' $((${#fail_stdout_list[@]} - 20))
   fi
+  if [ "${#fail_timeout_list[@]}" -gt 0 ]; then
+    printf '\nTimeout (%d):\n' "$fail_timeout"
+    printf '  %s\n' "${fail_timeout_list[@]:0:20}"
+    [ "${#fail_timeout_list[@]}" -gt 20 ] && printf '  ... %d more\n' $((${#fail_timeout_list[@]} - 20))
+  fi
   if [ "${#skip_unsupported_list[@]}" -gt 0 ]; then
     printf '\nUnsupported GNU extension skip (%d):\n' "$skip_unsupported"
     printf '  %s\n' "${skip_unsupported_list[@]:0:20}"
@@ -169,6 +204,7 @@ printf "Fail (compile):  %d\n" "$fail_compile"
 printf "Fail (assemble): %d\n" "$fail_assemble"
 printf "Fail (runtime):  %d\n" "$fail_runtime"
 printf "Fail (stdout):   %d\n" "$fail_stdout"
+printf "Fail (timeout):  %d\n" "$fail_timeout"
 if [ "$total" -gt 0 ]; then
   pct=$(awk "BEGIN { printf \"%.1f\", $pass * 100 / $total }")
   printf "Pass率:          %s%%\n" "$pct"

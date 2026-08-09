@@ -71,7 +71,8 @@ bash scripts/run_c_testsuite.sh --list-fail
 `git submodule update --init` が必要。各 runner は開始前に、共有の非対応 ID が
 実在することと、対象 `.c` / `.c.expected` が一対一に対応することを検証する。
 Native runner は `AG_C` と `C_TESTSUITE_DIR` で実行対象を差し替えられ、対象ケースに
-失敗があれば終了コード 1 を返す。4 runner の集計は、`Total` を除外前の全件数、
+失敗があれば終了コード 1 を返す。compile・link・run は既定で各10秒に制限され、
+`C_TESTSUITE_TIMEOUT_SEC` で変更できる。4 runner の集計は、`Total` を除外前の全件数、
 `Target` を共有の非対応ケースを除いた実行対象数として表示する。`make test` には
 含まれない。
 

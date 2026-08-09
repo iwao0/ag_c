@@ -1,4 +1,5 @@
 import { readFile, readdir } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 
 async function sourceFilesUnder(directory) {
   const files = [];
@@ -861,6 +862,38 @@ if (!cTestsuiteManifestSource.includes("validate_c_testsuite_manifest()")) {
     "the shared c-testsuite manifest must validate unsupported IDs and expected outputs",
   );
 }
+if (
+  !cTestsuiteManifestSource.includes("validate_c_testsuite_timeout_sec()") ||
+  !cTestsuiteManifestSource.includes("c_testsuite_run_with_timeout()")
+) {
+  throw new Error("c-testsuite runners must share a portable timeout helper");
+}
+const cTestsuiteTimeoutProbe = spawnSync(
+  "bash",
+  [
+    "-c",
+    [
+      "set -u",
+      ". scripts/c_testsuite_unsupported_cases.sh",
+      "validate_c_testsuite_timeout_sec 10",
+      "if validate_c_testsuite_timeout_sec 0 >/dev/null 2>&1; then exit 1; fi",
+      "c_testsuite_run_with_timeout 1 /usr/bin/true",
+      "status=0",
+      "c_testsuite_run_with_timeout 1 /usr/bin/false || status=$?",
+      '[ "$status" -eq 1 ] || exit 1',
+      "status=0",
+      "c_testsuite_run_with_timeout 1 perl -e 'select undef, undef, undef, 2' || status=$?",
+      '[ "$status" -eq 124 ]',
+    ].join("\n"),
+  ],
+  { encoding: "utf8", timeout: 5000 },
+);
+if (cTestsuiteTimeoutProbe.status !== 0) {
+  throw new Error(
+    "c-testsuite timeout helper probe failed:\n" +
+      (cTestsuiteTimeoutProbe.stderr || cTestsuiteTimeoutProbe.error || "unknown error"),
+  );
+}
 for (const [path, source] of cTestsuiteRunnerSources) {
   if (
     !source.includes("c_testsuite_unsupported_cases.sh") ||
@@ -875,6 +908,9 @@ const nativeCTestsuiteRunnerSource = cTestsuiteRunnerSources[0][1];
 if (
   !nativeCTestsuiteRunnerSource.includes("AG_C:-") ||
   !nativeCTestsuiteRunnerSource.includes("C_TESTSUITE_DIR:-") ||
+  !nativeCTestsuiteRunnerSource.includes("C_TESTSUITE_TIMEOUT_SEC:-") ||
+  !nativeCTestsuiteRunnerSource.includes("c_testsuite_run_with_timeout") ||
+  !nativeCTestsuiteRunnerSource.includes('printf "Fail (timeout):') ||
   !nativeCTestsuiteRunnerSource.includes("fail_total=$((") ||
   !nativeCTestsuiteRunnerSource.includes('[ "$fail_total" -ne 0 ]')
 ) {
