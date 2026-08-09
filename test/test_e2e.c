@@ -3621,6 +3621,18 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "assign_enum_negative_incompatible_nested_unsigned_pointer.c",
      "E3099"},
+    {"enum_incompatible_integer_pointer_static_assert_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "enum_incompatible_integer_pointer.c",
+     "E3012"},
+    {"enum_incompatible_nested_integer_pointer_static_assert_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "enum_incompatible_nested_integer_pointer.c",
+     "E3012"},
+    {"enum_negative_incompatible_nested_unsigned_pointer_static_assert_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "enum_negative_incompatible_nested_unsigned_pointer.c",
+     "E3012"},
     {"distinct_enum_pointer_compatibility",
      "fixture:test/fixtures/should_reject/assign_distinct_enum_pointer.c",
      "E3099"},

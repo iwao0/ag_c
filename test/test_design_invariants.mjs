@@ -78,6 +78,50 @@ const probeFixtureNames = (await readdir(probeFixtureDirectory))
   .filter((name) => name.endsWith(".c"))
   .sort();
 const nativeE2ESource = await readFile("test/test_e2e.c", "utf8");
+const shouldRejectFixtureDirectory = "test/fixtures/should_reject";
+const shouldRejectFixtureNames = (await readdir(shouldRejectFixtureDirectory))
+  .filter((name) => name.endsWith(".c"))
+  .sort();
+const compileFailRegistryMatch = nativeE2ESource.match(
+  /static const compile_fail_case_t compile_fail_cases\[\] = \{([\s\S]*?)\n\};/,
+);
+if (!compileFailRegistryMatch) {
+  throw new Error("could not locate the native/Wasm object compile-fail registry");
+}
+const normalizedCompileFailRegistry = compileFailRegistryMatch[1].replace(
+  /"\s*"/g,
+  "",
+);
+const registeredShouldRejectFixtureCounts = new Map();
+for (const match of normalizedCompileFailRegistry.matchAll(
+    /fixture:test\/fixtures\/should_reject\/([A-Za-z0-9_.-]+\.c)/g,
+  )) {
+  registeredShouldRejectFixtureCounts.set(
+    match[1],
+    (registeredShouldRejectFixtureCounts.get(match[1]) ?? 0) + 1,
+  );
+}
+const shouldRejectFixtureNameSet = new Set(shouldRejectFixtureNames);
+const missingShouldRejectObjectCases = shouldRejectFixtureNames.filter(
+  (name) => !registeredShouldRejectFixtureCounts.has(name),
+);
+const staleShouldRejectObjectCases = [
+  ...registeredShouldRejectFixtureCounts.keys(),
+].filter((name) => !shouldRejectFixtureNameSet.has(name));
+const duplicateShouldRejectObjectCases = [
+  ...registeredShouldRejectFixtureCounts.entries(),
+].filter(([, count]) => count !== 1)
+  .map(([name, count]) => `${name} (${count})`);
+if (missingShouldRejectObjectCases.length !== 0 ||
+    staleShouldRejectObjectCases.length !== 0 ||
+    duplicateShouldRejectObjectCases.length !== 0) {
+  throw new Error(
+    "should_reject fixture/object compile-fail coverage mismatch\n" +
+      `missing: ${missingShouldRejectObjectCases.join(", ") || "none"}\n` +
+      `stale: ${staleShouldRejectObjectCases.join(", ") || "none"}\n` +
+      `duplicates: ${duplicateShouldRejectObjectCases.join(", ") || "none"}`,
+  );
+}
 const enumCompatibilityCompileFailCases = [
   "enum_incompatible_integer_pointer",
   "enum_incompatible_nested_integer_pointer",
