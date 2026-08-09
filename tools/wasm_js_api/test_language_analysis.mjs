@@ -193,6 +193,183 @@ for (const hoverCase of starterHoverCases) {
   }
 }
 
+const forControlSource = {
+  name: "for-control.c",
+  source: "/* 日本語 */\n" +
+    "#define LOOP_LIMIT 8\n" +
+    "enum { ENEMY_COUNT = 8 };\n" +
+    "int identity(int value) { return value; }\n" +
+    "int main(void) {\n" +
+    "  int outer = 1;\n" +
+    "  for (\n" +
+    "#define LOOP_SEED 0; for (;;);\n" +
+    "       outer = identity(\"for (;;);\"[0] + " +
+    "/* for (;;); */ outer); // for (;;);\n" +
+    "       outer < ENEMY_COUNT && outer < LOOP_LIMIT;\n" +
+    "       outer++, outer += 0) {}\n" +
+    "  for (;;) { outer += 0; break; }\n" +
+    "  for (outer = 0; outer < 1;) { outer++; }\n" +
+    "  for (int inner = 0; inner < ENEMY_COUNT; inner++) {\n" +
+    "    for (int nested = 0; nested < inner; nested++) {\n" +
+    "      outer += inner;\n" +
+    "    }\n" +
+    "  }\n" +
+    "  outer += LOOP_LIMIT;\n" +
+    "  return outer;\n" +
+    "}\n",
+};
+
+function findForControlName(name, from) {
+  const index = forControlSource.source.indexOf(name, from);
+  assert.notEqual(index, -1, `missing for-control anchor: ${name}`);
+  return index;
+}
+
+const firstFor = findForControlName("for (\n#define LOOP_SEED", 0);
+const initOuter = findForControlName("outer", firstFor);
+const nestedInitOuter = findForControlName("outer", initOuter + "outer".length);
+const conditionOuter = findForControlName(
+  "outer", nestedInitOuter + "outer".length,
+);
+const forEnumUse = findForControlName("ENEMY_COUNT", conditionOuter);
+const forMacroUse = findForControlName("LOOP_LIMIT", forEnumUse);
+const updateOuter = findForControlName("outer", forMacroUse);
+const commaUpdateOuter = findForControlName(
+  "outer", updateOuter + "outer".length,
+);
+const emptyForBodyOuter = findForControlName(
+  "outer", commaUpdateOuter + "outer".length,
+);
+const emptyUpdateFor = findForControlName(
+  "for (outer", emptyForBodyOuter + "outer".length,
+);
+const emptyUpdateInitOuter = findForControlName("outer", emptyUpdateFor);
+const emptyUpdateConditionOuter = findForControlName(
+  "outer", emptyUpdateInitOuter + "outer".length,
+);
+const innerFor = findForControlName("for (int inner", emptyUpdateConditionOuter);
+const innerDeclaration = findForControlName("inner", innerFor);
+const innerCondition = findForControlName(
+  "inner", innerDeclaration + "inner".length,
+);
+const innerEnumUse = findForControlName("ENEMY_COUNT", innerCondition);
+const innerUpdate = findForControlName("inner", innerEnumUse);
+const nestedFor = findForControlName("for (int nested", innerUpdate);
+const nestedConditionInner = findForControlName("inner", nestedFor);
+const nestedBodyOuter = findForControlName("outer", nestedConditionInner);
+const nestedBodyInner = findForControlName("inner", nestedBodyOuter);
+const afterLoopOuter = findForControlName(
+  "outer", nestedBodyInner + "inner".length,
+);
+
+const forControlHoverCases = [
+  { name: "outer", kind: "object", index: initOuter },
+  { name: "outer", kind: "object", index: nestedInitOuter },
+  { name: "outer", kind: "object", index: conditionOuter },
+  { name: "ENEMY_COUNT", kind: "enumConstant", index: forEnumUse },
+  { name: "LOOP_LIMIT", kind: "macro", index: forMacroUse },
+  { name: "outer", kind: "object", index: updateOuter },
+  { name: "outer", kind: "object", index: commaUpdateOuter },
+  { name: "outer", kind: "object", index: emptyForBodyOuter },
+  { name: "outer", kind: "object", index: emptyUpdateInitOuter },
+  { name: "outer", kind: "object", index: emptyUpdateConditionOuter },
+  { name: "inner", kind: "object", index: innerCondition },
+  { name: "ENEMY_COUNT", kind: "enumConstant", index: innerEnumUse },
+  { name: "inner", kind: "object", index: innerUpdate },
+  { name: "inner", kind: "object", index: nestedConditionInner },
+  { name: "outer", kind: "object", index: nestedBodyOuter },
+  { name: "inner", kind: "object", index: nestedBodyInner },
+  { name: "outer", kind: "object", index: afterLoopOuter },
+];
+const forControlDeclarations = new Map();
+const nativeForControlSnapshots = new Map();
+
+function forControlByteOffset(analysisCase, delta) {
+  return Buffer.byteLength(
+    forControlSource.source.slice(0, analysisCase.index),
+  ) + delta;
+}
+
+function assertForControlHover(result, analysisCase, lifecycle) {
+  const hover = result.hover;
+  if (result.partial || result.diagnostics.length !== 0 ||
+      hover?.name !== analysisCase.name || hover.kind !== analysisCase.kind ||
+      (analysisCase.kind === "object" && hover.type !== "int") ||
+      (analysisCase.kind === "enumConstant" &&
+       hover.initializer.constantValue !== "8") ||
+      (analysisCase.kind === "macro" && hover.macro?.replacement !== "8")) {
+    throw new Error(
+      `${lifecycle} for-control hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+  const declaration = forControlDeclarations.get(analysisCase.name);
+  if (declaration) {
+    assert.deepStrictEqual(
+      hover.declaration,
+      declaration,
+      `${lifecycle} ${analysisCase.name} declaration range differs`,
+    );
+  } else {
+    forControlDeclarations.set(analysisCase.name, hover.declaration);
+  }
+  if (analysisCase.index === afterLoopOuter &&
+      symbol(result, "inner", "object")) {
+    throw new Error(
+      `${lifecycle} for-init object leaked after loop: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+for (const analysisCase of forControlHoverCases) {
+  for (const delta of [
+    0,
+    Math.floor(analysisCase.name.length / 2),
+    Buffer.byteLength(analysisCase.name),
+  ]) {
+    const byteOffset = forControlByteOffset(analysisCase, delta);
+    const wasmResult = compiler.analyzeSource(forControlSource, {
+      cursor: { sourceName: forControlSource.name, byteOffset },
+    });
+    assertForControlHover(wasmResult, analysisCase, "reused instance");
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--for-control-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm for-control snapshots differ at byte ${byteOffset}`,
+    );
+    nativeForControlSnapshots.set(byteOffset, nativeResult);
+  }
+}
+
+for (const analysisCase of [
+  forControlHoverCases[1],
+  forControlHoverCases[3],
+  forControlHoverCases[4],
+  forControlHoverCases[10],
+  forControlHoverCases[16],
+]) {
+  const delta = Math.floor(analysisCase.name.length / 2);
+  const byteOffset = forControlByteOffset(analysisCase, delta);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(forControlSource, {
+      cursor: { sourceName: forControlSource.name, byteOffset },
+    });
+    assertForControlHover(freshResult, analysisCase, "fresh instance");
+    assert.deepStrictEqual(
+      freshResult,
+      nativeForControlSnapshots.get(byteOffset),
+      `fresh native/Wasm for-control snapshot differs at byte ${byteOffset}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
 const enumParitySource = {
   name: "main.c",
   source: "enum {\n" +

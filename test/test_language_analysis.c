@@ -70,6 +70,29 @@ static const char project_guard_unterminated_header[] =
     "#ifndef MOVE_H\n"
     "#define MOVE_H\n\n"
     "void move_and_draw(void);\n";
+static const char for_control_hover_source[] =
+    "/* 日本語 */\n"
+    "#define LOOP_LIMIT 8\n"
+    "enum { ENEMY_COUNT = 8 };\n"
+    "int identity(int value) { return value; }\n"
+    "int main(void) {\n"
+    "  int outer = 1;\n"
+    "  for (\n"
+    "#define LOOP_SEED 0; for (;;);\n"
+    "       outer = identity(\"for (;;);\"[0] + "
+    "/* for (;;); */ outer); // for (;;);\n"
+    "       outer < ENEMY_COUNT && outer < LOOP_LIMIT;\n"
+    "       outer++, outer += 0) {}\n"
+    "  for (;;) { outer += 0; break; }\n"
+    "  for (outer = 0; outer < 1;) { outer++; }\n"
+    "  for (int inner = 0; inner < ENEMY_COUNT; inner++) {\n"
+    "    for (int nested = 0; nested < inner; nested++) {\n"
+    "      outer += inner;\n"
+    "    }\n"
+    "  }\n"
+    "  outer += LOOP_LIMIT;\n"
+    "  return outer;\n"
+    "}\n";
 
 static int update_guard_project(
     ag_compilation_session_t *session,
@@ -618,6 +641,37 @@ static int print_project_header_guard_parity_snapshot(int unterminated) {
   return result;
 }
 
+static int print_for_control_hover_parity_snapshot(const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(for_control_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  if (!session) return 1;
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = analyze_named(
+      session, "for-control.c", for_control_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0},
+      ag_language_analysis_default_limits(), &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  int result = 1;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--parity-json") == 0)
     return print_parity_snapshot();
@@ -639,6 +693,9 @@ int main(int argc, char **argv) {
   if (argc == 2 &&
       strcmp(argv[1], "--project-header-guard-error-parity-json") == 0)
     return print_project_header_guard_parity_snapshot(1);
+  if (argc == 3 &&
+      strcmp(argv[1], "--for-control-hover-parity-json") == 0)
+    return print_for_control_hover_parity_snapshot(argv[2]);
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "session");
@@ -786,6 +843,250 @@ int main(int argc, char **argv) {
     }
   }
   free(starter_bundle.bytes);
+
+  const char *first_for = strstr(
+      for_control_hover_source, "for (\n#define LOOP_SEED");
+  const char *init_outer = strstr(first_for, "outer");
+  const char *nested_init_outer = strstr(
+      init_outer + strlen("outer"), "outer");
+  const char *condition_outer = strstr(
+      nested_init_outer + strlen("outer"), "outer");
+  const char *for_enum_use = strstr(condition_outer, "ENEMY_COUNT");
+  const char *for_macro_use = strstr(for_enum_use, "LOOP_LIMIT");
+  const char *update_outer = strstr(for_macro_use, "outer");
+  const char *comma_update_outer = strstr(
+      update_outer + strlen("outer"), "outer");
+  const char *empty_for_body_outer = strstr(
+      comma_update_outer + strlen("outer"), "outer");
+  const char *empty_update_for = strstr(
+      empty_for_body_outer + strlen("outer"), "for (outer");
+  const char *empty_update_init_outer = strstr(empty_update_for, "outer");
+  const char *empty_update_condition_outer = strstr(
+      empty_update_init_outer + strlen("outer"), "outer");
+  const char *inner_for = strstr(empty_update_condition_outer, "for (int inner");
+  const char *inner_declaration = strstr(inner_for, "inner");
+  const char *inner_condition = strstr(
+      inner_declaration + strlen("inner"), "inner");
+  const char *inner_enum_use = strstr(inner_condition, "ENEMY_COUNT");
+  const char *inner_update = strstr(inner_enum_use, "inner");
+  const char *nested_for = strstr(inner_update, "for (int nested");
+  const char *nested_condition_inner = strstr(nested_for, "inner");
+  const char *nested_body_outer = strstr(nested_condition_inner, "outer");
+  const char *nested_body_inner = strstr(nested_body_outer, "inner");
+  const char *after_loop_outer = strstr(
+      nested_body_inner + strlen("inner"), "outer");
+  const char *after_loop_macro = strstr(after_loop_outer, "LOOP_LIMIT");
+  const char *outer_declaration = strstr(
+      for_control_hover_source, "outer");
+  CHECK(first_for && init_outer && nested_init_outer && condition_outer &&
+            for_enum_use && for_macro_use && update_outer &&
+            comma_update_outer && empty_for_body_outer && empty_update_for &&
+            empty_update_init_outer && empty_update_condition_outer &&
+            inner_for && inner_declaration && inner_condition &&
+            inner_enum_use && inner_update && nested_for &&
+            nested_condition_inner && nested_body_outer && nested_body_inner &&
+            after_loop_outer && after_loop_macro && outer_declaration,
+        "for-control hover source anchors");
+
+  ag_language_analysis_snapshot_t outer_baseline_snapshot = {0};
+  CHECK(analyze_named(
+            session, "for-control.c", for_control_hover_source,
+            (size_t)(outer_declaration - for_control_hover_source) + 2,
+            (header_bundle_t){0}, defaults, &outer_baseline_snapshot, &error),
+        "for-control outer hover baseline");
+  const ag_language_symbol_t *outer_baseline_hover =
+      hover_symbol(&outer_baseline_snapshot);
+  CHECK(outer_baseline_hover &&
+            outer_baseline_hover->kind == AG_LANGUAGE_SYMBOL_OBJECT &&
+            strcmp(outer_baseline_hover->name, "outer") == 0 &&
+            strcmp(outer_baseline_hover->type, "int") == 0 &&
+            !outer_baseline_snapshot.partial &&
+            outer_baseline_snapshot.diagnostic_count == 0,
+        "for-control outer hover baseline fields");
+  CHECK(analyze_named(
+            session, "for-control.c", for_control_hover_source,
+            (size_t)(after_loop_outer - for_control_hover_source),
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "post-for object hover");
+  CHECK(same_object_hover(
+            hover_symbol(&snapshot), outer_baseline_hover) &&
+            !snapshot.partial && snapshot.diagnostic_count == 0 &&
+            !find_symbol(&snapshot, "inner", AG_LANGUAGE_SYMBOL_OBJECT),
+        "for-init object leaves scope after loop");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  const char *outer_uses[] = {
+      init_outer,
+      nested_init_outer,
+      condition_outer,
+      update_outer,
+      comma_update_outer,
+      empty_for_body_outer,
+      empty_update_init_outer,
+      empty_update_condition_outer,
+      nested_body_outer,
+      after_loop_outer,
+  };
+  size_t object_cursor_deltas_for[] = {0, 2, strlen("outer")};
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t use_index = 0;
+         use_index < sizeof(outer_uses) / sizeof(outer_uses[0]);
+         use_index++) {
+      for (size_t cursor_index = 0;
+           cursor_index < sizeof(object_cursor_deltas_for) /
+                              sizeof(object_cursor_deltas_for[0]);
+           cursor_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh for-control object hover session");
+        }
+        size_t cursor =
+            (size_t)(outer_uses[use_index] - for_control_hover_source) +
+            object_cursor_deltas_for[cursor_index];
+        CHECK(analyze_named(
+                  analysis_session, "for-control.c",
+                  for_control_hover_source, cursor, (header_bundle_t){0},
+                  defaults, &snapshot, &error),
+              "for-control object hover");
+        CHECK(same_object_hover(
+                  hover_symbol(&snapshot), outer_baseline_hover) &&
+                  !snapshot.partial && snapshot.diagnostic_count == 0,
+              "for-control object hover fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+
+  ag_language_analysis_snapshot_t inner_baseline_snapshot = {0};
+  CHECK(analyze_named(
+            session, "for-control.c", for_control_hover_source,
+            (size_t)(nested_body_inner - for_control_hover_source),
+            (header_bundle_t){0}, defaults, &inner_baseline_snapshot, &error),
+        "for-init object hover baseline");
+  const ag_language_symbol_t *inner_baseline_hover =
+      hover_symbol(&inner_baseline_snapshot);
+  const char *inner_uses[] = {
+      inner_condition,
+      inner_update,
+      nested_condition_inner,
+      nested_body_inner,
+  };
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t use_index = 0;
+         use_index < sizeof(inner_uses) / sizeof(inner_uses[0]);
+         use_index++) {
+      for (size_t cursor_index = 0;
+           cursor_index < sizeof(object_cursor_deltas_for) /
+                              sizeof(object_cursor_deltas_for[0]);
+           cursor_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh for-init object hover session");
+        }
+        size_t cursor =
+            (size_t)(inner_uses[use_index] - for_control_hover_source) +
+            object_cursor_deltas_for[cursor_index];
+        CHECK(analyze_named(
+                  analysis_session, "for-control.c",
+                  for_control_hover_source, cursor, (header_bundle_t){0},
+                  defaults, &snapshot, &error),
+              "for-init object hover");
+        CHECK(same_object_hover(
+                  hover_symbol(&snapshot), inner_baseline_hover) &&
+                  !snapshot.partial && snapshot.diagnostic_count == 0,
+              "for-init object hover fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+
+  const char *enum_declaration = strstr(
+      for_control_hover_source, "ENEMY_COUNT");
+  ag_language_analysis_snapshot_t enum_baseline_snapshot = {0};
+  CHECK(analyze_named(
+            session, "for-control.c", for_control_hover_source,
+            (size_t)(enum_declaration - for_control_hover_source) + 2,
+            (header_bundle_t){0}, defaults, &enum_baseline_snapshot, &error),
+        "for-control enum hover baseline");
+  const ag_language_symbol_t *enum_baseline_hover =
+      hover_symbol(&enum_baseline_snapshot);
+  const char *enum_uses[] = {for_enum_use, inner_enum_use};
+  size_t enum_cursor_deltas_for[] = {
+      0, strlen("ENEMY_COUNT") / 2, strlen("ENEMY_COUNT"),
+  };
+  for (size_t use_index = 0;
+       use_index < sizeof(enum_uses) / sizeof(enum_uses[0]); use_index++) {
+    for (size_t cursor_index = 0;
+         cursor_index < sizeof(enum_cursor_deltas_for) /
+                            sizeof(enum_cursor_deltas_for[0]);
+         cursor_index++) {
+      size_t cursor =
+          (size_t)(enum_uses[use_index] - for_control_hover_source) +
+          enum_cursor_deltas_for[cursor_index];
+      CHECK(analyze_named(
+                session, "for-control.c", for_control_hover_source, cursor,
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "for-control enum hover");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      CHECK(hover && enum_baseline_hover &&
+                hover->kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT &&
+                strcmp(hover->constant_value, "8") == 0 &&
+                same_range(
+                    &hover->declaration,
+                    &enum_baseline_hover->declaration) &&
+                !snapshot.partial && snapshot.diagnostic_count == 0,
+            "for-control enum hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  ag_language_analysis_snapshot_t macro_baseline_snapshot = {0};
+  CHECK(analyze_named(
+            session, "for-control.c", for_control_hover_source,
+            (size_t)(after_loop_macro - for_control_hover_source),
+            (header_bundle_t){0}, defaults, &macro_baseline_snapshot, &error),
+        "for-control macro hover baseline");
+  const ag_language_symbol_t *macro_baseline_hover =
+      hover_symbol(&macro_baseline_snapshot);
+  CHECK(macro_baseline_hover && !macro_baseline_snapshot.partial &&
+            macro_baseline_snapshot.diagnostic_count == 0,
+        "for-control macro hover baseline fields");
+  size_t macro_cursor_deltas_for[] = {
+      0, strlen("LOOP_LIMIT") / 2, strlen("LOOP_LIMIT"),
+  };
+  for (size_t cursor_index = 0;
+       cursor_index < sizeof(macro_cursor_deltas_for) /
+                          sizeof(macro_cursor_deltas_for[0]);
+       cursor_index++) {
+    size_t cursor = (size_t)(for_macro_use - for_control_hover_source) +
+                    macro_cursor_deltas_for[cursor_index];
+    CHECK(analyze_named(
+              session, "for-control.c", for_control_hover_source, cursor,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "for-control macro hover");
+    const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+    CHECK(hover && macro_baseline_hover &&
+              hover->kind == AG_LANGUAGE_SYMBOL_MACRO &&
+              strcmp(hover->name, "LOOP_LIMIT") == 0 &&
+              strcmp(hover->macro_replacement, "8") == 0 &&
+              same_range(
+                  &hover->declaration,
+                  &macro_baseline_hover->declaration) &&
+              !snapshot.partial && snapshot.diagnostic_count == 0,
+          "for-control macro hover fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  ag_language_analysis_snapshot_dispose(&macro_baseline_snapshot);
+  ag_language_analysis_snapshot_dispose(&enum_baseline_snapshot);
+  ag_language_analysis_snapshot_dispose(&inner_baseline_snapshot);
+  ag_language_analysis_snapshot_dispose(&outer_baseline_snapshot);
 
   const char *enum_source =
       "enum {\n"

@@ -1067,6 +1067,12 @@ static char *append_conditional_validation_tail(
   return result;
 }
 
+typedef struct {
+  char open;
+  int is_for_control;
+  size_t for_separator_count;
+} recovery_delimiter_t;
+
 static char *build_recovery_source(const char *source, size_t source_length,
                                    size_t cursor,
                                    int *changed) {
@@ -1105,7 +1111,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
   size_t capacity = cursor * 2 + 8192;
   if (capacity < cursor || capacity > (size_t)INT_MAX) return NULL;
   char *result = calloc(capacity, 1);
-  char *stack = calloc(cursor + 1, 1);
+  recovery_delimiter_t *stack = calloc(cursor + 1, sizeof(*stack));
   if (!result || !stack) {
     free(result);
     free(stack);
@@ -1139,6 +1145,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int escaped = 0;
   int at_line_start = 1;
   int preprocessor_line = 0;
+  int previous_token_is_for = 0;
   char last_significant = 0;
   for (size_t i = 0; i < cursor; i++) {
     char c = result[i];
@@ -1177,6 +1184,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (c == '\'' || c == '"') {
       quote = c;
       at_line_start = 0;
+      previous_token_is_for = 0;
       continue;
     }
     if (c == '\n') {
@@ -1188,12 +1196,35 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (at_line_start && c == '#') preprocessor_line = 1;
     at_line_start = 0;
     if (preprocessor_line) continue;
+    int opens_for_control = 0;
+    if (is_identifier_byte((unsigned char)c)) {
+      if (i == 0 ||
+          !is_identifier_byte((unsigned char)result[i - 1])) {
+        size_t identifier_end = i + 1;
+        while (identifier_end < cursor &&
+               is_identifier_byte((unsigned char)result[identifier_end]))
+          identifier_end++;
+        previous_token_is_for = identifier_end - i == strlen("for") &&
+                                memcmp(result + i, "for", strlen("for")) == 0;
+      }
+    } else if (!isspace((unsigned char)c)) {
+      opens_for_control = c == '(' && previous_token_is_for;
+      previous_token_is_for = 0;
+    }
     if (c == '(' || c == '[' || c == '{') {
-      stack[stack_count++] = c;
+      stack[stack_count++] = (recovery_delimiter_t){
+          .open = c,
+          .is_for_control = opens_for_control,
+          .for_separator_count = 0,
+      };
     } else if ((c == ')' || c == ']' || c == '}') && stack_count > 0) {
-      char open = stack[stack_count - 1];
+      char open = stack[stack_count - 1].open;
       if ((open == '(' && c == ')') || (open == '[' && c == ']') ||
           (open == '{' && c == '}')) stack_count--;
+    } else if (c == ';' && stack_count > 0 &&
+               stack[stack_count - 1].open == '(' &&
+               stack[stack_count - 1].is_for_control) {
+      stack[stack_count - 1].for_separator_count++;
     }
     if (!isspace((unsigned char)c)) last_significant = c;
   }
@@ -1220,16 +1251,31 @@ static char *build_recovery_source(const char *source, size_t source_length,
       last_significant == '<' || last_significant == '>' ||
       last_significant == '?' || last_significant == ':')
     APPEND_LITERAL(" 0");
+  int cursor_marker_appended = 0;
   for (size_t i = stack_count; i > 0; i--) {
-    if (stack[i - 1] == '(') APPEND_LITERAL(")");
-    else if (stack[i - 1] == '[') APPEND_LITERAL("]");
+    if (stack[i - 1].open == '(') {
+      if (stack[i - 1].is_for_control) {
+        size_t separator_count = stack[i - 1].for_separator_count;
+        while (separator_count < 2) {
+          APPEND_LITERAL(";");
+          separator_count++;
+        }
+      }
+      APPEND_LITERAL(")");
+      if (stack[i - 1].is_for_control) {
+        APPEND_LITERAL(" {\nint " AG_LANGUAGE_CURSOR_MARKER ";\n}\n");
+        cursor_marker_appended = 1;
+      }
+    } else if (stack[i - 1].open == '[') APPEND_LITERAL("]");
   }
-  if (last_significant != 0 &&
-      last_significant != ';' && last_significant != '}')
-    APPEND_LITERAL(";");
-  APPEND_LITERAL("\nint " AG_LANGUAGE_CURSOR_MARKER ";\n");
+  if (!cursor_marker_appended) {
+    if (last_significant != 0 && last_significant != ';' &&
+        last_significant != '}')
+      APPEND_LITERAL(";");
+    APPEND_LITERAL("\nint " AG_LANGUAGE_CURSOR_MARKER ";\n");
+  }
   for (size_t i = stack_count; i > 0; i--)
-    if (stack[i - 1] == '{') APPEND_LITERAL("}\n");
+    if (stack[i - 1].open == '{') APPEND_LITERAL("}\n");
   result[length] = '\0';
 #undef APPEND_LITERAL
   free(stack);
