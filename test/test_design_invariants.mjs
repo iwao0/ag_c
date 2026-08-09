@@ -897,10 +897,12 @@ if (cTestsuiteTimeoutProbe.status !== 0) {
 for (const [path, source] of cTestsuiteRunnerSources) {
   if (
     !source.includes("c_testsuite_unsupported_cases.sh") ||
-    !source.includes("validate_c_testsuite_manifest")
+    !source.includes("validate_c_testsuite_manifest") ||
+    !source.includes("C_TESTSUITE_TIMEOUT_SEC:-") ||
+    !source.includes("c_testsuite_run_with_timeout")
   ) {
     throw new Error(
-      `${path} must validate the shared c-testsuite manifest before scanning`,
+      `${path} must validate the manifest and bound long-running tool stages`,
     );
   }
 }
@@ -924,12 +926,19 @@ if (!nativeCTestsuiteRunnerSource.includes('printf "Target:')) {
 for (const [path, source] of cTestsuiteRunnerSources.slice(1)) {
   if (
     !source.includes('"$((scanned + skipped))"') ||
-    !source.includes("printf 'Target:")
+    !source.includes("printf 'Target:") ||
+    !source.includes("timed_out=") ||
+    !source.includes("printf 'Timeout:")
   ) {
     throw new Error(
-      `${path} must report Total including skips and Target excluding skips`,
+      `${path} must report consistent Total, Target, and Timeout counts`,
     );
   }
+}
+if (/^run_with_timeout\(\)/m.test(cTestsuiteRunnerSources[3][1])) {
+  throw new Error(
+    "the Wasm object-link c-testsuite runner must not duplicate the shared timeout helper",
+  );
 }
 const wasm32ObjectFixtureTestSource = await readFile(
   "test/test_wasm32_object.c",

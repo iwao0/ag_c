@@ -5,6 +5,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 agc_wasm=${AG_C_WASM:-"$root/build/ag_c_wasm"}
 suite=${C_TESTSUITE_DIR:-"$root/test/external/c-testsuite/tests/single-exec"}
 out_dir=${WASM32_OBJECT_C_TESTSUITE_SCAN_DIR:-"$root/build/wasm32_obj_cts_scan"}
+timeout_sec=${C_TESTSUITE_TIMEOUT_SEC:-10}
 . "$root/scripts/c_testsuite_unsupported_cases.sh"
 list_fail=0
 verbose=0
@@ -20,6 +21,7 @@ validates each generated object too.
 Set AG_C_WASM to override the compiler path.
 Set C_TESTSUITE_DIR to override the input directory.
 Set WASM32_OBJECT_C_TESTSUITE_SCAN_DIR to override the output directory.
+Set C_TESTSUITE_TIMEOUT_SEC to override the per-tool timeout.
 EOF
 }
 
@@ -61,6 +63,10 @@ if ! validate_c_testsuite_manifest "$suite"; then
   exit 2
 fi
 
+if ! validate_c_testsuite_timeout_sec "$timeout_sec"; then
+  exit 2
+fi
+
 if [ "$validate" = "auto" ]; then
   if command -v wasm-validate >/dev/null 2>&1; then
     validate=1
@@ -76,6 +82,7 @@ failures="$out_dir/failures.txt"
 scanned=0
 failed=0
 skipped=0
+timed_out=0
 
 for src in "$suite"/[0-9]*.c; do
   [ -f "$src" ] || continue
@@ -93,9 +100,18 @@ for src in "$suite"/[0-9]*.c; do
   obj="$out_dir/$base.o"
   err="$out_dir/$base.err"
 
-  if ! "$agc_wasm" -c -o "$obj" "$src" >/dev/null 2>"$err"; then
+  compile_status=0
+  c_testsuite_run_with_timeout "$timeout_sec" \
+    "$agc_wasm" -c -o "$obj" "$src" >/dev/null 2>"$err" || compile_status=$?
+  if [ "$compile_status" -ne 0 ]; then
     failed=$((failed + 1))
-    msg=$(sed -n '1p' "$err")
+    if [ "$compile_status" -eq 124 ]; then
+      timed_out=$((timed_out + 1))
+      msg="timed out after ${timeout_sec}s"
+    else
+      msg=$(sed -n '1p' "$err")
+      [ -n "$msg" ] || msg="exited with status $compile_status"
+    fi
     printf '%s\tcompile: %s\n' "$src" "$msg" >> "$failures"
     if [ "$verbose" -ne 0 ]; then
       printf 'FAIL %s\tcompile: %s\n' "$src" "$msg"
@@ -103,14 +119,25 @@ for src in "$suite"/[0-9]*.c; do
     continue
   fi
 
-  if [ "$validate" -ne 0 ] && ! wasm-validate "$obj" >/dev/null 2>"$err"; then
-    failed=$((failed + 1))
-    msg=$(sed -n '1p' "$err")
-    printf '%s\tvalidate: %s\n' "$src" "$msg" >> "$failures"
-    if [ "$verbose" -ne 0 ]; then
-      printf 'FAIL %s\tvalidate: %s\n' "$src" "$msg"
+  if [ "$validate" -ne 0 ]; then
+    validate_status=0
+    c_testsuite_run_with_timeout "$timeout_sec" \
+      wasm-validate "$obj" >/dev/null 2>"$err" || validate_status=$?
+    if [ "$validate_status" -ne 0 ]; then
+      failed=$((failed + 1))
+      if [ "$validate_status" -eq 124 ]; then
+        timed_out=$((timed_out + 1))
+        msg="timed out after ${timeout_sec}s"
+      else
+        msg=$(sed -n '1p' "$err")
+        [ -n "$msg" ] || msg="exited with status $validate_status"
+      fi
+      printf '%s\tvalidate: %s\n' "$src" "$msg" >> "$failures"
+      if [ "$verbose" -ne 0 ]; then
+        printf 'FAIL %s\tvalidate: %s\n' "$src" "$msg"
+      fi
+      continue
     fi
-    continue
   fi
 
   if [ "$verbose" -ne 0 ]; then
@@ -123,6 +150,7 @@ printf 'Total:    %d\n' "$((scanned + skipped))"
 printf 'Target:   %d\n' "$scanned"
 printf 'Pass:     %d\n' "$((scanned - failed))"
 printf 'Fail:     %d\n' "$failed"
+printf 'Timeout:  %d\n' "$timed_out"
 printf 'Skip:     %d\n' "$skipped"
 printf 'Validate: %s\n' "$validate"
 printf 'Log:      %s\n' "$failures"
