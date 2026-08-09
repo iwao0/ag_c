@@ -22,6 +22,7 @@ typedef struct psx_scope_graph_t psx_scope_graph_t;
 typedef struct ir_allocation_stats_t ir_allocation_stats_t;
 typedef struct ag_compilation_session_t ag_compilation_session_t;
 typedef void (*ag_session_backend_destroy_fn)(void *context);
+typedef void (*ag_session_translation_unit_cleanup_fn)(void *context);
 
 /* A complete target is required. Session creation never selects a host
  * default. */
@@ -31,6 +32,14 @@ int ag_compilation_session_is_complete(
     const ag_compilation_session_t *session);
 int ag_compilation_session_reset_translation_unit(
     ag_compilation_session_t *session);
+/* Registers the one in-flight translation-unit owner. Reset and destroy invoke
+ * the cleanup when a parser exits non-locally before its normal epilogue. */
+int ag_compilation_session_register_translation_unit_cleanup(
+    ag_compilation_session_t *session,
+    ag_session_translation_unit_cleanup_fn cleanup, void *context);
+int ag_compilation_session_unregister_translation_unit_cleanup(
+    ag_compilation_session_t *session,
+    ag_session_translation_unit_cleanup_fn cleanup, void *context);
 int ag_compilation_session_destroy(ag_compilation_session_t *session);
 tokenizer_context_t *ag_compilation_session_tokenizer(
     ag_compilation_session_t *session);

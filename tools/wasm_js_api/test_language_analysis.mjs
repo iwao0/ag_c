@@ -1823,6 +1823,193 @@ assert.throws(
   /duplicate project source name/,
 );
 
+const recoveryCompiler = await createCompiler(wasmModule);
+const recoverySource = (value) => ({
+  name: "main.c",
+  source:
+    `enum { PLAYER_SIZE = ${value}, PLAYER_SPEED = 2 };\n` +
+    "int main(void) { return PLAYER_SIZE; }\n",
+});
+const invalidRecoverySource = {
+  name: "main.c",
+  source:
+    "enum { PLAYER_SIZE = , PLAYER_SPEED = 2 };\n" +
+    "int main(void) { return PLAYER_SIZE; }\n",
+};
+const recoveryCursor = (input) => ({
+  sourceName: input.name,
+  byteOffset: input.source.lastIndexOf("PLAYER_SIZE") +
+    Buffer.byteLength("PLAYER_SIZE"),
+});
+const analyzeRecoveryRevision = (revision, input, projectInputs = [input]) =>
+  recoveryCompiler.analyzeProjectSource(input, {
+    projectRevision: revision,
+    projectSources: projectInputs,
+    cursor: recoveryCursor(input),
+  });
+const assertProjectAnalysisFailure = (operation, expectedCode = null) => {
+  assert.throws(operation, (error) => {
+    if (error instanceof WebAssembly.RuntimeError ||
+        error?.name !== "AgcLanguageAnalysisError" ||
+        !Array.isArray(error.diagnostics) ||
+        (!error.diagnostics.some((diagnostic) =>
+          diagnostic.severity === "error" &&
+          (!expectedCode || diagnostic.code === expectedCode)) &&
+         (expectedCode || error.code === "AGC_LANGUAGE_ANALYSIS_FAILED"))) {
+      return false;
+    }
+    return true;
+  });
+};
+try {
+  const revision1 = recoverySource(12);
+  assert.equal(
+    analyzeRecoveryRevision(1, revision1).hover?.initializer.constantValue,
+    "12",
+  );
+  assertProjectAnalysisFailure(
+    () => analyzeRecoveryRevision(2, invalidRecoverySource),
+    "E3064",
+  );
+  const revision3 = recoverySource(13);
+  const recoveredRevision3 = analyzeRecoveryRevision(3, revision3);
+  assert.equal(recoveredRevision3.hover?.initializer.constantValue, "13");
+
+  const freshRecoveryCompiler = await createCompiler(wasmModule);
+  try {
+    const freshRevision3 = freshRecoveryCompiler.analyzeProjectSource(
+      revision3,
+      {
+        projectRevision: 3,
+        projectSources: [revision3],
+        cursor: recoveryCursor(revision3),
+      },
+    );
+    assert.deepStrictEqual(
+      recoveredRevision3,
+      freshRevision3,
+      "reused and fresh project recovery snapshots differ",
+    );
+  } finally {
+    freshRecoveryCompiler.dispose();
+  }
+  const nativeRecoveredRevision3 = JSON.parse(execFileSync(
+    nativeAnalysisPath,
+    ["--project-failure-recovery-parity-json"],
+    { encoding: "utf8" },
+  ));
+  assert.deepStrictEqual(
+    recoveredRevision3,
+    nativeRecoveredRevision3,
+    "native and Wasm project recovery snapshots differ",
+  );
+
+  const validSupportA = {
+    name: "support_a.c",
+    source: "int support_a(void) { return 1; }\n",
+  };
+  const validSupportB = {
+    name: "support_b.c",
+    source: "int support_b(void) { return 2; }\n",
+  };
+  let revision = 4;
+  for (const invalidIndex of [0, 1, 2]) {
+    const invalidSources = [validSupportA, invalidRecoverySource, validSupportB];
+    const invalid = invalidSources.splice(1, 1)[0];
+    invalidSources.splice(invalidIndex, 0, invalid);
+    assertProjectAnalysisFailure(
+      () => analyzeRecoveryRevision(revision++, invalidRecoverySource,
+                                    invalidSources),
+      "E3064",
+    );
+    const valid = recoverySource(20 + invalidIndex);
+    const validSources = [validSupportA, valid, validSupportB];
+    assert.equal(
+      analyzeRecoveryRevision(revision++, valid, validSources)
+        .hover?.initializer.constantValue,
+      String(20 + invalidIndex),
+    );
+  }
+
+  for (const invalid of [
+    { name: "main.c", source: "int broken(int value;\n" },
+    { name: "main.c", source: "#error broken header state\nint value;\n" },
+    { name: "main.c", source: "int main(void) { return missing_name; }\n" },
+  ]) {
+    assertProjectAnalysisFailure(
+      () => analyzeRecoveryRevision(revision++, invalid),
+    );
+    const valid = recoverySource(revision);
+    assert.equal(
+      analyzeRecoveryRevision(revision++, valid)
+        .hover?.initializer.constantValue,
+      String(revision - 1),
+    );
+  }
+
+  const headerRecoverySource = {
+    name: "main.c",
+    source:
+      "#include \"recovery.h\"\n" +
+      "enum { PLAYER_SIZE = 31 };\n" +
+      "int main(void) { return PLAYER_SIZE; }\n",
+  };
+  assertProjectAnalysisFailure(() =>
+    recoveryCompiler.analyzeProjectSource(headerRecoverySource, {
+      projectRevision: revision++,
+      projectSources: [headerRecoverySource],
+      headers: { "recovery.h": "#error broken project header\n" },
+      cursor: recoveryCursor(headerRecoverySource),
+    }));
+  const recoveredHeaderResult = recoveryCompiler.analyzeProjectSource(
+    headerRecoverySource,
+    {
+      projectRevision: revision++,
+      projectSources: [headerRecoverySource],
+      headers: { "recovery.h": "#define RECOVERY_READY 1\n" },
+      cursor: recoveryCursor(headerRecoverySource),
+    },
+  );
+  assert.equal(
+    recoveredHeaderResult.hover?.initializer.constantValue,
+    "31",
+  );
+
+  for (let iteration = 0; iteration < 4; iteration++) {
+    assertProjectAnalysisFailure(
+      () => analyzeRecoveryRevision(revision++, invalidRecoverySource),
+      "E3064",
+    );
+    const valid = recoverySource(40 + iteration);
+    analyzeRecoveryRevision(revision++, valid);
+  }
+  const recoveryWarmPages = recoveryCompiler.memory.buffer.byteLength / 65536;
+  for (let iteration = 0; iteration < 20; iteration++) {
+    assertProjectAnalysisFailure(
+      () => analyzeRecoveryRevision(revision++, invalidRecoverySource),
+      "E3064",
+    );
+    const valid = recoverySource(50 + iteration);
+    const result = analyzeRecoveryRevision(revision++, valid);
+    assert.equal(
+      result.hover?.initializer.constantValue,
+      String(50 + iteration),
+    );
+    assert.deepStrictEqual(
+      result.diagnostics,
+      recoveredRevision3.diagnostics,
+      "recovered project diagnostics accumulated stale failures",
+    );
+  }
+  assert.equal(
+    recoveryCompiler.memory.buffer.byteLength / 65536,
+    recoveryWarmPages,
+    "Wasm memory grew across recovered project analysis failures",
+  );
+} finally {
+  recoveryCompiler.dispose();
+}
+
 const guardedProjectHeaders = {
   "move.h":
     "#ifndef MOVE_H\n" +

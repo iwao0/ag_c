@@ -64,6 +64,7 @@ struct ag_language_project_index_t {
   int function_capacity;
   int definition_count;
   int valid;
+  ag_language_project_index_t *pending;
 };
 
 static void set_error(ag_language_analysis_error_t *error,
@@ -2521,6 +2522,8 @@ typedef struct {
   ag_compilation_session_t *session;
   tokenizer_context_t *tokenizer;
   const char *recovery_source;
+  char *recovery_source_owned;
+  ag_language_documentation_index_t *documentation_index_owned;
   pp_stream_t *preprocessor_stream;
   psx_frontend_stream_t frontend;
 #if !defined(AGC_TARGET_WASM32) && !defined(__wasm32__)
@@ -2532,6 +2535,71 @@ typedef struct {
   psx_scope_lookup_point_t semantic_lookup_point;
   saved_analysis_diagnostic_t semantic_diagnostic;
 } analysis_parse_state_t;
+
+static void cleanup_analysis_parse_state(void *context) {
+  analysis_parse_state_t *state = context;
+  if (!state) return;
+  if (state->session) {
+    ag_diagnostic_context_t *diagnostics =
+        ag_compilation_session_diagnostic_context(state->session);
+    ag_preprocessor_context_t *preprocessor =
+        ag_compilation_session_preprocessor_context(state->session);
+    if (diagnostics) {
+      diag_context_clear_fatal_recovery(diagnostics);
+      diag_context_set_capture_only(diagnostics, 0);
+    }
+    if (preprocessor)
+      pp_context_set_language_analysis_mode(preprocessor, 0);
+  }
+  if (state->frontend.is_started)
+    psx_frontend_stream_abort(&state->frontend);
+  if (state->preprocessor_stream)
+    pp_stream_close(state->preprocessor_stream);
+  dispose_saved_diagnostic(&state->semantic_diagnostic);
+  free(state->recovery_source_owned);
+  if (state->documentation_index_owned) {
+    ag_language_documentation_index_dispose(
+        state->documentation_index_owned);
+    free(state->documentation_index_owned);
+  }
+  free(state);
+}
+
+static analysis_parse_state_t *create_analysis_parse_state(
+    ag_compilation_session_t *session, tokenizer_context_t *tokenizer,
+    char *recovery_source,
+    ag_language_documentation_index_t *documentation_index) {
+  analysis_parse_state_t *state = calloc(1, sizeof(*state));
+  if (!state) {
+    free(recovery_source);
+    if (documentation_index) {
+      ag_language_documentation_index_dispose(documentation_index);
+      free(documentation_index);
+    }
+    return NULL;
+  }
+  state->session = session;
+  state->tokenizer = tokenizer;
+  state->recovery_source = recovery_source;
+  state->recovery_source_owned = recovery_source;
+  state->documentation_index_owned = documentation_index;
+  if (!ag_compilation_session_register_translation_unit_cleanup(
+          session, cleanup_analysis_parse_state, state)) {
+    cleanup_analysis_parse_state(state);
+    return NULL;
+  }
+  return state;
+}
+
+static void finish_analysis_parse_state(
+    analysis_parse_state_t *state) {
+  if (!state) return;
+  ag_compilation_session_t *session = state->session;
+  if (session)
+    (void)ag_compilation_session_unregister_translation_unit_cleanup(
+        session, cleanup_analysis_parse_state, state);
+  cleanup_analysis_parse_state(state);
+}
 
 static void save_semantic_rejection(
     analysis_parse_state_t *state,
@@ -2710,15 +2778,24 @@ int ag_language_analyze_source(
               limits.max_total_source_bytes, total_source_bytes);
     return 0;
   }
-  ag_language_documentation_index_t documentation_index = {0};
-  if (!build_documentation_index(
-          request, &limits, &documentation_index, error))
+  ag_language_documentation_index_t *documentation_index =
+      calloc(1, sizeof(*documentation_index));
+  if (!documentation_index) {
+    set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
+              "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
     return 0;
+  }
+  if (!build_documentation_index(
+          request, &limits, documentation_index, error)) {
+    ag_language_documentation_index_dispose(documentation_index);
+    free(documentation_index);
+    return 0;
+  }
   snapshot_builder_t builder = {
       .snapshot = snapshot,
       .error = error,
       .limits = limits,
-      .documentation_index = &documentation_index,
+      .documentation_index = documentation_index,
   };
   static const unsigned char empty_virtual_headers[4] = {0, 0, 0, 0};
   const unsigned char *header_bundle = request->virtual_header_bundle
@@ -2741,62 +2818,80 @@ int ag_language_analyze_source(
       request->source, request->source_length,
       request->cursor_byte_offset, &recovery_changed);
   if (!recovery_source) {
-    ag_language_documentation_index_dispose(&documentation_index);
+    ag_language_documentation_index_dispose(documentation_index);
+    free(documentation_index);
     set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
               "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
     return 0;
   }
   tokenizer_context_t *tokenizer = ag_compilation_session_tokenizer(session);
   tk_set_filename_ctx(tokenizer, request->source_name);
-  analysis_parse_state_t parse_state = {
-      .session = session,
-      .tokenizer = tokenizer,
-      .recovery_source = recovery_source,
-  };
-  if (!parse_analysis_source(&parse_state)) {
-    if (parse_state.preprocessor_stream)
-      pp_stream_close(parse_state.preprocessor_stream);
-    free(recovery_source);
-    ag_language_documentation_index_dispose(&documentation_index);
+  analysis_parse_state_t *parse_state = create_analysis_parse_state(
+      session, tokenizer, recovery_source, documentation_index);
+  if (!parse_state) {
+    set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
+              "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
+    return 0;
+  }
+  if (!parse_analysis_source(parse_state)) {
+    finish_analysis_parse_state(parse_state);
+    (void)ag_compilation_session_reset_translation_unit(session);
     set_error(error, AG_LANGUAGE_ANALYSIS_FAILED,
               "AGC_LANGUAGE_ANALYSIS_PARSE_START_FAILED", NULL, 0, 0);
     return 0;
   }
   saved_analysis_diagnostic_t saved_fatal = {0};
-  analysis_parse_state_t retry_state = {0};
-  analysis_parse_state_t *final_parse = &parse_state;
-  int recovered_before_retry = parse_state.fatal_recovered;
+  analysis_parse_state_t *retry_state = NULL;
+  analysis_parse_state_t *final_parse = parse_state;
+  int recovered_before_retry = parse_state->fatal_recovered;
   int retry_attempted = 0;
   ag_diagnostic_context_t *diagnostic_context =
       ag_compilation_session_diagnostic_context(session);
-  if (parse_state.fatal_recovered &&
+  if (parse_state->fatal_recovered &&
       save_last_diagnostic(diagnostic_context, &saved_fatal) &&
       elide_failed_statement(
           recovery_source, request->cursor_byte_offset,
           &saved_fatal, request->source_name)) {
-    if (parse_state.preprocessor_stream) {
-      pp_stream_close(parse_state.preprocessor_stream);
-      parse_state.preprocessor_stream = NULL;
+    parse_state->recovery_source_owned = NULL;
+    parse_state->documentation_index_owned = NULL;
+    finish_analysis_parse_state(parse_state);
+    parse_state = NULL;
+    if (!ag_compilation_session_reset_translation_unit(session)) {
+      dispose_saved_diagnostic(&saved_fatal);
+      free(recovery_source);
+      ag_language_documentation_index_dispose(documentation_index);
+      free(documentation_index);
+      set_error(error, AG_LANGUAGE_ANALYSIS_FAILED,
+                "AGC_LANGUAGE_ANALYSIS_SESSION_RESET_FAILED", NULL, 0, 0);
+      return 0;
     }
-    if (ag_compilation_session_reset_translation_unit(session)) {
-      pp_virtual_headers_configure_in(
-          ag_compilation_session_preprocessor_context(session),
-          header_bundle, header_bundle_length,
-          request->max_header_files > 0 ? request->max_header_files : 128,
-          request->max_header_file_bytes > 0
-              ? request->max_header_file_bytes : 1024 * 1024,
-          request->max_header_total_bytes > 0
-              ? request->max_header_total_bytes : 4 * 1024 * 1024,
-          request->max_include_depth > 0 ? request->max_include_depth : 32);
-      tk_set_filename_ctx(tokenizer, request->source_name);
-      retry_state = (analysis_parse_state_t){
-          .session = session,
-          .tokenizer = tokenizer,
-          .recovery_source = recovery_source,
-      };
-      retry_attempted = 1;
-      final_parse = &retry_state;
-      (void)parse_analysis_source(&retry_state);
+    pp_virtual_headers_configure_in(
+        ag_compilation_session_preprocessor_context(session),
+        header_bundle, header_bundle_length,
+        request->max_header_files > 0 ? request->max_header_files : 128,
+        request->max_header_file_bytes > 0
+            ? request->max_header_file_bytes : 1024 * 1024,
+        request->max_header_total_bytes > 0
+            ? request->max_header_total_bytes : 4 * 1024 * 1024,
+        request->max_include_depth > 0 ? request->max_include_depth : 32);
+    tk_set_filename_ctx(tokenizer, request->source_name);
+    retry_state = create_analysis_parse_state(
+        session, tokenizer, recovery_source, documentation_index);
+    if (!retry_state) {
+      dispose_saved_diagnostic(&saved_fatal);
+      set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
+                "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
+      return 0;
+    }
+    retry_attempted = 1;
+    final_parse = retry_state;
+    if (!parse_analysis_source(retry_state)) {
+      finish_analysis_parse_state(retry_state);
+      dispose_saved_diagnostic(&saved_fatal);
+      (void)ag_compilation_session_reset_translation_unit(session);
+      set_error(error, AG_LANGUAGE_ANALYSIS_FAILED,
+                "AGC_LANGUAGE_ANALYSIS_PARSE_START_FAILED", NULL, 0, 0);
+      return 0;
     }
   }
   if (!retry_attempted) dispose_saved_diagnostic(&saved_fatal);
@@ -2839,7 +2934,9 @@ int ag_language_analyze_source(
     add_declaration_symbol(&builder, request, semantic_context,
                            declaration, point, &symbol_capacity);
   }
-  ag_language_documentation_index_dispose(&documentation_index);
+  ag_language_documentation_index_dispose(documentation_index);
+  free(documentation_index);
+  final_parse->documentation_index_owned = NULL;
   builder.documentation_index = NULL;
   if (!builder.failed)
     add_member_symbols(&builder, request, semantic_context,
@@ -2862,13 +2959,11 @@ int ag_language_analyze_source(
   if (!builder.failed &&
       (recovery_changed & AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER))
     append_partial_identifier_diagnostic(&builder, request);
-  if (final_parse->preprocessor_stream)
-    pp_stream_close(final_parse->preprocessor_stream);
-  free(recovery_source);
   if (builder.failed) {
     dispose_saved_diagnostic(&saved_fatal);
-    dispose_saved_diagnostic(&parse_state.semantic_diagnostic);
-    dispose_saved_diagnostic(&retry_state.semantic_diagnostic);
+    finish_analysis_parse_state(parse_state);
+    finish_analysis_parse_state(retry_state);
+    (void)ag_compilation_session_reset_translation_unit(session);
     ag_language_analysis_snapshot_dispose(snapshot);
     return 0;
   }
@@ -2895,8 +2990,8 @@ int ag_language_analyze_source(
                       final_parse->fatal_recovered || recovered_before_retry ||
                       final_parse->semantic_diagnostic.code != NULL;
   dispose_saved_diagnostic(&saved_fatal);
-  dispose_saved_diagnostic(&parse_state.semantic_diagnostic);
-  dispose_saved_diagnostic(&retry_state.semantic_diagnostic);
+  finish_analysis_parse_state(parse_state);
+  finish_analysis_parse_state(retry_state);
   if (error) error->status = AG_LANGUAGE_ANALYSIS_OK;
   return 1;
 }
@@ -2956,6 +3051,15 @@ static void project_index_clear(
   index->valid = 0;
 }
 
+static void project_index_abort_pending(
+    ag_language_project_index_t *index) {
+  if (!index || !index->pending) return;
+  ag_language_project_index_t *pending = index->pending;
+  index->pending = NULL;
+  project_index_clear(pending);
+  free(pending);
+}
+
 ag_language_project_index_t *ag_language_project_index_create(void) {
   return calloc(1, sizeof(ag_language_project_index_t));
 }
@@ -2963,6 +3067,7 @@ ag_language_project_index_t *ag_language_project_index_create(void) {
 void ag_language_project_index_destroy(
     ag_language_project_index_t *index) {
   if (!index) return;
+  project_index_abort_pending(index);
   project_index_clear(index);
   free(index);
 }
@@ -3157,6 +3262,7 @@ int ag_language_project_index_update(
     const ag_language_project_update_request_t *request,
     ag_language_analysis_error_t *error) {
   if (error) memset(error, 0, sizeof(*error));
+  project_index_abort_pending(index);
   if (!session || !index || !request || request->revision == 0 ||
       !request->sources || request->source_count <= 0) {
     set_error(error, AG_LANGUAGE_ANALYSIS_INVALID_REQUEST,
@@ -3222,9 +3328,14 @@ int ag_language_project_index_update(
     return 0;
   }
 
-  ag_language_project_index_t next = {
-      .revision = request->revision,
-  };
+  ag_language_project_index_t *next = calloc(1, sizeof(*next));
+  if (!next) {
+    set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
+              "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
+    return 0;
+  }
+  next->revision = request->revision;
+  index->pending = next;
   for (int i = 0; i < request->source_count; i++) {
     const ag_language_project_source_t *source = &request->sources[i];
     ag_language_analysis_snapshot_t snapshot = {0};
@@ -3248,31 +3359,49 @@ int ag_language_project_index_update(
             .limits = limits,
         },
         &snapshot, &analysis_error);
-    if (!ok || !project_merge_snapshot(
-                   &next, &snapshot, limits.max_symbols,
+    const char *diagnostic_code = NULL;
+    if (ok) {
+      for (int diagnostic_index = 0;
+           diagnostic_index < snapshot.diagnostic_count;
+           diagnostic_index++) {
+        if (snapshot.diagnostics[diagnostic_index].severity == 1) {
+          diagnostic_code = snapshot.diagnostics[diagnostic_index].code;
+          break;
+        }
+      }
+    }
+    if (!ok || diagnostic_code || !project_merge_snapshot(
+                   next, &snapshot, limits.max_symbols,
                    &project_limit_exceeded)) {
+      if (diagnostic_code)
+        set_error(error, AG_LANGUAGE_ANALYSIS_FAILED,
+                  diagnostic_code, NULL, 0, 0);
       ag_language_analysis_snapshot_dispose(&snapshot);
-      project_index_clear(&next);
-      if (error) {
-        if (!ok)
+      project_index_abort_pending(index);
+      if (error && !diagnostic_code) {
+        if (!ok) {
           *error = analysis_error;
-        else if (project_limit_exceeded)
+        } else if (project_limit_exceeded) {
           set_error(error, AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT,
                     "AGC_LIMIT_MAX_ANALYSIS_SYMBOLS",
                     "maxAnalysisSymbols",
                     (size_t)limits.max_symbols,
                     (size_t)limits.max_symbols + 1);
-        else
+        } else {
           set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
                     "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL,
                     0, 0);
+        }
       }
       return 0;
     }
     ag_language_analysis_snapshot_dispose(&snapshot);
   }
+  index->pending = NULL;
   project_index_clear(index);
-  *index = next;
+  *index = *next;
+  index->pending = NULL;
+  free(next);
   index->valid = 1;
   if (error) error->status = AG_LANGUAGE_ANALYSIS_OK;
   return 1;

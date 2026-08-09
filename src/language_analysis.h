@@ -180,7 +180,8 @@ void ag_language_project_index_destroy(
 unsigned int ag_language_project_index_revision(
     const ag_language_project_index_t *index);
 /* Rebuilds the bounded index unless request->revision is already current.
- * Each source is parsed as a separate translation unit. */
+ * Each source is parsed as a separate translation unit. A failed source keeps
+ * the previously committed index and revision unchanged. */
 int ag_language_project_index_update(
     ag_compilation_session_t *session,
     ag_language_project_index_t *index,

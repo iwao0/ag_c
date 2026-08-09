@@ -966,7 +966,7 @@ export async function createCompiler(wasmSource, options = {}) {
     );
   }
 
-  function analysisTrapError(cause) {
+  function analysisFailureError(cause) {
     let diagnostics = Object.freeze([]);
     try {
       diagnostics = readStructuredDiagnostics();
@@ -976,10 +976,24 @@ export async function createCompiler(wasmSource, options = {}) {
     }
     const error = new Error("ag_c language analysis failed");
     error.name = "AgcLanguageAnalysisError";
-    error.code = "AGC_LANGUAGE_ANALYSIS_FAILED";
+    let code = "";
+    if (typeof analysisErrorExports.codePtr === "function") {
+      try {
+        code = readCString(callNumberFunc(
+          analysisErrorExports.codePtr, [requireAdapterHandle()],
+        ));
+      } catch (_) {
+        /* A trapped call may leave only the diagnostic record available. */
+      }
+    }
+    error.code = code || "AGC_LANGUAGE_ANALYSIS_FAILED";
     error.diagnostics = diagnostics;
-    error.cause = cause;
+    if (cause !== undefined) error.cause = cause;
     return error;
+  }
+
+  function analysisTrapError(cause) {
+    return analysisFailureError(cause);
   }
 
   function analyzeSourceInternal(input, analysisOptions = {}, useProject = false) {
@@ -1088,7 +1102,7 @@ export async function createCompiler(wasmSource, options = {}) {
           throw new TypeError("ag_c rejected the project language index request");
         }
         if (projectRc < 0) {
-          throw new Error("ag_c failed to update the project language index");
+          throw analysisFailureError();
         }
       }
       let capacity = Math.min(

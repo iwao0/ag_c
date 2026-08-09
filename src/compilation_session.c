@@ -196,9 +196,44 @@ int ag_compilation_session_is_complete(
          ag_target_info_is_valid(&session->target);
 }
 
+static void run_translation_unit_cleanup(
+    ag_compilation_session_t *session) {
+  if (!session || !session->translation_unit_cleanup) return;
+  ag_session_translation_unit_cleanup_fn cleanup =
+      session->translation_unit_cleanup;
+  void *context = session->translation_unit_cleanup_context;
+  session->translation_unit_cleanup = NULL;
+  session->translation_unit_cleanup_context = NULL;
+  cleanup(context);
+}
+
+int ag_compilation_session_register_translation_unit_cleanup(
+    ag_compilation_session_t *session,
+    ag_session_translation_unit_cleanup_fn cleanup, void *context) {
+  if (!ag_compilation_session_is_complete(session) || !cleanup || !context ||
+      session->translation_unit_cleanup)
+    return 0;
+  session->translation_unit_cleanup = cleanup;
+  session->translation_unit_cleanup_context = context;
+  return 1;
+}
+
+int ag_compilation_session_unregister_translation_unit_cleanup(
+    ag_compilation_session_t *session,
+    ag_session_translation_unit_cleanup_fn cleanup, void *context) {
+  if (!session || !cleanup || !context ||
+      session->translation_unit_cleanup != cleanup ||
+      session->translation_unit_cleanup_context != context)
+    return 0;
+  session->translation_unit_cleanup = NULL;
+  session->translation_unit_cleanup_context = NULL;
+  return 1;
+}
+
 int ag_compilation_session_reset_translation_unit(
     ag_compilation_session_t *session) {
   if (!ag_compilation_session_is_complete(session)) return 0;
+  run_translation_unit_cleanup(session);
   pp_virtual_dependencies_reset_in(session->preprocessor_context);
   ag_source_manager_reset_translation_unit(session->source_manager);
   psx_hir_module_reset(session->hir_module);
@@ -215,6 +250,7 @@ int ag_compilation_session_reset_translation_unit(
 
 int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   if (!session) return 0;
+  run_translation_unit_cleanup(session);
   psx_hir_module_destroy(session->hir_module);
   ps_ctx_destroy(session->semantic_context);
   ps_global_registry_destroy(session->global_registry);

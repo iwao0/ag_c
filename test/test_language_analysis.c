@@ -286,6 +286,31 @@ static int analyze_project_named(
       snapshot, error);
 }
 
+static int update_single_source_project(
+    ag_compilation_session_t *session,
+    ag_language_project_index_t *project, unsigned int revision,
+    const char *source, header_bundle_t bundle,
+    ag_language_analysis_limits_t limits,
+    ag_language_analysis_error_t *error) {
+  ag_language_project_source_t project_source = {
+      "main.c", source, strlen(source)};
+  return ag_language_project_index_update(
+      session, project,
+      &(ag_language_project_update_request_t){
+          .revision = revision,
+          .sources = &project_source,
+          .source_count = 1,
+          .virtual_header_bundle = bundle.bytes,
+          .virtual_header_bundle_length = bundle.length,
+          .max_header_files = 32,
+          .max_header_file_bytes = 1024 * 1024,
+          .max_header_total_bytes = 4 * 1024 * 1024,
+          .max_include_depth = 16,
+          .limits = limits,
+      },
+      error);
+}
+
 static const ag_language_symbol_t *find_symbol(
     const ag_language_analysis_snapshot_t *snapshot, const char *name,
     ag_language_symbol_kind_t kind) {
@@ -421,6 +446,174 @@ static int same_function_hover(
       return 1;                                                                  \
     }                                                                            \
   } while (0)
+
+static int test_project_failure_recovery(int print_json) {
+  static const char valid_source_12[] =
+      "enum { PLAYER_SIZE = 12, PLAYER_SPEED = 2 };\n"
+      "int main(void) { return PLAYER_SIZE; }\n";
+  static const char invalid_source[] =
+      "enum { PLAYER_SIZE = , PLAYER_SPEED = 2 };\n"
+      "int main(void) { return PLAYER_SIZE; }\n";
+  static const char valid_source_13[] =
+      "enum { PLAYER_SIZE = 13, PLAYER_SPEED = 2 };\n"
+      "int main(void) { return PLAYER_SIZE; }\n";
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  CHECK(session && project, "project failure recovery state");
+  ag_language_analysis_limits_t limits =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_error_t error = {0};
+  ag_language_analysis_snapshot_t snapshot = {0};
+
+  CHECK(update_single_source_project(
+            session, project, 1, valid_source_12,
+            (header_bundle_t){0}, limits, &error),
+        "project failure recovery revision 1");
+  const char *use_12 =
+      strstr(valid_source_12, "return PLAYER_SIZE") + strlen("return ");
+  CHECK(analyze_project_named(
+            session, project, "main.c", valid_source_12,
+            (size_t)(use_12 - valid_source_12) + strlen("PLAYER_SIZE"),
+            (header_bundle_t){0}, limits, &snapshot, &error),
+        "project failure recovery revision 1 hover");
+  CHECK(hover_symbol(&snapshot) &&
+            strcmp(hover_symbol(&snapshot)->constant_value, "12") == 0,
+        "project failure recovery revision 1 value");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  CHECK(!update_single_source_project(
+            session, project, 2, invalid_source,
+            (header_bundle_t){0}, limits, &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_FAILED &&
+            strcmp(error.code, "E3064") == 0,
+        "project syntax failure remains structured");
+  CHECK(ag_language_project_index_revision(project) == 1,
+        "failed project revision is not committed");
+
+  CHECK(update_single_source_project(
+            session, project, 3, valid_source_13,
+            (header_bundle_t){0}, limits, &error),
+        "project failure recovery revision 3");
+  const char *use_13 =
+      strstr(valid_source_13, "return PLAYER_SIZE") + strlen("return ");
+  CHECK(analyze_project_named(
+            session, project, "main.c", valid_source_13,
+            (size_t)(use_13 - valid_source_13) + strlen("PLAYER_SIZE"),
+            (header_bundle_t){0}, limits, &snapshot, &error),
+        "project failure recovery revision 3 hover");
+  CHECK(hover_symbol(&snapshot) &&
+            strcmp(hover_symbol(&snapshot)->constant_value, "13") == 0,
+        "project failure recovery revision 3 value");
+  if (print_json) {
+    int length = ag_language_analysis_snapshot_write_json(
+        &snapshot, NULL, 0);
+    char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+    CHECK(json && ag_language_analysis_snapshot_write_json(
+                      &snapshot, json, (size_t)length + 1) == length,
+          "project failure recovery parity json");
+    puts(json);
+    free(json);
+  }
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  ag_language_analysis_limits_t tiny = limits;
+  tiny.max_source_bytes = 8;
+  CHECK(!update_single_source_project(
+            session, project, 4, valid_source_13,
+            (header_bundle_t){0}, tiny, &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.limit, "maxSourceBytes") == 0 &&
+            ag_language_project_index_revision(project) == 3,
+        "project resource failure preserves revision");
+  CHECK(update_single_source_project(
+            session, project, 5, valid_source_13,
+            (header_bundle_t){0}, limits, &error),
+        "project recovers after resource failure");
+
+  ag_language_project_source_t duplicate_sources[] = {
+      {"same.c", "int first;", strlen("int first;")},
+      {"same.c", "int second;", strlen("int second;")},
+  };
+  CHECK(!ag_language_project_index_update(
+            session, project,
+            &(ag_language_project_update_request_t){
+                .revision = 6,
+                .sources = duplicate_sources,
+                .source_count = 2,
+                .limits = limits,
+            },
+            &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_INVALID_REQUEST &&
+            ag_language_project_index_revision(project) == 5,
+        "invalid project request preserves revision");
+
+  const char *header_paths[] = {"recovery.h"};
+  const char *broken_headers[] = {"#error broken header\n"};
+  header_bundle_t broken_bundle = make_bundle(
+      header_paths, broken_headers, 1);
+  const char *header_source =
+      "#include \"recovery.h\"\n"
+      "enum { PLAYER_SIZE = 14 };\n"
+      "int main(void) { return PLAYER_SIZE; }\n";
+  CHECK(!update_single_source_project(
+            session, project, 7, header_source, broken_bundle,
+            limits, &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_FAILED &&
+            error.code[0] != '\0' &&
+            ag_language_project_index_revision(project) == 5,
+        "project header failure preserves revision");
+  free(broken_bundle.bytes);
+  const char *fixed_headers[] = {"#define RECOVERY_READY 1\n"};
+  header_bundle_t fixed_bundle = make_bundle(
+      header_paths, fixed_headers, 1);
+  CHECK(update_single_source_project(
+            session, project, 8, header_source, fixed_bundle,
+            limits, &error),
+        "project recovers after header failure");
+  const char *header_use =
+      strstr(header_source, "return PLAYER_SIZE") + strlen("return ");
+  CHECK(analyze_project_named(
+            session, project, "main.c", header_source,
+            (size_t)(header_use - header_source) + strlen("PLAYER_SIZE"),
+            fixed_bundle, limits, &snapshot, &error) &&
+            hover_symbol(&snapshot) &&
+            strcmp(hover_symbol(&snapshot)->constant_value, "14") == 0,
+        "project header recovery hover");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  free(fixed_bundle.bytes);
+
+  const char *failure_sources[] = {
+      "int broken(int value;\n",
+      "#error broken preprocessor state\nint value;\n",
+      "int main(void) { return missing_name; }\n",
+  };
+  unsigned int revision = 9;
+  for (size_t failure_index = 0;
+       failure_index < sizeof(failure_sources) / sizeof(failure_sources[0]);
+       failure_index++) {
+    unsigned int failed_revision = revision++;
+    int failed_ok = update_single_source_project(
+        session, project, failed_revision,
+        failure_sources[failure_index], (header_bundle_t){0},
+        limits, &error);
+    CHECK(!failed_ok &&
+              error.status == AG_LANGUAGE_ANALYSIS_FAILED &&
+              error.code[0] != '\0' &&
+              ag_language_project_index_revision(project) ==
+                  failed_revision - 1,
+          "project failure class preserves revision");
+    CHECK(update_single_source_project(
+              session, project, revision++, valid_source_13,
+              (header_bundle_t){0}, limits, &error),
+          "project recovers after failure class");
+  }
+  ag_language_project_index_destroy(project);
+  ag_compilation_session_destroy(session);
+  return 0;
+}
 
 static int print_parity_snapshot(void) {
   ag_target_info_t target = ag_target_info_wasm32();
@@ -1331,6 +1524,10 @@ int main(int argc, char **argv) {
   if (argc == 3 &&
       strcmp(argv[1], "--documentation-project-parity-json") == 0)
     return print_documentation_project_parity_snapshot(argv[2]);
+  if (argc == 2 &&
+      strcmp(argv[1], "--project-failure-recovery-parity-json") == 0)
+    return test_project_failure_recovery(1);
+  if (test_project_failure_recovery(0) != 0) return 1;
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "session");

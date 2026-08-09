@@ -29,6 +29,8 @@ struct ag_compilation_session_t {
   ag_continuation_options_t continuation;
   void *backend_context;
   ag_session_backend_destroy_fn backend_destroy;
+  void *translation_unit_cleanup_context;
+  ag_session_translation_unit_cleanup_fn translation_unit_cleanup;
   ag_target_info_t target;
 };
 
