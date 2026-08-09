@@ -882,6 +882,19 @@ if (
     "the Native c-testsuite runner must support isolated failure tests and fail on any failed case",
   );
 }
+if (!nativeCTestsuiteRunnerSource.includes('printf "Target:')) {
+  throw new Error("the Native c-testsuite summary must report its target count");
+}
+for (const [path, source] of cTestsuiteRunnerSources.slice(1)) {
+  if (
+    !source.includes('"$((scanned + skipped))"') ||
+    !source.includes("printf 'Target:")
+  ) {
+    throw new Error(
+      `${path} must report Total including skips and Target excluding skips`,
+    );
+  }
+}
 const wasm32ObjectFixtureTestSource = await readFile(
   "test/test_wasm32_object.c",
   "utf8",

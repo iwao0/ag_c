@@ -211,7 +211,8 @@ for src in "$suite"/[0-9]*.c; do
 done
 
 printf '==== wasm32 object link c-testsuite scan ====\n'
-printf 'Total:            %d\n' "$scanned"
+printf 'Total:            %d\n' "$((scanned + skipped))"
+printf 'Target:           %d\n' "$scanned"
 printf 'Pass:             %d\n' "$((scanned - failed))"
 printf 'Fail:             %d\n' "$failed"
 printf 'Skip:             %d\n' "$skipped"

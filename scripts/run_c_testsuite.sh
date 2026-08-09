@@ -157,9 +157,12 @@ if [ "$VERBOSE" -eq 1 ] && [ "$LIST_FAIL" -eq 0 ]; then
   fi
 fi
 
+target_total=$((total - skip_unsupported))
+
 echo ""
 echo "==== c-testsuite (ag_c) ===="
 printf "Total:           %d\n" "$total"
+printf "Target:          %d\n" "$target_total"
 printf "Pass:            %d\n" "$pass"
 printf "Skip unsupported: %d\n" "$skip_unsupported"
 printf "Fail (compile):  %d\n" "$fail_compile"
@@ -170,7 +173,6 @@ if [ "$total" -gt 0 ]; then
   pct=$(awk "BEGIN { printf \"%.1f\", $pass * 100 / $total }")
   printf "Pass率:          %s%%\n" "$pct"
 fi
-target_total=$((total - skip_unsupported))
 if [ "$target_total" -gt 0 ]; then
   target_pct=$(awk "BEGIN { printf \"%.1f\", $pass * 100 / $target_total }")
   printf "対象Pass率:      %s%%\n" "$target_pct"
