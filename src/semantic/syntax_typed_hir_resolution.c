@@ -8909,7 +8909,10 @@ static int preflight_direct_local_declaration(
                 context, character_status, initializer->value_tok);
         }
         if (static_initializer_type.type_id == PSX_TYPE_ID_INVALID)
-          return 0;
+          return note_direct_initializer_rejection(
+              context,
+              PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
+              &syntax->base, initializer->value_tok);
         const psx_typed_hir_tree_t *initializer_typed_hir = NULL;
         psx_resolved_hir_build_failure_t initializer_failure;
         psx_syntax_typed_hir_resolution_status_t initializer_status =
@@ -8959,16 +8962,25 @@ static int preflight_direct_local_declaration(
       continue;
     }
     if (has_type && type_shape.kind == PSX_TYPE_ARRAY &&
-        type_shape.array_len <= 0 && !type_shape.is_vla) {
+        type_shape.array_len <= 0 && !type_shape.is_vla &&
+        initializer->has_initializer) {
       psx_character_array_initializer_status_t character_status;
       decl_qual_type = resolve_direct_completed_array_qual_type(
           context, decl_qual_type, initializer, &character_status);
       if (character_status != PSX_CHARACTER_ARRAY_INITIALIZER_OK)
         return reject_direct_character_array_initializer(
             context, character_status, initializer->value_tok);
+      if (decl_qual_type.type_id == PSX_TYPE_ID_INVALID)
+        return note_direct_initializer_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
+            &syntax->base, initializer->value_tok);
       has_type = psx_semantic_type_table_describe(
           semantic_types, decl_qual_type.type_id, &type_shape);
     }
+    int is_incomplete_fixed_array =
+        has_type && type_shape.kind == PSX_TYPE_ARRAY &&
+        type_shape.array_len <= 0 && !type_shape.is_vla;
     int is_complete_fixed_array =
         has_type && type_shape.kind == PSX_TYPE_ARRAY &&
         type_shape.array_len > 0 &&
@@ -8985,6 +8997,7 @@ static int preflight_direct_local_declaration(
           PSX_SYNTAX_TYPED_HIR_REJECTION_DECLARATION_VOID_OBJECT,
           &syntax->base, name->str, name->len);
     if (!has_type || (!psx_type_kind_is_scalar(type_shape.kind) &&
+                  !is_incomplete_fixed_array &&
                   !is_complete_fixed_array &&
                   !is_complete_aggregate && !has_vla_type))
       return 0;

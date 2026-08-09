@@ -6744,6 +6744,26 @@ if (!automaticLocalDeclarationPipelineFailure ||
     "invalid automatic local declaration diagnostics must fail the declaration pipeline",
   );
 }
+const directLocalDeclarationPreflight = syntaxTypedHirResolutionSource.match(
+  /static\s+int\s+preflight_direct_local_declaration\s*\([^]*?\n\}/,
+);
+if (!directLocalDeclarationPreflight ||
+    !/type_shape\.array_len\s*<=\s*0\s*&&\s*!type_shape\.is_vla\s*&&\s*initializer->has_initializer/.test(
+      directLocalDeclarationPreflight[0],
+    ) ||
+    !/decl_qual_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID[^]*PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES/.test(
+      directLocalDeclarationPreflight[0],
+    ) ||
+    !/static_initializer_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID[^]*PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES/.test(
+      directLocalDeclarationPreflight[0],
+    ) ||
+    !/is_incomplete_fixed_array[^]*!is_incomplete_fixed_array\s*&&\s*!is_complete_fixed_array/.test(
+      directLocalDeclarationPreflight[0],
+    )) {
+  throw new Error(
+    "direct local incomplete arrays must reach declaration diagnostics or record initializer incompatibility",
+  );
+}
 if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(
       declarationPipelineSource,
     ) ||

@@ -2197,6 +2197,30 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"vla_initializer_rejected",
      "fixture:test/fixtures/should_reject/vla_initializer.c",
      "E3064"},
+    {"local_incomplete_array_without_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "local_incomplete_array_without_initializer.c",
+     "E3064"},
+    {"local_incomplete_array_scalar_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "local_incomplete_array_scalar_initializer.c",
+     "E3099"},
+    {"local_incomplete_array_array_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "local_incomplete_array_array_initializer.c",
+     "E3099"},
+    {"static_local_incomplete_array_without_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_local_incomplete_array_without_initializer.c",
+     "E3064"},
+    {"static_local_incomplete_array_scalar_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_local_incomplete_array_scalar_initializer.c",
+     "E3099"},
+    {"static_local_incomplete_array_array_initializer_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "static_local_incomplete_array_array_initializer.c",
+     "E3099"},
     {"block_extern_vla_object_rejected",
      "fixture:test/fixtures/should_reject/extern_vla_object.c",
      "E3064"},
