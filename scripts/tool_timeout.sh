@@ -9,6 +9,23 @@ validate_tool_timeout_sec() {
   esac
 }
 
+acquire_lock_dir() {
+  local lock_dir=$1
+  local sec=$2
+  local attempts
+
+  validate_tool_timeout_sec "$sec" || return 1
+  attempts=$((sec * 10))
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    if [ "$attempts" -le 0 ]; then
+      echo "timed out waiting for lock: $lock_dir" >&2
+      return 124
+    fi
+    sleep 0.1
+    attempts=$((attempts - 1))
+  done
+}
+
 run_with_timeout() {
   local sec=$1
   shift

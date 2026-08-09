@@ -8,11 +8,12 @@ out_obj="$obj_dir/tools/wasm_obj_linker/ag_wasm_link.o"
 runtime_obj="$obj_dir/tools/wasm_obj_linker/runtime/libagc_runtime_js.o"
 out_wasm="$out_dir/ag_wasm_link.wasm"
 lock_dir="$out_dir.lock"
+lock_timeout_sec=${AGC_SELFHOST_LOCK_TIMEOUT_SEC:-60}
+. "$root/scripts/tool_timeout.sh"
 
 mkdir -p "$(dirname "$out_dir")"
-while ! mkdir "$lock_dir" 2>/dev/null; do
-  sleep 0.1
-done
+validate_tool_timeout_sec "$lock_timeout_sec"
+acquire_lock_dir "$lock_dir" "$lock_timeout_sec"
 trap 'rmdir "$lock_dir"' EXIT
 mkdir -p "$(dirname "$out_obj")"
 

@@ -26,6 +26,9 @@ make test-wasm-js-e2e
 | `make wasm-linker-selfhost` | `build/wasm_linker_selfhost/ag_wasm_link.wasm` | wasm 化した wasm object リンカー。JS から object bytes を渡してリンクできる。 |
 | `make release` | `build/ag_c` | `-Oz -DNDEBUG -flto` で release 風にビルドする。 |
 
+self-host build のlock取得は既定で60秒に制限され、
+`AGC_SELFHOST_LOCK_TIMEOUT_SEC`で変更できる。
+
 ## テスト
 
 | コマンド | 内容 | 目安 |

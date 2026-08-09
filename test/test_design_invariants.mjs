@@ -891,9 +891,10 @@ if (!cTestsuiteManifestSource.includes("validate_c_testsuite_manifest()")) {
 }
 if (
   !toolTimeoutSource.includes("validate_tool_timeout_sec()") ||
-  !toolTimeoutSource.includes("run_with_timeout()")
+  !toolTimeoutSource.includes("run_with_timeout()") ||
+  !toolTimeoutSource.includes("acquire_lock_dir()")
 ) {
-  throw new Error("test runners must share a portable timeout helper");
+  throw new Error("test and build runners must share portable timeout helpers");
 }
 const toolTimeoutProbe = spawnSync(
   "bash",
@@ -910,10 +911,18 @@ const toolTimeoutProbe = spawnSync(
       '[ "$status" -eq 1 ] || exit 1',
       "status=0",
       "run_with_timeout 1 perl -e 'select undef, undef, undef, 2' || status=$?",
+      '[ "$status" -eq 124 ] || exit 1',
+      'lock="build/tool_timeout_probe_lock.$$"',
+      'trap \'rmdir "$lock" 2>/dev/null || true\' EXIT',
+      'acquire_lock_dir "$lock" 1',
+      'rmdir "$lock"',
+      'mkdir "$lock"',
+      "status=0",
+      'acquire_lock_dir "$lock" 1 >/dev/null 2>&1 || status=$?',
       '[ "$status" -eq 124 ]',
     ].join("\n"),
   ],
-  { encoding: "utf8", timeout: 5000 },
+  { encoding: "utf8", timeout: 10000 },
 );
 if (toolTimeoutProbe.status !== 0) {
   throw new Error(
@@ -7288,6 +7297,24 @@ const selfHostBuildSource = await readFile(
   "scripts/build_wasm_selfhost_api.sh",
   "utf8",
 );
+const linkerSelfHostBuildSource = await readFile(
+  "scripts/build_wasm_linker_selfhost.sh",
+  "utf8",
+);
+for (const [path, source] of [
+  ["scripts/build_wasm_selfhost_api.sh", selfHostBuildSource],
+  ["scripts/build_wasm_linker_selfhost.sh", linkerSelfHostBuildSource],
+]) {
+  if (
+    !source.includes("tool_timeout.sh") ||
+    !source.includes("AGC_SELFHOST_LOCK_TIMEOUT_SEC:-") ||
+    !source.includes("validate_tool_timeout_sec") ||
+    !source.includes("acquire_lock_dir") ||
+    /while ! mkdir "\$lock_dir"/.test(source)
+  ) {
+    throw new Error(`${path} must bound self-host build lock acquisition`);
+  }
+}
 const diagnosticLocaleConfigSource = await readFile(
   "src/diag/locale_config.h",
   "utf8",
