@@ -62,6 +62,7 @@ make test-wasm-js-e2e
 fixture scan の compile・変換・link・検証は既定で各 10 秒に制限され、
 `WASM32_FIXTURE_SCAN_TIMEOUT_SEC` で変更できる。object-link scan の
 `wasm-interp` は別に既定 5 秒で、`WASM32_OBJECT_LINK_SCAN_TIMEOUT_SEC` で変更できる。
+各 summary の `Total` は `Target + Skip`、`Target` は実際に処理した件数を表す。
 
 ## c-testsuite
 

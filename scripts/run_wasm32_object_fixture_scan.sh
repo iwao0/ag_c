@@ -167,7 +167,8 @@ done < "$fixture_list"
 
 printf '==== wasm32 object fixture scan ====\n'
 printf 'Source: %s\n' "$fixture_source"
-printf 'Total: %d\n' "$scanned"
+printf 'Total: %d\n' "$((scanned + skipped))"
+printf 'Target: %d\n' "$scanned"
 printf 'Pass:  %d\n' "$((scanned - failed))"
 printf 'Fail:  %d\n' "$failed"
 printf 'Timeout: %d\n' "$timed_out"

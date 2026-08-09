@@ -860,10 +860,14 @@ for (const [path, source] of [
     !source.includes("WASM32_FIXTURE_SCAN_TIMEOUT_SEC:-") ||
     !source.includes("validate_tool_timeout_sec") ||
     !source.includes("run_with_timeout") ||
+    !source.includes('"$((scanned + skipped))"') ||
+    !source.includes("printf 'Target:") ||
     !source.includes("timed_out=") ||
     !source.includes("printf 'Timeout:")
   ) {
-    throw new Error(`${path} must bound and report long-running tool stages`);
+    throw new Error(
+      `${path} must report consistent fixture counts and bound long-running tool stages`,
+    );
   }
   if (/^run_with_timeout\(\)/m.test(source)) {
     throw new Error(`${path} must not duplicate the shared timeout helper`);
