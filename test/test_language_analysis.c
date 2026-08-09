@@ -121,6 +121,20 @@ static const char conditional_hover_source[] =
     "  return alternate ? other ? FIRST : SECOND :\n"
     "         local ? CHOICE_MACRO : THIRD;\n"
     "}\n";
+static const char generic_hover_source[] =
+    "#define GENERIC_MACRO 9\n"
+    "typedef int GenericScore;\n"
+    "enum { GENERIC_MODE = 3 };\n"
+    "int generic_value;\n"
+    "int generic_identity(int value) { return value; }\n"
+    "int main(void) {\n"
+    "  int result = _Generic(generic_value, int: 1, default: 0);\n"
+    "  result += _Generic(generic_identity(generic_value), int: 2, default: 0);\n"
+    "  result += _Generic(GENERIC_MODE, int: 3, default: 0);\n"
+    "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n"
+    "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n"
+    "  return result + _Generic(1, int: generic_value, default: 0);\n"
+    "}\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -1014,6 +1028,37 @@ static int print_conditional_hover_parity_snapshot(
   return result;
 }
 
+static int print_generic_hover_parity_snapshot(const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(generic_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  if (!session) return 1;
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = analyze_named(
+      session, "generic.c", generic_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0},
+      ag_language_analysis_default_limits(), &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  int result = 1;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
 static int print_documentation_hover_parity_snapshot(
     const char *cursor_text) {
   char *end = NULL;
@@ -1518,6 +1563,9 @@ int main(int argc, char **argv) {
   if (argc == 3 &&
       strcmp(argv[1], "--conditional-hover-parity-json") == 0)
     return print_conditional_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--generic-hover-parity-json") == 0)
+    return print_generic_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
       strcmp(argv[1], "--documentation-hover-parity-json") == 0)
     return print_documentation_hover_parity_snapshot(argv[2]);
@@ -2164,6 +2212,121 @@ int main(int argc, char **argv) {
                             conditional_hover_source + name_length) &&
                   !snapshot.partial && snapshot.diagnostic_count == 0,
               "conditional hover fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+
+  const char *generic_macro_declaration = strstr(
+      generic_hover_source, "GENERIC_MACRO");
+  const char *generic_typedef_declaration = strstr(
+      generic_hover_source, "GenericScore");
+  const char *generic_enum_declaration = strstr(
+      generic_hover_source, "GENERIC_MODE");
+  const char *generic_object_declaration = strstr(
+      generic_hover_source, "generic_value");
+  const char *generic_function_declaration = strstr(
+      generic_hover_source, "generic_identity");
+  const char *generic_first_control = strstr(
+      generic_function_declaration, "_Generic(generic_value");
+  const char *generic_first_object_use = strstr(
+      generic_first_control, "generic_value");
+  const char *generic_call_control = strstr(
+      generic_first_object_use, "_Generic(generic_identity");
+  const char *generic_function_use = strstr(
+      generic_call_control, "generic_identity");
+  const char *generic_argument_use = strstr(
+      generic_function_use + strlen("generic_identity"), "generic_value");
+  const char *generic_enum_control = strstr(
+      generic_argument_use, "_Generic(GENERIC_MODE");
+  const char *generic_enum_use = strstr(
+      generic_enum_control, "GENERIC_MODE");
+  const char *generic_macro_control = strstr(
+      generic_enum_use, "_Generic(GENERIC_MACRO");
+  const char *generic_macro_use = strstr(
+      generic_macro_control, "GENERIC_MACRO");
+  const char *generic_typedef_control = strstr(
+      generic_macro_use, "_Generic(generic_value, GenericScore");
+  const char *generic_typedef_use = strstr(
+      generic_typedef_control, "GenericScore");
+  const char *generic_value_association = strstr(
+      generic_typedef_use, "int: generic_value");
+  const char *generic_association_value_use = strstr(
+      generic_value_association, "generic_value");
+  CHECK(generic_macro_declaration && generic_typedef_declaration &&
+            generic_enum_declaration && generic_object_declaration &&
+            generic_function_declaration && generic_first_control &&
+            generic_first_object_use && generic_call_control &&
+            generic_function_use && generic_argument_use &&
+            generic_enum_control && generic_enum_use &&
+            generic_macro_control && generic_macro_use &&
+            generic_typedef_control && generic_typedef_use &&
+            generic_value_association && generic_association_value_use,
+        "generic hover source anchors");
+  struct {
+    const char *use;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration;
+    const char *constant_value;
+    const char *macro_replacement;
+  } generic_cases[] = {
+      {generic_first_object_use, "generic_value", AG_LANGUAGE_SYMBOL_OBJECT,
+       generic_object_declaration, "", ""},
+      {generic_function_use, "generic_identity", AG_LANGUAGE_SYMBOL_FUNCTION,
+       generic_function_declaration, "", ""},
+      {generic_argument_use, "generic_value", AG_LANGUAGE_SYMBOL_OBJECT,
+       generic_object_declaration, "", ""},
+      {generic_enum_use, "GENERIC_MODE", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       generic_enum_declaration, "3", ""},
+      {generic_macro_use, "GENERIC_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       generic_macro_declaration, "", "9"},
+      {generic_typedef_use, "GenericScore", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       generic_typedef_declaration, "", ""},
+      {generic_association_value_use, "generic_value",
+       AG_LANGUAGE_SYMBOL_OBJECT, generic_object_declaration, "", ""},
+  };
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(generic_cases) / sizeof(generic_cases[0]);
+         case_index++) {
+      size_t name_length = strlen(generic_cases[case_index].name);
+      size_t cursor_deltas[] = {0, name_length / 2, name_length};
+      for (size_t cursor_index = 0;
+           cursor_index < sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+           cursor_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL, "fresh generic hover session");
+        }
+        size_t cursor =
+            (size_t)(generic_cases[case_index].use - generic_hover_source) +
+            cursor_deltas[cursor_index];
+        CHECK(analyze_named(
+                  analysis_session, "generic.c", generic_hover_source,
+                  cursor, (header_bundle_t){0}, defaults, &snapshot, &error),
+              "generic hover analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        CHECK(hover && hover->kind == generic_cases[case_index].kind &&
+                  strcmp(hover->name, generic_cases[case_index].name) == 0 &&
+                  (hover->kind != AG_LANGUAGE_SYMBOL_ENUM_CONSTANT ||
+                   strcmp(hover->constant_value,
+                          generic_cases[case_index].constant_value) == 0) &&
+                  (hover->kind != AG_LANGUAGE_SYMBOL_MACRO ||
+                   strcmp(hover->macro_replacement,
+                          generic_cases[case_index].macro_replacement) == 0) &&
+                  strcmp(hover->declaration.source_name, "generic.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(generic_cases[case_index].declaration -
+                            generic_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(generic_cases[case_index].declaration -
+                            generic_hover_source + name_length) &&
+                  !snapshot.partial && snapshot.diagnostic_count == 0,
+              "generic hover fields");
         ag_language_analysis_snapshot_dispose(&snapshot);
         if (fresh_session)
           ag_compilation_session_destroy(analysis_session);

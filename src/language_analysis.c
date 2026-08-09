@@ -1078,6 +1078,9 @@ typedef struct {
   char open;
   int is_for_control;
   size_t for_separator_count;
+  int is_generic_selection;
+  size_t generic_separator_count;
+  int generic_association_has_colon;
   size_t pending_conditional_count;
 } recovery_delimiter_t;
 
@@ -1162,6 +1165,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int at_line_start = 1;
   int preprocessor_line = 0;
   int previous_token_is_for = 0;
+  int previous_token_is_generic = 0;
   size_t root_pending_conditional_count = 0;
   char last_significant = 0;
   for (size_t i = 0; i < cursor; i++) {
@@ -1202,6 +1206,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       quote = c;
       at_line_start = 0;
       previous_token_is_for = 0;
+      previous_token_is_generic = 0;
       continue;
     }
     if (c == '\n') {
@@ -1214,6 +1219,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     at_line_start = 0;
     if (preprocessor_line) continue;
     int opens_for_control = 0;
+    int opens_generic_selection = 0;
     if (is_identifier_byte((unsigned char)c)) {
       if (i == 0 ||
           !is_identifier_byte((unsigned char)result[i - 1])) {
@@ -1223,16 +1229,24 @@ static char *build_recovery_source(const char *source, size_t source_length,
           identifier_end++;
         previous_token_is_for = identifier_end - i == strlen("for") &&
                                 memcmp(result + i, "for", strlen("for")) == 0;
+        previous_token_is_generic =
+            identifier_end - i == strlen("_Generic") &&
+            memcmp(result + i, "_Generic", strlen("_Generic")) == 0;
       }
     } else if (!isspace((unsigned char)c)) {
       opens_for_control = c == '(' && previous_token_is_for;
+      opens_generic_selection = c == '(' && previous_token_is_generic;
       previous_token_is_for = 0;
+      previous_token_is_generic = 0;
     }
     if (c == '(' || c == '[' || c == '{') {
       stack[stack_count++] = (recovery_delimiter_t){
           .open = c,
           .is_for_control = opens_for_control,
           .for_separator_count = 0,
+          .is_generic_selection = opens_generic_selection,
+          .generic_separator_count = 0,
+          .generic_association_has_colon = 0,
           .pending_conditional_count = 0,
       };
     } else if ((c == ')' || c == ']' || c == '}') && stack_count > 0) {
@@ -1248,6 +1262,16 @@ static char *build_recovery_source(const char *source, size_t source_length,
         stack_count > 0
             ? &stack[stack_count - 1].pending_conditional_count
             : &root_pending_conditional_count;
+    if (stack_count > 0 && stack[stack_count - 1].is_generic_selection) {
+      recovery_delimiter_t *generic = &stack[stack_count - 1];
+      if (c == ',') {
+        generic->generic_separator_count++;
+        generic->generic_association_has_colon = 0;
+      } else if (c == ':' && *pending_conditional_count == 0 &&
+                 generic->generic_separator_count > 0) {
+        generic->generic_association_has_colon = 1;
+      }
+    }
     if (c == '?') {
       (*pending_conditional_count)++;
     } else if (c == ':' && *pending_conditional_count > 0) {
@@ -1266,11 +1290,28 @@ static char *build_recovery_source(const char *source, size_t source_length,
     memcpy(result + length, append_text, append_len);                             \
     length += append_len;                                                         \
   } while (0)
+#define APPEND_BYTES(bytes, byte_count)                                          \
+  do {                                                                           \
+    const char *append_bytes = (bytes);                                           \
+    size_t append_len = (byte_count);                                             \
+    if (length + append_len + 1 >= capacity) { free(stack); free(result); return NULL; } \
+    memcpy(result + length, append_bytes, append_len);                            \
+    length += append_len;                                                         \
+  } while (0)
   if (line_comment) APPEND_LITERAL("\n");
   if (block_comment) APPEND_LITERAL("*/\n");
   if (quote) APPEND_LITERAL(quote == '\'' ? "'\n" : "\"\n");
   if (preprocessor_line) APPEND_LITERAL("\n");
-  if (cursor_identifier_starts_conditional ||
+  int cursor_in_generic_association_type = 0;
+  for (size_t i = stack_count; i > 0; i--) {
+    if (!stack[i - 1].is_generic_selection) continue;
+    cursor_in_generic_association_type =
+        stack[i - 1].generic_separator_count > 0 &&
+        !stack[i - 1].generic_association_has_colon;
+    break;
+  }
+  if (!cursor_in_generic_association_type &&
+      (cursor_identifier_starts_conditional ||
       last_significant == '=' || last_significant == ',' ||
       last_significant == '(' || last_significant == '[' ||
       last_significant == '+' || last_significant == '-' ||
@@ -1279,7 +1320,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       last_significant == '|' || last_significant == '^' ||
       last_significant == '!' || last_significant == '~' ||
       last_significant == '<' || last_significant == '>' ||
-      last_significant == '?' || last_significant == ':')
+      last_significant == '?' || last_significant == ':'))
     APPEND_LITERAL(" 0");
 #define APPEND_PENDING_CONDITIONALS(count)                                      \
   do {                                                                           \
@@ -1291,6 +1332,19 @@ static char *build_recovery_source(const char *source, size_t source_length,
     APPEND_PENDING_CONDITIONALS(
         stack[i - 1].pending_conditional_count);
     if (stack[i - 1].open == '(') {
+      if (stack[i - 1].is_generic_selection) {
+        if (stack[i - 1].generic_separator_count == 0) {
+          APPEND_LITERAL(", default: 0");
+        } else if (!stack[i - 1].generic_association_has_colon) {
+          if (has_complete_identifier && cursor_name &&
+              cursor_name_length > 0) {
+            APPEND_BYTES(cursor_name, cursor_name_length);
+          } else {
+            APPEND_LITERAL("int");
+          }
+          APPEND_LITERAL(": 0");
+        }
+      }
       if (stack[i - 1].is_for_control) {
         size_t separator_count = stack[i - 1].for_separator_count;
         while (separator_count < 2) {
@@ -1316,6 +1370,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (stack[i - 1].open == '{') APPEND_LITERAL("}\n");
   result[length] = '\0';
 #undef APPEND_PENDING_CONDITIONALS
+#undef APPEND_BYTES
 #undef APPEND_LITERAL
   free(stack);
   if (changed) {

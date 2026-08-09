@@ -1141,6 +1141,158 @@ for (const analysisCase of [
   }
 }
 
+const genericSource = {
+  name: "generic.c",
+  source: "#define GENERIC_MACRO 9\n" +
+    "typedef int GenericScore;\n" +
+    "enum { GENERIC_MODE = 3 };\n" +
+    "int generic_value;\n" +
+    "int generic_identity(int value) { return value; }\n" +
+    "int main(void) {\n" +
+    "  int result = _Generic(generic_value, int: 1, default: 0);\n" +
+    "  result += _Generic(generic_identity(generic_value), int: 2, default: 0);\n" +
+    "  result += _Generic(GENERIC_MODE, int: 3, default: 0);\n" +
+    "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n" +
+    "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n" +
+    "  return result + _Generic(1, int: generic_value, default: 0);\n" +
+    "}\n",
+};
+
+function findGenericName(name, from = 0) {
+  const index = genericSource.source.indexOf(name, from);
+  assert.notEqual(index, -1, `missing generic hover anchor: ${name}`);
+  return index;
+}
+
+const genericMacroDeclaration = findGenericName("GENERIC_MACRO");
+const genericTypedefDeclaration = findGenericName("GenericScore");
+const genericEnumDeclaration = findGenericName("GENERIC_MODE");
+const genericObjectDeclaration = findGenericName("generic_value");
+const genericFunctionDeclaration = findGenericName("generic_identity");
+const genericFirstControl = findGenericName(
+  "_Generic(generic_value", genericFunctionDeclaration,
+);
+const genericFirstObjectUse = findGenericName(
+  "generic_value", genericFirstControl,
+);
+const genericCallControl = findGenericName(
+  "_Generic(generic_identity", genericFirstObjectUse,
+);
+const genericFunctionUse = findGenericName(
+  "generic_identity", genericCallControl,
+);
+const genericArgumentUse = findGenericName(
+  "generic_value", genericFunctionUse + "generic_identity".length,
+);
+const genericEnumControl = findGenericName(
+  "_Generic(GENERIC_MODE", genericArgumentUse,
+);
+const genericEnumUse = findGenericName("GENERIC_MODE", genericEnumControl);
+const genericMacroControl = findGenericName(
+  "_Generic(GENERIC_MACRO", genericEnumUse,
+);
+const genericMacroUse = findGenericName("GENERIC_MACRO", genericMacroControl);
+const genericTypedefControl = findGenericName(
+  "_Generic(generic_value, GenericScore", genericMacroUse,
+);
+const genericTypedefUse = findGenericName(
+  "GenericScore", genericTypedefControl,
+);
+const genericAssociationValue = findGenericName(
+  "int: generic_value", genericTypedefUse,
+);
+const genericAssociationValueUse = findGenericName(
+  "generic_value", genericAssociationValue,
+);
+const genericHoverCases = [
+  { name: "generic_value", kind: "object", index: genericFirstObjectUse },
+  { name: "generic_identity", kind: "function", index: genericFunctionUse },
+  { name: "generic_value", kind: "object", index: genericArgumentUse },
+  { name: "GENERIC_MODE", kind: "enumConstant", value: "3",
+    index: genericEnumUse },
+  { name: "GENERIC_MACRO", kind: "macro", replacement: "9",
+    index: genericMacroUse },
+  { name: "GenericScore", kind: "typedef", index: genericTypedefUse },
+  { name: "generic_value", kind: "object",
+    index: genericAssociationValueUse },
+];
+const genericDeclarations = new Map([
+  ["generic_value", genericObjectDeclaration],
+  ["generic_identity", genericFunctionDeclaration],
+  ["GENERIC_MODE", genericEnumDeclaration],
+  ["GENERIC_MACRO", genericMacroDeclaration],
+  ["GenericScore", genericTypedefDeclaration],
+]);
+const nativeGenericSnapshots = new Map();
+
+function genericByteOffset(analysisCase, delta) {
+  return Buffer.byteLength(genericSource.source.slice(0, analysisCase.index)) +
+    delta;
+}
+
+function assertGenericHover(result, analysisCase, lifecycle) {
+  const hover = result.hover;
+  const declarationStart = genericDeclarations.get(analysisCase.name);
+  if (result.partial || result.diagnostics.length !== 0 ||
+      hover?.name !== analysisCase.name || hover.kind !== analysisCase.kind ||
+      hover.declaration.sourceName !== genericSource.name ||
+      hover.declaration.start.offset !== declarationStart ||
+      hover.declaration.end.offset !==
+        declarationStart + Buffer.byteLength(analysisCase.name) ||
+      (analysisCase.kind === "enumConstant" &&
+       hover.initializer.constantValue !== analysisCase.value) ||
+      (analysisCase.kind === "macro" &&
+       hover.macro?.replacement !== analysisCase.replacement)) {
+    throw new Error(
+      `${lifecycle} generic hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+for (const analysisCase of genericHoverCases) {
+  for (const delta of [
+    0,
+    Math.floor(analysisCase.name.length / 2),
+    Buffer.byteLength(analysisCase.name),
+  ]) {
+    const byteOffset = genericByteOffset(analysisCase, delta);
+    const wasmResult = compiler.analyzeSource(genericSource, {
+      cursor: { sourceName: genericSource.name, byteOffset },
+    });
+    assertGenericHover(wasmResult, analysisCase, "reused instance");
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--generic-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm generic snapshots differ at byte ${byteOffset}`,
+    );
+    nativeGenericSnapshots.set(byteOffset, nativeResult);
+  }
+}
+
+for (const analysisCase of genericHoverCases) {
+  const delta = Math.floor(analysisCase.name.length / 2);
+  const byteOffset = genericByteOffset(analysisCase, delta);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(genericSource, {
+      cursor: { sourceName: genericSource.name, byteOffset },
+    });
+    assertGenericHover(freshResult, analysisCase, "fresh instance");
+    assert.deepStrictEqual(
+      freshResult,
+      nativeGenericSnapshots.get(byteOffset),
+      `fresh native/Wasm generic snapshot differs at byte ${byteOffset}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
 const enumParitySource = {
   name: "main.c",
   source: "enum {\n" +
