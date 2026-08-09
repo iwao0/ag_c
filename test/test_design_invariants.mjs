@@ -122,6 +122,40 @@ if (missingShouldRejectObjectCases.length !== 0 ||
       `duplicates: ${duplicateShouldRejectObjectCases.join(", ") || "none"}`,
   );
 }
+const compilerLimitFixtureDirectory = "test/fixtures/compiler_limits";
+const compilerLimitFixtureNames = (await readdir(compilerLimitFixtureDirectory))
+  .filter((name) => name.endsWith(".c"))
+  .sort();
+const registeredCompilerLimitFixtureCounts = new Map();
+for (const match of normalizedCompileFailRegistry.matchAll(
+    /fixture:test\/fixtures\/compiler_limits\/([A-Za-z0-9_.-]+\.c)/g,
+  )) {
+  registeredCompilerLimitFixtureCounts.set(
+    match[1],
+    (registeredCompilerLimitFixtureCounts.get(match[1]) ?? 0) + 1,
+  );
+}
+const compilerLimitFixtureNameSet = new Set(compilerLimitFixtureNames);
+const missingCompilerLimitObjectCases = compilerLimitFixtureNames.filter(
+  (name) => !registeredCompilerLimitFixtureCounts.has(name),
+);
+const staleCompilerLimitObjectCases = [
+  ...registeredCompilerLimitFixtureCounts.keys(),
+].filter((name) => !compilerLimitFixtureNameSet.has(name));
+const duplicateCompilerLimitObjectCases = [
+  ...registeredCompilerLimitFixtureCounts.entries(),
+].filter(([, count]) => count !== 1)
+  .map(([name, count]) => `${name} (${count})`);
+if (missingCompilerLimitObjectCases.length !== 0 ||
+    staleCompilerLimitObjectCases.length !== 0 ||
+    duplicateCompilerLimitObjectCases.length !== 0) {
+  throw new Error(
+    "compiler_limits fixture/object compile-fail coverage mismatch\n" +
+      `missing: ${missingCompilerLimitObjectCases.join(", ") || "none"}\n` +
+      `stale: ${staleCompilerLimitObjectCases.join(", ") || "none"}\n` +
+      `duplicates: ${duplicateCompilerLimitObjectCases.join(", ") || "none"}`,
+  );
+}
 const enumCompatibilityCompileFailCases = [
   "enum_incompatible_integer_pointer",
   "enum_incompatible_nested_integer_pointer",
