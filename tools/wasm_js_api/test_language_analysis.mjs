@@ -778,6 +778,565 @@ assert.equal(documentationSnapshotSucceeds(
   plainMacroSnapshotInput, documentedMacroSnapshotMinimum - 1,
 ), true, "Wasm session was not reusable after macro documentation snapshot limit");
 
+const macroDefinitionFormsSource = {
+  name: "macro-definition.c",
+  source: "#define SIMPLE_MACRO 1\n" +
+    "# define PARENTHESIZED_MACRO (2 + 3)\r\n" +
+    "#define FUNCTION_MACRO(value, other) ((value) + (other))\n" +
+    "#define EMPTY_MACRO\n" +
+    "#define CONTINUED_OBJECT (1 + \\\n" +
+    "  2)\n" +
+    "#define CONTINUED_FUNCTION(value) ((value) + \\\r\n" +
+    "  1)\r\n" +
+    "??= define TRIGRAPH_HASH_MACRO 7\n" +
+    "#define SPL\\\n" +
+    "ICED_NAME_MACRO 8\n" +
+    "#def\\\n" +
+    "ine SPLIT_DEFINE_MACRO 9\n" +
+    "#if 0\n" +
+    "#define BRANCH_MACRO 10\n" +
+    "#else\n" +
+    "#define BRANCH_MACRO 11\n" +
+    "#endif\n" +
+    "#define REDEFINED_MACRO 12\n" +
+    "#undef REDEFINED_MACRO\n" +
+    "#define REDEFINED_MACRO 13\n" +
+    "#pragma macro_definition_boundary\n" +
+    "EMPTY_MACRO\n" +
+    "enum MacroDefinitionEnum { MACRO_DEFINITION_ENUM = 1 };\n" +
+    "int macro_definition_left, macro_definition_right[2];\n" +
+    "int macro_definition_prototype(int value);\n" +
+    "int macro_definition_function(void) {\n" +
+    "  return SIMPLE_MACRO + PARENTHESIZED_MACRO +\n" +
+    "         FUNCTION_MACRO(CONTINUED_OBJECT, CONTINUED_FUNCTION(1)) +\n" +
+    "         TRIGRAPH_HASH_MACRO + SPLICED_NAME_MACRO +\n" +
+    "         SPLIT_DEFINE_MACRO + BRANCH_MACRO + REDEFINED_MACRO;\n" +
+    "}\n",
+};
+const macroDefinitionCases = [
+  {
+    name: "SIMPLE_MACRO", definition: "#define SIMPLE_MACRO 1",
+    rawName: "SIMPLE_MACRO", replacement: "1", parameters: [],
+  },
+  {
+    name: "PARENTHESIZED_MACRO",
+    definition: "# define PARENTHESIZED_MACRO (2 + 3)",
+    rawName: "PARENTHESIZED_MACRO", replacement: "( 2 + 3 )", parameters: [],
+  },
+  {
+    name: "FUNCTION_MACRO",
+    definition: "#define FUNCTION_MACRO(value, other) ((value) + (other))",
+    rawName: "FUNCTION_MACRO", replacement: "( ( value ) + ( other ) )",
+    parameters: ["value", "other"],
+  },
+  {
+    name: "EMPTY_MACRO", definition: "#define EMPTY_MACRO",
+    rawName: "EMPTY_MACRO", replacement: "", parameters: [],
+  },
+  {
+    name: "CONTINUED_OBJECT", definition: "#define CONTINUED_OBJECT (1 + \\\n  2)",
+    rawName: "CONTINUED_OBJECT", replacement: "( 1 + 2 )", parameters: [],
+  },
+  {
+    name: "CONTINUED_FUNCTION",
+    definition: "#define CONTINUED_FUNCTION(value) ((value) + \\\r\n  1)",
+    rawName: "CONTINUED_FUNCTION", replacement: "( ( value ) + 1 )",
+    parameters: ["value"],
+  },
+  {
+    name: "TRIGRAPH_HASH_MACRO", definition: "??= define TRIGRAPH_HASH_MACRO 7",
+    rawName: "TRIGRAPH_HASH_MACRO", replacement: "7", parameters: [],
+  },
+  {
+    name: "SPLICED_NAME_MACRO", definition: "#define SPL\\\nICED_NAME_MACRO 8",
+    rawName: "SPL\\\nICED_NAME_MACRO", replacement: "8", parameters: [],
+  },
+  {
+    name: "SPLIT_DEFINE_MACRO", definition: "#def\\\nine SPLIT_DEFINE_MACRO 9",
+    rawName: "SPLIT_DEFINE_MACRO", replacement: "9", parameters: [],
+  },
+  {
+    name: "BRANCH_MACRO", definition: "#define BRANCH_MACRO 11",
+    rawName: "BRANCH_MACRO", replacement: "11", parameters: [],
+  },
+  {
+    name: "REDEFINED_MACRO", definition: "#define REDEFINED_MACRO 13",
+    rawName: "REDEFINED_MACRO", replacement: "13", parameters: [],
+  },
+];
+
+function byteOffsetForIndex(source, index) {
+  return Buffer.byteLength(source.slice(0, index));
+}
+
+function assertMacroDefinitionSnapshot(result, macroCase, label,
+  requireComplete = true) {
+  const completion = symbol(result, macroCase.name, "macro");
+  assert.equal(result.hover?.name, macroCase.name, `${label}: hover name`);
+  assert.equal(result.hover?.kind, "macro", `${label}: hover kind`);
+  assert.equal(result.hover?.macro?.replacement, macroCase.replacement,
+    `${label}: hover replacement`);
+  assert.deepStrictEqual(result.hover?.macro?.parameters, macroCase.parameters,
+    `${label}: hover parameters`);
+  assert.equal(completion?.macro?.replacement, macroCase.replacement,
+    `${label}: completion replacement`);
+  assert.deepStrictEqual(completion?.macro?.parameters, macroCase.parameters,
+    `${label}: completion parameters`);
+  assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+    `${label}: hover/completion declaration`);
+  if (requireComplete) {
+    assert.equal(result.partial, false, `${label}: partial`);
+    assert.deepStrictEqual(result.diagnostics, [], `${label}: diagnostics`);
+  }
+}
+
+for (const macroCase of macroDefinitionCases) {
+  const fragmentIndex = macroDefinitionFormsSource.source.indexOf(
+    macroCase.definition,
+  );
+  const definitionIndex = macroDefinitionFormsSource.source.indexOf(
+    macroCase.rawName, fragmentIndex,
+  );
+  assert.notEqual(definitionIndex, -1, `missing ${macroCase.name} definition`);
+  const rawNameBytes = Buffer.byteLength(macroCase.rawName);
+  for (const delta of [0, Math.floor(rawNameBytes / 2), rawNameBytes]) {
+    const byteOffset = byteOffsetForIndex(
+      macroDefinitionFormsSource.source, definitionIndex,
+    ) + delta;
+    const wasmResult = compiler.analyzeSource(macroDefinitionFormsSource, {
+      cursor: { sourceName: macroDefinitionFormsSource.name, byteOffset },
+    });
+    assertMacroDefinitionSnapshot(
+      wasmResult, macroCase, `${macroCase.name} definition byte ${byteOffset}`,
+    );
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--macro-definition-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm macro definition differ for ${macroCase.name}`,
+    );
+  }
+}
+
+const oldRedefinitionIndex = macroDefinitionFormsSource.source.indexOf(
+  "REDEFINED_MACRO",
+  macroDefinitionFormsSource.source.indexOf("#define REDEFINED_MACRO 12"),
+);
+const oldRedefinitionOffset = byteOffsetForIndex(
+  macroDefinitionFormsSource.source, oldRedefinitionIndex,
+) + 3;
+const oldRedefinitionResult = compiler.analyzeSource(
+  macroDefinitionFormsSource,
+  {
+    cursor: {
+      sourceName: macroDefinitionFormsSource.name,
+      byteOffset: oldRedefinitionOffset,
+    },
+  },
+);
+assertMacroDefinitionSnapshot(oldRedefinitionResult, {
+  name: "REDEFINED_MACRO", replacement: "12", parameters: [],
+}, "definition before undef");
+assert.deepStrictEqual(oldRedefinitionResult, JSON.parse(execFileSync(
+  nativeAnalysisPath,
+  ["--macro-definition-parity-json", String(oldRedefinitionOffset)],
+  { encoding: "utf8" },
+)), "native and Wasm definition before undef differ");
+
+const inactiveDefinitionIndex = macroDefinitionFormsSource.source.indexOf(
+  "BRANCH_MACRO",
+  macroDefinitionFormsSource.source.indexOf("#define BRANCH_MACRO 10"),
+);
+const inactiveDefinitionOffset = byteOffsetForIndex(
+  macroDefinitionFormsSource.source, inactiveDefinitionIndex,
+) + 2;
+const inactiveDefinitionResult = compiler.analyzeSource(
+  macroDefinitionFormsSource,
+  {
+    cursor: {
+      sourceName: macroDefinitionFormsSource.name,
+      byteOffset: inactiveDefinitionOffset,
+    },
+  },
+);
+assert.equal(symbol(inactiveDefinitionResult, "BRANCH_MACRO", "macro"), undefined);
+assert.notEqual(inactiveDefinitionResult.hover?.kind, "macro");
+assert.equal(
+  inactiveDefinitionResult.diagnostics.some(({ code }) => code === "E3016"),
+  false,
+);
+assert.deepStrictEqual(inactiveDefinitionResult, JSON.parse(execFileSync(
+  nativeAnalysisPath,
+  ["--macro-definition-parity-json", String(inactiveDefinitionOffset)],
+  { encoding: "utf8" },
+)), "native and Wasm inactive macro definition differ");
+
+const pragmaIndex = macroDefinitionFormsSource.source.indexOf(
+  "macro_definition_boundary",
+);
+const pragmaOffset = byteOffsetForIndex(
+  macroDefinitionFormsSource.source, pragmaIndex,
+) + 2;
+const pragmaResult = compiler.analyzeSource(macroDefinitionFormsSource, {
+  cursor: { sourceName: macroDefinitionFormsSource.name, byteOffset: pragmaOffset },
+});
+assert.equal(pragmaResult.hover, null);
+assert.equal(pragmaResult.diagnostics.some(({ code }) => code === "E3016"), false);
+assert.deepStrictEqual(pragmaResult, JSON.parse(execFileSync(
+  nativeAnalysisPath,
+  ["--macro-definition-parity-json", String(pragmaOffset)],
+  { encoding: "utf8" },
+)), "native and Wasm non-define directive differ");
+
+for (const [source, name, replacement] of [
+  ["#define BEFORE_INCOMPLETE 1\nint unfinished(", "BEFORE_INCOMPLETE", "1"],
+  ["#define BEFORE_ERROR 2\nint broken = ;\n", "BEFORE_ERROR", "2"],
+]) {
+  const input = { name: "macro-trailing.c", source };
+  const index = source.indexOf(name);
+  const result = compiler.analyzeSource(input, {
+    cursor: { sourceName: input.name, byteOffset: index + 2 },
+  });
+  assertMacroDefinitionSnapshot(result, {
+    name, replacement, parameters: [],
+  }, `${name} before invalid trailing source`);
+}
+
+const invalidMacroSource = {
+  name: "invalid-macro.c",
+  source: "#define INVALID_MACRO(value) ## value\nint after_invalid;\n",
+};
+let invalidMacroResult = null;
+let invalidMacroError = null;
+try {
+  invalidMacroResult = compiler.analyzeSource(invalidMacroSource, {
+    cursor: {
+      sourceName: invalidMacroSource.name,
+      byteOffset: invalidMacroSource.source.indexOf("INVALID_MACRO") + 2,
+    },
+  });
+} catch (error) {
+  invalidMacroError = error;
+}
+if (invalidMacroResult
+  ? !invalidMacroResult.partial ||
+    !invalidMacroResult.diagnostics.some(({ code }) =>
+      code === "AGC_PARTIAL_MACRO_DEFINITION" || code === "E1031")
+  : invalidMacroError?.name !== "AgcLanguageAnalysisError" ||
+    !invalidMacroError.diagnostics?.some(({ code }) => code === "E1031")) {
+  throw new Error(
+    `invalid macro definition lost its diagnostic: ${JSON.stringify(
+      invalidMacroResult || invalidMacroError,
+    )}`,
+  );
+}
+
+const macroDefinitionGameHeader = "#define GAME_SCREEN_WIDTH 320\n" +
+  "#define GAME_SCREEN_HEIGHT 180\n" +
+  "#define BUTTON_LEFT 0\n" +
+  "#define BUTTON_RIGHT 1\n" +
+  "#define BUTTON_UP 2\n" +
+  "#define BUTTON_DOWN 3\n" +
+  "#define BUTTON_A 4\n" +
+  "#define COLOR_WHITE 0xffffff\n" +
+  "#define RGB(red, green, blue) ((red) + (green) + (blue))\n" +
+  "unsigned int random_next(void);\n" +
+  "void random_seed(unsigned int seed);\n" +
+  "unsigned int tick_count(void);\n" +
+  "int input_pressed(int button);\n" +
+  "void screen_clear(int color);\n" +
+  "void draw_text(const char *text, int x, int y, int color);\n" +
+  "void draw_rect(int x, int y, int width, int height, int color);\n" +
+  "int game_running(void);\n";
+const macroDefinitionSnake = {
+  name: "snake.c",
+  source: await readFile(
+    "test/fixtures/language_analysis/macro_definition_snake.txt", "utf8",
+  ),
+};
+const snakeMacroCases = [
+  {
+    name: "BOARD_COLUMNS", replacement: "( GAME_SCREEN_WIDTH / CELL_SIZE )",
+    documentation: "盤面の横方向のマス数です。",
+    comment: "/// 盤面の横方向のマス数です。",
+  },
+  {
+    name: "BOARD_ROWS",
+    replacement: "( ( GAME_SCREEN_HEIGHT - BOARD_TOP ) / CELL_SIZE )",
+    documentation: "盤面の縦方向のマス数です。",
+    comment: "/// 盤面の縦方向のマス数です。",
+  },
+  {
+    name: "MAX_SNAKE_LENGTH", replacement: "( BOARD_COLUMNS * BOARD_ROWS )",
+    documentation: "盤面に収まるヘビの最大の長さです。",
+    comment: "/// 盤面に収まるヘビの最大の長さです。",
+  },
+];
+for (const macroCase of snakeMacroCases) {
+  const definitionIndex = macroDefinitionSnake.source.indexOf(macroCase.name);
+  const useIndex = macroDefinitionSnake.source.lastIndexOf(macroCase.name);
+  const commentIndex = macroDefinitionSnake.source.indexOf(macroCase.comment);
+  const definitionStart = byteOffsetForIndex(
+    macroDefinitionSnake.source, definitionIndex,
+  );
+  const commentStart = byteOffsetForIndex(
+    macroDefinitionSnake.source, commentIndex,
+  );
+  const expectedDocumentationRange = {
+    sourceName: macroDefinitionSnake.name,
+    start: {
+      line: macroDefinitionSnake.source.slice(0, commentIndex).split("\n").length,
+      column: 1,
+      offset: commentStart,
+    },
+    end: {
+      line: macroDefinitionSnake.source.slice(0, commentIndex).split("\n").length,
+      column: Buffer.byteLength(macroCase.comment) + 1,
+      offset: commentStart + Buffer.byteLength(macroCase.comment),
+    },
+  };
+  for (const delta of [
+    0,
+    Math.floor(Buffer.byteLength(macroCase.name) / 2),
+    Buffer.byteLength(macroCase.name),
+  ]) {
+    const byteOffset = definitionStart + delta;
+    const result = compiler.analyzeSource(macroDefinitionSnake, {
+      headers: { "game.h": macroDefinitionGameHeader },
+      cursor: { sourceName: macroDefinitionSnake.name, byteOffset },
+    });
+    assertMacroDefinitionSnapshot(result, {
+      ...macroCase, parameters: [],
+    }, `${macroCase.name} snake definition`);
+    assert.equal(result.hover.documentation, macroCase.documentation);
+    assert.deepStrictEqual(
+      result.hover.documentationRange, expectedDocumentationRange,
+    );
+    assert.equal(result.hover.declaration.start.offset, definitionStart);
+    assert.equal(
+      result.hover.declaration.end.offset,
+      definitionStart + Buffer.byteLength(macroCase.name),
+    );
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--macro-definition-snake-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      result,
+      nativeResult,
+      `native and Wasm snake macro definition differ for ${macroCase.name}`,
+    );
+  }
+  const useOffset = byteOffsetForIndex(macroDefinitionSnake.source, useIndex) +
+    Math.floor(Buffer.byteLength(macroCase.name) / 2);
+  const useResult = compiler.analyzeSource(macroDefinitionSnake, {
+    headers: { "game.h": macroDefinitionGameHeader },
+    cursor: { sourceName: macroDefinitionSnake.name, byteOffset: useOffset },
+  });
+  assertMacroDefinitionSnapshot(useResult, {
+    ...macroCase, parameters: [],
+  }, `${macroCase.name} snake use`);
+  assert.equal(useResult.hover.documentation, macroCase.documentation);
+  assert.deepStrictEqual(useResult.hover.documentationRange,
+    expectedDocumentationRange);
+  const nativeUse = JSON.parse(execFileSync(
+    nativeAnalysisPath,
+    ["--macro-definition-snake-parity-json", String(useOffset)],
+    { encoding: "utf8" },
+  ));
+  assert.deepStrictEqual(
+    useResult,
+    nativeUse,
+    `native and Wasm snake macro use differ for ${macroCase.name}`,
+  );
+
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(macroDefinitionSnake, {
+      headers: { "game.h": macroDefinitionGameHeader },
+      cursor: {
+        sourceName: macroDefinitionSnake.name,
+        byteOffset: definitionStart + Math.floor(
+          Buffer.byteLength(macroCase.name) / 2,
+        ),
+      },
+    });
+    assertMacroDefinitionSnapshot(freshResult, {
+      ...macroCase, parameters: [],
+    }, `${macroCase.name} fresh snake definition`);
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
+const macroHeaderDefinitionSource = {
+  name: "macro-definition.h",
+  source: "/// virtual header definition\n" +
+    "#define HEADER_DEFINITION(value) ((value) + 2)\n",
+};
+const macroHeaderDefinitionResult = compiler.analyzeSource(
+  macroHeaderDefinitionSource,
+  {
+    cursor: {
+      sourceName: macroHeaderDefinitionSource.name,
+      byteOffset: macroHeaderDefinitionSource.source.indexOf(
+        "HEADER_DEFINITION",
+      ) + 3,
+    },
+  },
+);
+assertMacroDefinitionSnapshot(macroHeaderDefinitionResult, {
+  name: "HEADER_DEFINITION", replacement: "( ( value ) + 2 )",
+  parameters: ["value"],
+}, "virtual header definition");
+assert.equal(
+  macroHeaderDefinitionResult.hover.declaration.sourceName,
+  macroHeaderDefinitionSource.name,
+);
+assert.deepStrictEqual(
+  macroHeaderDefinitionResult,
+  JSON.parse(execFileSync(
+    nativeAnalysisPath,
+    ["--macro-definition-header-parity-json"],
+    { encoding: "utf8" },
+  )),
+  "native and Wasm virtual header macro definition differ",
+);
+
+const macroDefinitionProjectCompiler = await createCompiler(wasmModule);
+try {
+  const projectSources = [
+    "/// project definition v1\n#define PROJECT_DEFINITION 21\n" +
+      "int project_value(void) { return PROJECT_DEFINITION; }\n",
+    "\n/// project definition v2\n#define PROJECT_DEFINITION 22\n" +
+      "int project_value(void) { return PROJECT_DEFINITION; }\n",
+  ];
+  for (let revision = 1; revision <= projectSources.length; revision++) {
+    const input = { name: "main.c", source: projectSources[revision - 1] };
+    const result = macroDefinitionProjectCompiler.analyzeProjectSource(input, {
+      projectRevision: revision,
+      projectSources: [input],
+      cursor: {
+        sourceName: input.name,
+        byteOffset: input.source.indexOf("PROJECT_DEFINITION") + 4,
+      },
+    });
+    assertMacroDefinitionSnapshot(result, {
+      name: "PROJECT_DEFINITION", replacement: String(20 + revision),
+      parameters: [],
+    }, `project macro definition revision ${revision}`);
+    assert.equal(
+      result.hover.documentation,
+      `project definition v${revision}`,
+    );
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--macro-definition-project-parity-json", String(revision)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      result,
+      nativeResult,
+      `native and Wasm project macro definition differ at revision ${revision}`,
+    );
+  }
+} finally {
+  macroDefinitionProjectCompiler.dispose();
+}
+
+const macroDefinitionLimitSource = {
+  name: "macro-definition-limit.c",
+  source: "#define LIMIT_DEFINITION 1\nint unfinished(",
+};
+const macroDefinitionLimitCursor =
+  macroDefinitionLimitSource.source.indexOf("LIMIT_DEFINITION") + 2;
+const exactSourceLimitResult = compiler.analyzeSource(
+  macroDefinitionLimitSource,
+  {
+    cursor: {
+      sourceName: macroDefinitionLimitSource.name,
+      byteOffset: macroDefinitionLimitCursor,
+    },
+    limits: {
+      maxSourceBytes: Buffer.byteLength(macroDefinitionLimitSource.source),
+    },
+  },
+);
+assertMacroDefinitionSnapshot(exactSourceLimitResult, {
+  name: "LIMIT_DEFINITION", replacement: "1", parameters: [],
+}, "exact macro definition source limit");
+function macroDefinitionSnapshotSucceeds(maxAnalysisSnapshotBytes) {
+  try {
+    compiler.analyzeSource(macroDefinitionLimitSource, {
+      cursor: {
+        sourceName: macroDefinitionLimitSource.name,
+        byteOffset: macroDefinitionLimitCursor,
+      },
+      limits: { maxAnalysisSnapshotBytes },
+    });
+    return true;
+  } catch (error) {
+    if (!(error instanceof AgcResourceLimitError) ||
+        error.code !== "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES" ||
+        error.limit !== "maxAnalysisSnapshotBytes") {
+      throw error;
+    }
+    return false;
+  }
+}
+let macroDefinitionSnapshotLow = 1;
+let macroDefinitionSnapshotHigh = 64 * 1024;
+assert.equal(macroDefinitionSnapshotSucceeds(macroDefinitionSnapshotHigh), true);
+while (macroDefinitionSnapshotLow < macroDefinitionSnapshotHigh) {
+  const middle = macroDefinitionSnapshotLow + Math.floor(
+    (macroDefinitionSnapshotHigh - macroDefinitionSnapshotLow) / 2,
+  );
+  if (macroDefinitionSnapshotSucceeds(middle)) {
+    macroDefinitionSnapshotHigh = middle;
+  } else {
+    macroDefinitionSnapshotLow = middle + 1;
+  }
+}
+assert.equal(
+  macroDefinitionSnapshotSucceeds(macroDefinitionSnapshotLow - 1),
+  false,
+);
+try {
+  compiler.analyzeSource(macroDefinitionLimitSource, {
+    cursor: {
+      sourceName: macroDefinitionLimitSource.name,
+      byteOffset: macroDefinitionLimitCursor,
+    },
+    limits: {
+      maxSourceBytes: Buffer.byteLength(macroDefinitionLimitSource.source) - 1,
+    },
+  });
+  throw new Error("macro definition source limit unexpectedly succeeded");
+} catch (error) {
+  if (!(error instanceof AgcResourceLimitError) ||
+      error.code !== "AGC_LIMIT_MAX_SOURCE_BYTES" ||
+      error.limit !== "maxSourceBytes") {
+    throw error;
+  }
+}
+const macroDefinitionAfterLimit = compiler.analyzeSource(
+  { name: "macro-definition-limit.c", source: "#define SAFE_MACRO 1\n" },
+  {
+    cursor: {
+      sourceName: "macro-definition-limit.c",
+      byteOffset: Buffer.byteLength("#define SAFE"),
+    },
+  },
+);
+assertMacroDefinitionSnapshot(macroDefinitionAfterLimit, {
+  name: "SAFE_MACRO", replacement: "1", parameters: [],
+}, "macro definition reuse after limit");
+
 const documentationProjectCompiler = await createCompiler(wasmModule);
 try {
   const projectCallSource = {

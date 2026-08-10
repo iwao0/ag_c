@@ -12,6 +12,35 @@ typedef struct {
   size_t length;
 } header_bundle_t;
 
+static char *read_fixture_source(const char *path, size_t *length) {
+  if (length) *length = 0;
+  FILE *file = fopen(path, "rb");
+  if (!file) return NULL;
+  if (fseek(file, 0, SEEK_END) != 0) {
+    fclose(file);
+    return NULL;
+  }
+  long size = ftell(file);
+  if (size < 0 || fseek(file, 0, SEEK_SET) != 0) {
+    fclose(file);
+    return NULL;
+  }
+  char *source = malloc((size_t)size + 1);
+  if (!source) {
+    fclose(file);
+    return NULL;
+  }
+  size_t read_length = fread(source, 1, (size_t)size, file);
+  int close_status = fclose(file);
+  if (read_length != (size_t)size || close_status != 0) {
+    free(source);
+    return NULL;
+  }
+  source[read_length] = '\0';
+  if (length) *length = read_length;
+  return source;
+}
+
 static void put_u32(unsigned char *out, uint32_t value) {
   out[0] = (unsigned char)value;
   out[1] = (unsigned char)(value >> 8);
@@ -377,6 +406,68 @@ static const char documentation_hover_source[] =
     "         BLANK_DOC_MACRO + ORDINARY_GAP_MACRO +\n"
     "         CONDITIONAL_GAP_MACRO + PRAGMA_GAP_MACRO;\n"
     "}\n";
+
+static const char macro_definition_game_header[] =
+    "#define GAME_SCREEN_WIDTH 320\n"
+    "#define GAME_SCREEN_HEIGHT 180\n"
+    "#define BUTTON_LEFT 0\n"
+    "#define BUTTON_RIGHT 1\n"
+    "#define BUTTON_UP 2\n"
+    "#define BUTTON_DOWN 3\n"
+    "#define BUTTON_A 4\n"
+    "#define COLOR_WHITE 0xffffff\n"
+    "#define RGB(red, green, blue) ((red) + (green) + (blue))\n"
+    "unsigned int random_next(void);\n"
+    "void random_seed(unsigned int seed);\n"
+    "unsigned int tick_count(void);\n"
+    "int input_pressed(int button);\n"
+    "void screen_clear(int color);\n"
+    "void draw_text(const char *text, int x, int y, int color);\n"
+    "void draw_rect(int x, int y, int width, int height, int color);\n"
+    "int game_running(void);\n";
+
+static const char macro_definition_forms_source[] =
+    "#define SIMPLE_MACRO 1\n"
+    "# define PARENTHESIZED_MACRO (2 + 3)\r\n"
+    "#define FUNCTION_MACRO(value, other) ((value) + (other))\n"
+    "#define EMPTY_MACRO\n"
+    "#define CONTINUED_OBJECT (1 + \\\n"
+    "  2)\n"
+    "#define CONTINUED_FUNCTION(value) ((value) + \\\r\n"
+    "  1)\r\n"
+    "?" "?= define TRIGRAPH_HASH_MACRO 7\n"
+    "#define SPL\\\n"
+    "ICED_NAME_MACRO 8\n"
+    "#def\\\n"
+    "ine SPLIT_DEFINE_MACRO 9\n"
+    "#if 0\n"
+    "#define BRANCH_MACRO 10\n"
+    "#else\n"
+    "#define BRANCH_MACRO 11\n"
+    "#endif\n"
+    "#define REDEFINED_MACRO 12\n"
+    "#undef REDEFINED_MACRO\n"
+    "#define REDEFINED_MACRO 13\n"
+    "#pragma macro_definition_boundary\n"
+    "EMPTY_MACRO\n"
+    "enum MacroDefinitionEnum { MACRO_DEFINITION_ENUM = 1 };\n"
+    "int macro_definition_left, macro_definition_right[2];\n"
+    "int macro_definition_prototype(int value);\n"
+    "int macro_definition_function(void) {\n"
+    "  return SIMPLE_MACRO + PARENTHESIZED_MACRO +\n"
+    "         FUNCTION_MACRO(CONTINUED_OBJECT, CONTINUED_FUNCTION(1)) +\n"
+    "         TRIGRAPH_HASH_MACRO + SPLICED_NAME_MACRO +\n"
+    "         SPLIT_DEFINE_MACRO + BRANCH_MACRO + REDEFINED_MACRO;\n"
+    "}\n";
+static const char *const macro_definition_project_sources[] = {
+    "/// project definition v1\n#define PROJECT_DEFINITION 21\n"
+    "int project_value(void) { return PROJECT_DEFINITION; }\n",
+    "\n/// project definition v2\n#define PROJECT_DEFINITION 22\n"
+    "int project_value(void) { return PROJECT_DEFINITION; }\n",
+};
+static const char macro_definition_header_source[] =
+    "/// virtual header definition\n"
+    "#define HEADER_DEFINITION(value) ((value) + 2)\n";
 
 static int update_guard_project(
     ag_compilation_session_t *session,
@@ -1498,6 +1589,130 @@ static int print_macro_documentation_project_parity_snapshot(
   return result;
 }
 
+static int print_macro_definition_source_snapshot(
+    const char *source_name, const char *source, size_t cursor,
+    header_bundle_t bundle) {
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  if (!session) return 1;
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = analyze_named(
+      session, source_name, source, cursor, bundle,
+      ag_language_analysis_default_limits(), &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  int result = 1;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
+static int print_macro_definition_forms_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(macro_definition_forms_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "macro-definition.c", macro_definition_forms_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_macro_definition_snake_parity_snapshot(
+    const char *cursor_text) {
+  size_t source_length = 0;
+  char *source = read_fixture_source(
+      "test/fixtures/language_analysis/macro_definition_snake.txt",
+      &source_length);
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  if (!source || !cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length) {
+    free(source);
+    return 1;
+  }
+  const char *paths[] = {"game.h"};
+  const char *headers[] = {macro_definition_game_header};
+  header_bundle_t bundle = make_bundle(paths, headers, 1);
+  int result = print_macro_definition_source_snapshot(
+      "snake.c", source, (size_t)parsed_cursor, bundle);
+  free(bundle.bytes);
+  free(source);
+  return result;
+}
+
+static int print_macro_definition_header_parity_snapshot(void) {
+  const char *definition = strstr(
+      macro_definition_header_source, "HEADER_DEFINITION");
+  if (!definition) return 1;
+  return print_macro_definition_source_snapshot(
+      "macro-definition.h", macro_definition_header_source,
+      (size_t)(definition - macro_definition_header_source) + 3,
+      (header_bundle_t){0});
+}
+
+static int print_macro_definition_project_parity_snapshot(
+    const char *revision_text) {
+  char *end = NULL;
+  unsigned long parsed_revision = strtoul(revision_text, &end, 10);
+  if (!revision_text[0] || !end || *end != '\0' ||
+      parsed_revision < 1 || parsed_revision > 2)
+    return 1;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  if (!session || !project) {
+    ag_language_project_index_destroy(project);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  ag_language_analysis_limits_t limits =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_error_t error = {0};
+  int result = 1;
+  for (unsigned long revision = 1;
+       revision <= parsed_revision; revision++) {
+    if (!update_single_source_project(
+            session, project, (unsigned int)revision,
+            macro_definition_project_sources[revision - 1],
+            (header_bundle_t){0}, limits, &error))
+      goto done;
+  }
+  const char *source =
+      macro_definition_project_sources[parsed_revision - 1];
+  const char *definition = strstr(source, "PROJECT_DEFINITION");
+  ag_language_analysis_snapshot_t snapshot = {0};
+  int ok = definition && analyze_project_named(
+      session, project, "main.c", source,
+      (size_t)(definition - source) + 4, (header_bundle_t){0}, limits,
+      &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+done:
+  ag_language_project_index_destroy(project);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
 static const char *last_occurrence(const char *text, const char *needle) {
   const char *result = NULL;
   const char *cursor = text;
@@ -1519,6 +1734,377 @@ static int check_documentation_symbol(
          strcmp(symbol->documentation_range.source_name, source_name) == 0 &&
          symbol->documentation_range.start.offset == (int)comment_start &&
          symbol->documentation_range.end.offset == (int)comment_end;
+}
+
+static int macro_snapshot_fields_match(
+    const ag_language_analysis_snapshot_t *snapshot, const char *name,
+    const char *replacement, int parameter_count) {
+  const ag_language_symbol_t *hover = hover_symbol(snapshot);
+  const ag_language_symbol_t *completion = find_symbol(
+      snapshot, name, AG_LANGUAGE_SYMBOL_MACRO);
+  return hover && completion &&
+         hover->kind == AG_LANGUAGE_SYMBOL_MACRO &&
+         strcmp(hover->name, name) == 0 &&
+         hover->macro_replacement && completion->macro_replacement &&
+         strcmp(hover->macro_replacement, replacement) == 0 &&
+         strcmp(completion->macro_replacement, replacement) == 0 &&
+         hover->macro_parameter_count == parameter_count &&
+         completion->macro_parameter_count == parameter_count &&
+         same_range(&hover->declaration, &completion->declaration);
+}
+
+static int macro_definition_snapshot_matches(
+    const ag_language_analysis_snapshot_t *snapshot, const char *name,
+    const char *replacement, int parameter_count) {
+  return macro_snapshot_fields_match(
+             snapshot, name, replacement, parameter_count) &&
+         !snapshot->partial && snapshot->diagnostic_count == 0;
+}
+
+static int test_macro_definition_hover(ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "macro definition session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+
+  struct {
+    const char *name;
+    const char *definition_fragment;
+    const char *raw_definition_name;
+    const char *replacement;
+    int parameter_count;
+  } forms[] = {
+      {"SIMPLE_MACRO", "#define SIMPLE_MACRO 1", "SIMPLE_MACRO",
+       "1", 0},
+      {"PARENTHESIZED_MACRO", "# define PARENTHESIZED_MACRO (2 + 3)",
+       "PARENTHESIZED_MACRO", "( 2 + 3 )", 0},
+      {"FUNCTION_MACRO",
+       "#define FUNCTION_MACRO(value, other) ((value) + (other))",
+       "FUNCTION_MACRO", "( ( value ) + ( other ) )", 2},
+      {"EMPTY_MACRO", "#define EMPTY_MACRO", "EMPTY_MACRO", "", 0},
+      {"CONTINUED_OBJECT", "#define CONTINUED_OBJECT (1 + \\\n  2)",
+       "CONTINUED_OBJECT", "( 1 + 2 )", 0},
+      {"CONTINUED_FUNCTION",
+       "#define CONTINUED_FUNCTION(value) ((value) + \\\r\n  1)",
+       "CONTINUED_FUNCTION", "( ( value ) + 1 )", 1},
+      {"TRIGRAPH_HASH_MACRO", "?" "?= define TRIGRAPH_HASH_MACRO 7",
+       "TRIGRAPH_HASH_MACRO", "7", 0},
+      {"SPLICED_NAME_MACRO", "#define SPL\\\nICED_NAME_MACRO 8",
+       "SPL\\\nICED_NAME_MACRO", "8", 0},
+      {"SPLIT_DEFINE_MACRO", "#def\\\nine SPLIT_DEFINE_MACRO 9",
+       "SPLIT_DEFINE_MACRO", "9", 0},
+      {"BRANCH_MACRO", "#define BRANCH_MACRO 11", "BRANCH_MACRO",
+       "11", 0},
+      {"REDEFINED_MACRO", "#define REDEFINED_MACRO 13",
+       "REDEFINED_MACRO", "13", 0},
+  };
+  for (size_t i = 0; i < sizeof(forms) / sizeof(forms[0]); i++) {
+    const char *fragment = strstr(
+        macro_definition_forms_source, forms[i].definition_fragment);
+    const char *definition = fragment
+                                 ? strstr(fragment, forms[i].raw_definition_name)
+                                 : NULL;
+    CHECK(definition, "macro definition form anchors");
+    size_t raw_length = strlen(forms[i].raw_definition_name);
+    size_t deltas[] = {0, raw_length / 2, raw_length};
+    for (size_t delta = 0;
+         delta < sizeof(deltas) / sizeof(deltas[0]); delta++) {
+      CHECK(analyze_named(
+                session, "macro-definition.c",
+                macro_definition_forms_source,
+                (size_t)(definition - macro_definition_forms_source) +
+                    deltas[delta],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "macro definition form analysis");
+      CHECK(macro_definition_snapshot_matches(
+                &snapshot, forms[i].name, forms[i].replacement,
+                forms[i].parameter_count),
+            "macro definition form fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  const char *old_redefinition = strstr(
+      macro_definition_forms_source, "#define REDEFINED_MACRO 12");
+  old_redefinition = old_redefinition
+                         ? strstr(old_redefinition, "REDEFINED_MACRO")
+                         : NULL;
+  CHECK(old_redefinition && analyze_named(
+            session, "macro-definition.c", macro_definition_forms_source,
+            (size_t)(old_redefinition - macro_definition_forms_source) + 3,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "macro definition before undef analysis");
+  CHECK(macro_definition_snapshot_matches(
+            &snapshot, "REDEFINED_MACRO", "12", 0),
+        "macro definition before undef fields");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *inactive_definition = strstr(
+      macro_definition_forms_source, "#define BRANCH_MACRO 10");
+  inactive_definition = inactive_definition
+                            ? strstr(inactive_definition, "BRANCH_MACRO")
+                            : NULL;
+  CHECK(inactive_definition && analyze_named(
+            session, "macro-definition.c", macro_definition_forms_source,
+            (size_t)(inactive_definition - macro_definition_forms_source) + 2,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "inactive macro definition analysis");
+  CHECK(find_symbol(
+            &snapshot, "BRANCH_MACRO", AG_LANGUAGE_SYMBOL_MACRO) == NULL &&
+            (!hover_symbol(&snapshot) ||
+             hover_symbol(&snapshot)->kind != AG_LANGUAGE_SYMBOL_MACRO) &&
+            find_diagnostic(&snapshot, "E3016") == NULL,
+        "inactive macro definition omitted");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *pragma_identifier = strstr(
+      macro_definition_forms_source, "macro_definition_boundary");
+  CHECK(pragma_identifier && analyze_named(
+            session, "macro-definition.c", macro_definition_forms_source,
+            (size_t)(pragma_identifier - macro_definition_forms_source) + 2,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "non-define directive analysis");
+  CHECK(!hover_symbol(&snapshot) &&
+            find_diagnostic(&snapshot, "E3016") == NULL,
+        "non-define directive has no macro hover");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *trailing_sources[] = {
+      "#define BEFORE_INCOMPLETE 1\nint unfinished(",
+      "#define BEFORE_ERROR 2\nint broken = ;\n",
+  };
+  const char *trailing_names[] = {
+      "BEFORE_INCOMPLETE", "BEFORE_ERROR",
+  };
+  const char *trailing_replacements[] = {"1", "2"};
+  for (size_t i = 0; i < 2; i++) {
+    const char *definition = strstr(trailing_sources[i], trailing_names[i]);
+    CHECK(definition && analyze_named(
+              session, "macro-trailing.c", trailing_sources[i],
+              (size_t)(definition - trailing_sources[i]) + 2,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "macro definition before invalid trailing source");
+    CHECK(macro_definition_snapshot_matches(
+              &snapshot, trailing_names[i], trailing_replacements[i], 0),
+          "macro definition ignores invalid trailing source");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+
+  const char *invalid_macro =
+      "#define INVALID_MACRO(value) ## value\nint after_invalid;\n";
+  const char *invalid_name = strstr(invalid_macro, "INVALID_MACRO");
+  int invalid_ok = invalid_name && analyze_named(
+      session, "invalid-macro.c", invalid_macro,
+      (size_t)(invalid_name - invalid_macro) + 2,
+      (header_bundle_t){0}, defaults, &snapshot, &error);
+  if (!((invalid_ok && snapshot.partial && snapshot.diagnostic_count > 0) ||
+        (!invalid_ok && error.status == AG_LANGUAGE_ANALYSIS_FAILED)))
+    fprintf(stderr,
+            "invalid macro result: ok=%d partial=%d diagnostics=%d "
+            "status=%d code=%s\n",
+            invalid_ok, snapshot.partial, snapshot.diagnostic_count,
+            error.status, error.code);
+  CHECK((invalid_ok && snapshot.partial && snapshot.diagnostic_count > 0) ||
+            (!invalid_ok && error.status == AG_LANGUAGE_ANALYSIS_FAILED),
+        "invalid macro definition diagnostic preserved");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  size_t snake_length = 0;
+  char *snake_source = read_fixture_source(
+      "test/fixtures/language_analysis/macro_definition_snake.txt",
+      &snake_length);
+  CHECK(snake_source && snake_length == strlen(snake_source),
+        "snake macro definition fixture");
+  const char *game_paths[] = {"game.h"};
+  const char *game_headers[] = {macro_definition_game_header};
+  header_bundle_t game_bundle = make_bundle(game_paths, game_headers, 1);
+  struct {
+    const char *name;
+    const char *replacement;
+    const char *documentation;
+    const char *comment;
+  } snake_macros[] = {
+      {"BOARD_COLUMNS", "( GAME_SCREEN_WIDTH / CELL_SIZE )",
+       "盤面の横方向のマス数です。", "/// 盤面の横方向のマス数です。"},
+      {"BOARD_ROWS", "( ( GAME_SCREEN_HEIGHT - BOARD_TOP ) / CELL_SIZE )",
+       "盤面の縦方向のマス数です。", "/// 盤面の縦方向のマス数です。"},
+      {"MAX_SNAKE_LENGTH", "( BOARD_COLUMNS * BOARD_ROWS )",
+       "盤面に収まるヘビの最大の長さです。",
+       "/// 盤面に収まるヘビの最大の長さです。"},
+  };
+  for (size_t i = 0;
+       i < sizeof(snake_macros) / sizeof(snake_macros[0]); i++) {
+    const char *definition = strstr(snake_source, snake_macros[i].name);
+    const char *use = last_occurrence(snake_source, snake_macros[i].name);
+    const char *comment = strstr(snake_source, snake_macros[i].comment);
+    CHECK(definition && use && comment, "snake macro definition anchors");
+    size_t deltas[] = {
+        0, strlen(snake_macros[i].name) / 2,
+        strlen(snake_macros[i].name),
+    };
+    for (size_t delta = 0;
+         delta < sizeof(deltas) / sizeof(deltas[0]); delta++) {
+      CHECK(analyze_named(
+                session, "snake.c", snake_source,
+                (size_t)(definition - snake_source) + deltas[delta],
+                game_bundle, defaults, &snapshot, &error),
+            "snake macro definition analysis");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      const ag_language_symbol_t *completion = find_symbol(
+          &snapshot, snake_macros[i].name, AG_LANGUAGE_SYMBOL_MACRO);
+      CHECK(macro_definition_snapshot_matches(
+                &snapshot, snake_macros[i].name,
+                snake_macros[i].replacement, 0) &&
+                hover->declaration.start.offset ==
+                    (int)(definition - snake_source) &&
+                hover->declaration.end.offset ==
+                    (int)(definition - snake_source) +
+                        (int)strlen(snake_macros[i].name) &&
+                check_documentation_symbol(
+                    hover, snake_macros[i].documentation, "snake.c",
+                    (size_t)(comment - snake_source),
+                    (size_t)(comment - snake_source) +
+                        strlen(snake_macros[i].comment)) &&
+                check_documentation_symbol(
+                    completion, snake_macros[i].documentation, "snake.c",
+                    (size_t)(comment - snake_source),
+                    (size_t)(comment - snake_source) +
+                        strlen(snake_macros[i].comment)),
+            "snake macro definition fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+    CHECK(analyze_named(
+              session, "snake.c", snake_source,
+              (size_t)(use - snake_source) + strlen(snake_macros[i].name) / 2,
+              game_bundle, defaults, &snapshot, &error),
+          "snake macro use analysis");
+    CHECK(macro_definition_snapshot_matches(
+              &snapshot, snake_macros[i].name,
+              snake_macros[i].replacement, 0) &&
+              check_documentation_symbol(
+                  hover_symbol(&snapshot), snake_macros[i].documentation,
+                  "snake.c", (size_t)(comment - snake_source),
+                  (size_t)(comment - snake_source) +
+                      strlen(snake_macros[i].comment)),
+          "snake macro use fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+
+    ag_compilation_session_t *fresh =
+        ag_compilation_session_create(&target);
+    CHECK(fresh && analyze_named(
+              fresh, "snake.c", snake_source,
+              (size_t)(definition - snake_source) +
+                  strlen(snake_macros[i].name) / 2,
+              game_bundle, defaults, &snapshot, &error),
+          "fresh snake macro definition analysis");
+    CHECK(macro_definition_snapshot_matches(
+              &snapshot, snake_macros[i].name,
+              snake_macros[i].replacement, 0),
+          "fresh snake macro definition fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    ag_compilation_session_destroy(fresh);
+  }
+  free(game_bundle.bytes);
+  free(snake_source);
+
+  const char *header_definition = strstr(
+      macro_definition_header_source, "HEADER_DEFINITION");
+  CHECK(header_definition && analyze_named(
+            session, "macro-definition.h", macro_definition_header_source,
+            (size_t)(header_definition -
+                     macro_definition_header_source) + 3,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "virtual header macro definition analysis");
+  CHECK(macro_definition_snapshot_matches(
+            &snapshot, "HEADER_DEFINITION", "( ( value ) + 2 )", 1) &&
+            strcmp(hover_symbol(&snapshot)->declaration.source_name,
+                   "macro-definition.h") == 0,
+        "virtual header macro definition fields");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  CHECK(project != NULL, "macro definition project");
+  const char *project_docs[] = {
+      "project definition v1", "project definition v2",
+  };
+  const char *project_replacements[] = {"21", "22"};
+  for (size_t revision = 0; revision < 2; revision++) {
+    CHECK(update_single_source_project(
+              session, project, (unsigned int)revision + 1,
+              macro_definition_project_sources[revision],
+              (header_bundle_t){0}, defaults,
+              &error),
+          "macro definition project update");
+    const char *definition = strstr(
+        macro_definition_project_sources[revision], "PROJECT_DEFINITION");
+    const char *comment = strstr(
+        macro_definition_project_sources[revision], "///");
+    const char *comment_end = strchr(comment, '\n');
+    CHECK(definition && comment && comment_end && analyze_project_named(
+              session, project, "main.c",
+              macro_definition_project_sources[revision],
+              (size_t)(definition -
+                       macro_definition_project_sources[revision]) + 4,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "macro definition project analysis");
+    CHECK(macro_definition_snapshot_matches(
+              &snapshot, "PROJECT_DEFINITION",
+              project_replacements[revision], 0) &&
+              check_documentation_symbol(
+                  hover_symbol(&snapshot), project_docs[revision], "main.c",
+                  (size_t)(comment -
+                           macro_definition_project_sources[revision]),
+                  (size_t)(comment_end -
+                           macro_definition_project_sources[revision])),
+          "macro definition project revision fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  ag_language_project_index_destroy(project);
+
+  const char *limit_source =
+      "#define LIMIT_DEFINITION 1\nint unfinished(";
+  const char *limit_name = strstr(limit_source, "LIMIT_DEFINITION");
+  ag_language_analysis_limits_t tiny = defaults;
+  tiny.max_source_bytes = strlen(limit_source);
+  CHECK(limit_name && analyze_named(
+            session, "macro-definition-limit.c", limit_source,
+            (size_t)(limit_name - limit_source) + 2,
+            (header_bundle_t){0}, tiny, &snapshot, &error),
+        "macro definition exact source limit");
+  size_t macro_snapshot_bytes = snapshot.allocated_bytes;
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  tiny.max_source_bytes = strlen(limit_source) - 1;
+  CHECK(!analyze_named(
+            session, "macro-definition-limit.c", limit_source,
+            (size_t)(limit_name - limit_source) + 2,
+            (header_bundle_t){0}, tiny, &snapshot, &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code, "AGC_LIMIT_MAX_SOURCE_BYTES") == 0,
+        "macro definition source limit rejection");
+  tiny = defaults;
+  tiny.max_snapshot_bytes = macro_snapshot_bytes - 1;
+  CHECK(!analyze_named(
+            session, "macro-definition-limit.c", limit_source,
+            (size_t)(limit_name - limit_source) + 2,
+            (header_bundle_t){0}, tiny, &snapshot, &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code,
+                   "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES") == 0,
+        "macro definition snapshot limit rejection");
+  CHECK(analyze_named(
+            session, "macro-definition-limit.c", "#define SAFE_MACRO 1\n",
+            strlen("#define SAFE"), (header_bundle_t){0}, defaults,
+            &snapshot, &error) &&
+            macro_definition_snapshot_matches(
+                &snapshot, "SAFE_MACRO", "1", 0),
+        "macro definition session reusable after limits");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  ag_compilation_session_destroy(session);
+  return 0;
 }
 
 static int test_documentation_analysis(ag_target_info_t target) {
@@ -2146,6 +2732,18 @@ int main(int argc, char **argv) {
   if (argc == 3 &&
       strcmp(argv[1], "--macro-documentation-project-parity-json") == 0)
     return print_macro_documentation_project_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--macro-definition-parity-json") == 0)
+    return print_macro_definition_forms_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--macro-definition-snake-parity-json") == 0)
+    return print_macro_definition_snake_parity_snapshot(argv[2]);
+  if (argc == 2 &&
+      strcmp(argv[1], "--macro-definition-header-parity-json") == 0)
+    return print_macro_definition_header_parity_snapshot();
+  if (argc == 3 &&
+      strcmp(argv[1], "--macro-definition-project-parity-json") == 0)
+    return print_macro_definition_project_parity_snapshot(argv[2]);
   if (argc == 2 &&
       strcmp(argv[1], "--project-failure-recovery-parity-json") == 0)
     return test_project_failure_recovery(1);
@@ -2158,6 +2756,8 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_t snapshot = {0};
   ag_language_analysis_error_t error = {0};
 
+  CHECK(test_macro_definition_hover(target) == 0,
+        "macro definition hover scenarios");
   CHECK(test_documentation_analysis(target) == 0,
         "documentation analysis scenarios");
 
@@ -5166,6 +5766,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (37 scenarios)");
+  puts("language analysis tests passed (38 scenarios)");
   return 0;
 }

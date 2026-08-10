@@ -350,6 +350,60 @@ static size_t analysis_complete_line_splice_at_cursor(
   return cursor;
 }
 
+static size_t analysis_logical_line_start_mode(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs) {
+  size_t start = cursor;
+  while (start > 0 && source[start - 1] != '\n') start--;
+  for (;;) {
+    size_t splice_start = 0;
+    if (!analysis_line_splice_before(
+            source, length, start, enable_trigraphs, &splice_start))
+      return start;
+    start = splice_start;
+    while (start > 0 && source[start - 1] != '\n') start--;
+  }
+}
+
+static size_t analysis_skip_directive_spacing_mode(
+    const char *source, size_t length, size_t cursor, size_t end,
+    int enable_trigraphs, int *saw_horizontal_space) {
+  while (cursor < end) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, cursor, enable_trigraphs);
+    if (splice_size) {
+      cursor += splice_size;
+      continue;
+    }
+    if (source[cursor] != ' ' && source[cursor] != '\t' &&
+        source[cursor] != '\r')
+      break;
+    if (saw_horizontal_space) *saw_horizontal_space = 1;
+    cursor++;
+  }
+  return cursor;
+}
+
+static int analysis_match_directive_word_mode(
+    const char *source, size_t length, size_t cursor, size_t end,
+    int enable_trigraphs, const char *word, size_t word_length,
+    size_t *after_word) {
+  size_t word_offset = 0;
+  while (word_offset < word_length) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, cursor, enable_trigraphs);
+    if (splice_size) {
+      cursor += splice_size;
+      continue;
+    }
+    if (cursor >= end || source[cursor] != word[word_offset]) return 0;
+    cursor++;
+    word_offset++;
+  }
+  if (after_word) *after_word = cursor;
+  return 1;
+}
+
 static size_t analysis_complete_macro_definition_at_cursor(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs) {
@@ -358,13 +412,11 @@ static size_t analysis_complete_macro_definition_at_cursor(
           source, length, cursor, enable_trigraphs, &identifier))
     return 0;
 
-  size_t line_start = identifier.start;
-  while (line_start > 0 && source[line_start - 1] != '\n') line_start--;
+  size_t line_start = analysis_logical_line_start_mode(
+      source, length, identifier.start, enable_trigraphs);
   size_t probe = line_start;
-  while (probe < identifier.start &&
-         (source[probe] == ' ' || source[probe] == '\t' ||
-          source[probe] == '\r'))
-    probe++;
+  probe = analysis_skip_directive_spacing_mode(
+      source, length, probe, identifier.start, enable_trigraphs, NULL);
   if (probe < identifier.start && source[probe] == '#') {
     probe++;
   } else if (enable_trigraphs && probe + 2 < identifier.start &&
@@ -374,23 +426,19 @@ static size_t analysis_complete_macro_definition_at_cursor(
   } else {
     return 0;
   }
-  while (probe < identifier.start &&
-         (source[probe] == ' ' || source[probe] == '\t'))
-    probe++;
+  probe = analysis_skip_directive_spacing_mode(
+      source, length, probe, identifier.start, enable_trigraphs, NULL);
   static const char define_keyword[] = "define";
   size_t define_length = sizeof(define_keyword) - 1;
-  if (probe > identifier.start ||
-      define_length > identifier.start - probe ||
-      memcmp(source + probe, define_keyword, define_length) != 0)
+  if (!analysis_match_directive_word_mode(
+          source, length, probe, identifier.start, enable_trigraphs,
+          define_keyword, define_length, &probe))
     return 0;
-  probe += define_length;
-  if (probe >= identifier.start ||
-      (source[probe] != ' ' && source[probe] != '\t'))
-    return 0;
-  while (probe < identifier.start &&
-         (source[probe] == ' ' || source[probe] == '\t'))
-    probe++;
-  if (probe != identifier.start) return 0;
+  int saw_horizontal_space = 0;
+  probe = analysis_skip_directive_spacing_mode(
+      source, length, probe, identifier.start, enable_trigraphs,
+      &saw_horizontal_space);
+  if (!saw_horizontal_space || probe != identifier.start) return 0;
 
   for (size_t end = identifier.end; end < length;) {
     size_t splice_size = analysis_line_splice_size_mode(
@@ -1903,43 +1951,45 @@ static char *build_recovery_source(const char *source, size_t source_length,
                                      source, source_length, cursor,
                                      enable_trigraphs);
   size_t source_consumed = recovery_cursor;
-  char *function_parameter_recovery =
-      build_function_parameter_recovery_source(
-          source, source_length, recovery_cursor, changed,
-          &source_consumed);
-  if (function_parameter_recovery)
-    return append_conditional_validation_tail(
-        function_parameter_recovery, source, source_length,
-        source_consumed);
-  char *enum_recovery = build_enum_declaration_recovery_source(
-      source, source_length, recovery_cursor, changed,
-      &source_consumed);
-  if (enum_recovery)
-    return append_conditional_validation_tail(
-        enum_recovery, source, source_length, source_consumed);
-  char *record_member_recovery = build_record_member_recovery_source(
-      source, source_length, recovery_cursor, changed,
-      &source_consumed);
-  if (record_member_recovery)
-    return append_conditional_validation_tail(
-        record_member_recovery, source, source_length,
-        source_consumed);
-  char *jump_label_recovery = build_jump_label_recovery_source(
-      source, source_length, recovery_cursor, changed);
-  if (jump_label_recovery) return jump_label_recovery;
-  char *function_recovery =
-      build_function_declaration_recovery_source(
-          source, source_length, recovery_cursor, changed,
-          &source_consumed);
-  if (function_recovery)
-    return append_conditional_validation_tail(
-        function_recovery, source, source_length, source_consumed);
-  char *object_recovery = build_object_declaration_recovery_source(
-      source, source_length, recovery_cursor, changed,
-      &source_consumed);
-  if (object_recovery)
-    return append_conditional_validation_tail(
-        object_recovery, source, source_length, source_consumed);
+  if (!cursor_on_complete_macro_definition) {
+    char *function_parameter_recovery =
+        build_function_parameter_recovery_source(
+            source, source_length, recovery_cursor, changed,
+            &source_consumed);
+    if (function_parameter_recovery)
+      return append_conditional_validation_tail(
+          function_parameter_recovery, source, source_length,
+          source_consumed);
+    char *enum_recovery = build_enum_declaration_recovery_source(
+        source, source_length, recovery_cursor, changed,
+        &source_consumed);
+    if (enum_recovery)
+      return append_conditional_validation_tail(
+          enum_recovery, source, source_length, source_consumed);
+    char *record_member_recovery = build_record_member_recovery_source(
+        source, source_length, recovery_cursor, changed,
+        &source_consumed);
+    if (record_member_recovery)
+      return append_conditional_validation_tail(
+          record_member_recovery, source, source_length,
+          source_consumed);
+    char *jump_label_recovery = build_jump_label_recovery_source(
+        source, source_length, recovery_cursor, changed);
+    if (jump_label_recovery) return jump_label_recovery;
+    char *function_recovery =
+        build_function_declaration_recovery_source(
+            source, source_length, recovery_cursor, changed,
+            &source_consumed);
+    if (function_recovery)
+      return append_conditional_validation_tail(
+          function_recovery, source, source_length, source_consumed);
+    char *object_recovery = build_object_declaration_recovery_source(
+        source, source_length, recovery_cursor, changed,
+        &source_consumed);
+    if (object_recovery)
+      return append_conditional_validation_tail(
+          object_recovery, source, source_length, source_consumed);
+  }
   int has_complete_identifier = 0;
   analysis_identifier_span_t cursor_identifier = {0};
   int has_cursor_identifier = analysis_identifier_span_at_mode(
@@ -3890,6 +3940,31 @@ static int save_last_diagnostic(
   return 0;
 }
 
+static int save_invalid_macro_definition_diagnostic(
+    const ag_language_analysis_request_t *request,
+    int enable_trigraphs, saved_analysis_diagnostic_t *saved) {
+  if (!request || !saved) return 0;
+  analysis_identifier_span_t identifier = {0};
+  if (!analysis_identifier_span_at_mode(
+          request->source, request->source_length,
+          request->cursor_byte_offset, enable_trigraphs, &identifier))
+    return 0;
+  *saved = (saved_analysis_diagnostic_t){
+      .severity = 1,
+      .code = analysis_strdup("AGC_PARTIAL_MACRO_DEFINITION"),
+      .message = analysis_strdup(
+          "preprocessing stopped at an invalid macro definition"),
+      .source_name = analysis_strdup(request->source_name),
+      .start = position_at(
+          request->source, request->source_length, identifier.start),
+      .end = position_at(
+          request->source, request->source_length, identifier.end),
+  };
+  if (saved->code && saved->message && saved->source_name) return 1;
+  dispose_saved_diagnostic(saved);
+  return 0;
+}
+
 static int append_saved_diagnostic(
     snapshot_builder_t *builder,
     const saved_analysis_diagnostic_t *saved) {
@@ -4374,6 +4449,10 @@ int ag_language_analyze_source(
       analysis_source_needs_offset_mapping(
           request->source, request->source_length,
           builder.enable_trigraphs);
+  int cursor_on_complete_macro_definition =
+      analysis_complete_macro_definition_at_cursor(
+          request->source, request->source_length,
+          request->cursor_byte_offset, builder.enable_trigraphs) > 0;
   int recovery_changed = 0;
   char *recovery_source = build_recovery_source(
       request->source, request->source_length,
@@ -4467,6 +4546,10 @@ int ag_language_analyze_source(
     }
   }
   if (!retry_attempted) dispose_saved_diagnostic(&saved_fatal);
+  if (recovered_before_retry && !saved_fatal.code &&
+      cursor_on_complete_macro_definition)
+    (void)save_invalid_macro_definition_diagnostic(
+        request, builder.enable_trigraphs, &saved_fatal);
 
   psx_scope_graph_t *scope_graph = ag_compilation_session_scope_graph(session);
   const psx_scope_declaration_t *marker = NULL;
