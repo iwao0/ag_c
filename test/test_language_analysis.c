@@ -142,6 +142,14 @@ static const char generic_hover_source[] =
     "+ 0\n"
     "#define GENERIC_AFTER_TRANSLATION 13\n"
     "int generic_after_translation;\n"
+    "int generic_literal_lf_\\\n"
+    "value;\n"
+    "int generic_literal_crlf_\\\r\n"
+    "value;\n"
+    "int generic_trigraph_lf_?" "?/\n"
+    "value;\n"
+    "int generic_trigraph_crlf_?" "?/\r\n"
+    "value;\n"
     "int generic_identity(int value) { return value; }\n"
     "int generic_comment_invocation(void) { return GENERIC_INVOKED /* gap */ (); }\n"
     "int generic_lf_invocation(void) { return GENERIC_INVOKED \\\n"
@@ -168,6 +176,14 @@ static const char generic_hover_source[] =
     "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n"
     "  result += _Generic(GENERIC_CALL(), int: 6, default: 0);\n"
     "  result += GENERIC_TRIGRAPH_PREFIX + GENERIC_AFTER_TRANSLATION + generic_after_translation;\n"
+    "  result += generic_literal_lf_\\\n"
+    "value;\n"
+    "  result += generic_literal_crlf_\\\r\n"
+    "value;\n"
+    "  result += generic_trigraph_lf_?" "?/\n"
+    "value;\n"
+    "  result += generic_trigraph_crlf_?" "?/\r\n"
+    "value;\n"
     "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n"
     "  result += (int)sizeof(_Atomic /* type */ (GenericScore));\n"
     "  result += (int)_Alignof /* query */ (const GenericScore *);\n"
@@ -2709,6 +2725,89 @@ int main(int argc, char **argv) {
         ag_language_analysis_snapshot_dispose(&snapshot);
         if (fresh_session)
           ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+
+  const char *spliced_identifier_names[] = {
+      "generic_literal_lf_value",
+      "generic_literal_crlf_value",
+      "generic_trigraph_lf_value",
+      "generic_trigraph_crlf_value",
+  };
+  const char *spliced_identifier_spellings[] = {
+      "generic_literal_lf_\\\nvalue",
+      "generic_literal_crlf_\\\r\nvalue",
+      "generic_trigraph_lf_?" "?/\nvalue",
+      "generic_trigraph_crlf_?" "?/\r\nvalue",
+  };
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(spliced_identifier_names) /
+                          sizeof(spliced_identifier_names[0]);
+         case_index++) {
+      const char *spelling = spliced_identifier_spellings[case_index];
+      size_t spelling_length = strlen(spelling);
+      const char *declaration = strstr(generic_hover_source, spelling);
+      const char *use = declaration
+                            ? strstr(declaration + spelling_length, spelling)
+                            : NULL;
+      const char *splice = strchr(spelling, '\\');
+      if (!splice) splice = strstr(spelling, "?" "?/");
+      const char *newline = splice ? strchr(splice, '\n') : NULL;
+      CHECK(declaration && use && splice && newline,
+            "spliced identifier anchors");
+      size_t prefix_length = (size_t)(splice - spelling);
+      size_t splice_length = (size_t)(newline - splice) + 1;
+      size_t cursor_deltas[] = {
+          0,
+          prefix_length / 2,
+          prefix_length,
+          prefix_length + splice_length / 2,
+          prefix_length + splice_length,
+          spelling_length,
+      };
+      const char *locations[] = {declaration, use};
+      for (size_t location_index = 0;
+           location_index < sizeof(locations) / sizeof(locations[0]);
+           location_index++) {
+        for (size_t cursor_index = 0;
+             cursor_index < sizeof(cursor_deltas) /
+                                sizeof(cursor_deltas[0]);
+             cursor_index++) {
+          ag_compilation_session_t *analysis_session = session;
+          if (fresh_session) {
+            analysis_session = ag_compilation_session_create(&target);
+            CHECK(analysis_session != NULL,
+                  "fresh spliced identifier session");
+          }
+          CHECK(analyze_named(
+                    analysis_session, "generic.c", generic_hover_source,
+                    (size_t)(locations[location_index] -
+                             generic_hover_source) +
+                        cursor_deltas[cursor_index],
+                    (header_bundle_t){0}, defaults, &snapshot, &error),
+                "spliced identifier hover analysis");
+          const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+          CHECK(hover && hover->kind == AG_LANGUAGE_SYMBOL_OBJECT &&
+                    strcmp(hover->name,
+                           spliced_identifier_names[case_index]) == 0 &&
+                    strcmp(hover->declaration.source_name, "generic.c") == 0 &&
+                    hover->declaration.start.offset ==
+                        (int)(declaration - generic_hover_source) &&
+                    hover->declaration.end.offset ==
+                        (int)(declaration - generic_hover_source +
+                              spelling_length) &&
+                    hover->declaration.start.column == 5 &&
+                    hover->declaration.end.line ==
+                        hover->declaration.start.line + 1 &&
+                    hover->declaration.end.column == 6 &&
+                    !snapshot.partial && snapshot.diagnostic_count == 0,
+                "spliced identifier hover fields");
+          ag_language_analysis_snapshot_dispose(&snapshot);
+          if (fresh_session)
+            ag_compilation_session_destroy(analysis_session);
+        }
       }
     }
   }

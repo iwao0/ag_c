@@ -211,6 +211,145 @@ static size_t analysis_line_splice_size_mode(
   return 0;
 }
 
+typedef struct {
+  size_t start;
+  size_t end;
+  size_t logical_length;
+} analysis_identifier_span_t;
+
+static int analysis_line_splice_before(
+    const char *source, size_t length, size_t end,
+    int enable_trigraphs, size_t *start) {
+  size_t max_width = enable_trigraphs ? 5 : 3;
+  for (size_t width = 2; width <= max_width && width <= end; width++) {
+    size_t candidate = end - width;
+    if (analysis_line_splice_size_mode(
+            source, length, candidate, enable_trigraphs) == width) {
+      if (start) *start = candidate;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int analysis_identifier_span_at_mode(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs, analysis_identifier_span_t *span) {
+  if (span) *span = (analysis_identifier_span_t){0};
+  if (!source || !span || cursor > length) return 0;
+  size_t selected = SIZE_MAX;
+  if (cursor < length &&
+      is_identifier_byte((unsigned char)source[cursor])) {
+    selected = cursor;
+  } else if (cursor > 0 &&
+             is_identifier_byte((unsigned char)source[cursor - 1])) {
+    selected = cursor - 1;
+  } else {
+    size_t search_start = cursor > 5 ? cursor - 5 : 0;
+    for (size_t candidate = search_start;
+         candidate <= cursor && candidate < length; candidate++) {
+      size_t splice_size = analysis_line_splice_size_mode(
+          source, length, candidate, enable_trigraphs);
+      if (splice_size && candidate > 0 &&
+          candidate + splice_size < length &&
+          candidate <= cursor && cursor <= candidate + splice_size &&
+          is_identifier_byte((unsigned char)source[candidate - 1]) &&
+          is_identifier_byte(
+              (unsigned char)source[candidate + splice_size])) {
+        selected = candidate - 1;
+        break;
+      }
+    }
+  }
+  if (selected == SIZE_MAX) return 0;
+
+  size_t start = selected;
+  for (;;) {
+    while (start > 0 &&
+           is_identifier_byte((unsigned char)source[start - 1]))
+      start--;
+    size_t splice_start = 0;
+    if (!analysis_line_splice_before(
+            source, length, start, enable_trigraphs, &splice_start) ||
+        splice_start == 0 ||
+        !is_identifier_byte((unsigned char)source[splice_start - 1]))
+      break;
+    start = splice_start;
+  }
+
+  size_t end = selected + 1;
+  for (;;) {
+    while (end < length &&
+           is_identifier_byte((unsigned char)source[end]))
+      end++;
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, end, enable_trigraphs);
+    if (!splice_size || end + splice_size >= length ||
+        !is_identifier_byte((unsigned char)source[end + splice_size]))
+      break;
+    end += splice_size;
+  }
+
+  size_t logical_length = 0;
+  for (size_t current = start; current < end;) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, end, current, enable_trigraphs);
+    if (splice_size) {
+      current += splice_size;
+      continue;
+    }
+    if (!is_identifier_byte((unsigned char)source[current])) return 0;
+    logical_length++;
+    current++;
+  }
+  if (logical_length == 0) return 0;
+  *span = (analysis_identifier_span_t){
+      .start = start,
+      .end = end,
+      .logical_length = logical_length,
+  };
+  return 1;
+}
+
+static int analysis_identifier_span_matches(
+    const char *source, size_t source_length,
+    const analysis_identifier_span_t *span, int enable_trigraphs,
+    const char *name, size_t name_length) {
+  if (!source || !span || !name ||
+      span->logical_length != name_length || span->end > source_length)
+    return 0;
+  size_t name_offset = 0;
+  for (size_t current = span->start; current < span->end;) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, span->end, current, enable_trigraphs);
+    if (splice_size) {
+      current += splice_size;
+      continue;
+    }
+    if (name_offset >= name_length ||
+        source[current] != name[name_offset])
+      return 0;
+    current++;
+    name_offset++;
+  }
+  return name_offset == name_length;
+}
+
+static size_t analysis_complete_line_splice_at_cursor(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs) {
+  if (!source || cursor > length) return cursor;
+  size_t search_start = cursor > 5 ? cursor - 5 : 0;
+  for (size_t candidate = search_start;
+       candidate < cursor && candidate < length; candidate++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, candidate, enable_trigraphs);
+    if (splice_size && cursor < candidate + splice_size)
+      return candidate + splice_size;
+  }
+  return cursor;
+}
+
 static size_t skip_analysis_space_and_comments_mode(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs) {
@@ -575,14 +714,13 @@ static char *build_jump_label_recovery_source(
   return result;
 }
 
-static int analysis_cursor_is_complete_member_access(
-    const char *source, size_t length, size_t cursor) {
-  const char *name = NULL;
-  size_t name_length = 0;
-  identifier_at(source, length, cursor, &name, &name_length);
-  if (!name || name_length == 0) return 0;
-  size_t name_start = (size_t)(name - source);
-  size_t operator_end = name_start;
+static int analysis_identifier_is_complete_member_access(
+    const char *source, size_t length,
+    const analysis_identifier_span_t *identifier) {
+  if (!source || !identifier || identifier->logical_length == 0 ||
+      identifier->end > length)
+    return 0;
+  size_t operator_end = identifier->start;
   while (operator_end > 0 &&
          isspace((unsigned char)source[operator_end - 1]))
     operator_end--;
@@ -591,7 +729,8 @@ static int analysis_cursor_is_complete_member_access(
       (operator_end > 1 && source[operator_end - 2] == '-' &&
        source[operator_end - 1] == '>');
   analysis_source_prefix_state_t prefix;
-  if (!analysis_source_prefix_state(source, name_start, &prefix) ||
+  if (!analysis_source_prefix_state(
+          source, identifier->start, &prefix) ||
       prefix.line_comment || prefix.block_comment || prefix.quote ||
       prefix.preprocessor_line ||
       !has_member_operator)
@@ -926,14 +1065,6 @@ static int analysis_delimited_tail_end_mode(
     }
   }
   return 0;
-}
-
-static int analysis_delimited_tail_end(
-    const char *source, size_t source_length, size_t start,
-    char terminator, int allow_top_level_comma, size_t *tail_end) {
-  return analysis_delimited_tail_end_mode(
-      source, source_length, start, terminator,
-      allow_top_level_comma, 0, tail_end);
 }
 
 static int object_declaration_prefix(
@@ -1707,91 +1838,95 @@ static char *build_recovery_source(const char *source, size_t source_length,
                                    size_t cursor,
                                    int enable_trigraphs,
                                    int *changed) {
-  size_t source_consumed = cursor;
+  size_t recovery_cursor = analysis_complete_line_splice_at_cursor(
+      source, source_length, cursor, enable_trigraphs);
+  size_t source_consumed = recovery_cursor;
   char *function_parameter_recovery =
       build_function_parameter_recovery_source(
-          source, source_length, cursor, changed, &source_consumed);
+          source, source_length, recovery_cursor, changed,
+          &source_consumed);
   if (function_parameter_recovery)
     return append_conditional_validation_tail(
         function_parameter_recovery, source, source_length,
         source_consumed);
   char *enum_recovery = build_enum_declaration_recovery_source(
-      source, source_length, cursor, changed, &source_consumed);
+      source, source_length, recovery_cursor, changed,
+      &source_consumed);
   if (enum_recovery)
     return append_conditional_validation_tail(
         enum_recovery, source, source_length, source_consumed);
   char *record_member_recovery = build_record_member_recovery_source(
-      source, source_length, cursor, changed, &source_consumed);
+      source, source_length, recovery_cursor, changed,
+      &source_consumed);
   if (record_member_recovery)
     return append_conditional_validation_tail(
         record_member_recovery, source, source_length,
         source_consumed);
   char *jump_label_recovery = build_jump_label_recovery_source(
-      source, source_length, cursor, changed);
+      source, source_length, recovery_cursor, changed);
   if (jump_label_recovery) return jump_label_recovery;
   char *function_recovery =
       build_function_declaration_recovery_source(
-          source, source_length, cursor, changed, &source_consumed);
+          source, source_length, recovery_cursor, changed,
+          &source_consumed);
   if (function_recovery)
     return append_conditional_validation_tail(
         function_recovery, source, source_length, source_consumed);
   char *object_recovery = build_object_declaration_recovery_source(
-      source, source_length, cursor, changed, &source_consumed);
+      source, source_length, recovery_cursor, changed,
+      &source_consumed);
   if (object_recovery)
     return append_conditional_validation_tail(
         object_recovery, source, source_length, source_consumed);
   int has_complete_identifier = 0;
-  const char *cursor_name = NULL;
-  size_t cursor_name_length = 0;
+  analysis_identifier_span_t cursor_identifier = {0};
+  int has_cursor_identifier = analysis_identifier_span_at_mode(
+      source, source_length, cursor, enable_trigraphs,
+      &cursor_identifier);
   size_t cursor_name_end = 0;
-  identifier_at(
-      source, source_length, cursor,
-      &cursor_name, &cursor_name_length);
-  if (cursor_name && cursor_name_length > 0) {
-    size_t name_start = (size_t)(cursor_name - source);
-    size_t name_end = name_start + cursor_name_length;
-    cursor_name_end = name_end;
+  if (has_cursor_identifier) {
+    cursor_name_end = cursor_identifier.end;
     /* A delimiter after the name proves that this is a complete source token,
      * rather than an identifier prefix still being typed at EOF. */
-    if (name_end < source_length &&
-        cursor >= name_start && cursor <= name_end)
+    if (cursor_identifier.end < source_length &&
+        cursor >= cursor_identifier.start &&
+        cursor <= cursor_identifier.end)
       has_complete_identifier = 1;
   }
   int cursor_on_complete_member_access =
       has_complete_identifier &&
-      analysis_cursor_is_complete_member_access(
-          source, source_length, cursor);
+      analysis_identifier_is_complete_member_access(
+          source, source_length, &cursor_identifier);
   int cursor_identifier_starts_conditional = 0;
   if (has_complete_identifier) {
-    size_t name_end = (size_t)(cursor_name - source) + cursor_name_length;
-    size_t after_name = skip_analysis_space_and_comments(
-        source, source_length, name_end);
+    size_t after_name = skip_analysis_space_and_comments_mode(
+        source, source_length, cursor_identifier.end,
+        enable_trigraphs);
     cursor_identifier_starts_conditional =
         after_name < source_length && source[after_name] == '?';
   }
-  if (cursor > SIZE_MAX - 8192 ||
-      source_length > SIZE_MAX - cursor - 8192)
+  if (recovery_cursor > SIZE_MAX - 8192 ||
+      source_length > SIZE_MAX - recovery_cursor - 8192)
     return NULL;
-  size_t capacity = source_length + cursor + 8192;
+  size_t capacity = source_length + recovery_cursor + 8192;
   if (capacity > (size_t)INT_MAX) return NULL;
   char *result = calloc(capacity, 1);
-  recovery_delimiter_t *stack = calloc(cursor + 1, sizeof(*stack));
+  recovery_delimiter_t *stack = calloc(
+      recovery_cursor + 1, sizeof(*stack));
   if (!result || !stack) {
     free(result);
     free(stack);
     return NULL;
   }
-  memcpy(result, source, cursor);
-  int identifier_elided = cursor_name && cursor_name_length > 0 &&
+  memcpy(result, source, recovery_cursor);
+  int identifier_elided = has_cursor_identifier &&
                           !cursor_on_complete_member_access;
-  if (!cursor_on_complete_member_access && cursor > 0 &&
-      is_identifier_byte((unsigned char)source[cursor - 1])) {
-    size_t identifier_start = cursor - 1;
-    while (identifier_start > 0 &&
-           is_identifier_byte((unsigned char)source[identifier_start - 1]))
-      identifier_start--;
-    for (size_t i = identifier_start; i < cursor; i++) result[i] = ' ';
-    size_t operator_end = identifier_start;
+  if (!cursor_on_complete_member_access && has_cursor_identifier) {
+    size_t elide_end = cursor < cursor_identifier.end
+                           ? cursor : cursor_identifier.end;
+    for (size_t i = cursor_identifier.start; i < elide_end; i++)
+      if (is_identifier_byte((unsigned char)source[i])) result[i] = ' ';
+    size_t operator_end = cursor_identifier.start;
     while (operator_end > 0 &&
            isspace((unsigned char)source[operator_end - 1]))
       operator_end--;
@@ -1816,15 +1951,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int previous_token_is_tag_keyword = 0;
   size_t root_pending_conditional_count = 0;
   char last_significant = 0;
-  for (size_t i = 0; i < cursor; i++) {
+  for (size_t i = 0; i < recovery_cursor; i++) {
     size_t splice_size = analysis_line_splice_size_mode(
-        result, cursor, i, enable_trigraphs);
+        result, recovery_cursor, i, enable_trigraphs);
     if (splice_size) {
       i += splice_size - 1;
       continue;
     }
     char c = result[i];
-    char next = i + 1 < cursor ? result[i + 1] : 0;
+    char next = i + 1 < recovery_cursor ? result[i + 1] : 0;
     if (line_comment) {
       if (c == '\n') {
         line_comment = 0;
@@ -1871,7 +2006,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       continue;
     }
     if (at_line_start && (c == ' ' || c == '\t' || c == '\r')) continue;
-    if (at_line_start && enable_trigraphs && i + 2 < cursor &&
+    if (at_line_start && enable_trigraphs && i + 2 < recovery_cursor &&
         c == '?' && next == '?' && result[i + 2] == '=') {
       preprocessor_line = 1;
       at_line_start = 0;
@@ -1889,7 +2024,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       if (i == 0 ||
           !is_identifier_byte((unsigned char)result[i - 1])) {
         size_t identifier_end = i + 1;
-        while (identifier_end < cursor &&
+        while (identifier_end < recovery_cursor &&
                is_identifier_byte((unsigned char)result[identifier_end]))
           identifier_end++;
         previous_token_is_for = identifier_end - i == strlen("for") &&
@@ -1971,7 +2106,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     }
     if (!isspace((unsigned char)c)) last_significant = c;
   }
-  size_t length = cursor;
+  size_t length = recovery_cursor;
 #define APPEND_LITERAL(text)                                                     \
   do {                                                                           \
     const char *append_text = (text);                                             \
@@ -2014,14 +2149,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
       tail_terminator = ':';
     else if (stack[stack_count - 1].open == '(')
       tail_terminator = ')';
-    if (tail_terminator && analysis_delimited_tail_end(
+    if (tail_terminator && analysis_delimited_tail_end_mode(
             source, source_length, cursor_name_end, tail_terminator, 0,
-            &cursor_tag_tail_end)) {
+            enable_trigraphs, &cursor_tag_tail_end)) {
       cursor_tag_has_tail = 1;
     }
     if (cursor_tag_has_tail && tail_terminator == ')') {
-      size_t after_type = skip_analysis_space_and_comments(
-          source, source_length, cursor_tag_tail_end + 1);
+      size_t after_type = skip_analysis_space_and_comments_mode(
+          source, source_length, cursor_tag_tail_end + 1,
+          enable_trigraphs);
       if (after_type < source_length && source[after_type] == '{') {
         cursor_tag_compound_literal = 1;
       } else if (after_type < source_length &&
@@ -2033,11 +2169,13 @@ static char *build_recovery_source(const char *source, size_t source_length,
     }
   }
   if (cursor_on_complete_member_access) {
-    if (cursor < cursor_name_end)
-      APPEND_BYTES(source + cursor, cursor_name_end - cursor);
+    if (recovery_cursor < cursor_name_end)
+      APPEND_BYTES(source + recovery_cursor,
+                   cursor_name_end - recovery_cursor);
     APPEND_LITERAL(", 0");
   } else if (cursor_on_complete_tag_name) {
-    APPEND_BYTES(cursor_name, cursor_name_length);
+    APPEND_BYTES(source + cursor_identifier.start,
+                 cursor_identifier.end - cursor_identifier.start);
     if (cursor_tag_has_tail && cursor_tag_tail_end > cursor_name_end)
       APPEND_BYTES(source + cursor_name_end,
                    cursor_tag_tail_end - cursor_name_end);
@@ -2070,17 +2208,20 @@ static char *build_recovery_source(const char *source, size_t source_length,
           APPEND_LITERAL(", default: 0");
         } else if (!stack[i - 1].generic_association_has_colon) {
           if (!cursor_on_complete_tag_name) {
-            if (has_complete_identifier && cursor_name &&
-                cursor_name_length > 0) {
-              APPEND_BYTES(cursor_name, cursor_name_length);
+            if (has_complete_identifier) {
+              APPEND_BYTES(source + cursor_identifier.start,
+                           cursor_identifier.end -
+                               cursor_identifier.start);
             } else {
               APPEND_LITERAL("int");
             }
           }
           APPEND_LITERAL(": 0");
           int cursor_association_is_default =
-              has_complete_identifier && cursor_name_length == 7 &&
-              memcmp(cursor_name, "default", 7) == 0;
+              has_complete_identifier &&
+              analysis_identifier_span_matches(
+                  source, source_length, &cursor_identifier,
+                  enable_trigraphs, "default", 7);
           if (!stack[i - 1].generic_has_default_association &&
               !cursor_association_is_default)
             APPEND_LITERAL(", default: 0");
@@ -2127,7 +2268,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     }
   }
   return append_conditional_validation_tail(
-      result, source, source_length, cursor);
+      result, source, source_length, recovery_cursor);
 }
 
 static uint32_t read_u32_le(const unsigned char *bytes) {
@@ -3187,14 +3328,14 @@ static int cursor_invokes_function_like_macro(
     const ag_preprocessor_context_t *preprocessor,
     int enable_trigraphs) {
   if (!request || !preprocessor) return 0;
-  const char *name = NULL;
-  size_t name_length = 0;
-  identifier_at(request->source, request->source_length,
-                request->cursor_byte_offset, &name, &name_length);
-  if (!name || name_length == 0) return 0;
-  size_t name_end = (size_t)(name - request->source) + name_length;
+  analysis_identifier_span_t identifier = {0};
+  if (!analysis_identifier_span_at_mode(
+          request->source, request->source_length,
+          request->cursor_byte_offset, enable_trigraphs,
+          &identifier))
+    return 0;
   size_t after_name = skip_analysis_space_and_comments_mode(
-      request->source, request->source_length, name_end,
+      request->source, request->source_length, identifier.end,
       enable_trigraphs);
   if (after_name >= request->source_length ||
       request->source[after_name] != '(')
@@ -3208,8 +3349,9 @@ static int cursor_invokes_function_like_macro(
     ag_pp_macro_view_t view = {0};
     if (pp_macro_view_at_in(preprocessor, macro_index, &view) &&
         view.is_function_like && view.name && view.name_len > 0 &&
-        (size_t)view.name_len == name_length &&
-        memcmp(view.name, name, name_length) == 0)
+        analysis_identifier_span_matches(
+            request->source, request->source_length, &identifier,
+            enable_trigraphs, view.name, (size_t)view.name_len))
       return 1;
   }
   return 0;
@@ -3335,14 +3477,18 @@ static int symbol_compare(const void *left_pointer, const void *right_pointer) {
 }
 
 static void select_hover(ag_language_analysis_snapshot_t *snapshot,
-                         const char *name, size_t name_len,
+                         const char *source, size_t source_length,
+                         const analysis_identifier_span_t *identifier,
+                         int enable_trigraphs,
                          int function_like_macro_invoked) {
   snapshot->hover_index = -1;
-  if (!name || name_len == 0) return;
+  if (!source || !identifier || identifier->logical_length == 0) return;
   for (int i = 0; i < snapshot->completion_item_count; i++) {
     ag_language_symbol_t *symbol = &snapshot->completion_items[i];
-    if (strlen(symbol->name) != name_len ||
-        memcmp(symbol->name, name, name_len) != 0) continue;
+    if (!analysis_identifier_span_matches(
+            source, source_length, identifier, enable_trigraphs,
+            symbol->name, strlen(symbol->name)))
+      continue;
     if (snapshot->hover_index < 0)
       snapshot->hover_index = i;
     if (symbol->kind == AG_LANGUAGE_SYMBOL_MACRO &&
@@ -3354,13 +3500,19 @@ static void select_hover(ag_language_analysis_snapshot_t *snapshot,
 }
 
 static int select_hover_kind(ag_language_analysis_snapshot_t *snapshot,
-                             const char *name, size_t name_len,
+                             const char *source, size_t source_length,
+                             const analysis_identifier_span_t *identifier,
+                             int enable_trigraphs,
                              ag_language_symbol_kind_t kind) {
-  if (!snapshot || !name || name_len == 0) return 0;
+  if (!snapshot || !source || !identifier ||
+      identifier->logical_length == 0)
+    return 0;
   for (int i = 0; i < snapshot->completion_item_count; i++) {
     const ag_language_symbol_t *symbol = &snapshot->completion_items[i];
-    if (symbol->kind != kind || strlen(symbol->name) != name_len ||
-        memcmp(symbol->name, name, name_len) != 0)
+    if (symbol->kind != kind ||
+        !analysis_identifier_span_matches(
+            source, source_length, identifier, enable_trigraphs,
+            symbol->name, strlen(symbol->name)))
       continue;
     snapshot->hover_index = i;
     return 1;
@@ -3587,11 +3739,12 @@ static int copy_diagnostics(snapshot_builder_t *builder,
 static int append_partial_identifier_diagnostic(
     snapshot_builder_t *builder,
     const ag_language_analysis_request_t *request) {
-  const char *name = NULL;
-  size_t name_len = 0;
-  identifier_at(request->source, request->source_length,
-                request->cursor_byte_offset, &name, &name_len);
-  if (!name || name_len == 0) return 1;
+  analysis_identifier_span_t identifier = {0};
+  if (!analysis_identifier_span_at_mode(
+          request->source, request->source_length,
+          request->cursor_byte_offset, builder->enable_trigraphs,
+          &identifier))
+    return 1;
   int old_count = builder->snapshot->diagnostic_count;
   ag_language_diagnostic_t *next = snapshot_alloc(
       builder, (size_t)(old_count + 1) * sizeof(*next));
@@ -3608,11 +3761,10 @@ static int append_partial_identifier_diagnostic(
   diagnostic->message = snapshot_copy(
       builder, "source ends with an incomplete identifier at the analysis cursor");
   diagnostic->range.source_name = snapshot_copy(builder, request->source_name);
-  size_t start = (size_t)(name - request->source);
   diagnostic->range.start = position_at(
-      request->source, request->source_length, start);
+      request->source, request->source_length, identifier.start);
   diagnostic->range.end = position_at(
-      request->source, request->source_length, start + name_len);
+      request->source, request->source_length, identifier.end);
   return !builder->failed;
 }
 
@@ -4358,21 +4510,21 @@ int ag_language_analyze_source(
   qsort(snapshot->completion_items,
         (size_t)snapshot->completion_item_count,
         sizeof(*snapshot->completion_items), symbol_compare);
-  const char *hover_name = NULL;
-  size_t hover_name_len = 0;
-  identifier_at(request->source, request->source_length,
-                request->cursor_byte_offset, &hover_name, &hover_name_len);
-  size_t hover_name_end = hover_name
-                              ? (size_t)(hover_name - request->source) +
-                                    hover_name_len
-                              : 0;
+  analysis_identifier_span_t hover_identifier = {0};
+  int has_hover_identifier = analysis_identifier_span_at_mode(
+      request->source, request->source_length,
+      request->cursor_byte_offset, builder.enable_trigraphs,
+      &hover_identifier);
   size_t after_hover_name = skip_analysis_space_and_comments_mode(
-      request->source, request->source_length, hover_name_end,
+      request->source, request->source_length,
+      has_hover_identifier ? hover_identifier.end : 0,
       builder.enable_trigraphs);
   int function_like_macro_invoked =
-      hover_name && after_hover_name < request->source_length &&
+      has_hover_identifier && after_hover_name < request->source_length &&
       request->source[after_hover_name] == '(';
-  select_hover(snapshot, hover_name, hover_name_len,
+  select_hover(snapshot, request->source, request->source_length,
+               has_hover_identifier ? &hover_identifier : NULL,
+               builder.enable_trigraphs,
                function_like_macro_invoked);
   const char *member_object_name = NULL;
   size_t member_object_name_len = 0;
@@ -4382,13 +4534,19 @@ int ag_language_analyze_source(
       &member_uses_arrow);
   if (cursor_label_declaration)
     (void)select_hover_kind(
-        snapshot, hover_name, hover_name_len, AG_LANGUAGE_SYMBOL_LABEL);
+        snapshot, request->source, request->source_length,
+        has_hover_identifier ? &hover_identifier : NULL,
+        builder.enable_trigraphs, AG_LANGUAGE_SYMBOL_LABEL);
   else if (cursor_member_declaration || cursor_is_member_access)
     (void)select_hover_kind(
-        snapshot, hover_name, hover_name_len, AG_LANGUAGE_SYMBOL_MEMBER);
+        snapshot, request->source, request->source_length,
+        has_hover_identifier ? &hover_identifier : NULL,
+        builder.enable_trigraphs, AG_LANGUAGE_SYMBOL_MEMBER);
   else if (cursor_scoped_declaration)
     (void)select_hover_kind(
-        snapshot, hover_name, hover_name_len,
+        snapshot, request->source, request->source_length,
+        has_hover_identifier ? &hover_identifier : NULL,
+        builder.enable_trigraphs,
         declaration_kind(cursor_scoped_declaration));
   int unresolved_elided_identifier =
       (recovery_changed &

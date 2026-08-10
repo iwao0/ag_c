@@ -1162,6 +1162,14 @@ const genericSource = {
     "+ 0\n" +
     "#define GENERIC_AFTER_TRANSLATION 13\n" +
     "int generic_after_translation;\n" +
+    "int generic_literal_lf_\\\n" +
+    "value;\n" +
+    "int generic_literal_crlf_\\\r\n" +
+    "value;\n" +
+    "int generic_trigraph_lf_??/\n" +
+    "value;\n" +
+    "int generic_trigraph_crlf_??/\r\n" +
+    "value;\n" +
     "int generic_identity(int value) { return value; }\n" +
     "int generic_comment_invocation(void) { return GENERIC_INVOKED /* gap */ (); }\n" +
     "int generic_lf_invocation(void) { return GENERIC_INVOKED \\\n" +
@@ -1186,6 +1194,14 @@ const genericSource = {
     "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n" +
     "  result += _Generic(GENERIC_CALL(), int: 6, default: 0);\n" +
     "  result += GENERIC_TRIGRAPH_PREFIX + GENERIC_AFTER_TRANSLATION + generic_after_translation;\n" +
+    "  result += generic_literal_lf_\\\n" +
+    "value;\n" +
+    "  result += generic_literal_crlf_\\\r\n" +
+    "value;\n" +
+    "  result += generic_trigraph_lf_??/\n" +
+    "value;\n" +
+    "  result += generic_trigraph_crlf_??/\r\n" +
+    "value;\n" +
     "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n" +
     "  result += (int)sizeof(_Atomic /* type */ (GenericScore));\n" +
     "  result += (int)_Alignof /* query */ (const GenericScore *);\n" +
@@ -1596,6 +1612,119 @@ for (const analysisCase of genericHoverCases) {
     );
   } finally {
     freshCompiler.dispose();
+  }
+}
+
+const genericSplicedIdentifierCases = [
+  { name: "generic_literal_lf_value",
+    spelling: "generic_literal_lf_\\\nvalue" },
+  { name: "generic_literal_crlf_value",
+    spelling: "generic_literal_crlf_\\\r\nvalue" },
+  { name: "generic_trigraph_lf_value",
+    spelling: "generic_trigraph_lf_??/\nvalue" },
+  { name: "generic_trigraph_crlf_value",
+    spelling: "generic_trigraph_crlf_??/\r\nvalue" },
+].map((analysisCase) => {
+  const declaration = genericSource.source.indexOf(analysisCase.spelling);
+  const use = genericSource.source.indexOf(
+    analysisCase.spelling, declaration + analysisCase.spelling.length,
+  );
+  let splice = analysisCase.spelling.indexOf("\\");
+  if (splice < 0) splice = analysisCase.spelling.indexOf("??/");
+  const newline = analysisCase.spelling.indexOf("\n", splice);
+  if (declaration < 0 || use < 0 || splice < 0 || newline < 0) {
+    throw new Error(`spliced identifier anchors missing: ${analysisCase.name}`);
+  }
+  return {
+    ...analysisCase,
+    declaration,
+    use,
+    splice,
+    spliceLength: newline - splice + 1,
+  };
+});
+
+function assertGenericSplicedIdentifier(result, analysisCase, lifecycle) {
+  const declarationStart = Buffer.byteLength(
+    genericSource.source.slice(0, analysisCase.declaration),
+  );
+  const declarationEnd = declarationStart +
+    Buffer.byteLength(analysisCase.spelling);
+  if (result.partial || result.diagnostics.length !== 0 ||
+      result.hover?.name !== analysisCase.name ||
+      result.hover.kind !== "object" ||
+      result.hover.declaration.sourceName !== genericSource.name ||
+      !genericPositionEquals(
+        result.hover.declaration.start,
+        genericPositionAt(declarationStart),
+      ) ||
+      !genericPositionEquals(
+        result.hover.declaration.end,
+        genericPositionAt(declarationEnd),
+      )) {
+    throw new Error(
+      `${lifecycle} spliced identifier hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+const nativeSplicedSnapshots = new Map();
+for (const analysisCase of genericSplicedIdentifierCases) {
+  const cursorDeltas = [
+    0,
+    Math.floor(analysisCase.splice / 2),
+    analysisCase.splice,
+    analysisCase.splice + Math.floor(analysisCase.spliceLength / 2),
+    analysisCase.splice + analysisCase.spliceLength,
+    Buffer.byteLength(analysisCase.spelling),
+  ];
+  for (const location of [analysisCase.declaration, analysisCase.use]) {
+    for (const delta of cursorDeltas) {
+      const byteOffset = Buffer.byteLength(
+        genericSource.source.slice(0, location),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(genericSource, {
+        cursor: { sourceName: genericSource.name, byteOffset },
+      });
+      assertGenericSplicedIdentifier(
+        wasmResult, analysisCase, "reused instance",
+      );
+      const nativeResult = JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--generic-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      ));
+      assert.deepStrictEqual(
+        wasmResult,
+        nativeResult,
+        `native and Wasm spliced identifier snapshots differ at byte ${byteOffset}`,
+      );
+      nativeSplicedSnapshots.set(byteOffset, nativeResult);
+    }
+  }
+}
+
+for (const analysisCase of genericSplicedIdentifierCases) {
+  for (const location of [analysisCase.declaration, analysisCase.use]) {
+    const byteOffset = Buffer.byteLength(
+      genericSource.source.slice(0, location),
+    ) + analysisCase.splice + Math.floor(analysisCase.spliceLength / 2);
+    const freshCompiler = await createCompiler(wasmModule);
+    try {
+      const freshResult = freshCompiler.analyzeSource(genericSource, {
+        cursor: { sourceName: genericSource.name, byteOffset },
+      });
+      assertGenericSplicedIdentifier(
+        freshResult, analysisCase, "fresh instance",
+      );
+      assert.deepStrictEqual(
+        freshResult,
+        nativeSplicedSnapshots.get(byteOffset),
+        `fresh native/Wasm spliced identifier snapshot differs at byte ${byteOffset}`,
+      );
+    } finally {
+      freshCompiler.dispose();
+    }
   }
 }
 
