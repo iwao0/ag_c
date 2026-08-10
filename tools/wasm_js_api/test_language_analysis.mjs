@@ -1155,7 +1155,14 @@ const genericSource = {
     "int generic_value;\n" +
     "#define generic_value() 5\n" +
     "#define GENERIC_CALL() 6\n" +
+    "int GENERIC_INVOKED;\n" +
+    "#define GENERIC_INVOKED() 7\n" +
     "int generic_identity(int value) { return value; }\n" +
+    "int generic_comment_invocation(void) { return GENERIC_INVOKED /* gap */ (); }\n" +
+    "int generic_lf_invocation(void) { return GENERIC_INVOKED \\\n" +
+    "(); }\n" +
+    "int generic_crlf_invocation(void) { return GENERIC_INVOKED \\\r\n" +
+    "(); }\n" +
     "int generic_score(struct GenericPlayer value) { return value.score; }\n" +
     "int generic_pointer_score(const struct GenericPlayer *value) { return value ? value->score : 0; }\n" +
     "int generic_pointer_present(const void *value) { return value != 0; }\n" +
@@ -1200,6 +1207,11 @@ function findGenericName(name, from = 0) {
 
 const genericMacroDeclaration = findGenericName("GENERIC_MACRO");
 const genericCallMacroDeclaration = findGenericName("GENERIC_CALL");
+const genericInvokedObjectDeclaration = findGenericName("GENERIC_INVOKED");
+const genericInvokedMacroDeclaration = findGenericName(
+  "GENERIC_INVOKED",
+  genericInvokedObjectDeclaration + "GENERIC_INVOKED".length,
+);
 const genericTypedefDeclaration = findGenericName("GenericScore");
 const genericStructDeclaration = findGenericName("GenericPlayer");
 const genericUnionDeclaration = findGenericName("GenericPayload");
@@ -1207,6 +1219,24 @@ const genericEnumTagDeclaration = findGenericName("GenericState");
 const genericEnumDeclaration = findGenericName("GENERIC_MODE");
 const genericObjectDeclaration = findGenericName("generic_value");
 const genericFunctionDeclaration = findGenericName("generic_identity");
+const genericCommentInvocation = findGenericName(
+  "generic_comment_invocation", genericFunctionDeclaration,
+);
+const genericCommentMacroUse = findGenericName(
+  "GENERIC_INVOKED", genericCommentInvocation,
+);
+const genericLfInvocation = findGenericName(
+  "generic_lf_invocation", genericCommentMacroUse,
+);
+const genericLfMacroUse = findGenericName(
+  "GENERIC_INVOKED", genericLfInvocation,
+);
+const genericCrlfInvocation = findGenericName(
+  "generic_crlf_invocation", genericLfMacroUse,
+);
+const genericCrlfMacroUse = findGenericName(
+  "GENERIC_INVOKED", genericCrlfInvocation,
+);
 const genericFirstControl = findGenericName(
   "_Generic(generic_value", genericFunctionDeclaration,
 );
@@ -1374,6 +1404,12 @@ const genericHoverCases = [
     index: genericMacroUse },
   { name: "GENERIC_CALL", kind: "macro", replacement: "6",
     index: genericCallMacroUse },
+  { name: "GENERIC_INVOKED", kind: "macro", replacement: "7",
+    index: genericCommentMacroUse },
+  { name: "GENERIC_INVOKED", kind: "macro", replacement: "7",
+    index: genericLfMacroUse },
+  { name: "GENERIC_INVOKED", kind: "macro", replacement: "7",
+    index: genericCrlfMacroUse },
   { name: "GenericScore", kind: "typedef", index: genericTypedefUse },
   { name: "GenericScore", kind: "typedef",
     index: genericAtomicTypedefUse },
@@ -1411,6 +1447,7 @@ const genericDeclarations = new Map([
   ["GENERIC_MODE", genericEnumDeclaration],
   ["GENERIC_MACRO", genericMacroDeclaration],
   ["GENERIC_CALL", genericCallMacroDeclaration],
+  ["GENERIC_INVOKED", genericInvokedMacroDeclaration],
   ["GenericScore", genericTypedefDeclaration],
   ["GenericPlayer", genericStructDeclaration],
   ["GenericPayload", genericUnionDeclaration],
@@ -3701,6 +3738,38 @@ if (!semanticErrorResult.partial || semanticErrorResult.diagnostics.length === 0
     !symbol(semanticErrorResult, "before_error", "object") ||
     !symbol(semanticErrorResult, "local", "object")) {
   throw new Error(`semantic recovery lost partial symbols: ${JSON.stringify(semanticErrorResult)}`);
+}
+
+const incompleteMacroSource = {
+  name: "incomplete-macro.c",
+  source: "#define INCOMPLETE_CALL() 1\n" +
+    "int main(void) { return INCOMPLETE_CALL(",
+};
+const incompleteMacroStart = incompleteMacroSource.source.indexOf(
+  "INCOMPLETE_CALL(",
+);
+let incompleteMacroResult = null;
+let incompleteMacroError = null;
+try {
+  incompleteMacroResult = compiler.analyzeSource(incompleteMacroSource, {
+    cursor: {
+      sourceName: incompleteMacroSource.name,
+      byteOffset: incompleteMacroStart +
+        Math.floor("INCOMPLETE_CALL".length / 2),
+    },
+  });
+} catch (error) {
+  incompleteMacroError = error;
+}
+if (incompleteMacroResult
+  ? !incompleteMacroResult.partial ||
+    incompleteMacroResult.diagnostics.length === 0
+  : incompleteMacroError?.name !== "AgcLanguageAnalysisError" ||
+    !Array.isArray(incompleteMacroError.diagnostics) ||
+    incompleteMacroError.diagnostics.length === 0) {
+  throw new Error(
+    `incomplete macro invocation was marked complete: ${JSON.stringify(incompleteMacroResult || incompleteMacroError)}`,
+  );
 }
 
 const missingHeaderSource = {

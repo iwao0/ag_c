@@ -134,7 +134,14 @@ static const char generic_hover_source[] =
     "int generic_value;\n"
     "#define generic_value() 5\n"
     "#define GENERIC_CALL() 6\n"
+    "int GENERIC_INVOKED;\n"
+    "#define GENERIC_INVOKED() 7\n"
     "int generic_identity(int value) { return value; }\n"
+    "int generic_comment_invocation(void) { return GENERIC_INVOKED /* gap */ (); }\n"
+    "int generic_lf_invocation(void) { return GENERIC_INVOKED \\\n"
+    "(); }\n"
+    "int generic_crlf_invocation(void) { return GENERIC_INVOKED \\\r\n"
+    "(); }\n"
     "int generic_score(struct GenericPlayer value) { return value.score; }\n"
     "int generic_pointer_score(const struct GenericPlayer *value) { return value ? value->score : 0; }\n"
     "int generic_pointer_present(const void *value) { return value != 0; }\n"
@@ -2346,6 +2353,14 @@ int main(int argc, char **argv) {
       generic_hover_source, "GENERIC_MACRO");
   const char *generic_call_macro_declaration = strstr(
       generic_hover_source, "GENERIC_CALL");
+  const char *generic_invoked_object_declaration = strstr(
+      generic_hover_source, "GENERIC_INVOKED");
+  const char *generic_invoked_macro_declaration =
+      generic_invoked_object_declaration
+          ? strstr(generic_invoked_object_declaration +
+                       strlen("GENERIC_INVOKED"),
+                   "GENERIC_INVOKED")
+          : NULL;
   const char *generic_typedef_declaration = strstr(
       generic_hover_source, "GenericScore");
   const char *generic_struct_declaration = strstr(
@@ -2360,6 +2375,18 @@ int main(int argc, char **argv) {
       generic_hover_source, "generic_value");
   const char *generic_function_declaration = strstr(
       generic_hover_source, "generic_identity");
+  const char *generic_comment_invocation = strstr(
+      generic_function_declaration, "generic_comment_invocation");
+  const char *generic_comment_macro_use = strstr(
+      generic_comment_invocation, "GENERIC_INVOKED");
+  const char *generic_lf_invocation = strstr(
+      generic_comment_macro_use, "generic_lf_invocation");
+  const char *generic_lf_macro_use = strstr(
+      generic_lf_invocation, "GENERIC_INVOKED");
+  const char *generic_crlf_invocation = strstr(
+      generic_lf_macro_use, "generic_crlf_invocation");
+  const char *generic_crlf_macro_use = strstr(
+      generic_crlf_invocation, "GENERIC_INVOKED");
   const char *generic_first_control = strstr(
       generic_function_declaration, "_Generic(generic_value");
   const char *generic_first_object_use = strstr(
@@ -2478,11 +2505,16 @@ int main(int argc, char **argv) {
   const char *generic_association_value_use = strstr(
       generic_value_association, "generic_value");
   CHECK(generic_macro_declaration && generic_call_macro_declaration &&
+            generic_invoked_object_declaration &&
+            generic_invoked_macro_declaration &&
             generic_typedef_declaration &&
             generic_struct_declaration && generic_union_declaration &&
             generic_enum_tag_declaration &&
             generic_enum_declaration && generic_object_declaration &&
-            generic_function_declaration && generic_first_control &&
+            generic_function_declaration && generic_comment_invocation &&
+            generic_comment_macro_use && generic_lf_invocation &&
+            generic_lf_macro_use && generic_crlf_invocation &&
+            generic_crlf_macro_use && generic_first_control &&
             generic_first_object_use && generic_call_control &&
             generic_function_use && generic_argument_use &&
             generic_enum_control && generic_enum_use &&
@@ -2532,6 +2564,12 @@ int main(int argc, char **argv) {
        generic_macro_declaration, "", "9"},
       {generic_call_macro_use, "GENERIC_CALL", AG_LANGUAGE_SYMBOL_MACRO,
        generic_call_macro_declaration, "", "6"},
+      {generic_comment_macro_use, "GENERIC_INVOKED", AG_LANGUAGE_SYMBOL_MACRO,
+       generic_invoked_macro_declaration, "", "7"},
+      {generic_lf_macro_use, "GENERIC_INVOKED", AG_LANGUAGE_SYMBOL_MACRO,
+       generic_invoked_macro_declaration, "", "7"},
+      {generic_crlf_macro_use, "GENERIC_INVOKED", AG_LANGUAGE_SYMBOL_MACRO,
+       generic_invoked_macro_declaration, "", "7"},
       {generic_typedef_use, "GenericScore", AG_LANGUAGE_SYMBOL_TYPEDEF,
        generic_typedef_declaration, "", ""},
       {generic_atomic_typedef_use, "GenericScore",
@@ -4202,6 +4240,19 @@ int main(int argc, char **argv) {
             partial_identifier->range.start.offset == 0 &&
             partial_identifier->range.end.offset == 3,
         "incomplete declaration remains structured and partial");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  source = "#define INCOMPLETE_CALL() 1\n"
+           "int main(void) { return INCOMPLETE_CALL(";
+  const char *incomplete_macro = strstr(source, "INCOMPLETE_CALL(");
+  CHECK(incomplete_macro &&
+            analyze_named(
+                session, "incomplete-macro.c", source,
+                (size_t)(incomplete_macro - source) +
+                    strlen("INCOMPLETE_CALL") / 2,
+                analysis_game, defaults, &snapshot, &error),
+        "incomplete macro invocation");
+  CHECK(snapshot.partial && snapshot.diagnostic_count > 0,
+        "incomplete macro invocation stays partial");
   ag_language_analysis_snapshot_dispose(&snapshot);
   free(analysis_game.bytes);
 

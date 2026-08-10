@@ -188,9 +188,24 @@ static void identifier_at(const char *source, size_t length, size_t cursor,
   *name_length = end - start;
 }
 
+static size_t analysis_line_splice_size(
+    const char *source, size_t length, size_t cursor) {
+  if (!source || cursor >= length || source[cursor] != '\\') return 0;
+  if (cursor + 1 < length && source[cursor + 1] == '\n') return 2;
+  if (cursor + 2 < length && source[cursor + 1] == '\r' &&
+      source[cursor + 2] == '\n')
+    return 3;
+  return 0;
+}
+
 static size_t skip_analysis_space_and_comments(
     const char *source, size_t length, size_t cursor) {
   while (cursor < length) {
+    size_t splice_size = analysis_line_splice_size(source, length, cursor);
+    if (splice_size > 0) {
+      cursor += splice_size;
+      continue;
+    }
     if (isspace((unsigned char)source[cursor])) {
       cursor++;
       continue;
@@ -207,7 +222,14 @@ static size_t skip_analysis_space_and_comments(
     if (cursor + 1 < length && source[cursor] == '/' &&
         source[cursor + 1] == '/') {
       cursor += 2;
-      while (cursor < length && source[cursor] != '\n') cursor++;
+      while (cursor < length && source[cursor] != '\n') {
+        splice_size = analysis_line_splice_size(source, length, cursor);
+        if (splice_size > 0) {
+          cursor += splice_size;
+          continue;
+        }
+        cursor++;
+      }
       continue;
     }
     break;
@@ -799,9 +821,9 @@ static int analysis_declaration_modifier_word(
   return 0;
 }
 
-static int analysis_type_name_tail_end(
+static int analysis_delimited_tail_end(
     const char *source, size_t source_length, size_t start,
-    char terminator, size_t *tail_end) {
+    char terminator, int allow_top_level_comma, size_t *tail_end) {
   size_t paren_depth = 0;
   size_t bracket_depth = 0;
   size_t brace_depth = 0;
@@ -810,6 +832,12 @@ static int analysis_type_name_tail_end(
   int quote = 0;
   int escaped = 0;
   for (size_t cursor = start; cursor < source_length; cursor++) {
+    size_t splice_size = analysis_line_splice_size(
+        source, source_length, cursor);
+    if (splice_size > 0) {
+      cursor += splice_size - 1;
+      continue;
+    }
     char c = source[cursor];
     char next = cursor + 1 < source_length ? source[cursor + 1] : 0;
     if (line_comment) {
@@ -869,8 +897,8 @@ static int analysis_type_name_tail_end(
     } else if (c == '}') {
       if (brace_depth == 0) return 0;
       brace_depth--;
-    } else if ((c == ';' || c == ',') && paren_depth == 0 &&
-               bracket_depth == 0 && brace_depth == 0) {
+    } else if ((c == ';' || (c == ',' && !allow_top_level_comma)) &&
+               paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
       return 0;
     }
   }
@@ -1941,8 +1969,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
       tail_terminator = ':';
     else if (stack[stack_count - 1].open == '(')
       tail_terminator = ')';
-    if (tail_terminator && analysis_type_name_tail_end(
-            source, source_length, cursor_name_end, tail_terminator,
+    if (tail_terminator && analysis_delimited_tail_end(
+            source, source_length, cursor_name_end, tail_terminator, 0,
             &cursor_tag_tail_end)) {
       cursor_tag_has_tail = 1;
     }
@@ -2970,6 +2998,37 @@ static int add_macro_symbols(snapshot_builder_t *builder,
   return 1;
 }
 
+static int cursor_invokes_function_like_macro(
+    const ag_language_analysis_request_t *request,
+    const ag_preprocessor_context_t *preprocessor) {
+  if (!request || !preprocessor) return 0;
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(request->source, request->source_length,
+                request->cursor_byte_offset, &name, &name_length);
+  if (!name || name_length == 0) return 0;
+  size_t name_end = (size_t)(name - request->source) + name_length;
+  size_t after_name = skip_analysis_space_and_comments(
+      request->source, request->source_length, name_end);
+  if (after_name >= request->source_length ||
+      request->source[after_name] != '(')
+    return 0;
+  if (!analysis_delimited_tail_end(
+          request->source, request->source_length, after_name + 1,
+          ')', 1, NULL))
+    return 0;
+  int macro_count = pp_macro_count_in(preprocessor);
+  for (int macro_index = 0; macro_index < macro_count; macro_index++) {
+    ag_pp_macro_view_t view = {0};
+    if (pp_macro_view_at_in(preprocessor, macro_index, &view) &&
+        view.is_function_like && view.name && view.name_len > 0 &&
+        (size_t)view.name_len == name_length &&
+        memcmp(view.name, name, name_length) == 0)
+      return 1;
+  }
+  return 0;
+}
+
 static int member_base_at_cursor(
     const ag_language_analysis_request_t *request,
     const char **object_name, size_t *object_name_len, int *uses_arrow) {
@@ -3459,6 +3518,18 @@ static int elide_failed_statement(
   return 1;
 }
 
+static int elide_cursor_statement(char *source, size_t cursor) {
+  if (!source || source[cursor] != ';') return 0;
+  size_t start = cursor;
+  while (start > 0 && source[start - 1] != ';' &&
+         source[start - 1] != '{' && source[start - 1] != '}')
+    start--;
+  if (start >= cursor) return 0;
+  for (size_t i = start; i < cursor; i++)
+    if (source[i] != '\n' && source[i] != '\r') source[i] = ' ';
+  return 1;
+}
+
 typedef struct {
   ag_compilation_session_t *session;
   tokenizer_context_t *tokenizer;
@@ -3895,11 +3966,21 @@ int ag_language_analyze_source(
   int retry_attempted = 0;
   ag_diagnostic_context_t *diagnostic_context =
       ag_compilation_session_diagnostic_context(session);
+  int retry_recovery_ready = 0;
+  int semantic_macro_invocation =
+      parse_state->semantic_diagnostic.code &&
+      cursor_invokes_function_like_macro(
+          request, ag_compilation_session_preprocessor_context(session));
   if (parse_state->fatal_recovered &&
-      save_last_diagnostic(diagnostic_context, &saved_fatal) &&
-      elide_failed_statement(
-          recovery_source, request->cursor_byte_offset,
-          &saved_fatal, request->source_name)) {
+      save_last_diagnostic(diagnostic_context, &saved_fatal)) {
+    retry_recovery_ready = elide_failed_statement(
+        recovery_source, request->cursor_byte_offset,
+        &saved_fatal, request->source_name);
+  } else if (semantic_macro_invocation) {
+    retry_recovery_ready = elide_cursor_statement(
+        recovery_source, request->cursor_byte_offset);
+  }
+  if (retry_recovery_ready) {
     parse_state->recovery_source_owned = NULL;
     parse_state->documentation_index_owned = NULL;
     finish_analysis_parse_state(parse_state);
