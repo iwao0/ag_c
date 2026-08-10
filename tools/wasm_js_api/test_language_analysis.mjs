@@ -1491,6 +1491,10 @@ const functionDeclaratorSource = {
     "typedef int Scalar;\n" +
     "int takes_scalar(Scalar);\n" +
     "int parameter_prototype(int named, const int *pointer, int proto_callback(int));\n" +
+    "int tagged_parameter_prototype(struct /* scope */ PrototypeRecord { int member; } value);\n" +
+    "int nested_tag_parameter_prototype(int callback(union /* scope */ NestedPayload { int member; } value));\n" +
+    "int enum_parameter_prototype(enum /* scope */ PrototypeState { PROTOTYPE_READY = 3, PROTOTYPE_BUSY } value);\n" +
+    "int nested_enum_parameter_prototype(int callback(enum /* scope */ NestedState { NESTED_READY = 7 } value));\n" +
     "int unicode_parameter(int 値) { return 値; }\n" +
     "int (parenthesized)(int value) { return value + 1; }\n" +
     "int target(int value);\n" +
@@ -1551,6 +1555,19 @@ const functionParameterCases = [
     declarationAnchor: "(int seed))" },
 ];
 const nativeFunctionParameterSnapshots = new Map();
+const functionParameterTagCases = [
+  { name: "PrototypeRecord", type: "struct PrototypeRecord", scopeDepth: 1 },
+  { name: "NestedPayload", type: "union NestedPayload", scopeDepth: 2 },
+  { name: "PrototypeState", type: "enum PrototypeState", scopeDepth: 1 },
+  { name: "NestedState", type: "enum NestedState", scopeDepth: 2 },
+];
+const nativeFunctionParameterTagSnapshots = new Map();
+const functionParameterEnumCases = [
+  { name: "PROTOTYPE_READY", value: "3", scopeDepth: 1 },
+  { name: "PROTOTYPE_BUSY", value: "4", scopeDepth: 1 },
+  { name: "NESTED_READY", value: "7", scopeDepth: 2 },
+];
+const nativeFunctionParameterEnumSnapshots = new Map();
 
 function functionDeclaratorByteOffset(stringIndex) {
   return stringIndex < 0
@@ -1619,6 +1636,52 @@ function assertFunctionParameterHover(result, analysisCase, lifecycle) {
   }
 }
 
+function functionScopedDeclarationStart(analysisCase) {
+  return functionDeclaratorByteOffset(
+    functionDeclaratorSource.source.indexOf(analysisCase.name),
+  );
+}
+
+function assertFunctionParameterTagHover(result, analysisCase, lifecycle) {
+  const declarationStart = functionScopedDeclarationStart(analysisCase);
+  const hover = result.hover;
+  if (declarationStart < 0 || result.partial ||
+      result.diagnostics.length !== 0 ||
+      hover?.name !== analysisCase.name || hover.kind !== "tag" ||
+      hover.nameSpace !== "tag" || hover.type !== analysisCase.type ||
+      hover.signature !== "" || hover.storageClass !== "" ||
+      hover.scopeDepth !== analysisCase.scopeDepth || hover.definition !== null ||
+      hover.declaration.sourceName !== functionDeclaratorSource.name ||
+      hover.declaration.start.offset !== declarationStart ||
+      hover.declaration.end.offset !==
+        declarationStart + Buffer.byteLength(analysisCase.name)) {
+    throw new Error(
+      `${lifecycle} function prototype-scope tag hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertFunctionParameterEnumHover(result, analysisCase, lifecycle) {
+  const declarationStart = functionScopedDeclarationStart(analysisCase);
+  const hover = result.hover;
+  if (declarationStart < 0 || result.partial ||
+      result.diagnostics.length !== 0 ||
+      hover?.name !== analysisCase.name || hover.kind !== "enumConstant" ||
+      hover.nameSpace !== "ordinary" || hover.type !== "int" ||
+      hover.signature !== "" || hover.storageClass !== "" ||
+      hover.scopeDepth !== analysisCase.scopeDepth || hover.definition !== null ||
+      hover.initializer?.state !== "explicitConstant" ||
+      hover.initializer.constantValue !== analysisCase.value ||
+      hover.declaration.sourceName !== functionDeclaratorSource.name ||
+      hover.declaration.start.offset !== declarationStart ||
+      hover.declaration.end.offset !==
+        declarationStart + Buffer.byteLength(analysisCase.name)) {
+    throw new Error(
+      `${lifecycle} function prototype-scope enum hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
 for (const analysisCase of functionDeclaratorCases) {
   const declarationStart = functionDeclaratorByteOffset(
     functionDeclaratorSource.source.indexOf(analysisCase.name),
@@ -1678,6 +1741,56 @@ for (const analysisCase of functionParameterCases) {
   }
 }
 
+for (const analysisCase of functionParameterTagCases) {
+  const declarationStart = functionScopedDeclarationStart(analysisCase);
+  const nameByteLength = Buffer.byteLength(analysisCase.name);
+  for (const delta of [0, Math.floor(nameByteLength / 2), nameByteLength]) {
+    const byteOffset = declarationStart + delta;
+    const wasmResult = compiler.analyzeSource(functionDeclaratorSource, {
+      cursor: { sourceName: functionDeclaratorSource.name, byteOffset },
+    });
+    assertFunctionParameterTagHover(
+      wasmResult, analysisCase, "reused instance",
+    );
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--function-declarator-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm function prototype-scope tag snapshots differ at byte ${byteOffset}`,
+    );
+    nativeFunctionParameterTagSnapshots.set(byteOffset, nativeResult);
+  }
+}
+
+for (const analysisCase of functionParameterEnumCases) {
+  const declarationStart = functionScopedDeclarationStart(analysisCase);
+  const nameByteLength = Buffer.byteLength(analysisCase.name);
+  for (const delta of [0, Math.floor(nameByteLength / 2), nameByteLength]) {
+    const byteOffset = declarationStart + delta;
+    const wasmResult = compiler.analyzeSource(functionDeclaratorSource, {
+      cursor: { sourceName: functionDeclaratorSource.name, byteOffset },
+    });
+    assertFunctionParameterEnumHover(
+      wasmResult, analysisCase, "reused instance",
+    );
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--function-declarator-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm function prototype-scope enum snapshots differ at byte ${byteOffset}`,
+    );
+    nativeFunctionParameterEnumSnapshots.set(byteOffset, nativeResult);
+  }
+}
+
 for (const analysisCase of functionDeclaratorCases) {
   const declarationStart = functionDeclaratorByteOffset(
     functionDeclaratorSource.source.indexOf(analysisCase.name),
@@ -1720,6 +1833,50 @@ for (const analysisCase of functionParameterCases) {
       freshResult,
       nativeFunctionParameterSnapshots.get(byteOffset),
       `fresh native/Wasm function parameter snapshot differs at byte ${byteOffset}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
+for (const analysisCase of functionParameterTagCases) {
+  const byteOffset = functionScopedDeclarationStart(analysisCase) +
+    Math.floor(Buffer.byteLength(analysisCase.name) / 2);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(
+      functionDeclaratorSource,
+      { cursor: { sourceName: functionDeclaratorSource.name, byteOffset } },
+    );
+    assertFunctionParameterTagHover(
+      freshResult, analysisCase, "fresh instance",
+    );
+    assert.deepStrictEqual(
+      freshResult,
+      nativeFunctionParameterTagSnapshots.get(byteOffset),
+      `fresh native/Wasm function prototype-scope tag snapshot differs at byte ${byteOffset}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
+for (const analysisCase of functionParameterEnumCases) {
+  const byteOffset = functionScopedDeclarationStart(analysisCase) +
+    Math.floor(Buffer.byteLength(analysisCase.name) / 2);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(
+      functionDeclaratorSource,
+      { cursor: { sourceName: functionDeclaratorSource.name, byteOffset } },
+    );
+    assertFunctionParameterEnumHover(
+      freshResult, analysisCase, "fresh instance",
+    );
+    assert.deepStrictEqual(
+      freshResult,
+      nativeFunctionParameterEnumSnapshots.get(byteOffset),
+      `fresh native/Wasm function prototype-scope enum snapshot differs at byte ${byteOffset}`,
     );
   } finally {
     freshCompiler.dispose();

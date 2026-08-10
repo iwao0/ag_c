@@ -1101,11 +1101,27 @@ static char *build_function_parameter_recovery_source(
                   source, length, candidate_end, 0, 0,
                   &declaration_end, &is_definition,
                   &function_body_open) &&
-              is_definition && function_body_open != SIZE_MAX &&
               candidate_end <= selected_start &&
-              selected_end <= function_body_open) {
+              selected_end <= (is_definition
+                                   ? function_body_open
+                                   : declaration_end)) {
             static const char marker[] =
                 "\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+            if (!is_definition) {
+              if (declaration_end > SIZE_MAX - sizeof(marker)) return NULL;
+              size_t result_length =
+                  declaration_end + sizeof(marker) - 1;
+              char *result = malloc(result_length + 1);
+              if (!result) return NULL;
+              memcpy(result, source, declaration_end);
+              memcpy(result + declaration_end,
+                     marker, sizeof(marker) - 1);
+              result[result_length] = '\0';
+              if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+              if (source_consumed) *source_consumed = declaration_end;
+              return result;
+            }
+            if (function_body_open == SIZE_MAX) return NULL;
             size_t prefix_length = function_body_open + 1;
             if (declaration_end < prefix_length) return NULL;
             size_t tail_length = declaration_end - prefix_length;
@@ -1370,11 +1386,6 @@ static char *build_recovery_source(const char *source, size_t source_length,
                                    size_t cursor,
                                    int *changed) {
   size_t source_consumed = cursor;
-  char *enum_recovery = build_enum_declaration_recovery_source(
-      source, source_length, cursor, changed, &source_consumed);
-  if (enum_recovery)
-    return append_conditional_validation_tail(
-        enum_recovery, source, source_length, source_consumed);
   char *function_parameter_recovery =
       build_function_parameter_recovery_source(
           source, source_length, cursor, changed, &source_consumed);
@@ -1382,6 +1393,11 @@ static char *build_recovery_source(const char *source, size_t source_length,
     return append_conditional_validation_tail(
         function_parameter_recovery, source, source_length,
         source_consumed);
+  char *enum_recovery = build_enum_declaration_recovery_source(
+      source, source_length, cursor, changed, &source_consumed);
+  if (enum_recovery)
+    return append_conditional_validation_tail(
+        enum_recovery, source, source_length, source_consumed);
   char *function_recovery =
       build_function_declaration_recovery_source(
           source, source_length, cursor, changed, &source_consumed);
@@ -2773,7 +2789,7 @@ static void select_hover(ag_language_analysis_snapshot_t *snapshot,
 }
 
 static const psx_scope_declaration_t *
-parameter_declaration_at_cursor(
+ordinary_scoped_declaration_at_cursor(
     const psx_scope_graph_t *scope_graph,
     const ag_language_analysis_request_t *request) {
   if (!scope_graph || !request || !request->source ||
@@ -2792,18 +2808,70 @@ parameter_declaration_at_cursor(
   for (size_t i = declaration_count; i > 0; i--) {
     const psx_scope_declaration_t *declaration =
         psx_scope_graph_declaration_at(scope_graph, i - 1);
-    int is_parameter = declaration &&
-        (declaration->kind == PSX_DECL_PARAMETER ||
+    int is_scoped_ordinary = declaration &&
+        declaration->name_space == PSX_NAMESPACE_ORDINARY &&
+        (declaration->kind == PSX_DECL_ENUM_CONSTANT ||
+         declaration->kind == PSX_DECL_PARAMETER ||
          (declaration->kind == PSX_DECL_LOCAL_OBJECT &&
           declaration->payload &&
           ps_lvar_is_param((const lvar_t *)declaration->payload)));
-    if (!is_parameter || !declaration->name ||
+    if (!is_scoped_ordinary || !declaration->name ||
         declaration->name_len != (int)name_length ||
         memcmp(declaration->name, name, name_length) != 0 ||
         !declaration->source_name ||
         strcmp(declaration->source_name, request->source_name) != 0 ||
         declaration->source_byte_offset != (int)name_start ||
         declaration->source_byte_length != (int)name_length)
+      continue;
+    return declaration;
+  }
+  return NULL;
+}
+
+static const psx_scope_declaration_t *tag_declaration_at_cursor(
+    const psx_scope_graph_t *scope_graph,
+    const ag_language_analysis_request_t *request) {
+  if (!scope_graph || !request || !request->source ||
+      !request->source_name)
+    return NULL;
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(
+      request->source, request->source_length,
+      request->cursor_byte_offset, &name, &name_length);
+  if (!name || name_length == 0 || name_length > INT_MAX) return NULL;
+  size_t name_start = (size_t)(name - request->source);
+  if (name_start > INT_MAX) return NULL;
+  size_t declaration_count =
+      psx_scope_graph_declaration_count(scope_graph);
+  for (size_t i = declaration_count; i > 0; i--) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(scope_graph, i - 1);
+    if (!declaration || declaration->kind != PSX_DECL_TAG ||
+        declaration->name_space != PSX_NAMESPACE_TAG ||
+        !declaration->name ||
+        declaration->name_len != (int)name_length ||
+        memcmp(declaration->name, name, name_length) != 0 ||
+        !declaration->source_name || !declaration->source_input ||
+        strcmp(declaration->source_name, request->source_name) != 0 ||
+        declaration->source_byte_offset < 0 ||
+        declaration->source_byte_length < 0)
+      continue;
+    size_t source_length = strlen(declaration->source_input);
+    size_t declaration_start =
+        (size_t)declaration->source_byte_offset;
+    size_t declaration_length =
+        (size_t)declaration->source_byte_length;
+    if (declaration_start > source_length ||
+        declaration_length > source_length - declaration_start)
+      continue;
+    size_t declaration_end = declaration_start + declaration_length;
+    size_t declaration_name_start = skip_analysis_space_and_comments(
+        declaration->source_input, source_length, declaration_end);
+    if (declaration_name_start != name_start ||
+        name_length > source_length - declaration_name_start ||
+        memcmp(declaration->source_input + declaration_name_start,
+               name, name_length) != 0)
       continue;
     return declaration;
   }
@@ -3397,16 +3465,21 @@ int ag_language_analyze_source(
       : final_parse->has_semantic_lookup_point
             ? final_parse->semantic_lookup_point
             : psx_scope_graph_capture_lookup_point(scope_graph);
-  const psx_scope_declaration_t *cursor_parameter =
-      parameter_declaration_at_cursor(scope_graph, request);
-  if (cursor_parameter &&
+  const psx_scope_declaration_t *cursor_ordinary_declaration =
+      ordinary_scoped_declaration_at_cursor(scope_graph, request);
+  const psx_scope_declaration_t *cursor_scoped_declaration =
+      cursor_ordinary_declaration
+          ? cursor_ordinary_declaration
+          : tag_declaration_at_cursor(scope_graph, request);
+  if (cursor_scoped_declaration &&
       psx_scope_graph_lookup(
-          scope_graph, cursor_parameter->name_space,
-          cursor_parameter->name, cursor_parameter->name_len,
-          point) != cursor_parameter->id) {
+          scope_graph, cursor_scoped_declaration->name_space,
+          cursor_scoped_declaration->name,
+          cursor_scoped_declaration->name_len,
+          point) != cursor_scoped_declaration->id) {
     point = (psx_scope_lookup_point_t){
-        cursor_parameter->scope_id,
-        cursor_parameter->declaration_order,
+        cursor_scoped_declaration->scope_id,
+        cursor_scoped_declaration->declaration_order,
     };
   }
   psx_semantic_context_t *semantic_context =

@@ -183,6 +183,10 @@ static const char function_declarator_hover_source[] =
     "typedef int Scalar;\n"
     "int takes_scalar(Scalar);\n"
     "int parameter_prototype(int named, const int *pointer, int proto_callback(int));\n"
+    "int tagged_parameter_prototype(struct /* scope */ PrototypeRecord { int member; } value);\n"
+    "int nested_tag_parameter_prototype(int callback(union /* scope */ NestedPayload { int member; } value));\n"
+    "int enum_parameter_prototype(enum /* scope */ PrototypeState { PROTOTYPE_READY = 3, PROTOTYPE_BUSY } value);\n"
+    "int nested_enum_parameter_prototype(int callback(enum /* scope */ NestedState { NESTED_READY = 7 } value));\n"
     "int unicode_parameter(int 値) { return 値; }\n"
     "int (parenthesized)(int value) { return value + 1; }\n"
     "int target(int value);\n"
@@ -2954,6 +2958,117 @@ int main(int argc, char **argv) {
                           function_declarator_hover_source + name_length) &&
                 !snapshot.partial && snapshot.diagnostic_count == 0,
             "function parameter hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  struct {
+    const char *name;
+    const char *type;
+    int scope_depth;
+  } function_parameter_tag_cases[] = {
+      {"PrototypeRecord", "struct PrototypeRecord", 1},
+      {"NestedPayload", "union NestedPayload", 2},
+      {"PrototypeState", "enum PrototypeState", 1},
+      {"NestedState", "enum NestedState", 2},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(function_parameter_tag_cases) /
+                        sizeof(function_parameter_tag_cases[0]);
+       case_index++) {
+    const char *name = strstr(
+        function_declarator_hover_source,
+        function_parameter_tag_cases[case_index].name);
+    size_t name_length = strlen(
+        function_parameter_tag_cases[case_index].name);
+    size_t cursor_deltas[] = {0, name_length / 2, name_length};
+    CHECK(name, "function prototype-scope tag hover anchor");
+    for (size_t cursor_index = 0;
+         cursor_index < sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+         cursor_index++) {
+      CHECK(analyze_named(
+                session, "function-declarator.c",
+                function_declarator_hover_source,
+                (size_t)(name - function_declarator_hover_source) +
+                    cursor_deltas[cursor_index],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "function prototype-scope tag hover analysis");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      CHECK(hover && hover->kind == AG_LANGUAGE_SYMBOL_TAG &&
+                hover->name_space == AG_LANGUAGE_NAMESPACE_TAG &&
+                strcmp(hover->name,
+                       function_parameter_tag_cases[case_index].name) == 0 &&
+                strcmp(hover->type,
+                       function_parameter_tag_cases[case_index].type) == 0 &&
+                strcmp(hover->signature, "") == 0 &&
+                strcmp(hover->storage_class, "") == 0 &&
+                hover->scope_depth ==
+                    function_parameter_tag_cases[case_index].scope_depth &&
+                !hover->has_definition &&
+                hover->declaration.start.offset ==
+                    (int)(name - function_declarator_hover_source) &&
+                hover->declaration.end.offset ==
+                    (int)(name - function_declarator_hover_source +
+                          name_length) &&
+                !snapshot.partial && snapshot.diagnostic_count == 0,
+            "function prototype-scope tag hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  struct {
+    const char *name;
+    const char *value;
+    int scope_depth;
+  } function_parameter_enum_cases[] = {
+      {"PROTOTYPE_READY", "3", 1},
+      {"PROTOTYPE_BUSY", "4", 1},
+      {"NESTED_READY", "7", 2},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(function_parameter_enum_cases) /
+                        sizeof(function_parameter_enum_cases[0]);
+       case_index++) {
+    const char *name = strstr(
+        function_declarator_hover_source,
+        function_parameter_enum_cases[case_index].name);
+    size_t name_length = strlen(
+        function_parameter_enum_cases[case_index].name);
+    size_t cursor_deltas[] = {0, name_length / 2, name_length};
+    CHECK(name, "function prototype-scope enum hover anchor");
+    for (size_t cursor_index = 0;
+         cursor_index < sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+         cursor_index++) {
+      CHECK(analyze_named(
+                session, "function-declarator.c",
+                function_declarator_hover_source,
+                (size_t)(name - function_declarator_hover_source) +
+                    cursor_deltas[cursor_index],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "function prototype-scope enum hover analysis");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      CHECK(hover &&
+                hover->kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT &&
+                hover->name_space == AG_LANGUAGE_NAMESPACE_ORDINARY &&
+                strcmp(hover->name,
+                       function_parameter_enum_cases[case_index].name) == 0 &&
+                strcmp(hover->type, "int") == 0 &&
+                strcmp(hover->signature, "") == 0 &&
+                strcmp(hover->storage_class, "") == 0 &&
+                hover->initializer_state ==
+                    AG_LANGUAGE_INITIALIZER_EXPLICIT_CONSTANT &&
+                strcmp(hover->constant_value,
+                       function_parameter_enum_cases[case_index].value) == 0 &&
+                hover->scope_depth ==
+                    function_parameter_enum_cases[case_index].scope_depth &&
+                !hover->has_definition &&
+                hover->declaration.start.offset ==
+                    (int)(name - function_declarator_hover_source) &&
+                hover->declaration.end.offset ==
+                    (int)(name - function_declarator_hover_source +
+                          name_length) &&
+                !snapshot.partial && snapshot.diagnostic_count == 0,
+            "function prototype-scope enum hover fields");
       ag_language_analysis_snapshot_dispose(&snapshot);
     }
   }
