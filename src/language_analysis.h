@@ -14,6 +14,7 @@ typedef enum {
   AG_LANGUAGE_SYMBOL_TAG,
   AG_LANGUAGE_SYMBOL_MEMBER,
   AG_LANGUAGE_SYMBOL_MACRO,
+  AG_LANGUAGE_SYMBOL_LABEL,
 } ag_language_symbol_kind_t;
 
 typedef enum {

@@ -14,6 +14,7 @@
 #include "frontend/translation_unit.h"
 #include "frontend/translation_unit_resolver.h"
 #include "language_documentation.h"
+#include "parser/ast.h"
 #include "parser/function_public.h"
 #include "parser/gvar_public.h"
 #include "parser/local_registry.h"
@@ -362,88 +363,171 @@ static int record_body_open_at(
   return 1;
 }
 
-static int analysis_source_delimiters_are_balanced(
-    const char *source, size_t length) {
-  if (!source || (length > 0 && source[length - 1] == '\\')) return 0;
-  int paren_depth = 0;
-  int bracket_depth = 0;
-  int brace_depth = 0;
-  int line_comment = 0;
-  int block_comment = 0;
-  int quote = 0;
+typedef struct {
+  int paren_depth;
+  int bracket_depth;
+  int brace_depth;
+  int pending_conditional_count;
+  int line_comment;
+  int block_comment;
+  int quote;
+  int preprocessor_line;
+  size_t last_word_start;
+  size_t last_word_length;
+} analysis_source_prefix_state_t;
+
+static int analysis_source_prefix_state(
+    const char *source, size_t length,
+    analysis_source_prefix_state_t *state) {
+  if (!source || !state) return 0;
+  *state = (analysis_source_prefix_state_t){0};
   int escaped = 0;
   int at_line_start = 1;
-  int preprocessor_line = 0;
   for (size_t i = 0; i < length; i++) {
     char c = source[i];
     char next = i + 1 < length ? source[i + 1] : 0;
-    if (line_comment) {
+    if (state->line_comment) {
       if (c == '\n') {
-        line_comment = 0;
+        state->line_comment = 0;
         at_line_start = 1;
-        preprocessor_line = 0;
+        state->preprocessor_line = 0;
       }
       continue;
     }
-    if (block_comment) {
+    if (state->block_comment) {
       if (c == '*' && next == '/') {
-        block_comment = 0;
+        state->block_comment = 0;
         i++;
       }
       continue;
     }
-    if (quote) {
+    if (state->quote) {
       if (escaped) escaped = 0;
       else if (c == '\\') escaped = 1;
-      else if (c == quote) quote = 0;
+      else if (c == state->quote) state->quote = 0;
       continue;
     }
     if (c == '/' && next == '/') {
-      line_comment = 1;
+      state->line_comment = 1;
       i++;
       continue;
     }
     if (c == '/' && next == '*') {
-      block_comment = 1;
+      state->block_comment = 1;
       i++;
       continue;
     }
     if (c == '\'' || c == '"') {
-      quote = c;
+      state->quote = c;
       at_line_start = 0;
       continue;
     }
     if (c == '\n') {
-      if (!preprocessor_line || i == 0 || source[i - 1] != '\\')
-        preprocessor_line = 0;
+      if (!state->preprocessor_line || i == 0 || source[i - 1] != '\\')
+        state->preprocessor_line = 0;
       at_line_start = 1;
       continue;
     }
     if (at_line_start &&
         (c == ' ' || c == '\t' || c == '\r'))
       continue;
-    if (at_line_start && c == '#') preprocessor_line = 1;
+    if (at_line_start && c == '#') state->preprocessor_line = 1;
     at_line_start = 0;
-    if (preprocessor_line) continue;
+    if (state->preprocessor_line) continue;
+    if (is_identifier_byte((unsigned char)c)) {
+      size_t word_start = i;
+      while (i + 1 < length &&
+             is_identifier_byte((unsigned char)source[i + 1]))
+        i++;
+      state->last_word_start = word_start;
+      state->last_word_length = i + 1 - word_start;
+      continue;
+    }
     if (c == '(') {
-      paren_depth++;
+      state->paren_depth++;
     } else if (c == ')') {
-      if (paren_depth == 0) return 0;
-      paren_depth--;
+      if (state->paren_depth == 0) return 0;
+      state->paren_depth--;
     } else if (c == '[') {
-      bracket_depth++;
+      state->bracket_depth++;
     } else if (c == ']') {
-      if (bracket_depth == 0) return 0;
-      bracket_depth--;
+      if (state->bracket_depth == 0) return 0;
+      state->bracket_depth--;
     } else if (c == '{') {
-      brace_depth++;
+      state->brace_depth++;
     } else if (c == '}') {
-      if (brace_depth == 0) return 0;
-      brace_depth--;
+      if (state->brace_depth == 0) return 0;
+      state->brace_depth--;
+    } else if (c == '?') {
+      state->pending_conditional_count++;
+    } else if (c == ':' && state->pending_conditional_count > 0) {
+      state->pending_conditional_count--;
+    } else if (c == ';') {
+      state->pending_conditional_count = 0;
     }
   }
-  return !block_comment && !quote && paren_depth == 0 &&
-         bracket_depth == 0 && brace_depth == 0;
+  return 1;
+}
+
+static int analysis_prefix_last_word_is(
+    const char *source, const analysis_source_prefix_state_t *state,
+    const char *word) {
+  if (!source || !state || !word) return 0;
+  size_t word_length = strlen(word);
+  return state->last_word_length == word_length &&
+         memcmp(source + state->last_word_start, word, word_length) == 0;
+}
+
+static int analysis_source_delimiters_are_balanced(
+    const char *source, size_t length) {
+  if (!source || (length > 0 && source[length - 1] == '\\')) return 0;
+  analysis_source_prefix_state_t state;
+  return analysis_source_prefix_state(source, length, &state) &&
+         !state.block_comment && !state.quote &&
+         state.paren_depth == 0 && state.bracket_depth == 0 &&
+         state.brace_depth == 0;
+}
+
+static char *build_jump_label_recovery_source(
+    const char *source, size_t length, size_t cursor, int *changed) {
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(source, length, cursor, &name, &name_length);
+  if (!name || name_length == 0) return NULL;
+  size_t name_start = (size_t)(name - source);
+  size_t name_end = name_start + name_length;
+  size_t after_name = skip_analysis_space_and_comments(
+      source, length, name_end);
+  analysis_source_prefix_state_t prefix;
+  if (!analysis_source_prefix_state(source, name_start, &prefix) ||
+      prefix.line_comment || prefix.block_comment || prefix.quote ||
+      prefix.preprocessor_line || prefix.paren_depth != 0 ||
+      prefix.bracket_depth != 0 || prefix.brace_depth <= 0 ||
+      !analysis_source_delimiters_are_balanced(source, length))
+    return NULL;
+
+  int is_goto_name =
+      analysis_prefix_last_word_is(source, &prefix, "goto") &&
+      after_name < length && source[after_name] == ';';
+  int is_label_name =
+      after_name < length && source[after_name] == ':' &&
+      prefix.pending_conditional_count == 0 &&
+      !analysis_prefix_last_word_is(source, &prefix, "case") &&
+      !(name_length == strlen("default") &&
+        memcmp(name, "default", strlen("default")) == 0);
+  if (is_label_name) {
+    size_t record_open = 0;
+    if (record_body_open_at(source, name_start, &record_open))
+      is_label_name = 0;
+  }
+  if (!is_goto_name && !is_label_name) return NULL;
+
+  char *result = malloc(length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, length);
+  result[length] = '\0';
+  if (changed) *changed = 0;
+  return result;
 }
 
 static char *build_record_member_recovery_source(
@@ -1557,6 +1641,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
     return append_conditional_validation_tail(
         record_member_recovery, source, source_length,
         source_consumed);
+  char *jump_label_recovery = build_jump_label_recovery_source(
+      source, source_length, cursor, changed);
+  if (jump_label_recovery) return jump_label_recovery;
   char *function_recovery =
       build_function_declaration_recovery_source(
           source, source_length, cursor, changed, &source_consumed);
@@ -2262,6 +2349,7 @@ static const char *symbol_kind_name(ag_language_symbol_kind_t kind) {
     case AG_LANGUAGE_SYMBOL_TAG: return "tag";
     case AG_LANGUAGE_SYMBOL_MEMBER: return "member";
     case AG_LANGUAGE_SYMBOL_MACRO: return "macro";
+    case AG_LANGUAGE_SYMBOL_LABEL: return "label";
   }
   return "unknown";
 }
@@ -2452,6 +2540,7 @@ static ag_language_symbol_kind_t declaration_kind(
     case PSX_DECL_ENUM_CONSTANT: return AG_LANGUAGE_SYMBOL_ENUM_CONSTANT;
     case PSX_DECL_TAG: return AG_LANGUAGE_SYMBOL_TAG;
     case PSX_DECL_MEMBER: return AG_LANGUAGE_SYMBOL_MEMBER;
+    case PSX_DECL_LABEL: return AG_LANGUAGE_SYMBOL_LABEL;
     case PSX_DECL_PARAMETER: return AG_LANGUAGE_SYMBOL_PARAMETER;
     case PSX_DECL_LOCAL_OBJECT:
       if (declaration->payload &&
@@ -2740,6 +2829,23 @@ static int add_declaration_symbol(
   if (symbol->kind == AG_LANGUAGE_SYMBOL_MEMBER) {
     free(symbol->storage_class);
     symbol->storage_class = snapshot_copy(builder, "member");
+  }
+  if (symbol->kind == AG_LANGUAGE_SYMBOL_LABEL) {
+    size_t name_length = strlen(symbol->name);
+    if (name_length > (size_t)builder->limits.max_string_bytes - 1) {
+      builder_limit(builder, "maxAnalysisStringBytes",
+                    "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES",
+                    (size_t)builder->limits.max_string_bytes,
+                    name_length + 1);
+    } else {
+      free(symbol->signature);
+      symbol->signature = snapshot_alloc(builder, name_length + 2);
+      if (symbol->signature) {
+        memcpy(symbol->signature, symbol->name, name_length);
+        symbol->signature[name_length] = ':';
+        symbol->signature[name_length + 1] = '\0';
+      }
+    }
   }
   free(symbol->constant_value);
   symbol->constant_value = NULL;
@@ -3082,6 +3188,27 @@ static const psx_scope_declaration_t *member_declaration_at_cursor(
   return NULL;
 }
 
+static const psx_scope_declaration_t *label_declaration_at_cursor(
+    const psx_scope_graph_t *scope_graph,
+    const ag_language_analysis_request_t *request,
+    psx_scope_lookup_point_t point) {
+  if (!scope_graph || !request || !request->source) return NULL;
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(
+      request->source, request->source_length,
+      request->cursor_byte_offset, &name, &name_length);
+  if (!name || name_length == 0 || name_length > INT_MAX) return NULL;
+  psx_decl_id_t declaration_id = psx_scope_graph_lookup(
+      scope_graph, PSX_NAMESPACE_LABEL, name, (int)name_length, point);
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_declaration(scope_graph, declaration_id);
+  return declaration && declaration->kind == PSX_DECL_LABEL &&
+                 declaration->name_space == PSX_NAMESPACE_LABEL
+             ? declaration
+             : NULL;
+}
+
 static int copy_dependencies(
     snapshot_builder_t *builder, const ag_compilation_session_t *session) {
   int count =
@@ -3276,6 +3403,7 @@ static int elide_failed_statement(
 typedef struct {
   ag_compilation_session_t *session;
   tokenizer_context_t *tokenizer;
+  const ag_language_analysis_request_t *request;
   const char *recovery_source;
   char *recovery_source_owned;
   ag_language_documentation_index_t *documentation_index_owned;
@@ -3286,6 +3414,8 @@ typedef struct {
 #endif
   int started;
   int fatal_recovered;
+  int has_cursor_lookup_point;
+  psx_scope_lookup_point_t cursor_lookup_point;
   int has_semantic_lookup_point;
   psx_scope_lookup_point_t semantic_lookup_point;
   saved_analysis_diagnostic_t semantic_diagnostic;
@@ -3323,7 +3453,8 @@ static void cleanup_analysis_parse_state(void *context) {
 static analysis_parse_state_t *create_analysis_parse_state(
     ag_compilation_session_t *session, tokenizer_context_t *tokenizer,
     char *recovery_source,
-    ag_language_documentation_index_t *documentation_index) {
+    ag_language_documentation_index_t *documentation_index,
+    const ag_language_analysis_request_t *request) {
   analysis_parse_state_t *state = calloc(1, sizeof(*state));
   if (!state) {
     free(recovery_source);
@@ -3335,6 +3466,7 @@ static analysis_parse_state_t *create_analysis_parse_state(
   }
   state->session = session;
   state->tokenizer = tokenizer;
+  state->request = request;
   state->recovery_source = recovery_source;
   state->recovery_source_owned = recovery_source;
   state->documentation_index_owned = documentation_index;
@@ -3390,6 +3522,106 @@ static void save_semantic_rejection(
       end <= source_length ? end : source_length);
 }
 
+static int push_analysis_statement(
+    const node_t ***stack, size_t *count, size_t *capacity,
+    const node_t *statement) {
+  if (!statement) return 1;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > SIZE_MAX / sizeof(**stack))
+      return 0;
+    const node_t **next_stack = realloc(
+        (void *)*stack, next_capacity * sizeof(**stack));
+    if (!next_stack) return 0;
+    *stack = next_stack;
+    *capacity = next_capacity;
+  }
+  (*stack)[(*count)++] = statement;
+  return 1;
+}
+
+static int jump_name_contains_analysis_cursor(
+    const analysis_parse_state_t *state,
+    const node_jump_t *jump) {
+  if (!state || !state->request || !state->request->source_name ||
+      !jump || !jump->name_tok || !jump->name_tok->source_input ||
+      jump->name_tok->byte_offset < 0 ||
+      jump->name_tok->byte_length < 0)
+    return 0;
+  ag_source_manager_t *sources = diag_context_source_manager(
+      ag_compilation_session_diagnostic_context(state->session));
+  const char *source_name = ag_source_manager_name(
+      sources, jump->name_tok->file_name_id);
+  if (!source_name ||
+      strcmp(source_name, state->request->source_name) != 0)
+    return 0;
+  size_t start = (size_t)jump->name_tok->byte_offset;
+  size_t length = (size_t)jump->name_tok->byte_length;
+  size_t cursor = state->request->cursor_byte_offset;
+  return start <= cursor && cursor - start <= length;
+}
+
+static void capture_jump_cursor_lookup_point(
+    analysis_parse_state_t *state, const node_t *root) {
+  if (!state || !root || state->has_cursor_lookup_point) return;
+  const node_t **stack = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_analysis_statement(&stack, &count, &capacity, root)) return;
+  while (count > 0 && !state->has_cursor_lookup_point) {
+    const node_t *statement = stack[--count];
+    if (!statement) continue;
+    switch (statement->kind) {
+      case ND_GOTO:
+      case ND_LABEL: {
+        const node_jump_t *jump = (const node_jump_t *)statement;
+        if (jump_name_contains_analysis_cursor(state, jump)) {
+          state->cursor_lookup_point = (psx_scope_lookup_point_t){
+              jump->scope_seq, jump->declaration_seq};
+          state->has_cursor_lookup_point = 1;
+          break;
+        }
+        if (statement->kind == ND_LABEL)
+          (void)push_analysis_statement(
+              &stack, &count, &capacity, statement->rhs);
+        break;
+      }
+      case ND_BLOCK: {
+        const node_block_t *block = (const node_block_t *)statement;
+        if (!block->body) break;
+        for (size_t i = 0; block->body[i]; i++)
+          if (!push_analysis_statement(
+                  &stack, &count, &capacity, block->body[i])) {
+            count = 0;
+            break;
+          }
+        break;
+      }
+      case ND_IF: {
+        const node_ctrl_t *control = (const node_ctrl_t *)statement;
+        (void)push_analysis_statement(
+            &stack, &count, &capacity, control->els);
+        (void)push_analysis_statement(
+            &stack, &count, &capacity, statement->rhs);
+        break;
+      }
+      case ND_WHILE:
+      case ND_DO_WHILE:
+      case ND_FOR:
+      case ND_SWITCH:
+      case ND_CASE:
+      case ND_DEFAULT:
+        (void)push_analysis_statement(
+            &stack, &count, &capacity, statement->rhs);
+        break;
+      default:
+        break;
+    }
+  }
+  free((void *)stack);
+}
+
 static int collect_analysis_function_declarations(
     void *context, ag_compilation_session_t *session,
     const psx_parsed_function_definition_t *syntax_function,
@@ -3397,6 +3629,8 @@ static int collect_analysis_function_declarations(
     psx_hir_node_id_t *hir_root) {
   analysis_parse_state_t *state = context;
   if (hir_root) *hir_root = PSX_HIR_NODE_ID_INVALID;
+  capture_jump_cursor_lookup_point(
+      state, syntax_function ? syntax_function->body : NULL);
   psx_resolved_hir_build_failure_t failure;
   psx_scope_lookup_point_t lookup_point;
   psx_syntax_typed_hir_resolution_status_t status =
@@ -3582,7 +3816,7 @@ int ag_language_analyze_source(
   tokenizer_context_t *tokenizer = ag_compilation_session_tokenizer(session);
   tk_set_filename_ctx(tokenizer, request->source_name);
   analysis_parse_state_t *parse_state = create_analysis_parse_state(
-      session, tokenizer, recovery_source, documentation_index);
+      session, tokenizer, recovery_source, documentation_index, request);
   if (!parse_state) {
     set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
               "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
@@ -3631,7 +3865,7 @@ int ag_language_analyze_source(
         request->max_include_depth > 0 ? request->max_include_depth : 32);
     tk_set_filename_ctx(tokenizer, request->source_name);
     retry_state = create_analysis_parse_state(
-        session, tokenizer, recovery_source, documentation_index);
+        session, tokenizer, recovery_source, documentation_index, request);
     if (!retry_state) {
       dispose_saved_diagnostic(&saved_fatal);
       set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
@@ -3663,12 +3897,17 @@ int ag_language_analyze_source(
       break;
     }
   }
-  psx_scope_lookup_point_t point = marker
-      ? (psx_scope_lookup_point_t){marker->scope_id,
-                                   marker->declaration_order}
-      : final_parse->has_semantic_lookup_point
-            ? final_parse->semantic_lookup_point
-            : psx_scope_graph_capture_lookup_point(scope_graph);
+  psx_scope_lookup_point_t point;
+  if (marker) {
+    point = (psx_scope_lookup_point_t){
+        marker->scope_id, marker->declaration_order};
+  } else if (final_parse->has_cursor_lookup_point) {
+    point = final_parse->cursor_lookup_point;
+  } else if (final_parse->has_semantic_lookup_point) {
+    point = final_parse->semantic_lookup_point;
+  } else {
+    point = psx_scope_graph_capture_lookup_point(scope_graph);
+  }
   const psx_scope_declaration_t *cursor_ordinary_declaration =
       ordinary_scoped_declaration_at_cursor(scope_graph, request);
   const psx_scope_declaration_t *cursor_scoped_declaration =
@@ -3677,6 +3916,10 @@ int ag_language_analyze_source(
           : tag_declaration_at_cursor(scope_graph, request);
   const psx_scope_declaration_t *cursor_member_declaration =
       member_declaration_at_cursor(scope_graph, request);
+  const psx_scope_declaration_t *cursor_label_declaration =
+      final_parse->has_cursor_lookup_point
+          ? label_declaration_at_cursor(scope_graph, request, point)
+          : NULL;
   if (cursor_scoped_declaration &&
       psx_scope_graph_lookup(
           scope_graph, cursor_scoped_declaration->name_space,
@@ -3711,6 +3954,10 @@ int ag_language_analyze_source(
   if (!builder.failed && cursor_member_declaration)
     add_declaration_symbol(
         &builder, request, semantic_context, cursor_member_declaration,
+        point, &symbol_capacity);
+  if (!builder.failed && cursor_label_declaration)
+    add_declaration_symbol(
+        &builder, request, semantic_context, cursor_label_declaration,
         point, &symbol_capacity);
   ag_language_documentation_index_dispose(documentation_index);
   free(documentation_index);
@@ -3753,6 +4000,18 @@ int ag_language_analyze_source(
   identifier_at(request->source, request->source_length,
                 request->cursor_byte_offset, &hover_name, &hover_name_len);
   select_hover(snapshot, hover_name, hover_name_len);
+  if (cursor_label_declaration) {
+    for (int i = 0; i < snapshot->completion_item_count; i++) {
+      const ag_language_symbol_t *symbol =
+          &snapshot->completion_items[i];
+      if (symbol->kind == AG_LANGUAGE_SYMBOL_LABEL &&
+          strlen(symbol->name) == hover_name_len &&
+          memcmp(symbol->name, hover_name, hover_name_len) == 0) {
+        snapshot->hover_index = i;
+        break;
+      }
+    }
+  }
   int unresolved_elided_identifier =
       (recovery_changed &
        AG_LANGUAGE_RECOVERY_COMPLETE_IDENTIFIER_ELIDED) &&
@@ -3761,12 +4020,12 @@ int ag_language_analyze_source(
   for (int i = 0; i < snapshot->diagnostic_count; i++)
     if (snapshot->diagnostics[i].severity == 1) has_error = 1;
   snapshot->partial =
-                      has_error || !marker ||
-                      (recovery_changed &
-                       AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER) ||
-                      unresolved_elided_identifier ||
-                      final_parse->fatal_recovered || recovered_before_retry ||
-                      final_parse->semantic_diagnostic.code != NULL;
+      has_error ||
+      (!marker && !final_parse->has_cursor_lookup_point) ||
+      (recovery_changed & AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER) ||
+      unresolved_elided_identifier || final_parse->fatal_recovered ||
+      recovered_before_retry ||
+      final_parse->semantic_diagnostic.code != NULL;
   dispose_saved_diagnostic(&saved_fatal);
   finish_analysis_parse_state(parse_state);
   finish_analysis_parse_state(retry_state);

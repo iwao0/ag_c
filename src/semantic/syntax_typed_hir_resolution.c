@@ -21,6 +21,7 @@
 #include "../parser/lvar_public.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
+#include "../source_manager.h"
 #include "../target_info.h"
 #include "../type_layout.h"
 #include "../type_system/integer_conversion.h"
@@ -7612,6 +7613,17 @@ static int collect_direct_function_jumps(
             context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
             syntax);
         return 0;
+      }
+      if (label->name_tok) {
+        ag_source_manager_t *sources = diag_context_source_manager(
+            ps_ctx_diagnostics(context->semantic_context));
+        (void)psx_scope_graph_note_declaration_source(
+            graph, declaration_id,
+            ag_source_manager_name(
+                sources, label->name_tok->file_name_id),
+            label->name_tok->source_input,
+            label->name_tok->byte_offset,
+            label->name_tok->byte_length);
       }
       return !syntax->rhs ||
              collect_direct_function_jumps(context, syntax->rhs);

@@ -436,6 +436,10 @@ static node_t *parse_stmt_goto(psx_statement_parse_context_t *context) {
   node->base.tok = goto_tok;
   node->name = ident->str;
   node->name_len = ident->len;
+  node->name_tok = (token_t *)ident;
+  ps_name_classifier_capture_lookup_point(
+      &context->syntax.name_classifier,
+      &node->scope_seq, &node->declaration_seq);
   tk_expect_ctx(context->tokenizer_context, ';');
   return (node_t *)node;
 }
@@ -449,6 +453,10 @@ static node_t *parse_stmt_label(psx_statement_parse_context_t *context) {
   node->base.tok = (token_t *)ident;
   node->name = ident->str;
   node->name_len = ident->len;
+  node->name_tok = (token_t *)ident;
+  ps_name_classifier_capture_lookup_point(
+      &context->syntax.name_classifier,
+      &node->scope_seq, &node->declaration_seq);
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
 }

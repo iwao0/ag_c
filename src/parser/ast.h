@@ -216,6 +216,9 @@ struct node_jump_t {
   node_t base;
   char *name;
   int name_len;
+  token_t *name_tok;
+  unsigned scope_seq;
+  unsigned declaration_seq;
 };
 
 /* global_var_t / string_lit_t / float_lit_t moved to symtab.h in Phase C1. */

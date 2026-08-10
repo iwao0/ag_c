@@ -173,7 +173,7 @@ export interface AgcLanguageMacroInfo {
 export interface AgcLanguageSymbol {
   readonly name: string;
   readonly kind: "object" | "parameter" | "function" | "typedef" |
-    "enumConstant" | "tag" | "member" | "macro";
+    "enumConstant" | "tag" | "member" | "macro" | "label";
   readonly nameSpace: "ordinary" | "tag" | "label" | "member" | "macro";
   readonly type: string;
   readonly signature: string;

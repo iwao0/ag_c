@@ -193,7 +193,23 @@ static const char function_declarator_hover_source[] =
     "int (parenthesized)(int value) { return value + 1; }\n"
     "int target(int value);\n"
     "int (*(factory(void)))(int) { return target; }\n"
-    "int (*(seeded_factory(int seed)))(int) { return target; }\n";
+    "int (*(seeded_factory(int seed)))(int) { return target; }\n"
+    "int forward_label(int value) {\n"
+    "  {\n"
+    "    int shared_label = value;\n"
+    "    goto /* forward */ shared_label;\n"
+    "  }\n"
+    "shared_label:\n"
+    "  return value;\n"
+    "}\n"
+    "int backward_label(int value) {\n"
+    "shared_label:\n"
+    "  {\n"
+    "    int shared_label = value;\n"
+    "    if (value) goto /* backward */ shared_label;\n"
+    "    return shared_label;\n"
+    "  }\n"
+    "}\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -3074,6 +3090,72 @@ int main(int argc, char **argv) {
                           name_length) &&
                 !snapshot.partial && snapshot.diagnostic_count == 0,
             "aggregate member hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  struct {
+    const char *anchor;
+    const char *declaration_anchor;
+    int object_visible;
+  } label_hover_cases[] = {
+      {"goto /* forward */ shared_label;",
+       "shared_label:\n  return value;", 1},
+      {"shared_label:\n  return value;",
+       "shared_label:\n  return value;", 0},
+      {"int backward_label(int value) {\nshared_label:",
+       "int backward_label(int value) {\nshared_label:", 0},
+      {"goto /* backward */ shared_label;",
+       "int backward_label(int value) {\nshared_label:", 1},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(label_hover_cases) /
+                        sizeof(label_hover_cases[0]);
+       case_index++) {
+    const char *anchor = strstr(
+        function_declarator_hover_source,
+        label_hover_cases[case_index].anchor);
+    const char *name = anchor ? strstr(anchor, "shared_label") : NULL;
+    const char *declaration_anchor = strstr(
+        function_declarator_hover_source,
+        label_hover_cases[case_index].declaration_anchor);
+    const char *declaration = declaration_anchor
+                                  ? strstr(declaration_anchor, "shared_label")
+                                  : NULL;
+    size_t name_length = strlen("shared_label");
+    size_t cursor_deltas[] = {0, name_length / 2, name_length};
+    CHECK(name && declaration, "label hover anchors");
+    for (size_t cursor_index = 0;
+         cursor_index < sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+         cursor_index++) {
+      CHECK(analyze_named(
+                session, "function-declarator.c",
+                function_declarator_hover_source,
+                (size_t)(name - function_declarator_hover_source) +
+                    cursor_deltas[cursor_index],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "label hover analysis");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      const ag_language_symbol_t *same_named_object = find_symbol(
+          &snapshot, "shared_label", AG_LANGUAGE_SYMBOL_OBJECT);
+      CHECK(hover && hover->kind == AG_LANGUAGE_SYMBOL_LABEL &&
+                hover->name_space == AG_LANGUAGE_NAMESPACE_LABEL &&
+                strcmp(hover->name, "shared_label") == 0 &&
+                strcmp(hover->type, "") == 0 &&
+                strcmp(hover->signature, "shared_label:") == 0 &&
+                strcmp(hover->storage_class, "") == 0 &&
+                hover->initializer_state == AG_LANGUAGE_INITIALIZER_NONE &&
+                hover->scope_depth == 1 && !hover->has_definition &&
+                hover->declaration.start.offset ==
+                    (int)(declaration - function_declarator_hover_source) &&
+                hover->declaration.end.offset ==
+                    (int)(declaration - function_declarator_hover_source +
+                          name_length) &&
+                (label_hover_cases[case_index].object_visible
+                     ? same_named_object != NULL
+                     : same_named_object == NULL) &&
+                !snapshot.partial && snapshot.diagnostic_count == 0,
+            "label hover fields");
       ag_language_analysis_snapshot_dispose(&snapshot);
     }
   }

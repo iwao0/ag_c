@@ -1501,7 +1501,23 @@ const functionDeclaratorSource = {
     "int (parenthesized)(int value) { return value + 1; }\n" +
     "int target(int value);\n" +
     "int (*(factory(void)))(int) { return target; }\n" +
-    "int (*(seeded_factory(int seed)))(int) { return target; }\n",
+    "int (*(seeded_factory(int seed)))(int) { return target; }\n" +
+    "int forward_label(int value) {\n" +
+    "  {\n" +
+    "    int shared_label = value;\n" +
+    "    goto /* forward */ shared_label;\n" +
+    "  }\n" +
+    "shared_label:\n" +
+    "  return value;\n" +
+    "}\n" +
+    "int backward_label(int value) {\n" +
+    "shared_label:\n" +
+    "  {\n" +
+    "    int shared_label = value;\n" +
+    "    if (value) goto /* backward */ shared_label;\n" +
+    "    return shared_label;\n" +
+    "  }\n" +
+    "}\n",
 };
 const functionDeclaratorCases = [
   { name: "old_sum", returnType: "int", parameterCount: 2, hasPrototype: false,
@@ -1581,6 +1597,20 @@ const aggregateMemberCases = [
     type: "int", scopeDepth: 3 },
 ];
 const nativeAggregateMemberSnapshots = new Map();
+const labelHoverCases = [
+  { anchor: "goto /* forward */ shared_label;", name: "shared_label",
+    declarationAnchor: "shared_label:\n  return value;", objectVisible: true },
+  { anchor: "shared_label:\n  return value;", name: "shared_label",
+    declarationAnchor: "shared_label:\n  return value;", objectVisible: false },
+  { anchor: "int backward_label(int value) {\nshared_label:",
+    name: "shared_label",
+    declarationAnchor: "int backward_label(int value) {\nshared_label:",
+    objectVisible: false },
+  { anchor: "goto /* backward */ shared_label;", name: "shared_label",
+    declarationAnchor: "int backward_label(int value) {\nshared_label:",
+    objectVisible: true },
+];
+const nativeLabelHoverSnapshots = new Map();
 const functionParameterEnumCases = [
   { name: "PROTOTYPE_READY", value: "3", scopeDepth: 1 },
   { name: "PROTOTYPE_BUSY", value: "4", scopeDepth: 1 },
@@ -1725,6 +1755,55 @@ function assertAggregateMemberHover(result, analysisCase, lifecycle) {
   }
 }
 
+function labelHoverOffsets(analysisCase) {
+  const anchorStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.anchor,
+  );
+  const nameStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.name, anchorStart,
+  );
+  const declarationAnchorStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.declarationAnchor,
+  );
+  const declarationStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.name, declarationAnchorStart,
+  );
+  return {
+    anchorStart,
+    nameStart: functionDeclaratorByteOffset(nameStart),
+    declarationStart: functionDeclaratorByteOffset(declarationStart),
+  };
+}
+
+function assertLabelHover(result, analysisCase, lifecycle) {
+  const { anchorStart, nameStart, declarationStart } =
+    labelHoverOffsets(analysisCase);
+  const hover = result.hover;
+  const sameNamedObjects = result.completionItems.filter(
+    (item) => item.name === analysisCase.name && item.kind === "object",
+  );
+  const labels = result.completionItems.filter(
+    (item) => item.kind === "label",
+  );
+  if (anchorStart < 0 || nameStart < 0 || declarationStart < 0 ||
+      result.partial || result.diagnostics.length !== 0 ||
+      hover?.name !== analysisCase.name || hover.kind !== "label" ||
+      hover.nameSpace !== "label" || hover.type !== "" ||
+      hover.signature !== `${analysisCase.name}:` ||
+      hover.storageClass !== "" || hover.scopeDepth !== 1 ||
+      hover.definition !== null || hover.initializer?.state !== "none" ||
+      hover.declaration.sourceName !== functionDeclaratorSource.name ||
+      hover.declaration.start.offset !== declarationStart ||
+      hover.declaration.end.offset !==
+        declarationStart + Buffer.byteLength(analysisCase.name) ||
+      labels.length !== 1 || labels[0].name !== hover.name ||
+      sameNamedObjects.length !== (analysisCase.objectVisible ? 1 : 0)) {
+    throw new Error(
+      `${lifecycle} label hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
 for (const analysisCase of functionDeclaratorCases) {
   const declarationStart = functionDeclaratorByteOffset(
     functionDeclaratorSource.source.indexOf(analysisCase.name),
@@ -1831,6 +1910,29 @@ for (const analysisCase of aggregateMemberCases) {
       `native and Wasm aggregate member snapshots differ at byte ${byteOffset}`,
     );
     nativeAggregateMemberSnapshots.set(byteOffset, nativeResult);
+  }
+}
+
+for (const analysisCase of labelHoverCases) {
+  const { nameStart } = labelHoverOffsets(analysisCase);
+  const nameByteLength = Buffer.byteLength(analysisCase.name);
+  for (const delta of [0, Math.floor(nameByteLength / 2), nameByteLength]) {
+    const byteOffset = nameStart + delta;
+    const wasmResult = compiler.analyzeSource(functionDeclaratorSource, {
+      cursor: { sourceName: functionDeclaratorSource.name, byteOffset },
+    });
+    assertLabelHover(wasmResult, analysisCase, "reused instance");
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--function-declarator-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm label snapshots differ at byte ${byteOffset}`,
+    );
+    nativeLabelHoverSnapshots.set(byteOffset, nativeResult);
   }
 }
 
@@ -1945,6 +2047,27 @@ for (const analysisCase of aggregateMemberCases) {
       freshResult,
       nativeAggregateMemberSnapshots.get(byteOffset),
       `fresh native/Wasm aggregate member snapshot differs at byte ${byteOffset}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
+for (const analysisCase of labelHoverCases) {
+  const { nameStart } = labelHoverOffsets(analysisCase);
+  const byteOffset = nameStart +
+    Math.floor(Buffer.byteLength(analysisCase.name) / 2);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(
+      functionDeclaratorSource,
+      { cursor: { sourceName: functionDeclaratorSource.name, byteOffset } },
+    );
+    assertLabelHover(freshResult, analysisCase, "fresh instance");
+    assert.deepStrictEqual(
+      freshResult,
+      nativeLabelHoverSnapshots.get(byteOffset),
+      `fresh native/Wasm label snapshot differs at byte ${byteOffset}`,
     );
   } finally {
     freshCompiler.dispose();
