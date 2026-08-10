@@ -434,6 +434,7 @@ static int analysis_source_prefix_state(
     if (at_line_start && c == '#') state->preprocessor_line = 1;
     at_line_start = 0;
     if (state->preprocessor_line) continue;
+    if (isspace((unsigned char)c)) continue;
     if (is_identifier_byte((unsigned char)c)) {
       size_t word_start = i;
       while (i + 1 < length &&
@@ -528,6 +529,30 @@ static char *build_jump_label_recovery_source(
   result[length] = '\0';
   if (changed) *changed = 0;
   return result;
+}
+
+static int analysis_cursor_is_complete_member_access(
+    const char *source, size_t length, size_t cursor) {
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(source, length, cursor, &name, &name_length);
+  if (!name || name_length == 0) return 0;
+  size_t name_start = (size_t)(name - source);
+  size_t operator_end = name_start;
+  while (operator_end > 0 &&
+         isspace((unsigned char)source[operator_end - 1]))
+    operator_end--;
+  int has_member_operator =
+      (operator_end > 0 && source[operator_end - 1] == '.') ||
+      (operator_end > 1 && source[operator_end - 2] == '-' &&
+       source[operator_end - 1] == '>');
+  analysis_source_prefix_state_t prefix;
+  if (!analysis_source_prefix_state(source, name_start, &prefix) ||
+      prefix.line_comment || prefix.block_comment || prefix.quote ||
+      prefix.preprocessor_line ||
+      !has_member_operator)
+    return 0;
+  return 1;
 }
 
 static char *build_record_member_recovery_source(
@@ -1672,6 +1697,10 @@ static char *build_recovery_source(const char *source, size_t source_length,
         cursor >= name_start && cursor <= name_end)
       has_complete_identifier = 1;
   }
+  int cursor_on_complete_member_access =
+      has_complete_identifier &&
+      analysis_cursor_is_complete_member_access(
+          source, source_length, cursor);
   int cursor_identifier_starts_conditional = 0;
   if (has_complete_identifier) {
     size_t name_end = (size_t)(cursor_name - source) + cursor_name_length;
@@ -1693,8 +1722,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
     return NULL;
   }
   memcpy(result, source, cursor);
-  int identifier_elided = cursor_name && cursor_name_length > 0;
-  if (cursor > 0 &&
+  int identifier_elided = cursor_name && cursor_name_length > 0 &&
+                          !cursor_on_complete_member_access;
+  if (!cursor_on_complete_member_access && cursor > 0 &&
       is_identifier_byte((unsigned char)source[cursor - 1])) {
     size_t identifier_start = cursor - 1;
     while (identifier_start > 0 &&
@@ -1929,7 +1959,11 @@ static char *build_recovery_source(const char *source, size_t source_length,
       }
     }
   }
-  if (cursor_on_complete_tag_name) {
+  if (cursor_on_complete_member_access) {
+    if (cursor < cursor_name_end)
+      APPEND_BYTES(source + cursor, cursor_name_end - cursor);
+    APPEND_LITERAL(", 0");
+  } else if (cursor_on_complete_tag_name) {
     APPEND_BYTES(cursor_name, cursor_name_length);
     if (cursor_tag_has_tail && cursor_tag_tail_end > cursor_name_end)
       APPEND_BYTES(source + cursor_name_end,
@@ -3031,7 +3065,13 @@ static int add_member_symbols(
     symbol->scope_depth = psx_scope_graph_scope_depth(
         graph, object->scope_id) + 1;
     symbol->declaration_order = (unsigned int)member_index;
-    locate_declaration(builder, request, NULL,
+    psx_decl_id_t member_declaration_id =
+        ps_ctx_record_member_declaration_id_in(
+            semantic_context, shape.record_id,
+            member->name, member->len);
+    const psx_scope_declaration_t *member_declaration =
+        psx_scope_graph_declaration(graph, member_declaration_id);
+    locate_declaration(builder, request, member_declaration,
                        member->name, (size_t)member->len,
                        &symbol->declaration);
   }

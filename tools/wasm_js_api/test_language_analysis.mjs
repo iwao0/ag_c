@@ -1502,6 +1502,9 @@ const functionDeclaratorSource = {
     "int target(int value);\n" +
     "int (*(factory(void)))(int) { return target; }\n" +
     "int (*(seeded_factory(int seed)))(int) { return target; }\n" +
+    "int read_file_members(struct FileRecord *record, union FileUnion value) {\n" +
+    "  return (record->member != 0) + (int)value.member;\n" +
+    "}\n" +
     "int forward_label(int value) {\n" +
     "  {\n" +
     "    int shared_label = value;\n" +
@@ -1597,6 +1600,15 @@ const aggregateMemberCases = [
     type: "int", scopeDepth: 3 },
 ];
 const nativeAggregateMemberSnapshots = new Map();
+const aggregateMemberUseCases = [
+  { anchor: "return value.member;", name: "member", type: "int",
+    declarationAnchor: "LocalValue { int member; }" },
+  { anchor: "record->member", name: "member", type: "const int *",
+    declarationAnchor: "FileRecord { const int *member;" },
+  { anchor: "(int)value.member;", name: "member", type: "long",
+    declarationAnchor: "FileUnion { long member; }" },
+];
+const nativeAggregateMemberUseSnapshots = new Map();
 const labelHoverCases = [
   { anchor: "goto /* forward */ shared_label;", name: "shared_label",
     declarationAnchor: "shared_label:\n  return value;", objectVisible: true },
@@ -1751,6 +1763,47 @@ function assertAggregateMemberHover(result, analysisCase, lifecycle) {
         declarationStart + Buffer.byteLength(analysisCase.name)) {
     throw new Error(
       `${lifecycle} aggregate member hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function aggregateMemberUseOffsets(analysisCase) {
+  const anchorStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.anchor,
+  );
+  const nameStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.name, anchorStart,
+  );
+  const declarationAnchorStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.declarationAnchor,
+  );
+  const declarationStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.name, declarationAnchorStart,
+  );
+  return {
+    anchorStart,
+    nameStart: functionDeclaratorByteOffset(nameStart),
+    declarationStart: functionDeclaratorByteOffset(declarationStart),
+  };
+}
+
+function assertAggregateMemberUseHover(result, analysisCase, lifecycle) {
+  const { anchorStart, nameStart, declarationStart } =
+    aggregateMemberUseOffsets(analysisCase);
+  const hover = result.hover;
+  if (anchorStart < 0 || nameStart < 0 || declarationStart < 0 ||
+      result.partial || result.diagnostics.length !== 0 ||
+      hover?.name !== analysisCase.name || hover.kind !== "member" ||
+      hover.nameSpace !== "member" || hover.type !== analysisCase.type ||
+      hover.signature !== "" || hover.storageClass !== "member" ||
+      hover.scopeDepth !== 2 || hover.definition !== null ||
+      hover.initializer?.state !== "none" ||
+      hover.declaration.sourceName !== functionDeclaratorSource.name ||
+      hover.declaration.start.offset !== declarationStart ||
+      hover.declaration.end.offset !==
+        declarationStart + Buffer.byteLength(analysisCase.name)) {
+    throw new Error(
+      `${lifecycle} aggregate member use hover failed: ${JSON.stringify(result)}`,
     );
   }
 }
@@ -1913,6 +1966,31 @@ for (const analysisCase of aggregateMemberCases) {
   }
 }
 
+for (const analysisCase of aggregateMemberUseCases) {
+  const { nameStart } = aggregateMemberUseOffsets(analysisCase);
+  const nameByteLength = Buffer.byteLength(analysisCase.name);
+  for (const delta of [0, Math.floor(nameByteLength / 2), nameByteLength]) {
+    const byteOffset = nameStart + delta;
+    const wasmResult = compiler.analyzeSource(functionDeclaratorSource, {
+      cursor: { sourceName: functionDeclaratorSource.name, byteOffset },
+    });
+    assertAggregateMemberUseHover(
+      wasmResult, analysisCase, "reused instance",
+    );
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--function-declarator-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm aggregate member use snapshots differ at byte ${byteOffset}`,
+    );
+    nativeAggregateMemberUseSnapshots.set(byteOffset, nativeResult);
+  }
+}
+
 for (const analysisCase of labelHoverCases) {
   const { nameStart } = labelHoverOffsets(analysisCase);
   const nameByteLength = Buffer.byteLength(analysisCase.name);
@@ -2047,6 +2125,29 @@ for (const analysisCase of aggregateMemberCases) {
       freshResult,
       nativeAggregateMemberSnapshots.get(byteOffset),
       `fresh native/Wasm aggregate member snapshot differs at byte ${byteOffset}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
+for (const analysisCase of aggregateMemberUseCases) {
+  const { nameStart } = aggregateMemberUseOffsets(analysisCase);
+  const byteOffset = nameStart +
+    Math.floor(Buffer.byteLength(analysisCase.name) / 2);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(
+      functionDeclaratorSource,
+      { cursor: { sourceName: functionDeclaratorSource.name, byteOffset } },
+    );
+    assertAggregateMemberUseHover(
+      freshResult, analysisCase, "fresh instance",
+    );
+    assert.deepStrictEqual(
+      freshResult,
+      nativeAggregateMemberUseSnapshots.get(byteOffset),
+      `fresh native/Wasm aggregate member use snapshot differs at byte ${byteOffset}`,
     );
   } finally {
     freshCompiler.dispose();
