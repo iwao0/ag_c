@@ -137,6 +137,40 @@ static size_t declaration_start_after_comment(
   return cursor;
 }
 
+static int macro_definition_range_after_comment(
+    const char *source, size_t length, size_t comment_end,
+    size_t *definition_start, size_t *definition_end) {
+  if (!source || !definition_start || !definition_end) return 0;
+  size_t cursor = comment_end;
+  int newline_count = 0;
+  while (cursor < length && isspace((unsigned char)source[cursor])) {
+    if (source[cursor] == '\n') newline_count++;
+    cursor++;
+  }
+  if (newline_count > 1 || cursor >= length || source[cursor] != '#')
+    return 0;
+
+  size_t start = cursor++;
+  while (cursor < length && is_horizontal_space(source[cursor])) cursor++;
+  static const char define_keyword[] = "define";
+  size_t define_length = sizeof(define_keyword) - 1;
+  if (cursor > length || define_length > length - cursor ||
+      memcmp(source + cursor, define_keyword, define_length) != 0)
+    return 0;
+  cursor += define_length;
+  if (cursor >= length || !is_horizontal_space(source[cursor])) return 0;
+
+  size_t end = cursor;
+  while (end < length) {
+    if (source[end] == '\n' && !newline_is_escaped(source, end)) break;
+    end++;
+  }
+  if (end <= start) return 0;
+  *definition_start = start;
+  *definition_end = end;
+  return 1;
+}
+
 static ag_language_documentation_status_t append_entry(
     ag_language_documentation_index_t *index,
     const ag_language_documentation_entry_t *entry,
@@ -164,10 +198,16 @@ static ag_language_documentation_status_t record_comment(
     ag_language_documentation_style_t style, size_t max_entries) {
   size_t declaration_start = declaration_start_after_comment(
       source, source_length, comment_end);
-  if (declaration_start == (size_t)-1)
-    return AG_LANGUAGE_DOCUMENTATION_OK;
-  size_t declaration_end = declaration_end_after(
-      source, source_length, declaration_start);
+  size_t declaration_end = 0;
+  if (declaration_start == (size_t)-1) {
+    if (!macro_definition_range_after_comment(
+            source, source_length, comment_end,
+            &declaration_start, &declaration_end))
+      return AG_LANGUAGE_DOCUMENTATION_OK;
+  } else {
+    declaration_end = declaration_end_after(
+        source, source_length, declaration_start);
+  }
   if (declaration_end <= declaration_start)
     return AG_LANGUAGE_DOCUMENTATION_OK;
   return append_entry(

@@ -350,6 +350,61 @@ static size_t analysis_complete_line_splice_at_cursor(
   return cursor;
 }
 
+static size_t analysis_complete_macro_definition_at_cursor(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs) {
+  analysis_identifier_span_t identifier = {0};
+  if (!analysis_identifier_span_at_mode(
+          source, length, cursor, enable_trigraphs, &identifier))
+    return 0;
+
+  size_t line_start = identifier.start;
+  while (line_start > 0 && source[line_start - 1] != '\n') line_start--;
+  size_t probe = line_start;
+  while (probe < identifier.start &&
+         (source[probe] == ' ' || source[probe] == '\t' ||
+          source[probe] == '\r'))
+    probe++;
+  if (probe < identifier.start && source[probe] == '#') {
+    probe++;
+  } else if (enable_trigraphs && probe + 2 < identifier.start &&
+             source[probe] == '?' && source[probe + 1] == '?' &&
+             source[probe + 2] == '=') {
+    probe += 3;
+  } else {
+    return 0;
+  }
+  while (probe < identifier.start &&
+         (source[probe] == ' ' || source[probe] == '\t'))
+    probe++;
+  static const char define_keyword[] = "define";
+  size_t define_length = sizeof(define_keyword) - 1;
+  if (probe > identifier.start ||
+      define_length > identifier.start - probe ||
+      memcmp(source + probe, define_keyword, define_length) != 0)
+    return 0;
+  probe += define_length;
+  if (probe >= identifier.start ||
+      (source[probe] != ' ' && source[probe] != '\t'))
+    return 0;
+  while (probe < identifier.start &&
+         (source[probe] == ' ' || source[probe] == '\t'))
+    probe++;
+  if (probe != identifier.start) return 0;
+
+  for (size_t end = identifier.end; end < length;) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, end, enable_trigraphs);
+    if (splice_size) {
+      end += splice_size;
+      continue;
+    }
+    if (source[end] == '\n') return end + 1;
+    end++;
+  }
+  return length;
+}
+
 static size_t skip_analysis_space_and_comments_mode(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs) {
@@ -1838,8 +1893,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
                                    size_t cursor,
                                    int enable_trigraphs,
                                    int *changed) {
-  size_t recovery_cursor = analysis_complete_line_splice_at_cursor(
-      source, source_length, cursor, enable_trigraphs);
+  size_t macro_definition_end =
+      analysis_complete_macro_definition_at_cursor(
+          source, source_length, cursor, enable_trigraphs);
+  int cursor_on_complete_macro_definition = macro_definition_end > 0;
+  size_t recovery_cursor = cursor_on_complete_macro_definition
+                               ? macro_definition_end
+                               : analysis_complete_line_splice_at_cursor(
+                                     source, source_length, cursor,
+                                     enable_trigraphs);
   size_t source_consumed = recovery_cursor;
   char *function_parameter_recovery =
       build_function_parameter_recovery_source(
@@ -1920,8 +1982,10 @@ static char *build_recovery_source(const char *source, size_t source_length,
   }
   memcpy(result, source, recovery_cursor);
   int identifier_elided = has_cursor_identifier &&
+                          !cursor_on_complete_macro_definition &&
                           !cursor_on_complete_member_access;
-  if (!cursor_on_complete_member_access && has_cursor_identifier) {
+  if (!cursor_on_complete_macro_definition &&
+      !cursor_on_complete_member_access && has_cursor_identifier) {
     size_t elide_end = cursor < cursor_identifier.end
                            ? cursor : cursor_identifier.end;
     for (size_t i = cursor_identifier.start; i < elide_end; i++)
@@ -3295,6 +3359,10 @@ static int add_macro_symbols(snapshot_builder_t *builder,
     if (!symbol->declaration.source_name)
       locate_declaration(builder, request, NULL, view.name,
                          (size_t)view.name_len, &symbol->declaration);
+    set_symbol_documentation(
+        builder, symbol,
+        documentation_for_range(builder, &symbol->declaration));
+    if (builder->failed) return 0;
     int replacement_len = pp_macro_format_replacement_in(
         preprocessor, macro_index, NULL, 0);
     if (replacement_len < 0) replacement_len = 0;
@@ -4474,10 +4542,6 @@ int ag_language_analyze_source(
     add_declaration_symbol(
         &builder, request, semantic_context, cursor_label_declaration,
         point, &symbol_capacity);
-  ag_language_documentation_index_dispose(documentation_index);
-  free(documentation_index);
-  final_parse->documentation_index_owned = NULL;
-  builder.documentation_index = NULL;
   if (!builder.failed)
     add_member_symbols(&builder, request, semantic_context,
                        point, &symbol_capacity);
@@ -4485,6 +4549,10 @@ int ag_language_analyze_source(
     add_macro_symbols(&builder, request,
                       ag_compilation_session_preprocessor_context(session),
                       &symbol_capacity);
+  ag_language_documentation_index_dispose(documentation_index);
+  free(documentation_index);
+  final_parse->documentation_index_owned = NULL;
+  builder.documentation_index = NULL;
   if (!builder.failed)
     copy_dependencies(&builder, session);
   const ag_diagnostic_context_t *diagnostics =

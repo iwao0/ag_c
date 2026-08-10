@@ -199,6 +199,46 @@ const documentationSource = {
     "\t */\r\n" +
     "static const int crlf_value = 5;\n" +
     "\n" +
+    "\t/// 四角形の一辺の長さ（ピクセル）です。\r\n" +
+    "\t/// プレイヤーの描画に使用します。\r\n" +
+    "\t#define PLAYER_SIZE 12\r\n" +
+    "\n" +
+    "/**\n" +
+    " * 値を二倍にします。\n" +
+    " *\n" +
+    " * 引数は一度だけ評価してください。\n" +
+    " */\n" +
+    "#define DOUBLE(value) ((value) * 2)\n" +
+    "/** 継続object macro */\n" +
+    "#define DOCUMENTED_LINE_OBJECT (1 + \\\n" +
+    "  2)\n" +
+    "/** 継続function macro */\n" +
+    "#define DOCUMENTED_LINE_FUNCTION(value) ((value) + \\\n" +
+    "  1)\n" +
+    "/** 古いmacro説明 */\n" +
+    "#define REDEFINED_DOC 1\n" +
+    "#undef REDEFINED_DOC\n" +
+    "/** 新しいmacro説明 */\n" +
+    "#define REDEFINED_DOC 2\n" +
+    "#if 0\n" +
+    "/** inactive macro説明 */\n" +
+    "#define INACTIVE_DOCUMENTATION 99\n" +
+    "#endif\n" +
+    "/** 空行で切れるmacro */\n" +
+    "\n" +
+    "#define BLANK_DOC_MACRO 3\n" +
+    "/** 通常commentで切れるmacro */\n" +
+    "/* separator */\n" +
+    "#define ORDINARY_GAP_MACRO 4\n" +
+    "/** 条件directiveで切れるmacro */\n" +
+    "#if 1\n" +
+    "#define CONDITIONAL_GAP_MACRO 5\n" +
+    "#endif\n" +
+    "/** pragmaで切れるmacro */\n" +
+    "#pragma pack(push, 1)\n" +
+    "#define PRAGMA_GAP_MACRO 6\n" +
+    "#pragma pack(pop)\n" +
+    "\n" +
     "int documentation_main(void) {\n" +
     "  /** local object */\n" +
     "  int local_value = 1;\n" +
@@ -206,7 +246,11 @@ const documentationSource = {
     "  return enemy_x + qualified_value + left_value + right_value +\n" +
     "         external_value + prototype_only(local_value) +\n" +
     "         definition_only(local_value) + documented_both(local_value) +\n" +
-    "         fallback_definition(local_value) + crlf_value;\n" +
+    "         fallback_definition(local_value) + crlf_value + PLAYER_SIZE +\n" +
+    "         DOUBLE(local_value) + DOCUMENTED_LINE_OBJECT +\n" +
+    "         DOCUMENTED_LINE_FUNCTION(local_value) + REDEFINED_DOC +\n" +
+    "         BLANK_DOC_MACRO + ORDINARY_GAP_MACRO +\n" +
+    "         CONDITIONAL_GAP_MACRO + PRAGMA_GAP_MACRO;\n" +
     "}\n",
 };
 
@@ -243,7 +287,14 @@ function assertDocumentation(result, documentationCase, lifecycle) {
   }
   const completion = symbol(result, documentationCase.name,
     documentationCase.kind);
-  if (completion?.documentation !== documentationCase.documentation) {
+  if (completion?.documentation !== documentationCase.documentation ||
+      (documentationCase.kind === "macro" &&
+       (hover.macro?.replacement !== documentationCase.replacement ||
+        completion.macro?.replacement !== documentationCase.replacement ||
+        JSON.stringify(hover.macro?.parameters) !==
+          JSON.stringify(documentationCase.parameters) ||
+        JSON.stringify(completion.macro?.parameters) !==
+          JSON.stringify(documentationCase.parameters)))) {
     throw new Error(
       `${lifecycle} completion documentation differs: ${JSON.stringify(result)}`,
     );
@@ -288,6 +339,27 @@ const documentationCases = [
     comment: "/**\r\n\t * CRLFの説明\r\n\t * 二行目\r\n\t */" },
   { name: "local_value", kind: "object", documentation: "local object",
     comment: "/** local object */" },
+  { name: "PLAYER_SIZE", kind: "macro",
+    documentation: "四角形の一辺の長さ（ピクセル）です。\n" +
+      "プレイヤーの描画に使用します。",
+    comment: "/// 四角形の一辺の長さ（ピクセル）です。\r\n" +
+      "\t/// プレイヤーの描画に使用します。",
+    replacement: "12", parameters: [] },
+  { name: "DOUBLE", kind: "macro",
+    documentation: "値を二倍にします。\n\n引数は一度だけ評価してください。",
+    comment: "/**\n * 値を二倍にします。\n *\n" +
+      " * 引数は一度だけ評価してください。\n */",
+    replacement: "( ( value ) * 2 )", parameters: ["value"] },
+  { name: "DOCUMENTED_LINE_OBJECT", kind: "macro",
+    documentation: "継続object macro", comment: "/** 継続object macro */",
+    replacement: "( 1 + 2 )", parameters: [] },
+  { name: "DOCUMENTED_LINE_FUNCTION", kind: "macro",
+    documentation: "継続function macro",
+    comment: "/** 継続function macro */",
+    replacement: "( ( value ) + 1 )", parameters: ["value"] },
+  { name: "REDEFINED_DOC", kind: "macro",
+    documentation: "新しいmacro説明", comment: "/** 新しいmacro説明 */",
+    replacement: "2", parameters: [] },
 ];
 
 const nativeDocumentationSnapshots = new Map();
@@ -315,7 +387,10 @@ for (const documentationCase of documentationCases) {
   nativeDocumentationSnapshots.set(byteOffset, nativeResult);
 }
 
-for (const documentationCase of documentationCases.slice(0, 2)) {
+const stableDocumentationCases = documentationCases.filter(
+  ({ name }) => ["enemy_x", "walk_frame", "PLAYER_SIZE", "DOUBLE"].includes(name),
+);
+for (const documentationCase of stableDocumentationCases) {
   const declarationIndex = documentationSource.source.indexOf(
     documentationCase.name,
   );
@@ -350,7 +425,7 @@ for (const documentationCase of documentationCases.slice(0, 2)) {
   }
 }
 
-for (const documentationCase of documentationCases.slice(0, 2)) {
+for (const documentationCase of stableDocumentationCases) {
   const useIndex = documentationSource.source.lastIndexOf(
     documentationCase.name,
   );
@@ -376,6 +451,8 @@ for (const name of [
   "blank_gap", "directive_gap", "directive_continuation_gap",
   "declaration_after", "ordinary_block", "ordinary_line", "comment_text",
   "string_after", "comment_character", "character_after",
+  "BLANK_DOC_MACRO", "ORDINARY_GAP_MACRO", "CONDITIONAL_GAP_MACRO",
+  "PRAGMA_GAP_MACRO",
   "documentation_main",
 ]) {
   const index = documentationSource.source.indexOf(name);
@@ -390,6 +467,159 @@ for (const name of [
       `non-documentation comment leaked for ${name}: ${JSON.stringify(undocumentedResult)}`,
     );
   }
+}
+const inactiveDocumentationResult = compiler.analyzeSource(
+  documentationSource,
+  {
+    cursor: {
+      sourceName: documentationSource.name,
+      byteOffset: Buffer.byteLength(documentationSource.source),
+    },
+  },
+);
+assert.equal(
+  symbol(inactiveDocumentationResult, "INACTIVE_DOCUMENTATION", "macro"),
+  undefined,
+);
+
+const macroHeaderMain = {
+  name: "macro-header-main.c",
+  source: "#include \"macro-doc.h\"\n" +
+    "int macro_header_main(void) { return HEADER_DOC(INCLUDE_GAP_MACRO); }\n",
+};
+const macroHeaderSources = [
+  "/** include boundary */\n" +
+    "#include \"empty.h\"\n" +
+    "#define INCLUDE_GAP_MACRO 4\n" +
+    "/// header macro v1\n" +
+    "#define HEADER_DOC(value) ((value) + 1)\n",
+  "/** include boundary */\n" +
+    "#include \"empty.h\"\n" +
+    "#define INCLUDE_GAP_MACRO 4\n" +
+    "/** header macro v2 */\n" +
+    "#define HEADER_DOC(value) ((value) + 2)\n",
+  "/** include boundary */\n" +
+    "#include \"empty.h\"\n" +
+    "#define INCLUDE_GAP_MACRO 4\n" +
+    "#define HEADER_DOC(value) ((value) + 3)\n",
+];
+const macroHeaderUse = macroHeaderMain.source.indexOf("HEADER_DOC");
+for (let revision = 1; revision <= 3; revision++) {
+  const header = macroHeaderSources[revision - 1];
+  const wasmResult = compiler.analyzeSource(macroHeaderMain, {
+    headers: { "macro-doc.h": header, "empty.h": "" },
+    cursor: {
+      sourceName: macroHeaderMain.name,
+      byteOffset: macroHeaderUse + 3,
+    },
+  });
+  const expectedDocumentation = revision === 1 ? "header macro v1"
+    : revision === 2 ? "header macro v2" : "";
+  const comment = revision === 1 ? "/// header macro v1"
+    : revision === 2 ? "/** header macro v2 */" : null;
+  const commentStart = comment === null ? -1 : header.indexOf(comment);
+  const headerMacro = symbol(wasmResult, "HEADER_DOC", "macro");
+  const includeGap = symbol(wasmResult, "INCLUDE_GAP_MACRO", "macro");
+  if (wasmResult.hover?.name !== "HEADER_DOC" ||
+      wasmResult.hover.documentation !== expectedDocumentation ||
+      headerMacro?.documentation !== expectedDocumentation ||
+      headerMacro?.macro?.parameters.join(",") !== "value" ||
+      includeGap?.documentation !== "" ||
+      includeGap.documentationRange !== null ||
+      (comment === null
+        ? headerMacro.documentationRange !== null
+        : headerMacro.documentationRange?.sourceName !== "macro-doc.h" ||
+          headerMacro.documentationRange.start.offset !== commentStart ||
+          headerMacro.documentationRange.end.offset !==
+            commentStart + Buffer.byteLength(comment))) {
+    throw new Error(
+      `virtual header macro documentation revision ${revision} failed: ` +
+      JSON.stringify(wasmResult),
+    );
+  }
+  const nativeResult = JSON.parse(execFileSync(
+    nativeAnalysisPath,
+    ["--macro-documentation-header-parity-json", String(revision)],
+    { encoding: "utf8" },
+  ));
+  assert.deepStrictEqual(
+    wasmResult,
+    nativeResult,
+    `native and Wasm header macro documentation differ at revision ${revision}`,
+  );
+  if (revision === 1) {
+    const freshCompiler = await createCompiler(wasmModule);
+    try {
+      const freshResult = freshCompiler.analyzeSource(macroHeaderMain, {
+        headers: { "macro-doc.h": header, "empty.h": "" },
+        cursor: {
+          sourceName: macroHeaderMain.name,
+          byteOffset: macroHeaderUse + 3,
+        },
+      });
+      assert.deepStrictEqual(
+        freshResult,
+        nativeResult,
+        "fresh header macro documentation snapshot differs",
+      );
+    } finally {
+      freshCompiler.dispose();
+    }
+  }
+}
+
+const macroProjectSources = [
+  "/** project macro v1 */\n" +
+    "#define PROJECT_DOC 10\n" +
+    "int macro_project_main(void) { return PROJECT_DOC; }\n",
+  "/** project macro v2 */\n" +
+    "#define PROJECT_DOC 20\n" +
+    "int macro_project_main(void) { return PROJECT_DOC; }\n",
+  "#define PROJECT_DOC 30\n" +
+    "int macro_project_main(void) { return PROJECT_DOC; }\n",
+];
+const macroProjectCompiler = await createCompiler(wasmModule);
+try {
+  for (let revision = 1; revision <= 3; revision++) {
+    const source = {
+      name: "macro-project.c",
+      source: macroProjectSources[revision - 1],
+    };
+    const definition = source.source.indexOf("PROJECT_DOC");
+    const use = source.source.indexOf("PROJECT_DOC", definition + 1);
+    const result = macroProjectCompiler.analyzeProjectSource(source, {
+      projectRevision: revision,
+      projectSources: [source],
+      cursor: { sourceName: source.name, byteOffset: use + 3 },
+    });
+    const expectedDocumentation = revision === 1 ? "project macro v1"
+      : revision === 2 ? "project macro v2" : "";
+    const projectMacro = symbol(result, "PROJECT_DOC", "macro");
+    if (result.hover?.name !== "PROJECT_DOC" ||
+        result.hover.documentation !== expectedDocumentation ||
+        projectMacro?.documentation !== expectedDocumentation ||
+        projectMacro?.macro?.replacement !== String(revision * 10) ||
+        (expectedDocumentation
+          ? projectMacro.documentationRange?.sourceName !== source.name
+          : projectMacro.documentationRange !== null)) {
+      throw new Error(
+        `project macro documentation revision ${revision} failed: ` +
+        JSON.stringify(result),
+      );
+    }
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--macro-documentation-project-parity-json", String(revision)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      result,
+      nativeResult,
+      `native and Wasm project macro documentation differ at revision ${revision}`,
+    );
+  }
+} finally {
+  macroProjectCompiler.dispose();
 }
 
 try {
@@ -414,6 +644,55 @@ const documentationAfterLimit = compiler.analyzeSource(
   { cursor: { sourceName: "d.c", byteOffset: 5 } },
 );
 assert.equal(documentationAfterLimit.hover?.documentation, "");
+
+const limitedMacroSource = {
+  name: "macro-limit.c",
+  source: "/** 12345678901234 */\n#define LIMITED_MACRO 1\n",
+};
+try {
+  compiler.analyzeSource(limitedMacroSource, {
+    cursor: {
+      sourceName: limitedMacroSource.name,
+      byteOffset: limitedMacroSource.source.indexOf("LIMITED_MACRO") + 2,
+    },
+    limits: { maxAnalysisStringBytes: 13 },
+  });
+  throw new Error("macro documentation string limit unexpectedly succeeded");
+} catch (error) {
+  if (!(error instanceof AgcResourceLimitError) ||
+      error.code !== "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES" ||
+      error.limit !== "maxAnalysisStringBytes" || error.max !== 13 ||
+      error.actual !== 14) {
+    throw error;
+  }
+}
+const macroEntryLimitSource = {
+  name: "macro-entry-limit.c",
+  source: "/** first */\n#define FIRST_DOC 1\n" +
+    "/** second */\n#define SECOND_DOC 2\n",
+};
+try {
+  compiler.analyzeSource(macroEntryLimitSource, {
+    cursor: {
+      sourceName: macroEntryLimitSource.name,
+      byteOffset: Buffer.byteLength(macroEntryLimitSource.source),
+    },
+    limits: { maxAnalysisSymbols: 1 },
+  });
+  throw new Error("macro documentation entry limit unexpectedly succeeded");
+} catch (error) {
+  if (!(error instanceof AgcResourceLimitError) ||
+      error.code !== "AGC_LIMIT_MAX_ANALYSIS_SYMBOLS" ||
+      error.limit !== "maxAnalysisSymbols" || error.max !== 1 ||
+      error.actual !== 2) {
+    throw error;
+  }
+}
+const macroDocumentationAfterLimit = compiler.analyzeSource(
+  { name: "macro-limit.c", source: "#define OK 1\n" },
+  { cursor: { sourceName: "macro-limit.c", byteOffset: 13 } },
+);
+assert.equal(symbol(macroDocumentationAfterLimit, "OK", "macro")?.documentation, "");
 
 function documentationSnapshotSucceeds(input, maxAnalysisSnapshotBytes) {
   try {
@@ -469,6 +748,35 @@ assert.equal(documentationSnapshotSucceeds(
 assert.equal(documentationSnapshotSucceeds(
   plainSnapshotInput, documentedSnapshotMinimum - 1,
 ), true, "Wasm session was not reusable after documentation snapshot limit");
+
+const plainMacroSnapshotInput = {
+  name: "macro-snapshot.c",
+  source: "#define BOUNDED_MACRO 1\n" +
+    "int bounded_macro_main(void) { return BOUNDED_MACRO; }\n",
+};
+const documentedMacroSnapshotInput = {
+  name: "macro-snapshot.c",
+  source: "/** bounded macro doc */\n" +
+    "#define BOUNDED_MACRO 1\n" +
+    "int bounded_macro_main(void) { return BOUNDED_MACRO; }\n",
+};
+const plainMacroSnapshotMinimum = minimumDocumentationSnapshotLimit(
+  plainMacroSnapshotInput,
+);
+const documentedMacroSnapshotMinimum = minimumDocumentationSnapshotLimit(
+  documentedMacroSnapshotInput,
+);
+assert.ok(documentedMacroSnapshotMinimum > plainMacroSnapshotMinimum,
+  "macro documentation did not contribute to the Wasm snapshot byte limit");
+assert.equal(documentationSnapshotSucceeds(
+  plainMacroSnapshotInput, documentedMacroSnapshotMinimum - 1,
+), true);
+assert.equal(documentationSnapshotSucceeds(
+  documentedMacroSnapshotInput, documentedMacroSnapshotMinimum - 1,
+), false);
+assert.equal(documentationSnapshotSucceeds(
+  plainMacroSnapshotInput, documentedMacroSnapshotMinimum - 1,
+), true, "Wasm session was not reusable after macro documentation snapshot limit");
 
 const documentationProjectCompiler = await createCompiler(wasmModule);
 try {
@@ -3950,7 +4258,7 @@ const incompleteMacroSource = {
   source: "#define INCOMPLETE_CALL() 1\n" +
     "int main(void) { return INCOMPLETE_CALL(",
 };
-const incompleteMacroStart = incompleteMacroSource.source.indexOf(
+const incompleteMacroStart = incompleteMacroSource.source.lastIndexOf(
   "INCOMPLETE_CALL(",
 );
 let incompleteMacroResult = null;

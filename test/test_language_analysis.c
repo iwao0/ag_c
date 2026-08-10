@@ -324,6 +324,46 @@ static const char documentation_hover_source[] =
     "\t */\r\n"
     "static const int crlf_value = 5;\n"
     "\n"
+    "\t/// 四角形の一辺の長さ（ピクセル）です。\r\n"
+    "\t/// プレイヤーの描画に使用します。\r\n"
+    "\t#define PLAYER_SIZE 12\r\n"
+    "\n"
+    "/**\n"
+    " * 値を二倍にします。\n"
+    " *\n"
+    " * 引数は一度だけ評価してください。\n"
+    " */\n"
+    "#define DOUBLE(value) ((value) * 2)\n"
+    "/** 継続object macro */\n"
+    "#define DOCUMENTED_LINE_OBJECT (1 + \\\n"
+    "  2)\n"
+    "/** 継続function macro */\n"
+    "#define DOCUMENTED_LINE_FUNCTION(value) ((value) + \\\n"
+    "  1)\n"
+    "/** 古いmacro説明 */\n"
+    "#define REDEFINED_DOC 1\n"
+    "#undef REDEFINED_DOC\n"
+    "/** 新しいmacro説明 */\n"
+    "#define REDEFINED_DOC 2\n"
+    "#if 0\n"
+    "/** inactive macro説明 */\n"
+    "#define INACTIVE_DOCUMENTATION 99\n"
+    "#endif\n"
+    "/** 空行で切れるmacro */\n"
+    "\n"
+    "#define BLANK_DOC_MACRO 3\n"
+    "/** 通常commentで切れるmacro */\n"
+    "/* separator */\n"
+    "#define ORDINARY_GAP_MACRO 4\n"
+    "/** 条件directiveで切れるmacro */\n"
+    "#if 1\n"
+    "#define CONDITIONAL_GAP_MACRO 5\n"
+    "#endif\n"
+    "/** pragmaで切れるmacro */\n"
+    "#pragma pack(push, 1)\n"
+    "#define PRAGMA_GAP_MACRO 6\n"
+    "#pragma pack(pop)\n"
+    "\n"
     "int documentation_main(void) {\n"
     "  /** local object */\n"
     "  int local_value = 1;\n"
@@ -331,7 +371,11 @@ static const char documentation_hover_source[] =
     "  return enemy_x + qualified_value + left_value + right_value +\n"
     "         external_value + prototype_only(local_value) +\n"
     "         definition_only(local_value) + documented_both(local_value) +\n"
-    "         fallback_definition(local_value) + crlf_value;\n"
+    "         fallback_definition(local_value) + crlf_value + PLAYER_SIZE +\n"
+    "         DOUBLE(local_value) + DOCUMENTED_LINE_OBJECT +\n"
+    "         DOCUMENTED_LINE_FUNCTION(local_value) + REDEFINED_DOC +\n"
+    "         BLANK_DOC_MACRO + ORDINARY_GAP_MACRO +\n"
+    "         CONDITIONAL_GAP_MACRO + PRAGMA_GAP_MACRO;\n"
     "}\n";
 
 static int update_guard_project(
@@ -1334,6 +1378,126 @@ static int print_documentation_project_parity_snapshot(
   return result;
 }
 
+static int print_macro_documentation_header_parity_snapshot(
+    const char *revision_text) {
+  char *end = NULL;
+  unsigned long revision = strtoul(revision_text, &end, 10);
+  if (!revision_text[0] || !end || *end != '\0' ||
+      revision < 1 || revision > 3)
+    return 1;
+  const char *paths[] = {"macro-doc.h", "empty.h"};
+  const char *headers[] = {
+      "/** include boundary */\n"
+      "#include \"empty.h\"\n"
+      "#define INCLUDE_GAP_MACRO 4\n"
+      "/// header macro v1\n"
+      "#define HEADER_DOC(value) ((value) + 1)\n",
+      "/** include boundary */\n"
+      "#include \"empty.h\"\n"
+      "#define INCLUDE_GAP_MACRO 4\n"
+      "/** header macro v2 */\n"
+      "#define HEADER_DOC(value) ((value) + 2)\n",
+      "/** include boundary */\n"
+      "#include \"empty.h\"\n"
+      "#define INCLUDE_GAP_MACRO 4\n"
+      "#define HEADER_DOC(value) ((value) + 3)\n",
+  };
+  const char *header_sources[] = {headers[revision - 1], ""};
+  header_bundle_t bundle = make_bundle(paths, header_sources, 2);
+  const char *source =
+      "#include \"macro-doc.h\"\n"
+      "int macro_header_main(void) { return HEADER_DOC(INCLUDE_GAP_MACRO); }\n";
+  const char *use = strstr(source, "HEADER_DOC");
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int ok = session && bundle.bytes && use && analyze_named(
+      session, "macro-header-main.c", source,
+      (size_t)(use - source) + 3, bundle,
+      ag_language_analysis_default_limits(), &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  int result = 1;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  free(bundle.bytes);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
+static int print_macro_documentation_project_parity_snapshot(
+    const char *revision_text) {
+  char *end = NULL;
+  unsigned long requested_revision = strtoul(revision_text, &end, 10);
+  if (!revision_text[0] || !end || *end != '\0' ||
+      requested_revision < 1 || requested_revision > 3)
+    return 1;
+  const char *sources[] = {
+      "/** project macro v1 */\n"
+      "#define PROJECT_DOC 10\n"
+      "int macro_project_main(void) { return PROJECT_DOC; }\n",
+      "/** project macro v2 */\n"
+      "#define PROJECT_DOC 20\n"
+      "int macro_project_main(void) { return PROJECT_DOC; }\n",
+      ("#define PROJECT_DOC 30\n"
+       "int macro_project_main(void) { return PROJECT_DOC; }\n"),
+  };
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  ag_language_project_index_t *project = ag_language_project_index_create();
+  ag_language_analysis_limits_t limits =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  int result = 1;
+  for (unsigned int revision = 1;
+       session && project && revision <= requested_revision; revision++) {
+    const char *source = sources[revision - 1];
+    ag_language_project_source_t project_source = {
+        "macro-project.c", source, strlen(source)};
+    int ok = ag_language_project_index_update(
+        session, project,
+        &(ag_language_project_update_request_t){
+            .revision = revision,
+            .sources = &project_source,
+            .source_count = 1,
+            .limits = limits,
+        },
+        &error);
+    if (!ok) break;
+    if (revision != requested_revision) continue;
+    const char *definition = strstr(source, "PROJECT_DOC");
+    const char *use = definition
+                          ? strstr(definition + strlen("PROJECT_DOC"),
+                                   "PROJECT_DOC")
+                          : NULL;
+    ok = use && analyze_project_named(
+        session, project, "macro-project.c", source,
+        (size_t)(use - source) + 3, (header_bundle_t){0}, limits,
+        &snapshot, &error);
+    int length = ok ? ag_language_analysis_snapshot_write_json(
+                          &snapshot, NULL, 0) : -1;
+    char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+    if (json && ag_language_analysis_snapshot_write_json(
+                    &snapshot, json, (size_t)length + 1) == length) {
+      puts(json);
+      result = 0;
+    }
+    free(json);
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  ag_language_project_index_destroy(project);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
 static const char *last_occurrence(const char *text, const char *needle) {
   const char *result = NULL;
   const char *cursor = text;
@@ -1370,40 +1534,65 @@ static int test_documentation_analysis(ag_target_info_t target) {
     ag_language_symbol_kind_t kind;
     const char *documentation;
     const char *comment;
+    const char *macro_replacement;
+    int macro_parameter_count;
+    const char *first_macro_parameter;
   } documented[] = {
       {"enemy_x", AG_LANGUAGE_SYMBOL_OBJECT, "敵の現在位置",
-       "/** 敵の現在位置 */"},
+       "/** 敵の現在位置 */", NULL, 0, NULL},
       {"walk_frame", AG_LANGUAGE_SYMBOL_FUNCTION,
        "歩行中の画像番号を返す\nalternateが0以外なら第一フレーム",
        "/// 歩行中の画像番号を返す\n"
-       "/// alternateが0以外なら第一フレーム"},
+       "/// alternateが0以外なら第一フレーム", NULL, 0, NULL},
       {"qualified_value", AG_LANGUAGE_SYMBOL_OBJECT,
        "読み取り専用の値\n\n日本語の段落を維持する",
        "/**\n"
        " * 読み取り専用の値\n"
        " *\n"
        " * 日本語の段落を維持する\n"
-       " */"},
+       " */", NULL, 0, NULL},
       {"left_value", AG_LANGUAGE_SYMBOL_OBJECT, "左右の座標",
-       "/** 左右の座標 */"},
+       "/** 左右の座標 */", NULL, 0, NULL},
       {"right_value", AG_LANGUAGE_SYMBOL_OBJECT, "左右の座標",
-       "/** 左右の座標 */"},
+       "/** 左右の座標 */", NULL, 0, NULL},
       {"external_value", AG_LANGUAGE_SYMBOL_OBJECT, "外部オブジェクト",
-       "/** 外部オブジェクト */"},
+       "/** 外部オブジェクト */", NULL, 0, NULL},
       {"prototype_only", AG_LANGUAGE_SYMBOL_FUNCTION, "prototype only",
-       "/** prototype only */"},
+       "/** prototype only */", NULL, 0, NULL},
       {"definition_only", AG_LANGUAGE_SYMBOL_FUNCTION, "definition only",
-       "/** definition only */"},
+       "/** definition only */", NULL, 0, NULL},
       {"documented_both", AG_LANGUAGE_SYMBOL_FUNCTION, "prototype wins",
-       "/** prototype wins */"},
+       "/** prototype wins */", NULL, 0, NULL},
       {"fallback_definition", AG_LANGUAGE_SYMBOL_FUNCTION,
-       "definition fallback", "/** definition fallback */"},
+       "definition fallback", "/** definition fallback */", NULL, 0, NULL},
       {"first_only", AG_LANGUAGE_SYMBOL_OBJECT, "最初の宣言だけ",
-       "/** 最初の宣言だけ */"},
+       "/** 最初の宣言だけ */", NULL, 0, NULL},
       {"crlf_value", AG_LANGUAGE_SYMBOL_OBJECT, "CRLFの説明\n二行目",
-       "/**\r\n\t * CRLFの説明\r\n\t * 二行目\r\n\t */"},
+       "/**\r\n\t * CRLFの説明\r\n\t * 二行目\r\n\t */", NULL, 0, NULL},
       {"local_value", AG_LANGUAGE_SYMBOL_OBJECT, "local object",
-       "/** local object */"},
+       "/** local object */", NULL, 0, NULL},
+      {"PLAYER_SIZE", AG_LANGUAGE_SYMBOL_MACRO,
+       "四角形の一辺の長さ（ピクセル）です。\n"
+       "プレイヤーの描画に使用します。",
+       "/// 四角形の一辺の長さ（ピクセル）です。\r\n"
+       "\t/// プレイヤーの描画に使用します。",
+       "12", 0, NULL},
+      {"DOUBLE", AG_LANGUAGE_SYMBOL_MACRO,
+       "値を二倍にします。\n\n引数は一度だけ評価してください。",
+       "/**\n"
+       " * 値を二倍にします。\n"
+       " *\n"
+       " * 引数は一度だけ評価してください。\n"
+       " */",
+       "( ( value ) * 2 )", 1, "value"},
+      {"DOCUMENTED_LINE_OBJECT", AG_LANGUAGE_SYMBOL_MACRO,
+       "継続object macro", "/** 継続object macro */",
+       "( 1 + 2 )", 0, NULL},
+      {"DOCUMENTED_LINE_FUNCTION", AG_LANGUAGE_SYMBOL_MACRO,
+       "継続function macro", "/** 継続function macro */",
+       "( ( value ) + 1 )", 1, "value"},
+      {"REDEFINED_DOC", AG_LANGUAGE_SYMBOL_MACRO,
+       "新しいmacro説明", "/** 新しいmacro説明 */", "2", 0, NULL},
   };
   for (size_t i = 0; i < sizeof(documented) / sizeof(documented[0]); i++) {
     const char *use = last_occurrence(
@@ -1430,12 +1619,23 @@ static int test_documentation_analysis(ag_target_info_t target) {
                   symbol, documented[i].documentation, "documentation.c",
                   (size_t)(comment - documentation_hover_source),
                   (size_t)(comment - documentation_hover_source) +
-                      strlen(documented[i].comment)),
+                      strlen(documented[i].comment)) &&
+              (documented[i].kind != AG_LANGUAGE_SYMBOL_MACRO ||
+               (symbol->macro_replacement &&
+                strcmp(symbol->macro_replacement,
+                       documented[i].macro_replacement) == 0 &&
+                symbol->macro_parameter_count ==
+                    documented[i].macro_parameter_count &&
+                (documented[i].macro_parameter_count == 0 ||
+                 (symbol->macro_parameters &&
+                  strcmp(symbol->macro_parameters[0],
+                         documented[i].first_macro_parameter) == 0)))),
           "documented symbol fields");
     ag_language_analysis_snapshot_dispose(&snapshot);
   }
 
-  const char *stable_names[] = {"enemy_x", "walk_frame"};
+  const char *stable_names[] = {
+      "enemy_x", "walk_frame", "PLAYER_SIZE", "DOUBLE"};
   for (size_t name_index = 0;
        name_index < sizeof(stable_names) / sizeof(stable_names[0]);
        name_index++) {
@@ -1481,6 +1681,8 @@ static int test_documentation_analysis(ag_target_info_t target) {
       "declaration_after",
       "ordinary_block", "ordinary_line", "comment_text",
       "string_after",   "comment_character", "character_after",
+      "BLANK_DOC_MACRO", "ORDINARY_GAP_MACRO",
+      "CONDITIONAL_GAP_MACRO", "PRAGMA_GAP_MACRO",
       "documentation_main",
   };
   for (size_t i = 0;
@@ -1500,6 +1702,132 @@ static int test_documentation_analysis(ag_target_info_t target) {
           "undocumented symbol fields");
     ag_language_analysis_snapshot_dispose(&snapshot);
   }
+  CHECK(analyze_named(
+            session, "documentation.c", documentation_hover_source,
+            strlen(documentation_hover_source), (header_bundle_t){0},
+            defaults, &snapshot, &error),
+        "inactive macro documentation analysis");
+  CHECK(find_symbol(
+            &snapshot, "INACTIVE_DOCUMENTATION",
+            AG_LANGUAGE_SYMBOL_MACRO) == NULL,
+        "inactive macro documentation omitted");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  const char *macro_header_paths[] = {"macro-doc.h", "empty.h"};
+  const char *macro_headers[] = {
+      "/** include boundary */\n"
+      "#include \"empty.h\"\n"
+      "#define INCLUDE_GAP_MACRO 4\n"
+      "/// header macro v1\n"
+      "#define HEADER_DOC(value) ((value) + 1)\n",
+      "/** include boundary */\n"
+      "#include \"empty.h\"\n"
+      "#define INCLUDE_GAP_MACRO 4\n"
+      "/** header macro v2 */\n"
+      "#define HEADER_DOC(value) ((value) + 2)\n",
+      "/** include boundary */\n"
+      "#include \"empty.h\"\n"
+      "#define INCLUDE_GAP_MACRO 4\n"
+      "#define HEADER_DOC(value) ((value) + 3)\n",
+  };
+  const char *macro_header_main =
+      "#include \"macro-doc.h\"\n"
+      "int macro_header_main(void) { return HEADER_DOC(INCLUDE_GAP_MACRO); }\n";
+  const char *macro_header_use = strstr(macro_header_main, "HEADER_DOC");
+  for (size_t revision = 0; revision < 3; revision++) {
+    const char *macro_header_sources[] = {macro_headers[revision], ""};
+    header_bundle_t bundle = make_bundle(
+        macro_header_paths, macro_header_sources, 2);
+    CHECK(bundle.bytes && macro_header_use && analyze_named(
+              session, "macro-header-main.c", macro_header_main,
+              (size_t)(macro_header_use - macro_header_main) + 3,
+              bundle, defaults, &snapshot, &error),
+          "virtual header macro documentation analysis");
+    const ag_language_symbol_t *header_macro = find_symbol(
+        &snapshot, "HEADER_DOC", AG_LANGUAGE_SYMBOL_MACRO);
+    const ag_language_symbol_t *include_gap = find_symbol(
+        &snapshot, "INCLUDE_GAP_MACRO", AG_LANGUAGE_SYMBOL_MACRO);
+    const char *expected = revision == 0 ? "header macro v1"
+                           : revision == 1 ? "header macro v2" : "";
+    const char *comment_text = revision == 0 ? "/// header macro v1"
+                               : revision == 1
+                                     ? "/** header macro v2 */" : NULL;
+    const char *comment = comment_text
+                              ? strstr(macro_headers[revision], comment_text)
+                              : NULL;
+    CHECK(header_macro &&
+              check_documentation_symbol(
+                  header_macro, expected, "macro-doc.h",
+                  comment ? (size_t)(comment - macro_headers[revision]) : 0,
+                  comment ? (size_t)(comment - macro_headers[revision]) +
+                                strlen(comment_text)
+                          : 0) &&
+              header_macro->macro_parameter_count == 1 &&
+              strcmp(header_macro->macro_parameters[0], "value") == 0 &&
+              include_gap && include_gap->documentation &&
+              include_gap->documentation[0] == '\0' &&
+              !include_gap->has_documentation_range,
+          "virtual header macro documentation fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    free(bundle.bytes);
+  }
+
+  const char *macro_project_sources[] = {
+      "/** project macro v1 */\n"
+      "#define PROJECT_DOC 10\n"
+      "int macro_project_main(void) { return PROJECT_DOC; }\n",
+      "/** project macro v2 */\n"
+      "#define PROJECT_DOC 20\n"
+      "int macro_project_main(void) { return PROJECT_DOC; }\n",
+      ("#define PROJECT_DOC 30\n"
+       "int macro_project_main(void) { return PROJECT_DOC; }\n"),
+  };
+  ag_language_project_index_t *macro_project =
+      ag_language_project_index_create();
+  CHECK(macro_project != NULL, "macro documentation project index");
+  for (unsigned int revision = 1; revision <= 3; revision++) {
+    const char *source = macro_project_sources[revision - 1];
+    ag_language_project_source_t project_source = {
+        "macro-project.c", source, strlen(source)};
+    CHECK(ag_language_project_index_update(
+              session, macro_project,
+              &(ag_language_project_update_request_t){
+                  .revision = revision,
+                  .sources = &project_source,
+                  .source_count = 1,
+                  .limits = defaults,
+              },
+              &error),
+          "macro documentation project update");
+    const char *definition = strstr(source, "PROJECT_DOC");
+    const char *use = definition
+                          ? strstr(definition + strlen("PROJECT_DOC"),
+                                   "PROJECT_DOC")
+                          : NULL;
+    CHECK(use && analyze_project_named(
+              session, macro_project, "macro-project.c", source,
+              (size_t)(use - source) + 3, (header_bundle_t){0},
+              defaults, &snapshot, &error),
+          "macro documentation project analysis");
+    const ag_language_symbol_t *project_macro = find_symbol(
+        &snapshot, "PROJECT_DOC", AG_LANGUAGE_SYMBOL_MACRO);
+    const char *expected = revision == 1 ? "project macro v1"
+                           : revision == 2 ? "project macro v2" : "";
+    const char *comment_text = revision == 1 ? "/** project macro v1 */"
+                               : revision == 2
+                                     ? "/** project macro v2 */" : NULL;
+    const char *comment = comment_text ? strstr(source, comment_text) : NULL;
+    CHECK(project_macro &&
+              check_documentation_symbol(
+                  project_macro, expected, "macro-project.c",
+                  comment ? (size_t)(comment - source) : 0,
+                  comment ? (size_t)(comment - source) +
+                                strlen(comment_text)
+                          : 0),
+          "macro documentation project revision fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  ag_language_project_index_destroy(macro_project);
 
   const char *header_paths[] = {"player.h"};
   const char *header_with_documentation =
@@ -1630,6 +1958,45 @@ static int test_documentation_analysis(ag_target_info_t target) {
         "documentation session reusable after string limit");
   ag_language_analysis_snapshot_dispose(&snapshot);
 
+  const char *limited_macro_source =
+      "/** 12345678901234 */\n"
+      "#define LIMITED_MACRO 1\n";
+  const char *limited_macro_use = strstr(
+      limited_macro_source, "LIMITED_MACRO");
+  tiny = defaults;
+  tiny.max_string_bytes = 13;
+  CHECK(limited_macro_use && !analyze_named(
+            session, "macro-limit.c", limited_macro_source,
+            (size_t)(limited_macro_use - limited_macro_source) + 2,
+            (header_bundle_t){0}, tiny, &snapshot, &error),
+        "macro documentation string limit rejected");
+  CHECK(error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code, "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES") == 0 &&
+            strcmp(error.limit, "maxAnalysisStringBytes") == 0 &&
+            error.max == 13 && error.actual == 14,
+        "macro documentation string limit fields");
+  const char *macro_entry_limit_source =
+      "/** first */\n#define FIRST_DOC 1\n"
+      "/** second */\n#define SECOND_DOC 2\n"
+      "int macro_entry_limit_main(void) { return FIRST_DOC + SECOND_DOC; }\n";
+  tiny = defaults;
+  tiny.max_symbols = 1;
+  CHECK(!analyze_named(
+            session, "macro-entry-limit.c", macro_entry_limit_source,
+            strlen(macro_entry_limit_source), (header_bundle_t){0}, tiny,
+            &snapshot, &error),
+        "macro documentation entry limit rejected");
+  CHECK(error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code, "AGC_LIMIT_MAX_ANALYSIS_SYMBOLS") == 0 &&
+            strcmp(error.limit, "maxAnalysisSymbols") == 0 &&
+            error.max == 1 && error.actual == 2,
+        "macro documentation entry limit fields");
+  CHECK(analyze_named(
+            session, "macro-limit.c", "#define OK 1\n", 13,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "macro documentation session reusable after limits");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
   const char *snapshot_plain = "int bounded;\n";
   const char *snapshot_documented = "/** bounded doc */\nint bounded;\n";
   CHECK(analyze_named(
@@ -1666,6 +2033,48 @@ static int test_documentation_analysis(ag_target_info_t target) {
                    "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES") == 0 &&
             strcmp(error.limit, "maxAnalysisSnapshotBytes") == 0,
         "documentation snapshot limit fields");
+
+  const char *snapshot_plain_macro =
+      "#define BOUNDED_MACRO 1\n"
+      "int bounded_macro_main(void) { return BOUNDED_MACRO; }\n";
+  const char *snapshot_documented_macro =
+      "/** bounded macro doc */\n"
+      "#define BOUNDED_MACRO 1\n"
+      "int bounded_macro_main(void) { return BOUNDED_MACRO; }\n";
+  CHECK(analyze_named(
+            session, "macro-snapshot.c", snapshot_plain_macro,
+            strlen(snapshot_plain_macro), (header_bundle_t){0}, defaults,
+            &snapshot, &error),
+        "plain macro documentation snapshot sizing");
+  size_t plain_macro_snapshot_bytes = snapshot.allocated_bytes;
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  CHECK(analyze_named(
+            session, "macro-snapshot.c", snapshot_documented_macro,
+            strlen(snapshot_documented_macro), (header_bundle_t){0},
+            defaults, &snapshot, &error),
+        "documented macro snapshot sizing");
+  size_t documented_macro_snapshot_bytes = snapshot.allocated_bytes;
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  CHECK(documented_macro_snapshot_bytes > plain_macro_snapshot_bytes,
+        "macro documentation contributes to snapshot limit");
+  tiny = defaults;
+  tiny.max_snapshot_bytes = documented_macro_snapshot_bytes - 1;
+  CHECK(analyze_named(
+            session, "macro-snapshot.c", snapshot_plain_macro,
+            strlen(snapshot_plain_macro), (header_bundle_t){0}, tiny,
+            &snapshot, &error),
+        "plain macro snapshot within documentation boundary");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  CHECK(!analyze_named(
+            session, "macro-snapshot.c", snapshot_documented_macro,
+            strlen(snapshot_documented_macro), (header_bundle_t){0}, tiny,
+            &snapshot, &error),
+        "documented macro snapshot limit rejected");
+  CHECK(error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code,
+                   "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES") == 0 &&
+            strcmp(error.limit, "maxAnalysisSnapshotBytes") == 0,
+        "macro documentation snapshot limit fields");
 
   const char *immutable_source = "/** immutable */\nint immutable_value;\n";
   CHECK(analyze_named(
@@ -1731,6 +2140,12 @@ int main(int argc, char **argv) {
   if (argc == 3 &&
       strcmp(argv[1], "--documentation-project-parity-json") == 0)
     return print_documentation_project_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--macro-documentation-header-parity-json") == 0)
+    return print_macro_documentation_header_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--macro-documentation-project-parity-json") == 0)
+    return print_macro_documentation_project_parity_snapshot(argv[2]);
   if (argc == 2 &&
       strcmp(argv[1], "--project-failure-recovery-parity-json") == 0)
     return test_project_failure_recovery(1);
@@ -4437,7 +4852,8 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
   source = "#define INCOMPLETE_CALL() 1\n"
            "int main(void) { return INCOMPLETE_CALL(";
-  const char *incomplete_macro = strstr(source, "INCOMPLETE_CALL(");
+  const char *incomplete_macro = last_occurrence(
+      source, "INCOMPLETE_CALL(");
   CHECK(incomplete_macro &&
             analyze_named(
                 session, "incomplete-macro.c", source,
