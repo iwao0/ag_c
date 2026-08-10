@@ -124,11 +124,16 @@ static const char conditional_hover_source[] =
 static const char generic_hover_source[] =
     "#define GENERIC_MACRO 9\n"
     "typedef int GenericScore;\n"
+    "#define GenericScore() long\n"
     "struct GenericPlayer { int score; };\n"
     "union GenericPayload { int score; };\n"
     "enum GenericState { GENERIC_IDLE = 0 };\n"
+    "#define GenericState() int\n"
     "enum { GENERIC_MODE = 3 };\n"
+    "#define GENERIC_MODE() 4\n"
     "int generic_value;\n"
+    "#define generic_value() 5\n"
+    "#define GENERIC_CALL() 6\n"
     "int generic_identity(int value) { return value; }\n"
     "int generic_score(struct GenericPlayer value) { return value.score; }\n"
     "int generic_pointer_score(const struct GenericPlayer *value) { return value ? value->score : 0; }\n"
@@ -142,6 +147,7 @@ static const char generic_hover_source[] =
     "  result += _Generic(generic_identity(generic_value), int: 2, default: 0);\n"
     "  result += _Generic(GENERIC_MODE, int: 3, default: 0);\n"
     "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n"
+    "  result += _Generic(GENERIC_CALL(), int: 6, default: 0);\n"
     "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n"
     "  result += (int)sizeof(_Atomic /* type */ (GenericScore));\n"
     "  result += (int)_Alignof /* query */ (const GenericScore *);\n"
@@ -194,6 +200,10 @@ static const char function_declarator_hover_source[] =
     "int target(int value);\n"
     "int (*(factory(void)))(int) { return target; }\n"
     "int (*(seeded_factory(int seed)))(int) { return target; }\n"
+    "#define active_member_macro() 9\n"
+    "struct MacroRecord { int active_member_macro; int future_member_macro; };\n"
+    "int read_macro_member(struct MacroRecord value) { return value.active_member_macro; }\n"
+    "#define future_member_macro 7\n"
     "int read_file_members(struct FileRecord *record, union FileUnion value) {\n"
     "  return (record->member != 0) + (int)value.member;\n"
     "}\n"
@@ -2334,6 +2344,8 @@ int main(int argc, char **argv) {
 
   const char *generic_macro_declaration = strstr(
       generic_hover_source, "GENERIC_MACRO");
+  const char *generic_call_macro_declaration = strstr(
+      generic_hover_source, "GENERIC_CALL");
   const char *generic_typedef_declaration = strstr(
       generic_hover_source, "GenericScore");
   const char *generic_struct_declaration = strstr(
@@ -2366,8 +2378,12 @@ int main(int argc, char **argv) {
       generic_enum_use, "_Generic(GENERIC_MACRO");
   const char *generic_macro_use = strstr(
       generic_macro_control, "GENERIC_MACRO");
+  const char *generic_call_macro_control = strstr(
+      generic_macro_use, "_Generic(GENERIC_CALL()");
+  const char *generic_call_macro_use = strstr(
+      generic_call_macro_control, "GENERIC_CALL");
   const char *generic_typedef_control = strstr(
-      generic_macro_use, "_Generic(generic_value, GenericScore");
+      generic_call_macro_use, "_Generic(generic_value, GenericScore");
   const char *generic_typedef_use = strstr(
       generic_typedef_control, "GenericScore");
   const char *generic_atomic_query = strstr(
@@ -2461,7 +2477,8 @@ int main(int argc, char **argv) {
       generic_array_literal_use, "int: generic_value");
   const char *generic_association_value_use = strstr(
       generic_value_association, "generic_value");
-  CHECK(generic_macro_declaration && generic_typedef_declaration &&
+  CHECK(generic_macro_declaration && generic_call_macro_declaration &&
+            generic_typedef_declaration &&
             generic_struct_declaration && generic_union_declaration &&
             generic_enum_tag_declaration &&
             generic_enum_declaration && generic_object_declaration &&
@@ -2470,6 +2487,7 @@ int main(int argc, char **argv) {
             generic_function_use && generic_argument_use &&
             generic_enum_control && generic_enum_use &&
             generic_macro_control && generic_macro_use &&
+            generic_call_macro_control && generic_call_macro_use &&
             generic_typedef_control && generic_typedef_use &&
             generic_atomic_query && generic_atomic_typedef_use &&
             generic_alignof && generic_alignof_typedef_use &&
@@ -2512,6 +2530,8 @@ int main(int argc, char **argv) {
        generic_enum_declaration, "3", ""},
       {generic_macro_use, "GENERIC_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
        generic_macro_declaration, "", "9"},
+      {generic_call_macro_use, "GENERIC_CALL", AG_LANGUAGE_SYMBOL_MACRO,
+       generic_call_macro_declaration, "", "6"},
       {generic_typedef_use, "GenericScore", AG_LANGUAGE_SYMBOL_TYPEDEF,
        generic_typedef_declaration, "", ""},
       {generic_atomic_typedef_use, "GenericScore",
@@ -3050,6 +3070,9 @@ int main(int argc, char **argv) {
       {"FileUnion { long member;", "member", "long", 1},
       {"PrototypeRecord { int member; }", "member", "int", 2},
       {"NestedPayload { int member; }", "member", "int", 3},
+      {"MacroRecord { int active_member_macro;", "active_member_macro",
+       "int", 1},
+      {"int future_member_macro;", "future_member_macro", "int", 1},
   };
   for (size_t case_index = 0;
        case_index < sizeof(aggregate_member_cases) /
@@ -3099,13 +3122,16 @@ int main(int argc, char **argv) {
 
   struct {
     const char *anchor;
+    const char *name;
     const char *declaration_anchor;
     const char *type;
   } aggregate_member_use_cases[] = {
-      {"return value.member;", "LocalValue { int member; }", "int"},
-      {"record->member", "FileRecord { const int *member;",
+      {"return value.member;", "member", "LocalValue { int member; }", "int"},
+      {"record->member", "member", "FileRecord { const int *member;",
        "const int *"},
-      {"(int)value.member;", "FileUnion { long member; }", "long"},
+      {"(int)value.member;", "member", "FileUnion { long member; }", "long"},
+      {"return value.active_member_macro;", "active_member_macro",
+       "MacroRecord { int active_member_macro;", "int"},
   };
   for (size_t case_index = 0;
        case_index < sizeof(aggregate_member_use_cases) /
@@ -3114,14 +3140,20 @@ int main(int argc, char **argv) {
     const char *anchor = strstr(
         function_declarator_hover_source,
         aggregate_member_use_cases[case_index].anchor);
-    const char *name = anchor ? strstr(anchor, "member") : NULL;
+    const char *name = anchor
+                           ? strstr(anchor,
+                                    aggregate_member_use_cases[case_index].name)
+                           : NULL;
     const char *declaration_anchor = strstr(
         function_declarator_hover_source,
         aggregate_member_use_cases[case_index].declaration_anchor);
     const char *declaration = declaration_anchor
-                                  ? strstr(declaration_anchor, "member")
+                                  ? strstr(
+                                        declaration_anchor,
+                                        aggregate_member_use_cases[case_index].name)
                                   : NULL;
-    size_t name_length = strlen("member");
+    size_t name_length = strlen(
+        aggregate_member_use_cases[case_index].name);
     size_t cursor_deltas[] = {0, name_length / 2, name_length};
     CHECK(name && declaration, "aggregate member use hover anchors");
     for (size_t cursor_index = 0;
@@ -3137,7 +3169,8 @@ int main(int argc, char **argv) {
       const ag_language_symbol_t *hover = hover_symbol(&snapshot);
       CHECK(hover && hover->kind == AG_LANGUAGE_SYMBOL_MEMBER &&
                 hover->name_space == AG_LANGUAGE_NAMESPACE_MEMBER &&
-                strcmp(hover->name, "member") == 0 &&
+                strcmp(hover->name,
+                       aggregate_member_use_cases[case_index].name) == 0 &&
                 strcmp(hover->type,
                        aggregate_member_use_cases[case_index].type) == 0 &&
                 strcmp(hover->signature, "") == 0 &&

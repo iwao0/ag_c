@@ -1145,11 +1145,16 @@ const genericSource = {
   name: "generic.c",
   source: "#define GENERIC_MACRO 9\n" +
     "typedef int GenericScore;\n" +
+    "#define GenericScore() long\n" +
     "struct GenericPlayer { int score; };\n" +
     "union GenericPayload { int score; };\n" +
     "enum GenericState { GENERIC_IDLE = 0 };\n" +
+    "#define GenericState() int\n" +
     "enum { GENERIC_MODE = 3 };\n" +
+    "#define GENERIC_MODE() 4\n" +
     "int generic_value;\n" +
+    "#define generic_value() 5\n" +
+    "#define GENERIC_CALL() 6\n" +
     "int generic_identity(int value) { return value; }\n" +
     "int generic_score(struct GenericPlayer value) { return value.score; }\n" +
     "int generic_pointer_score(const struct GenericPlayer *value) { return value ? value->score : 0; }\n" +
@@ -1163,6 +1168,7 @@ const genericSource = {
     "  result += _Generic(generic_identity(generic_value), int: 2, default: 0);\n" +
     "  result += _Generic(GENERIC_MODE, int: 3, default: 0);\n" +
     "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n" +
+    "  result += _Generic(GENERIC_CALL(), int: 6, default: 0);\n" +
     "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n" +
     "  result += (int)sizeof(_Atomic /* type */ (GenericScore));\n" +
     "  result += (int)_Alignof /* query */ (const GenericScore *);\n" +
@@ -1193,6 +1199,7 @@ function findGenericName(name, from = 0) {
 }
 
 const genericMacroDeclaration = findGenericName("GENERIC_MACRO");
+const genericCallMacroDeclaration = findGenericName("GENERIC_CALL");
 const genericTypedefDeclaration = findGenericName("GenericScore");
 const genericStructDeclaration = findGenericName("GenericPlayer");
 const genericUnionDeclaration = findGenericName("GenericPayload");
@@ -1223,8 +1230,14 @@ const genericMacroControl = findGenericName(
   "_Generic(GENERIC_MACRO", genericEnumUse,
 );
 const genericMacroUse = findGenericName("GENERIC_MACRO", genericMacroControl);
+const genericCallMacroControl = findGenericName(
+  "_Generic(GENERIC_CALL()", genericMacroUse,
+);
+const genericCallMacroUse = findGenericName(
+  "GENERIC_CALL", genericCallMacroControl,
+);
 const genericTypedefControl = findGenericName(
-  "_Generic(generic_value, GenericScore", genericMacroUse,
+  "_Generic(generic_value, GenericScore", genericCallMacroUse,
 );
 const genericTypedefUse = findGenericName(
   "GenericScore", genericTypedefControl,
@@ -1359,6 +1372,8 @@ const genericHoverCases = [
     index: genericEnumUse },
   { name: "GENERIC_MACRO", kind: "macro", replacement: "9",
     index: genericMacroUse },
+  { name: "GENERIC_CALL", kind: "macro", replacement: "6",
+    index: genericCallMacroUse },
   { name: "GenericScore", kind: "typedef", index: genericTypedefUse },
   { name: "GenericScore", kind: "typedef",
     index: genericAtomicTypedefUse },
@@ -1395,6 +1410,7 @@ const genericDeclarations = new Map([
   ["generic_identity", genericFunctionDeclaration],
   ["GENERIC_MODE", genericEnumDeclaration],
   ["GENERIC_MACRO", genericMacroDeclaration],
+  ["GENERIC_CALL", genericCallMacroDeclaration],
   ["GenericScore", genericTypedefDeclaration],
   ["GenericPlayer", genericStructDeclaration],
   ["GenericPayload", genericUnionDeclaration],
@@ -1502,6 +1518,10 @@ const functionDeclaratorSource = {
     "int target(int value);\n" +
     "int (*(factory(void)))(int) { return target; }\n" +
     "int (*(seeded_factory(int seed)))(int) { return target; }\n" +
+    "#define active_member_macro() 9\n" +
+    "struct MacroRecord { int active_member_macro; int future_member_macro; };\n" +
+    "int read_macro_member(struct MacroRecord value) { return value.active_member_macro; }\n" +
+    "#define future_member_macro 7\n" +
     "int read_file_members(struct FileRecord *record, union FileUnion value) {\n" +
     "  return (record->member != 0) + (int)value.member;\n" +
     "}\n" +
@@ -1598,6 +1618,10 @@ const aggregateMemberCases = [
     type: "int", scopeDepth: 2 },
   { anchor: "NestedPayload { int member; }", name: "member",
     type: "int", scopeDepth: 3 },
+  { anchor: "MacroRecord { int active_member_macro;",
+    name: "active_member_macro", type: "int", scopeDepth: 1 },
+  { anchor: "int future_member_macro;", name: "future_member_macro",
+    type: "int", scopeDepth: 1 },
 ];
 const nativeAggregateMemberSnapshots = new Map();
 const aggregateMemberUseCases = [
@@ -1607,6 +1631,8 @@ const aggregateMemberUseCases = [
     declarationAnchor: "FileRecord { const int *member;" },
   { anchor: "(int)value.member;", name: "member", type: "long",
     declarationAnchor: "FileUnion { long member; }" },
+  { anchor: "return value.active_member_macro;", name: "active_member_macro",
+    type: "int", declarationAnchor: "MacroRecord { int active_member_macro;" },
 ];
 const nativeAggregateMemberUseSnapshots = new Map();
 const labelHoverCases = [

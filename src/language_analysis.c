@@ -3090,18 +3090,37 @@ static int symbol_compare(const void *left_pointer, const void *right_pointer) {
 }
 
 static void select_hover(ag_language_analysis_snapshot_t *snapshot,
-                         const char *name, size_t name_len) {
+                         const char *name, size_t name_len,
+                         int function_like_macro_invoked) {
   snapshot->hover_index = -1;
   if (!name || name_len == 0) return;
   for (int i = 0; i < snapshot->completion_item_count; i++) {
     ag_language_symbol_t *symbol = &snapshot->completion_items[i];
     if (strlen(symbol->name) != name_len ||
         memcmp(symbol->name, name, name_len) != 0) continue;
-    if (snapshot->hover_index < 0 ||
-        symbol->kind == AG_LANGUAGE_SYMBOL_MACRO)
+    if (snapshot->hover_index < 0)
       snapshot->hover_index = i;
-    if (symbol->kind == AG_LANGUAGE_SYMBOL_MACRO) return;
+    if (symbol->kind == AG_LANGUAGE_SYMBOL_MACRO &&
+        (!symbol->macro_is_function_like || function_like_macro_invoked)) {
+      snapshot->hover_index = i;
+      return;
+    }
   }
+}
+
+static int select_hover_kind(ag_language_analysis_snapshot_t *snapshot,
+                             const char *name, size_t name_len,
+                             ag_language_symbol_kind_t kind) {
+  if (!snapshot || !name || name_len == 0) return 0;
+  for (int i = 0; i < snapshot->completion_item_count; i++) {
+    const ag_language_symbol_t *symbol = &snapshot->completion_items[i];
+    if (symbol->kind != kind || strlen(symbol->name) != name_len ||
+        memcmp(symbol->name, name, name_len) != 0)
+      continue;
+    snapshot->hover_index = i;
+    return 1;
+  }
+  return 0;
 }
 
 static const psx_scope_declaration_t *
@@ -4039,19 +4058,33 @@ int ag_language_analyze_source(
   size_t hover_name_len = 0;
   identifier_at(request->source, request->source_length,
                 request->cursor_byte_offset, &hover_name, &hover_name_len);
-  select_hover(snapshot, hover_name, hover_name_len);
-  if (cursor_label_declaration) {
-    for (int i = 0; i < snapshot->completion_item_count; i++) {
-      const ag_language_symbol_t *symbol =
-          &snapshot->completion_items[i];
-      if (symbol->kind == AG_LANGUAGE_SYMBOL_LABEL &&
-          strlen(symbol->name) == hover_name_len &&
-          memcmp(symbol->name, hover_name, hover_name_len) == 0) {
-        snapshot->hover_index = i;
-        break;
-      }
-    }
-  }
+  size_t hover_name_end = hover_name
+                              ? (size_t)(hover_name - request->source) +
+                                    hover_name_len
+                              : 0;
+  size_t after_hover_name = skip_analysis_space_and_comments(
+      request->source, request->source_length, hover_name_end);
+  int function_like_macro_invoked =
+      hover_name && after_hover_name < request->source_length &&
+      request->source[after_hover_name] == '(';
+  select_hover(snapshot, hover_name, hover_name_len,
+               function_like_macro_invoked);
+  const char *member_object_name = NULL;
+  size_t member_object_name_len = 0;
+  int member_uses_arrow = 0;
+  int cursor_is_member_access = member_base_at_cursor(
+      request, &member_object_name, &member_object_name_len,
+      &member_uses_arrow);
+  if (cursor_label_declaration)
+    (void)select_hover_kind(
+        snapshot, hover_name, hover_name_len, AG_LANGUAGE_SYMBOL_LABEL);
+  else if (cursor_member_declaration || cursor_is_member_access)
+    (void)select_hover_kind(
+        snapshot, hover_name, hover_name_len, AG_LANGUAGE_SYMBOL_MEMBER);
+  else if (cursor_scoped_declaration)
+    (void)select_hover_kind(
+        snapshot, hover_name, hover_name_len,
+        declaration_kind(cursor_scoped_declaration));
   int unresolved_elided_identifier =
       (recovery_changed &
        AG_LANGUAGE_RECOVERY_COMPLETE_IDENTIFIER_ELIDED) &&
