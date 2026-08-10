@@ -189,8 +189,22 @@ int psx_apply_aggregate_member_declaration(
       ps_ctx_diagnostics(request->semantic_context);
   psx_aggregate_member_declaration_resolution_t resolution;
   psx_resolve_aggregate_member_declaration(layout, request, &resolution);
-  if (resolution.status == PSX_AGGREGATE_MEMBER_OK)
+  if (resolution.status == PSX_AGGREGATE_MEMBER_OK) {
+    if (request->member_name && request->member_name_len > 0 && diag_tok) {
+      psx_decl_id_t declaration_id =
+          ps_ctx_record_member_declaration_id_in(
+              request->semantic_context, layout->record_id,
+              request->member_name, request->member_name_len);
+      ag_source_manager_t *sources = diag_context_source_manager(
+          diagnostics);
+      (void)psx_scope_graph_note_declaration_source(
+          ps_ctx_scope_graph(request->semantic_context), declaration_id,
+          ag_source_manager_name(sources, diag_tok->file_name_id),
+          diag_tok->source_input, diag_tok->byte_offset,
+          diag_tok->byte_length);
+    }
     return resolution.registered_member_count;
+  }
   if (resolution.status == PSX_AGGREGATE_MEMBER_MISSING_NAME) {
     ps_diag_missing_in(diagnostics, diag_tok, diag_text_for_in(diagnostics, DIAG_TEXT_MEMBER_NAME));
   }

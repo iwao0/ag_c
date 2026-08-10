@@ -181,6 +181,8 @@ static const char function_declarator_hover_source[] =
     "int first(void), second(void);\n"
     "int third(void), brace_values[2] = { 1, 2 };\n"
     "typedef int Scalar;\n"
+    "struct FileRecord { const int *member; unsigned bits : 3; int values[4]; int (*callback_member)(int); };\n"
+    "union FileUnion { long member; };\n"
     "int takes_scalar(Scalar);\n"
     "int parameter_prototype(int named, const int *pointer, int proto_callback(int));\n"
     "int tagged_parameter_prototype(struct /* scope */ PrototypeRecord { int member; } value);\n"
@@ -3012,6 +3014,66 @@ int main(int argc, char **argv) {
                           name_length) &&
                 !snapshot.partial && snapshot.diagnostic_count == 0,
             "function prototype-scope tag hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  struct {
+    const char *anchor;
+    const char *name;
+    const char *type;
+    int scope_depth;
+  } aggregate_member_cases[] = {
+      {"FileRecord { const int *member;", "member", "const int *", 1},
+      {"unsigned bits : 3;", "bits", "unsigned int", 1},
+      {"int values[4];", "values", "int [4]", 1},
+      {"(*callback_member)(int);", "callback_member", "int (*)(int)", 1},
+      {"FileUnion { long member;", "member", "long", 1},
+      {"PrototypeRecord { int member; }", "member", "int", 2},
+      {"NestedPayload { int member; }", "member", "int", 3},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(aggregate_member_cases) /
+                        sizeof(aggregate_member_cases[0]);
+       case_index++) {
+    const char *anchor = strstr(
+        function_declarator_hover_source,
+        aggregate_member_cases[case_index].anchor);
+    const char *name =
+        anchor ? strstr(anchor, aggregate_member_cases[case_index].name) : NULL;
+    size_t name_length = strlen(aggregate_member_cases[case_index].name);
+    size_t cursor_deltas[] = {0, name_length / 2, name_length};
+    CHECK(name, "aggregate member hover anchor");
+    for (size_t cursor_index = 0;
+         cursor_index < sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+         cursor_index++) {
+      CHECK(analyze_named(
+                session, "function-declarator.c",
+                function_declarator_hover_source,
+                (size_t)(name - function_declarator_hover_source) +
+                    cursor_deltas[cursor_index],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "aggregate member hover analysis");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      CHECK(hover && hover->kind == AG_LANGUAGE_SYMBOL_MEMBER &&
+                hover->name_space == AG_LANGUAGE_NAMESPACE_MEMBER &&
+                strcmp(hover->name,
+                       aggregate_member_cases[case_index].name) == 0 &&
+                strcmp(hover->type,
+                       aggregate_member_cases[case_index].type) == 0 &&
+                strcmp(hover->signature, "") == 0 &&
+                strcmp(hover->storage_class, "member") == 0 &&
+                hover->initializer_state == AG_LANGUAGE_INITIALIZER_NONE &&
+                hover->scope_depth ==
+                    aggregate_member_cases[case_index].scope_depth &&
+                !hover->has_definition &&
+                hover->declaration.start.offset ==
+                    (int)(name - function_declarator_hover_source) &&
+                hover->declaration.end.offset ==
+                    (int)(name - function_declarator_hover_source +
+                          name_length) &&
+                !snapshot.partial && snapshot.diagnostic_count == 0,
+            "aggregate member hover fields");
       ag_language_analysis_snapshot_dispose(&snapshot);
     }
   }

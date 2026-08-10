@@ -225,9 +225,11 @@ static int word_before(
   return length == strlen(word) && memcmp(source + cursor, word, length) == 0;
 }
 
-static int enum_body_open_at(
-    const char *source, size_t limit, size_t *enum_open,
-    size_t *outer_brace_count) {
+static int tag_body_open_at(
+    const char *source, size_t limit, const char *tag_keyword,
+    size_t *tag_open, size_t *outer_brace_count) {
+  if (!source || !tag_keyword || !tag_open || !outer_brace_count)
+    return 0;
   size_t *braces = NULL;
   size_t brace_count = 0;
   size_t brace_capacity = 0;
@@ -320,18 +322,168 @@ static int enum_body_open_at(
   while (cursor > 0 &&
          is_identifier_byte((unsigned char)source[cursor - 1]))
     cursor--;
-  if (word_end - cursor == strlen("enum") &&
-      memcmp(source + cursor, "enum", strlen("enum")) == 0) {
-    *enum_open = open;
+  size_t keyword_length = strlen(tag_keyword);
+  if (word_end - cursor == keyword_length &&
+      memcmp(source + cursor, tag_keyword, keyword_length) == 0) {
+    *tag_open = open;
     *outer_brace_count = outer_count;
     return 1;
   }
   if (cursor == word_end) return 0;
   while (cursor > 0 && isspace((unsigned char)source[cursor - 1])) cursor--;
-  if (!word_before(source, cursor, "enum")) return 0;
-  *enum_open = open;
+  if (!word_before(source, cursor, tag_keyword)) return 0;
+  *tag_open = open;
   *outer_brace_count = outer_count;
   return 1;
+}
+
+static int record_body_open_at(
+    const char *source, size_t limit, size_t *record_open) {
+  if (!source || !record_open) return 0;
+  size_t search_limit = limit;
+  size_t selected = SIZE_MAX;
+  for (;;) {
+    size_t open = 0;
+    size_t outer_brace_count = 0;
+    if (!tag_body_open_at(
+            source, search_limit, "struct", &open,
+            &outer_brace_count) &&
+        !tag_body_open_at(
+            source, search_limit, "union", &open,
+            &outer_brace_count))
+      break;
+    (void)outer_brace_count;
+    selected = open;
+    if (open == 0) break;
+    search_limit = open;
+  }
+  if (selected == SIZE_MAX) return 0;
+  *record_open = selected;
+  return 1;
+}
+
+static int analysis_source_delimiters_are_balanced(
+    const char *source, size_t length) {
+  if (!source || (length > 0 && source[length - 1] == '\\')) return 0;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = 1;
+  int preprocessor_line = 0;
+  for (size_t i = 0; i < length; i++) {
+    char c = source[i];
+    char next = i + 1 < length ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      if (!preprocessor_line || i == 0 || source[i - 1] != '\\')
+        preprocessor_line = 0;
+      at_line_start = 1;
+      continue;
+    }
+    if (at_line_start &&
+        (c == ' ' || c == '\t' || c == '\r'))
+      continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    at_line_start = 0;
+    if (preprocessor_line) continue;
+    if (c == '(') {
+      paren_depth++;
+    } else if (c == ')') {
+      if (paren_depth == 0) return 0;
+      paren_depth--;
+    } else if (c == '[') {
+      bracket_depth++;
+    } else if (c == ']') {
+      if (bracket_depth == 0) return 0;
+      bracket_depth--;
+    } else if (c == '{') {
+      brace_depth++;
+    } else if (c == '}') {
+      if (brace_depth == 0) return 0;
+      brace_depth--;
+    }
+  }
+  return !block_comment && !quote && paren_depth == 0 &&
+         bracket_depth == 0 && brace_depth == 0;
+}
+
+static char *build_record_member_recovery_source(
+    const char *source, size_t length, size_t cursor, int *changed,
+    size_t *source_consumed) {
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(source, length, cursor, &name, &name_length);
+  if (!name || name_length == 0) return NULL;
+  size_t name_start = (size_t)(name - source);
+  size_t after_name = skip_analysis_space_and_comments(
+      source, length, name_start + name_length);
+  size_t before_name = name_start;
+  while (before_name > 0 &&
+         isspace((unsigned char)source[before_name - 1]))
+    before_name--;
+  int is_parenthesized_pointer_name =
+      after_name < length && source[after_name] == ')' &&
+      before_name > 0 && source[before_name - 1] == '*';
+  if (after_name >= length ||
+      (source[after_name] != ';' && source[after_name] != ',' &&
+       source[after_name] != '[' && source[after_name] != ':' &&
+       !is_parenthesized_pointer_name))
+    return NULL;
+  size_t record_open = 0;
+  if (!record_body_open_at(source, name_start, &record_open) ||
+      record_open >= name_start ||
+      !analysis_source_delimiters_are_balanced(source, length))
+    return NULL;
+  static const char marker[] =
+      "\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  if (length > SIZE_MAX - sizeof(marker)) return NULL;
+  size_t result_length = length + sizeof(marker) - 1;
+  char *result = malloc(result_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, length);
+  memcpy(result + length, marker, sizeof(marker));
+  if (changed) *changed = 1;
+  if (source_consumed) *source_consumed = length;
+  return result;
 }
 
 static int enum_enumerator_bounds(
@@ -461,8 +613,9 @@ static char *build_enum_declaration_recovery_source(
   size_t enum_open = 0;
   size_t outer_brace_count = 0;
   size_t item_end = 0;
-  if (!enum_body_open_at(
-          source, name_start, &enum_open, &outer_brace_count) ||
+  if (!tag_body_open_at(
+          source, name_start, "enum", &enum_open,
+          &outer_brace_count) ||
       !enum_enumerator_bounds(
           source, length, enum_open, name_start, name_end, &item_end))
     return NULL;
@@ -1398,6 +1551,12 @@ static char *build_recovery_source(const char *source, size_t source_length,
   if (enum_recovery)
     return append_conditional_validation_tail(
         enum_recovery, source, source_length, source_consumed);
+  char *record_member_recovery = build_record_member_recovery_source(
+      source, source_length, cursor, changed, &source_consumed);
+  if (record_member_recovery)
+    return append_conditional_validation_tail(
+        record_member_recovery, source, source_length,
+        source_consumed);
   char *function_recovery =
       build_function_declaration_recovery_source(
           source, source_length, cursor, changed, &source_consumed);
@@ -2070,6 +2229,13 @@ static psx_qual_type_t declaration_type(
     case PSX_DECL_ENUM_CONSTANT:
       return psx_semantic_type_table_fundamental_integer(
           types, PSX_INTEGER_KIND_INT, 0, 0);
+    case PSX_DECL_MEMBER: {
+      psx_qual_type_t type = {PSX_TYPE_ID_INVALID, 0};
+      return ps_ctx_record_member_qual_type_by_declaration_id_in(
+                 semantic_context, declaration->id, &type)
+                 ? type
+                 : (psx_qual_type_t){PSX_TYPE_ID_INVALID, 0};
+    }
     case PSX_DECL_TAG: {
       const token_kind_t kinds[] = {TK_STRUCT, TK_UNION, TK_ENUM};
       for (size_t i = 0; i < sizeof(kinds) / sizeof(kinds[0]); i++) {
@@ -2571,6 +2737,10 @@ static int add_declaration_symbol(
     fill_function_storage_class(builder, declaration, symbol);
     fill_function_parameter_names(builder, request, symbol);
   }
+  if (symbol->kind == AG_LANGUAGE_SYMBOL_MEMBER) {
+    free(symbol->storage_class);
+    symbol->storage_class = snapshot_copy(builder, "member");
+  }
   free(symbol->constant_value);
   symbol->constant_value = NULL;
   fill_initializer(builder, semantic_context, declaration, symbol);
@@ -2872,6 +3042,40 @@ static const psx_scope_declaration_t *tag_declaration_at_cursor(
         name_length > source_length - declaration_name_start ||
         memcmp(declaration->source_input + declaration_name_start,
                name, name_length) != 0)
+      continue;
+    return declaration;
+  }
+  return NULL;
+}
+
+static const psx_scope_declaration_t *member_declaration_at_cursor(
+    const psx_scope_graph_t *scope_graph,
+    const ag_language_analysis_request_t *request) {
+  if (!scope_graph || !request || !request->source ||
+      !request->source_name)
+    return NULL;
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(
+      request->source, request->source_length,
+      request->cursor_byte_offset, &name, &name_length);
+  if (!name || name_length == 0 || name_length > INT_MAX) return NULL;
+  size_t name_start = (size_t)(name - request->source);
+  if (name_start > INT_MAX) return NULL;
+  size_t declaration_count =
+      psx_scope_graph_declaration_count(scope_graph);
+  for (size_t i = declaration_count; i > 0; i--) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(scope_graph, i - 1);
+    if (!declaration || declaration->kind != PSX_DECL_MEMBER ||
+        declaration->name_space != PSX_NAMESPACE_MEMBER ||
+        !declaration->name ||
+        declaration->name_len != (int)name_length ||
+        memcmp(declaration->name, name, name_length) != 0 ||
+        !declaration->source_name ||
+        strcmp(declaration->source_name, request->source_name) != 0 ||
+        declaration->source_byte_offset != (int)name_start ||
+        declaration->source_byte_length != (int)name_length)
       continue;
     return declaration;
   }
@@ -3471,6 +3675,8 @@ int ag_language_analyze_source(
       cursor_ordinary_declaration
           ? cursor_ordinary_declaration
           : tag_declaration_at_cursor(scope_graph, request);
+  const psx_scope_declaration_t *cursor_member_declaration =
+      member_declaration_at_cursor(scope_graph, request);
   if (cursor_scoped_declaration &&
       psx_scope_graph_lookup(
           scope_graph, cursor_scoped_declaration->name_space,
@@ -3502,6 +3708,10 @@ int ag_language_analyze_source(
     add_declaration_symbol(&builder, request, semantic_context,
                            declaration, point, &symbol_capacity);
   }
+  if (!builder.failed && cursor_member_declaration)
+    add_declaration_symbol(
+        &builder, request, semantic_context, cursor_member_declaration,
+        point, &symbol_capacity);
   ag_language_documentation_index_dispose(documentation_index);
   free(documentation_index);
   final_parse->documentation_index_owned = NULL;

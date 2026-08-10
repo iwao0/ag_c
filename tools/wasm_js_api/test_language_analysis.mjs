@@ -1489,6 +1489,8 @@ const functionDeclaratorSource = {
     "int first(void), second(void);\n" +
     "int third(void), brace_values[2] = { 1, 2 };\n" +
     "typedef int Scalar;\n" +
+    "struct FileRecord { const int *member; unsigned bits : 3; int values[4]; int (*callback_member)(int); };\n" +
+    "union FileUnion { long member; };\n" +
     "int takes_scalar(Scalar);\n" +
     "int parameter_prototype(int named, const int *pointer, int proto_callback(int));\n" +
     "int tagged_parameter_prototype(struct /* scope */ PrototypeRecord { int member; } value);\n" +
@@ -1562,6 +1564,23 @@ const functionParameterTagCases = [
   { name: "NestedState", type: "enum NestedState", scopeDepth: 2 },
 ];
 const nativeFunctionParameterTagSnapshots = new Map();
+const aggregateMemberCases = [
+  { anchor: "FileRecord { const int *member;", name: "member",
+    type: "const int *", scopeDepth: 1 },
+  { anchor: "unsigned bits : 3;", name: "bits",
+    type: "unsigned int", scopeDepth: 1 },
+  { anchor: "int values[4];", name: "values",
+    type: "int [4]", scopeDepth: 1 },
+  { anchor: "(*callback_member)(int);", name: "callback_member",
+    type: "int (*)(int)", scopeDepth: 1 },
+  { anchor: "FileUnion { long member;", name: "member",
+    type: "long", scopeDepth: 1 },
+  { anchor: "PrototypeRecord { int member; }", name: "member",
+    type: "int", scopeDepth: 2 },
+  { anchor: "NestedPayload { int member; }", name: "member",
+    type: "int", scopeDepth: 3 },
+];
+const nativeAggregateMemberSnapshots = new Map();
 const functionParameterEnumCases = [
   { name: "PROTOTYPE_READY", value: "3", scopeDepth: 1 },
   { name: "PROTOTYPE_BUSY", value: "4", scopeDepth: 1 },
@@ -1637,8 +1656,12 @@ function assertFunctionParameterHover(result, analysisCase, lifecycle) {
 }
 
 function functionScopedDeclarationStart(analysisCase) {
+  const anchorStart = analysisCase.anchor
+    ? functionDeclaratorSource.source.indexOf(analysisCase.anchor)
+    : 0;
+  if (anchorStart < 0) return -1;
   return functionDeclaratorByteOffset(
-    functionDeclaratorSource.source.indexOf(analysisCase.name),
+    functionDeclaratorSource.source.indexOf(analysisCase.name, anchorStart),
   );
 }
 
@@ -1678,6 +1701,26 @@ function assertFunctionParameterEnumHover(result, analysisCase, lifecycle) {
         declarationStart + Buffer.byteLength(analysisCase.name)) {
     throw new Error(
       `${lifecycle} function prototype-scope enum hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertAggregateMemberHover(result, analysisCase, lifecycle) {
+  const declarationStart = functionScopedDeclarationStart(analysisCase);
+  const hover = result.hover;
+  if (declarationStart < 0 || result.partial ||
+      result.diagnostics.length !== 0 ||
+      hover?.name !== analysisCase.name || hover.kind !== "member" ||
+      hover.nameSpace !== "member" || hover.type !== analysisCase.type ||
+      hover.signature !== "" || hover.storageClass !== "member" ||
+      hover.scopeDepth !== analysisCase.scopeDepth || hover.definition !== null ||
+      hover.initializer?.state !== "none" ||
+      hover.declaration.sourceName !== functionDeclaratorSource.name ||
+      hover.declaration.start.offset !== declarationStart ||
+      hover.declaration.end.offset !==
+        declarationStart + Buffer.byteLength(analysisCase.name)) {
+    throw new Error(
+      `${lifecycle} aggregate member hover failed: ${JSON.stringify(result)}`,
     );
   }
 }
@@ -1763,6 +1806,31 @@ for (const analysisCase of functionParameterTagCases) {
       `native and Wasm function prototype-scope tag snapshots differ at byte ${byteOffset}`,
     );
     nativeFunctionParameterTagSnapshots.set(byteOffset, nativeResult);
+  }
+}
+
+for (const analysisCase of aggregateMemberCases) {
+  const declarationStart = functionScopedDeclarationStart(analysisCase);
+  const nameByteLength = Buffer.byteLength(analysisCase.name);
+  for (const delta of [0, Math.floor(nameByteLength / 2), nameByteLength]) {
+    const byteOffset = declarationStart + delta;
+    const wasmResult = compiler.analyzeSource(functionDeclaratorSource, {
+      cursor: { sourceName: functionDeclaratorSource.name, byteOffset },
+    });
+    assertAggregateMemberHover(
+      wasmResult, analysisCase, "reused instance",
+    );
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--function-declarator-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm aggregate member snapshots differ at byte ${byteOffset}`,
+    );
+    nativeAggregateMemberSnapshots.set(byteOffset, nativeResult);
   }
 }
 
@@ -1855,6 +1923,28 @@ for (const analysisCase of functionParameterTagCases) {
       freshResult,
       nativeFunctionParameterTagSnapshots.get(byteOffset),
       `fresh native/Wasm function prototype-scope tag snapshot differs at byte ${byteOffset}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
+for (const analysisCase of aggregateMemberCases) {
+  const byteOffset = functionScopedDeclarationStart(analysisCase) +
+    Math.floor(Buffer.byteLength(analysisCase.name) / 2);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(
+      functionDeclaratorSource,
+      { cursor: { sourceName: functionDeclaratorSource.name, byteOffset } },
+    );
+    assertAggregateMemberHover(
+      freshResult, analysisCase, "fresh instance",
+    );
+    assert.deepStrictEqual(
+      freshResult,
+      nativeAggregateMemberSnapshots.get(byteOffset),
+      `fresh native/Wasm aggregate member snapshot differs at byte ${byteOffset}`,
     );
   } finally {
     freshCompiler.dispose();

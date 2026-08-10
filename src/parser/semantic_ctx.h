@@ -180,6 +180,12 @@ bool ps_ctx_find_record_member_in(
     psx_semantic_context_t *context, psx_record_id_t record_id,
     const char *member_name, int member_len, int *out_member_index,
     psx_record_member_decl_t *out_declaration);
+psx_decl_id_t ps_ctx_record_member_declaration_id_in(
+    psx_semantic_context_t *context, psx_record_id_t record_id,
+    const char *member_name, int member_len);
+bool ps_ctx_record_member_qual_type_by_declaration_id_in(
+    const psx_semantic_context_t *context,
+    psx_decl_id_t declaration_id, psx_qual_type_t *out_qual_type);
 int ps_ctx_get_tag_scope_depth_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);

@@ -1188,6 +1188,46 @@ bool ps_ctx_find_record_member_in(
   return true;
 }
 
+psx_decl_id_t ps_ctx_record_member_declaration_id_in(
+    psx_semantic_context_t *context, psx_record_id_t record_id,
+    const char *member_name, int member_len) {
+  if (!context || !context->scope_graph ||
+      record_id == PSX_RECORD_ID_INVALID || !member_name ||
+      member_len <= 0)
+    return PSX_DECL_ID_INVALID;
+  tag_type_t *tag = find_tag_type_by_record_id_in(context, record_id);
+  if (!tag || tag->member_scope_id == PSX_SCOPE_ID_INVALID)
+    return PSX_DECL_ID_INVALID;
+  const psx_scope_declaration_t *binding =
+      psx_scope_graph_lookup_declaration_in_scope(
+          context->scope_graph, tag->member_scope_id,
+          PSX_NAMESPACE_MEMBER, member_name, member_len);
+  return binding && binding->kind == PSX_DECL_MEMBER
+             ? binding->id
+             : PSX_DECL_ID_INVALID;
+}
+
+bool ps_ctx_record_member_qual_type_by_declaration_id_in(
+    const psx_semantic_context_t *context,
+    psx_decl_id_t declaration_id, psx_qual_type_t *out_qual_type) {
+  if (out_qual_type)
+    *out_qual_type = (psx_qual_type_t){PSX_TYPE_ID_INVALID, 0};
+  if (!context || !context->scope_graph || !out_qual_type)
+    return false;
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_declaration(
+          context->scope_graph, declaration_id);
+  const tag_member_t *member =
+      declaration && declaration->kind == PSX_DECL_MEMBER
+          ? declaration->payload
+          : NULL;
+  if (!member ||
+      member->declaration.qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return false;
+  *out_qual_type = member->declaration.qual_type;
+  return true;
+}
+
 int ps_ctx_get_tag_scope_depth_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
