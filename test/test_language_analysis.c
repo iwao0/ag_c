@@ -182,9 +182,12 @@ static const char function_declarator_hover_source[] =
     "int third(void), brace_values[2] = { 1, 2 };\n"
     "typedef int Scalar;\n"
     "int takes_scalar(Scalar);\n"
+    "int parameter_prototype(int named, const int *pointer, int proto_callback(int));\n"
+    "int unicode_parameter(int 値) { return 値; }\n"
     "int (parenthesized)(int value) { return value + 1; }\n"
     "int target(int value);\n"
-    "int (*(factory(void)))(int) { return target; }\n";
+    "int (*(factory(void)))(int) { return target; }\n"
+    "int (*(seeded_factory(int seed)))(int) { return target; }\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -2828,8 +2831,11 @@ int main(int argc, char **argv) {
       {"second", "int", 0, 1, 0},
       {"third", "int", 0, 1, 0},
       {"takes_scalar", "int", 1, 1, 0},
+      {"parameter_prototype", "int", 3, 1, 0},
+      {"unicode_parameter", "int", 1, 1, 1},
       {"parenthesized", "int", 1, 1, 1},
       {"factory", "int (*)(int)", 0, 1, 1},
+      {"seeded_factory", "int (*)(int)", 1, 1, 1},
   };
   for (size_t case_index = 0;
        case_index < sizeof(function_declarator_cases) /
@@ -2871,6 +2877,83 @@ int main(int argc, char **argv) {
                            function_declarator_hover_source)) &&
                 !snapshot.partial && snapshot.diagnostic_count == 0,
             "function declarator hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  struct {
+    const char *anchor;
+    const char *name;
+    const char *type;
+    const char *declaration_anchor;
+  } function_parameter_cases[] = {
+      {"increment(int value", "value", "int", "increment(int value"},
+      {"old_sum(left", "left", "int", "int left, right;"},
+      {"int callback(int);", "callback", "int (*)(int)",
+       "int callback(int);"},
+      {"register int value;", "value", "int", "register int value;"},
+      {"old_member(value)", "value", "struct LocalValue", "} value;"},
+      {"old_array(values)", "values", "int *", "int values[';'];"},
+      {"*pointer,", "pointer", "const int *", "*pointer,"},
+      {"proto_callback(int)", "proto_callback", "int (*)(int)",
+       "proto_callback(int)"},
+      {"unicode_parameter(int 値", "値", "int",
+       "unicode_parameter(int 値"},
+      {"parenthesized)(int value", "value", "int",
+       "parenthesized)(int value"},
+      {"(int seed))", "seed", "int", "(int seed))"},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(function_parameter_cases) /
+                        sizeof(function_parameter_cases[0]);
+       case_index++) {
+    const char *anchor = strstr(
+        function_declarator_hover_source,
+        function_parameter_cases[case_index].anchor);
+    const char *name = anchor
+                           ? strstr(
+                                 anchor,
+                                 function_parameter_cases[case_index].name)
+                           : NULL;
+    const char *declaration_anchor = strstr(
+        function_declarator_hover_source,
+        function_parameter_cases[case_index].declaration_anchor);
+    const char *declaration = declaration_anchor
+                                  ? strstr(
+                                        declaration_anchor,
+                                        function_parameter_cases[case_index]
+                                            .name)
+                                  : NULL;
+    size_t name_length = strlen(function_parameter_cases[case_index].name);
+    size_t cursor_deltas[] = {0, name_length / 2, name_length};
+    CHECK(anchor && name && declaration,
+          "function parameter hover anchors");
+    for (size_t cursor_index = 0;
+         cursor_index < sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+         cursor_index++) {
+      CHECK(analyze_named(
+                session, "function-declarator.c",
+                function_declarator_hover_source,
+                (size_t)(name - function_declarator_hover_source) +
+                    cursor_deltas[cursor_index],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "function parameter hover analysis");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      CHECK(hover && hover->kind == AG_LANGUAGE_SYMBOL_PARAMETER &&
+                strcmp(hover->name,
+                       function_parameter_cases[case_index].name) == 0 &&
+                strcmp(hover->type,
+                       function_parameter_cases[case_index].type) == 0 &&
+                strcmp(hover->signature, "") == 0 &&
+                hover->scope_depth == 1 && !hover->has_definition &&
+                hover->declaration.start.offset ==
+                    (int)(declaration -
+                          function_declarator_hover_source) &&
+                hover->declaration.end.offset ==
+                    (int)(declaration -
+                          function_declarator_hover_source + name_length) &&
+                !snapshot.partial && snapshot.diagnostic_count == 0,
+            "function parameter hover fields");
       ag_language_analysis_snapshot_dispose(&snapshot);
     }
   }
@@ -4069,6 +4152,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (36 scenarios)");
+  puts("language analysis tests passed (37 scenarios)");
   return 0;
 }

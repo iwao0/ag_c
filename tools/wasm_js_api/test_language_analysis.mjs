@@ -1490,9 +1490,12 @@ const functionDeclaratorSource = {
     "int third(void), brace_values[2] = { 1, 2 };\n" +
     "typedef int Scalar;\n" +
     "int takes_scalar(Scalar);\n" +
+    "int parameter_prototype(int named, const int *pointer, int proto_callback(int));\n" +
+    "int unicode_parameter(int 値) { return 値; }\n" +
     "int (parenthesized)(int value) { return value + 1; }\n" +
     "int target(int value);\n" +
-    "int (*(factory(void)))(int) { return target; }\n",
+    "int (*(factory(void)))(int) { return target; }\n" +
+    "int (*(seeded_factory(int seed)))(int) { return target; }\n",
 };
 const functionDeclaratorCases = [
   { name: "old_sum", returnType: "int", parameterCount: 2, hasPrototype: false,
@@ -1511,16 +1514,53 @@ const functionDeclaratorCases = [
     hasDefinition: false },
   { name: "takes_scalar", returnType: "int", parameterCount: 1, hasPrototype: true,
     hasDefinition: false },
+  { name: "parameter_prototype", returnType: "int", parameterCount: 3,
+    hasPrototype: true, hasDefinition: false },
+  { name: "unicode_parameter", returnType: "int", parameterCount: 1,
+    hasPrototype: true, hasDefinition: true },
   { name: "parenthesized", returnType: "int", parameterCount: 1,
     hasPrototype: true, hasDefinition: true },
   { name: "factory", returnType: "int (*)(int)", parameterCount: 0,
     hasPrototype: true, hasDefinition: true },
+  { name: "seeded_factory", returnType: "int (*)(int)", parameterCount: 1,
+    hasPrototype: true, hasDefinition: true },
 ];
 const nativeFunctionDeclaratorSnapshots = new Map();
+const functionParameterCases = [
+  { anchor: "increment(int value", name: "value", type: "int",
+    declarationAnchor: "increment(int value" },
+  { anchor: "old_sum(left", name: "left", type: "int",
+    declarationAnchor: "int left, right;" },
+  { anchor: "int callback(int);", name: "callback", type: "int (*)(int)",
+    declarationAnchor: "int callback(int);" },
+  { anchor: "register int value;", name: "value", type: "int",
+    declarationAnchor: "register int value;" },
+  { anchor: "old_member(value)", name: "value", type: "struct LocalValue",
+    declarationAnchor: "} value;" },
+  { anchor: "old_array(values)", name: "values", type: "int *",
+    declarationAnchor: "int values[';'];" },
+  { anchor: "*pointer,", name: "pointer", type: "const int *",
+    declarationAnchor: "*pointer," },
+  { anchor: "proto_callback(int)", name: "proto_callback",
+    type: "int (*)(int)", declarationAnchor: "proto_callback(int)" },
+  { anchor: "unicode_parameter(int 値", name: "値", type: "int",
+    declarationAnchor: "unicode_parameter(int 値" },
+  { anchor: "parenthesized)(int value", name: "value", type: "int",
+    declarationAnchor: "parenthesized)(int value" },
+  { anchor: "(int seed))", name: "seed", type: "int",
+    declarationAnchor: "(int seed))" },
+];
+const nativeFunctionParameterSnapshots = new Map();
+
+function functionDeclaratorByteOffset(stringIndex) {
+  return stringIndex < 0
+    ? -1
+    : Buffer.byteLength(functionDeclaratorSource.source.slice(0, stringIndex));
+}
 
 function assertFunctionDeclaratorHover(result, analysisCase, lifecycle) {
-  const declarationStart = functionDeclaratorSource.source.indexOf(
-    analysisCase.name,
+  const declarationStart = functionDeclaratorByteOffset(
+    functionDeclaratorSource.source.indexOf(analysisCase.name),
   );
   const hover = result.hover;
   if (declarationStart < 0 || result.partial ||
@@ -1540,9 +1580,48 @@ function assertFunctionDeclaratorHover(result, analysisCase, lifecycle) {
   }
 }
 
-for (const analysisCase of functionDeclaratorCases) {
+function functionParameterOffsets(analysisCase) {
+  const anchorStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.anchor,
+  );
+  const nameStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.name, anchorStart,
+  );
+  const declarationAnchorStart = functionDeclaratorSource.source.indexOf(
+    analysisCase.declarationAnchor,
+  );
   const declarationStart = functionDeclaratorSource.source.indexOf(
-    analysisCase.name,
+    analysisCase.name, declarationAnchorStart,
+  );
+  return {
+    anchorStart,
+    nameStart: functionDeclaratorByteOffset(nameStart),
+    declarationStart: functionDeclaratorByteOffset(declarationStart),
+  };
+}
+
+function assertFunctionParameterHover(result, analysisCase, lifecycle) {
+  const { anchorStart, nameStart, declarationStart } =
+    functionParameterOffsets(analysisCase);
+  const hover = result.hover;
+  if (anchorStart < 0 || nameStart < 0 || declarationStart < 0 ||
+      result.partial || result.diagnostics.length !== 0 ||
+      hover?.name !== analysisCase.name || hover.kind !== "parameter" ||
+      hover.type !== analysisCase.type || hover.signature !== "" ||
+      hover.scopeDepth !== 1 || hover.definition !== null ||
+      hover.declaration.sourceName !== functionDeclaratorSource.name ||
+      hover.declaration.start.offset !== declarationStart ||
+      hover.declaration.end.offset !==
+        declarationStart + Buffer.byteLength(analysisCase.name)) {
+    throw new Error(
+      `${lifecycle} function parameter hover failed: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+for (const analysisCase of functionDeclaratorCases) {
+  const declarationStart = functionDeclaratorByteOffset(
+    functionDeclaratorSource.source.indexOf(analysisCase.name),
   );
   for (const delta of [
     0,
@@ -1570,9 +1649,38 @@ for (const analysisCase of functionDeclaratorCases) {
   }
 }
 
+for (const analysisCase of functionParameterCases) {
+  const { nameStart } = functionParameterOffsets(analysisCase);
+  const nameByteLength = Buffer.byteLength(analysisCase.name);
+  for (const delta of [
+    0,
+    Math.floor(nameByteLength / 2),
+    nameByteLength,
+  ]) {
+    const byteOffset = nameStart + delta;
+    const wasmResult = compiler.analyzeSource(functionDeclaratorSource, {
+      cursor: { sourceName: functionDeclaratorSource.name, byteOffset },
+    });
+    assertFunctionParameterHover(
+      wasmResult, analysisCase, "reused instance",
+    );
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--function-declarator-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      wasmResult,
+      nativeResult,
+      `native and Wasm function parameter snapshots differ at byte ${byteOffset}`,
+    );
+    nativeFunctionParameterSnapshots.set(byteOffset, nativeResult);
+  }
+}
+
 for (const analysisCase of functionDeclaratorCases) {
-  const declarationStart = functionDeclaratorSource.source.indexOf(
-    analysisCase.name,
+  const declarationStart = functionDeclaratorByteOffset(
+    functionDeclaratorSource.source.indexOf(analysisCase.name),
   );
   const byteOffset = declarationStart +
     Math.floor(analysisCase.name.length / 2);
@@ -1589,6 +1697,29 @@ for (const analysisCase of functionDeclaratorCases) {
       freshResult,
       nativeFunctionDeclaratorSnapshots.get(byteOffset),
       `fresh native/Wasm function declarator snapshot differs at byte ${byteOffset}`,
+    );
+  } finally {
+    freshCompiler.dispose();
+  }
+}
+
+for (const analysisCase of functionParameterCases) {
+  const { nameStart } = functionParameterOffsets(analysisCase);
+  const byteOffset = nameStart +
+    Math.floor(Buffer.byteLength(analysisCase.name) / 2);
+  const freshCompiler = await createCompiler(wasmModule);
+  try {
+    const freshResult = freshCompiler.analyzeSource(
+      functionDeclaratorSource,
+      { cursor: { sourceName: functionDeclaratorSource.name, byteOffset } },
+    );
+    assertFunctionParameterHover(
+      freshResult, analysisCase, "fresh instance",
+    );
+    assert.deepStrictEqual(
+      freshResult,
+      nativeFunctionParameterSnapshots.get(byteOffset),
+      `fresh native/Wasm function parameter snapshot differs at byte ${byteOffset}`,
     );
   } finally {
     freshCompiler.dispose();
