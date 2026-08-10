@@ -36,7 +36,10 @@ typedef struct {
   ag_language_analysis_snapshot_t *snapshot;
   ag_language_analysis_error_t *error;
   ag_language_analysis_limits_t limits;
+  const ag_language_analysis_request_t *request;
   const ag_language_documentation_index_t *documentation_index;
+  int enable_trigraphs;
+  int primary_needs_offset_mapping;
   int failed;
 } snapshot_builder_t;
 
@@ -188,20 +191,32 @@ static void identifier_at(const char *source, size_t length, size_t cursor,
   *name_length = end - start;
 }
 
-static size_t analysis_line_splice_size(
-    const char *source, size_t length, size_t cursor) {
-  if (!source || cursor >= length || source[cursor] != '\\') return 0;
-  if (cursor + 1 < length && source[cursor + 1] == '\n') return 2;
-  if (cursor + 2 < length && source[cursor + 1] == '\r' &&
-      source[cursor + 2] == '\n')
-    return 3;
+static size_t analysis_line_splice_size_mode(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs) {
+  if (!source || cursor >= length) return 0;
+  if (source[cursor] == '\\') {
+    if (cursor + 1 < length && source[cursor + 1] == '\n') return 2;
+    if (cursor + 2 < length && source[cursor + 1] == '\r' &&
+        source[cursor + 2] == '\n')
+      return 3;
+  }
+  if (enable_trigraphs && cursor + 3 < length && source[cursor] == '?' &&
+      source[cursor + 1] == '?' && source[cursor + 2] == '/') {
+    if (source[cursor + 3] == '\n') return 4;
+    if (cursor + 4 < length && source[cursor + 3] == '\r' &&
+        source[cursor + 4] == '\n')
+      return 5;
+  }
   return 0;
 }
 
-static size_t skip_analysis_space_and_comments(
-    const char *source, size_t length, size_t cursor) {
+static size_t skip_analysis_space_and_comments_mode(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs) {
   while (cursor < length) {
-    size_t splice_size = analysis_line_splice_size(source, length, cursor);
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, cursor, enable_trigraphs);
     if (splice_size > 0) {
       cursor += splice_size;
       continue;
@@ -223,7 +238,8 @@ static size_t skip_analysis_space_and_comments(
         source[cursor + 1] == '/') {
       cursor += 2;
       while (cursor < length && source[cursor] != '\n') {
-        splice_size = analysis_line_splice_size(source, length, cursor);
+        splice_size = analysis_line_splice_size_mode(
+            source, length, cursor, enable_trigraphs);
         if (splice_size > 0) {
           cursor += splice_size;
           continue;
@@ -235,6 +251,12 @@ static size_t skip_analysis_space_and_comments(
     break;
   }
   return cursor;
+}
+
+static size_t skip_analysis_space_and_comments(
+    const char *source, size_t length, size_t cursor) {
+  return skip_analysis_space_and_comments_mode(
+      source, length, cursor, 0);
 }
 
 static int word_before(
@@ -821,9 +843,10 @@ static int analysis_declaration_modifier_word(
   return 0;
 }
 
-static int analysis_delimited_tail_end(
+static int analysis_delimited_tail_end_mode(
     const char *source, size_t source_length, size_t start,
-    char terminator, int allow_top_level_comma, size_t *tail_end) {
+    char terminator, int allow_top_level_comma, int enable_trigraphs,
+    size_t *tail_end) {
   size_t paren_depth = 0;
   size_t bracket_depth = 0;
   size_t brace_depth = 0;
@@ -832,8 +855,8 @@ static int analysis_delimited_tail_end(
   int quote = 0;
   int escaped = 0;
   for (size_t cursor = start; cursor < source_length; cursor++) {
-    size_t splice_size = analysis_line_splice_size(
-        source, source_length, cursor);
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, source_length, cursor, enable_trigraphs);
     if (splice_size > 0) {
       cursor += splice_size - 1;
       continue;
@@ -903,6 +926,14 @@ static int analysis_delimited_tail_end(
     }
   }
   return 0;
+}
+
+static int analysis_delimited_tail_end(
+    const char *source, size_t source_length, size_t start,
+    char terminator, int allow_top_level_comma, size_t *tail_end) {
+  return analysis_delimited_tail_end_mode(
+      source, source_length, start, terminator,
+      allow_top_level_comma, 0, tail_end);
 }
 
 static int object_declaration_prefix(
@@ -1674,6 +1705,7 @@ typedef struct {
 
 static char *build_recovery_source(const char *source, size_t source_length,
                                    size_t cursor,
+                                   int enable_trigraphs,
                                    int *changed) {
   size_t source_consumed = cursor;
   char *function_parameter_recovery =
@@ -1785,6 +1817,12 @@ static char *build_recovery_source(const char *source, size_t source_length,
   size_t root_pending_conditional_count = 0;
   char last_significant = 0;
   for (size_t i = 0; i < cursor; i++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        result, cursor, i, enable_trigraphs);
+    if (splice_size) {
+      i += splice_size - 1;
+      continue;
+    }
     char c = result[i];
     char next = i + 1 < cursor ? result[i + 1] : 0;
     if (line_comment) {
@@ -1833,6 +1871,13 @@ static char *build_recovery_source(const char *source, size_t source_length,
       continue;
     }
     if (at_line_start && (c == ' ' || c == '\t' || c == '\r')) continue;
+    if (at_line_start && enable_trigraphs && i + 2 < cursor &&
+        c == '?' && next == '?' && result[i + 2] == '=') {
+      preprocessor_line = 1;
+      at_line_start = 0;
+      i += 2;
+      continue;
+    }
     if (at_line_start && c == '#') preprocessor_line = 1;
     at_line_start = 0;
     if (preprocessor_line) continue;
@@ -2194,6 +2239,144 @@ static ag_language_position_t position_at(const char *source, size_t length,
   return position;
 }
 
+static char analysis_trigraph_replacement(char suffix) {
+  switch (suffix) {
+    case '=': return '#';
+    case '(': return '[';
+    case '/': return '\\';
+    case ')': return ']';
+    case '\'': return '^';
+    case '<': return '{';
+    case '>': return '}';
+    case '!': return '|';
+    case '-': return '~';
+    default: return 0;
+  }
+}
+
+static size_t analysis_phase_one_width(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs) {
+  if (enable_trigraphs && cursor + 2 < length &&
+      source[cursor] == '?' && source[cursor + 1] == '?' &&
+      analysis_trigraph_replacement(source[cursor + 2]))
+    return 3;
+  return cursor < length ? 1 : 0;
+}
+
+static int analysis_source_needs_offset_mapping(
+    const char *source, size_t length, int enable_trigraphs) {
+  if (!source) return 0;
+  for (size_t cursor = 0; cursor < length;) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, cursor, enable_trigraphs);
+    if (splice_size) return 1;
+    size_t width = analysis_phase_one_width(
+        source, length, cursor, enable_trigraphs);
+    if (width > 1) return 1;
+    cursor += width;
+  }
+  return 0;
+}
+
+static int analysis_source_named(
+    const ag_language_analysis_request_t *request,
+    const char *source_name, analysis_source_view_t *source) {
+  if (!request || !source_name || !source) return 0;
+  for (int index = 0; index < source_count(request); index++) {
+    analysis_source_view_t candidate = {0};
+    if (source_at(request, index, &candidate) && candidate.name &&
+        strcmp(candidate.name, source_name) == 0) {
+      *source = candidate;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int analysis_original_offset(
+    const analysis_source_view_t *source, size_t normalized_offset,
+    int after_removed_bytes, int enable_trigraphs,
+    size_t *original_offset) {
+  if (!source || !source->source || !original_offset) return 0;
+  size_t original = 0;
+  size_t normalized = 0;
+  while (original < source->length) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source->source, source->length, original, enable_trigraphs);
+    if (splice_size) {
+      if (normalized == normalized_offset && !after_removed_bytes) {
+        *original_offset = original;
+        return 1;
+      }
+      original += splice_size;
+      continue;
+    }
+    if (normalized == normalized_offset) {
+      *original_offset = original;
+      return 1;
+    }
+    original += analysis_phase_one_width(
+        source->source, source->length, original, enable_trigraphs);
+    normalized++;
+  }
+  if (normalized != normalized_offset) return 0;
+  *original_offset = original;
+  return 1;
+}
+
+static int analysis_original_range(
+    const snapshot_builder_t *builder, const char *source_name,
+    const char *normalized_source,
+    size_t normalized_start, size_t normalized_end,
+    analysis_source_view_t *source, size_t *original_start,
+    size_t *original_end) {
+  if (!builder || !builder->request || normalized_end < normalized_start ||
+      !analysis_source_named(builder->request, source_name, source))
+    return 0;
+  int is_primary = source->source == builder->request->source;
+  if (normalized_source == source->source ||
+      (is_primary && !builder->primary_needs_offset_mapping)) {
+    if (normalized_end > source->length) return 0;
+    *original_start = normalized_start;
+    *original_end = normalized_end;
+    return 1;
+  }
+  if (!analysis_original_offset(
+          source, normalized_start, 1, builder->enable_trigraphs,
+          original_start))
+    return 0;
+  if (normalized_start == normalized_end) {
+    *original_end = *original_start;
+    return 1;
+  }
+  return analysis_original_offset(
+      source, normalized_end, 0, builder->enable_trigraphs,
+      original_end);
+}
+
+static void analysis_positions_from_normalized_range(
+    const snapshot_builder_t *builder, const char *source_name,
+    const char *normalized_source, size_t normalized_length,
+    size_t normalized_start, size_t normalized_end,
+    ag_language_position_t *start, ag_language_position_t *end) {
+  analysis_source_view_t original = {0};
+  size_t original_start = 0;
+  size_t original_end = 0;
+  if (analysis_original_range(
+          builder, source_name, normalized_source,
+          normalized_start, normalized_end,
+          &original, &original_start, &original_end)) {
+    *start = position_at(original.source, original.length, original_start);
+    *end = position_at(original.source, original.length, original_end);
+    return;
+  }
+  *start = position_at(
+      normalized_source, normalized_length, normalized_start);
+  *end = position_at(
+      normalized_source, normalized_length, normalized_end);
+}
+
 static void locate_declaration(snapshot_builder_t *builder,
                                const ag_language_analysis_request_t *request,
                                const psx_scope_declaration_t *declaration,
@@ -2221,10 +2404,10 @@ static void locate_declaration(snapshot_builder_t *builder,
         }
       }
       range->source_name = snapshot_copy(builder, declaration->source_name);
-      range->start = position_at(
-          declaration->source_input, source_length, start);
-      range->end = position_at(
-          declaration->source_input, source_length, end);
+      analysis_positions_from_normalized_range(
+          builder, declaration->source_name,
+          declaration->source_input, source_length, start, end,
+          &range->start, &range->end);
       return;
     }
   }
@@ -2261,8 +2444,9 @@ static int copy_function_source_location(
   size_t end = start + (size_t)location->byte_length;
   if (start > source_length || end > source_length) return 0;
   range->source_name = snapshot_copy(builder, location->source_name);
-  range->start = position_at(location->source_input, source_length, start);
-  range->end = position_at(location->source_input, source_length, end);
+  analysis_positions_from_normalized_range(
+      builder, location->source_name, location->source_input,
+      source_length, start, end, &range->start, &range->end);
   return !builder->failed;
 }
 
@@ -2961,10 +3145,10 @@ static int add_macro_symbols(snapshot_builder_t *builder,
       if (start <= source_length && end <= source_length) {
         symbol->declaration.source_name = snapshot_copy(
             builder, view.source_name);
-        symbol->declaration.start = position_at(
-            view.source_input, source_length, start);
-        symbol->declaration.end = position_at(
-            view.source_input, source_length, end);
+        analysis_positions_from_normalized_range(
+            builder, view.source_name, view.source_input,
+            source_length, start, end,
+            &symbol->declaration.start, &symbol->declaration.end);
       }
     }
     if (!symbol->declaration.source_name)
@@ -3000,7 +3184,8 @@ static int add_macro_symbols(snapshot_builder_t *builder,
 
 static int cursor_invokes_function_like_macro(
     const ag_language_analysis_request_t *request,
-    const ag_preprocessor_context_t *preprocessor) {
+    const ag_preprocessor_context_t *preprocessor,
+    int enable_trigraphs) {
   if (!request || !preprocessor) return 0;
   const char *name = NULL;
   size_t name_length = 0;
@@ -3008,14 +3193,15 @@ static int cursor_invokes_function_like_macro(
                 request->cursor_byte_offset, &name, &name_length);
   if (!name || name_length == 0) return 0;
   size_t name_end = (size_t)(name - request->source) + name_length;
-  size_t after_name = skip_analysis_space_and_comments(
-      request->source, request->source_length, name_end);
+  size_t after_name = skip_analysis_space_and_comments_mode(
+      request->source, request->source_length, name_end,
+      enable_trigraphs);
   if (after_name >= request->source_length ||
       request->source[after_name] != '(')
     return 0;
-  if (!analysis_delimited_tail_end(
+  if (!analysis_delimited_tail_end_mode(
           request->source, request->source_length, after_name + 1,
-          ')', 1, NULL))
+          ')', 1, enable_trigraphs, NULL))
     return 0;
   int macro_count = pp_macro_count_in(preprocessor);
   for (int macro_index = 0; macro_index < macro_count; macro_index++) {
@@ -3370,15 +3556,29 @@ static int copy_diagnostics(snapshot_builder_t *builder,
         builder, diag_context_record_code(diagnostics, i));
     diagnostic->message = snapshot_copy(
         builder, diag_context_record_message(diagnostics, i));
-    diagnostic->range.source_name = snapshot_copy(
-        builder, diag_context_record_source_name(diagnostics, i));
-    diagnostic->range.start = (ag_language_position_t){
-        diag_context_record_start_line(diagnostics, i),
-        diag_context_record_start_column(diagnostics, i), start};
-    diagnostic->range.end = (ag_language_position_t){
-        diag_context_record_end_line(diagnostics, i),
-        diag_context_record_end_column(diagnostics, i),
-        diag_context_record_end_offset(diagnostics, i)};
+    const char *source_name =
+        diag_context_record_source_name(diagnostics, i);
+    diagnostic->range.source_name = snapshot_copy(builder, source_name);
+    int end = diag_context_record_end_offset(diagnostics, i);
+    analysis_source_view_t original = {0};
+    size_t original_start = 0;
+    size_t original_end = 0;
+    if (start >= 0 && end >= start &&
+        analysis_original_range(
+            builder, source_name, NULL, (size_t)start, (size_t)end,
+            &original, &original_start, &original_end)) {
+      diagnostic->range.start = position_at(
+          original.source, original.length, original_start);
+      diagnostic->range.end = position_at(
+          original.source, original.length, original_end);
+    } else {
+      diagnostic->range.start = (ag_language_position_t){
+          diag_context_record_start_line(diagnostics, i),
+          diag_context_record_start_column(diagnostics, i), start};
+      diagnostic->range.end = (ag_language_position_t){
+          diag_context_record_end_line(diagnostics, i),
+          diag_context_record_end_column(diagnostics, i), end};
+    }
   }
   builder->snapshot->diagnostic_count = output;
   return !builder->failed;
@@ -3489,8 +3689,23 @@ static int append_saved_diagnostic(
   diagnostic->code = snapshot_copy(builder, saved->code);
   diagnostic->message = snapshot_copy(builder, saved->message);
   diagnostic->range.source_name = snapshot_copy(builder, saved->source_name);
-  diagnostic->range.start = saved->start;
-  diagnostic->range.end = saved->end;
+  analysis_source_view_t original = {0};
+  size_t original_start = 0;
+  size_t original_end = 0;
+  if (saved->start.offset >= 0 &&
+      saved->end.offset >= saved->start.offset &&
+      analysis_original_range(
+          builder, saved->source_name, NULL,
+          (size_t)saved->start.offset, (size_t)saved->end.offset,
+          &original, &original_start, &original_end)) {
+    diagnostic->range.start = position_at(
+        original.source, original.length, original_start);
+    diagnostic->range.end = position_at(
+        original.source, original.length, original_end);
+  } else {
+    diagnostic->range.start = saved->start;
+    diagnostic->range.end = saved->end;
+  }
   return !builder->failed;
 }
 
@@ -3914,6 +4129,7 @@ int ag_language_analyze_source(
       .snapshot = snapshot,
       .error = error,
       .limits = limits,
+      .request = request,
       .documentation_index = documentation_index,
   };
   static const unsigned char empty_virtual_headers[4] = {0, 0, 0, 0};
@@ -3932,10 +4148,17 @@ int ag_language_analyze_source(
       request->max_header_total_bytes > 0
           ? request->max_header_total_bytes : 4 * 1024 * 1024,
       request->max_include_depth > 0 ? request->max_include_depth : 32);
+  tokenizer_context_t *tokenizer = ag_compilation_session_tokenizer(session);
+  builder.enable_trigraphs = tk_ctx_get_enable_trigraphs(tokenizer);
+  builder.primary_needs_offset_mapping =
+      analysis_source_needs_offset_mapping(
+          request->source, request->source_length,
+          builder.enable_trigraphs);
   int recovery_changed = 0;
   char *recovery_source = build_recovery_source(
       request->source, request->source_length,
-      request->cursor_byte_offset, &recovery_changed);
+      request->cursor_byte_offset, builder.enable_trigraphs,
+      &recovery_changed);
   if (!recovery_source) {
     ag_language_documentation_index_dispose(documentation_index);
     free(documentation_index);
@@ -3943,7 +4166,6 @@ int ag_language_analyze_source(
               "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
     return 0;
   }
-  tokenizer_context_t *tokenizer = ag_compilation_session_tokenizer(session);
   tk_set_filename_ctx(tokenizer, request->source_name);
   analysis_parse_state_t *parse_state = create_analysis_parse_state(
       session, tokenizer, recovery_source, documentation_index, request);
@@ -3970,7 +4192,8 @@ int ag_language_analyze_source(
   int semantic_macro_invocation =
       parse_state->semantic_diagnostic.code &&
       cursor_invokes_function_like_macro(
-          request, ag_compilation_session_preprocessor_context(session));
+          request, ag_compilation_session_preprocessor_context(session),
+          builder.enable_trigraphs);
   if (parse_state->fatal_recovered &&
       save_last_diagnostic(diagnostic_context, &saved_fatal)) {
     retry_recovery_ready = elide_failed_statement(
@@ -4143,8 +4366,9 @@ int ag_language_analyze_source(
                               ? (size_t)(hover_name - request->source) +
                                     hover_name_len
                               : 0;
-  size_t after_hover_name = skip_analysis_space_and_comments(
-      request->source, request->source_length, hover_name_end);
+  size_t after_hover_name = skip_analysis_space_and_comments_mode(
+      request->source, request->source_length, hover_name_end,
+      builder.enable_trigraphs);
   int function_like_macro_invoked =
       hover_name && after_hover_name < request->source_length &&
       request->source[after_hover_name] == '(';
@@ -4637,7 +4861,14 @@ int ag_language_analyze_project_source(
       .snapshot = snapshot,
       .error = error,
       .limits = limits,
+      .request = request,
+      .enable_trigraphs = tk_ctx_get_enable_trigraphs(
+          ag_compilation_session_tokenizer(session)),
   };
+  builder.primary_needs_offset_mapping =
+      analysis_source_needs_offset_mapping(
+          request->source, request->source_length,
+          builder.enable_trigraphs);
   for (int i = 0; i < snapshot->completion_item_count; i++) {
     ag_language_symbol_t *symbol = &snapshot->completion_items[i];
     if (symbol->kind != AG_LANGUAGE_SYMBOL_FUNCTION ||

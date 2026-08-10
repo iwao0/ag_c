@@ -1157,11 +1157,20 @@ const genericSource = {
     "#define GENERIC_CALL() 6\n" +
     "int GENERIC_INVOKED;\n" +
     "#define GENERIC_INVOKED() 7\n" +
+    "??=define GENERIC_TRIGRAPH_PREFIX 11\n" +
+    "#define GENERIC_SPLICE_PREFIX 12 \\\n" +
+    "+ 0\n" +
+    "#define GENERIC_AFTER_TRANSLATION 13\n" +
+    "int generic_after_translation;\n" +
     "int generic_identity(int value) { return value; }\n" +
     "int generic_comment_invocation(void) { return GENERIC_INVOKED /* gap */ (); }\n" +
     "int generic_lf_invocation(void) { return GENERIC_INVOKED \\\n" +
     "(); }\n" +
     "int generic_crlf_invocation(void) { return GENERIC_INVOKED \\\r\n" +
+    "(); }\n" +
+    "int generic_trigraph_lf_invocation(void) { return GENERIC_INVOKED ??/\n" +
+    "(); }\n" +
+    "int generic_trigraph_crlf_invocation(void) { return GENERIC_INVOKED ??/\r\n" +
     "(); }\n" +
     "int generic_score(struct GenericPlayer value) { return value.score; }\n" +
     "int generic_pointer_score(const struct GenericPlayer *value) { return value ? value->score : 0; }\n" +
@@ -1176,6 +1185,7 @@ const genericSource = {
     "  result += _Generic(GENERIC_MODE, int: 3, default: 0);\n" +
     "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n" +
     "  result += _Generic(GENERIC_CALL(), int: 6, default: 0);\n" +
+    "  result += GENERIC_TRIGRAPH_PREFIX + GENERIC_AFTER_TRANSLATION + generic_after_translation;\n" +
     "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n" +
     "  result += (int)sizeof(_Atomic /* type */ (GenericScore));\n" +
     "  result += (int)_Alignof /* query */ (const GenericScore *);\n" +
@@ -1212,6 +1222,15 @@ const genericInvokedMacroDeclaration = findGenericName(
   "GENERIC_INVOKED",
   genericInvokedObjectDeclaration + "GENERIC_INVOKED".length,
 );
+const genericTrigraphPrefixDeclaration = findGenericName(
+  "GENERIC_TRIGRAPH_PREFIX", genericInvokedMacroDeclaration,
+);
+const genericAfterTranslationMacroDeclaration = findGenericName(
+  "GENERIC_AFTER_TRANSLATION", genericTrigraphPrefixDeclaration,
+);
+const genericAfterTranslationObjectDeclaration = findGenericName(
+  "generic_after_translation", genericAfterTranslationMacroDeclaration,
+);
 const genericTypedefDeclaration = findGenericName("GenericScore");
 const genericStructDeclaration = findGenericName("GenericPlayer");
 const genericUnionDeclaration = findGenericName("GenericPayload");
@@ -1236,6 +1255,18 @@ const genericCrlfInvocation = findGenericName(
 );
 const genericCrlfMacroUse = findGenericName(
   "GENERIC_INVOKED", genericCrlfInvocation,
+);
+const genericTrigraphLfInvocation = findGenericName(
+  "generic_trigraph_lf_invocation", genericCrlfMacroUse,
+);
+const genericTrigraphLfMacroUse = findGenericName(
+  "GENERIC_INVOKED", genericTrigraphLfInvocation,
+);
+const genericTrigraphCrlfInvocation = findGenericName(
+  "generic_trigraph_crlf_invocation", genericTrigraphLfMacroUse,
+);
+const genericTrigraphCrlfMacroUse = findGenericName(
+  "GENERIC_INVOKED", genericTrigraphCrlfInvocation,
 );
 const genericFirstControl = findGenericName(
   "_Generic(generic_value", genericFunctionDeclaration,
@@ -1266,8 +1297,17 @@ const genericCallMacroControl = findGenericName(
 const genericCallMacroUse = findGenericName(
   "GENERIC_CALL", genericCallMacroControl,
 );
+const genericTrigraphPrefixUse = findGenericName(
+  "GENERIC_TRIGRAPH_PREFIX", genericCallMacroUse,
+);
+const genericAfterTranslationMacroUse = findGenericName(
+  "GENERIC_AFTER_TRANSLATION", genericTrigraphPrefixUse,
+);
+const genericAfterTranslationObjectUse = findGenericName(
+  "generic_after_translation", genericAfterTranslationMacroUse,
+);
 const genericTypedefControl = findGenericName(
-  "_Generic(generic_value, GenericScore", genericCallMacroUse,
+  "_Generic(generic_value, GenericScore", genericAfterTranslationObjectUse,
 );
 const genericTypedefUse = findGenericName(
   "GenericScore", genericTypedefControl,
@@ -1404,12 +1444,22 @@ const genericHoverCases = [
     index: genericMacroUse },
   { name: "GENERIC_CALL", kind: "macro", replacement: "6",
     index: genericCallMacroUse },
+  { name: "GENERIC_TRIGRAPH_PREFIX", kind: "macro", replacement: "11",
+    index: genericTrigraphPrefixUse },
+  { name: "GENERIC_AFTER_TRANSLATION", kind: "macro", replacement: "13",
+    index: genericAfterTranslationMacroUse },
+  { name: "generic_after_translation", kind: "object",
+    index: genericAfterTranslationObjectUse },
   { name: "GENERIC_INVOKED", kind: "macro", replacement: "7",
     index: genericCommentMacroUse },
   { name: "GENERIC_INVOKED", kind: "macro", replacement: "7",
     index: genericLfMacroUse },
   { name: "GENERIC_INVOKED", kind: "macro", replacement: "7",
     index: genericCrlfMacroUse },
+  { name: "GENERIC_INVOKED", kind: "macro", replacement: "7",
+    index: genericTrigraphLfMacroUse },
+  { name: "GENERIC_INVOKED", kind: "macro", replacement: "7",
+    index: genericTrigraphCrlfMacroUse },
   { name: "GenericScore", kind: "typedef", index: genericTypedefUse },
   { name: "GenericScore", kind: "typedef",
     index: genericAtomicTypedefUse },
@@ -1448,6 +1498,9 @@ const genericDeclarations = new Map([
   ["GENERIC_MACRO", genericMacroDeclaration],
   ["GENERIC_CALL", genericCallMacroDeclaration],
   ["GENERIC_INVOKED", genericInvokedMacroDeclaration],
+  ["GENERIC_TRIGRAPH_PREFIX", genericTrigraphPrefixDeclaration],
+  ["GENERIC_AFTER_TRANSLATION", genericAfterTranslationMacroDeclaration],
+  ["generic_after_translation", genericAfterTranslationObjectDeclaration],
   ["GenericScore", genericTypedefDeclaration],
   ["GenericPlayer", genericStructDeclaration],
   ["GenericPayload", genericUnionDeclaration],
@@ -1460,15 +1513,38 @@ function genericByteOffset(analysisCase, delta) {
     delta;
 }
 
+function genericPositionAt(byteOffset) {
+  const bytes = Buffer.from(genericSource.source);
+  let line = 1;
+  let column = 1;
+  for (let index = 0; index < byteOffset; index++) {
+    if (bytes[index] === 0x0a) {
+      line++;
+      column = 1;
+    } else {
+      column++;
+    }
+  }
+  return { line, column, offset: byteOffset };
+}
+
+function genericPositionEquals(actual, expected) {
+  return actual?.line === expected.line &&
+    actual.column === expected.column && actual.offset === expected.offset;
+}
+
 function assertGenericHover(result, analysisCase, lifecycle) {
   const hover = result.hover;
   const declarationStart = genericDeclarations.get(analysisCase.name);
+  const declarationEnd =
+    declarationStart + Buffer.byteLength(analysisCase.name);
+  const expectedStart = genericPositionAt(declarationStart);
+  const expectedEnd = genericPositionAt(declarationEnd);
   if (result.partial || result.diagnostics.length !== 0 ||
       hover?.name !== analysisCase.name || hover.kind !== analysisCase.kind ||
       hover.declaration.sourceName !== genericSource.name ||
-      hover.declaration.start.offset !== declarationStart ||
-      hover.declaration.end.offset !==
-        declarationStart + Buffer.byteLength(analysisCase.name) ||
+      !genericPositionEquals(hover.declaration.start, expectedStart) ||
+      !genericPositionEquals(hover.declaration.end, expectedEnd) ||
       (analysisCase.kind === "enumConstant" &&
        hover.initializer.constantValue !== analysisCase.value) ||
       (analysisCase.kind === "macro" &&

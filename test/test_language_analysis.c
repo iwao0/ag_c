@@ -1,5 +1,6 @@
 #include "../src/language_analysis.h"
 #include "../src/target_info.h"
+#include "../src/tokenizer/tokenizer.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -136,11 +137,22 @@ static const char generic_hover_source[] =
     "#define GENERIC_CALL() 6\n"
     "int GENERIC_INVOKED;\n"
     "#define GENERIC_INVOKED() 7\n"
+    "?" "?=define GENERIC_TRIGRAPH_PREFIX 11\n"
+    "#define GENERIC_SPLICE_PREFIX 12 \\\n"
+    "+ 0\n"
+    "#define GENERIC_AFTER_TRANSLATION 13\n"
+    "int generic_after_translation;\n"
     "int generic_identity(int value) { return value; }\n"
     "int generic_comment_invocation(void) { return GENERIC_INVOKED /* gap */ (); }\n"
     "int generic_lf_invocation(void) { return GENERIC_INVOKED \\\n"
     "(); }\n"
     "int generic_crlf_invocation(void) { return GENERIC_INVOKED \\\r\n"
+    "(); }\n"
+    "int generic_trigraph_lf_invocation(void) { return GENERIC_INVOKED "
+    "?" "?/\n"
+    "(); }\n"
+    "int generic_trigraph_crlf_invocation(void) { return GENERIC_INVOKED "
+    "?" "?/\r\n"
     "(); }\n"
     "int generic_score(struct GenericPlayer value) { return value.score; }\n"
     "int generic_pointer_score(const struct GenericPlayer *value) { return value ? value->score : 0; }\n"
@@ -155,6 +167,7 @@ static const char generic_hover_source[] =
     "  result += _Generic(GENERIC_MODE, int: 3, default: 0);\n"
     "  result += _Generic(GENERIC_MACRO, int: 4, default: 0);\n"
     "  result += _Generic(GENERIC_CALL(), int: 6, default: 0);\n"
+    "  result += GENERIC_TRIGRAPH_PREFIX + GENERIC_AFTER_TRANSLATION + generic_after_translation;\n"
     "  result += _Generic(generic_value, GenericScore: 5, default: 0);\n"
     "  result += (int)sizeof(_Atomic /* type */ (GenericScore));\n"
     "  result += (int)_Alignof /* query */ (const GenericScore *);\n"
@@ -2361,6 +2374,13 @@ int main(int argc, char **argv) {
                        strlen("GENERIC_INVOKED"),
                    "GENERIC_INVOKED")
           : NULL;
+  const char *generic_trigraph_prefix_declaration = strstr(
+      generic_invoked_macro_declaration, "GENERIC_TRIGRAPH_PREFIX");
+  const char *generic_after_translation_macro_declaration = strstr(
+      generic_trigraph_prefix_declaration, "GENERIC_AFTER_TRANSLATION");
+  const char *generic_after_translation_object_declaration = strstr(
+      generic_after_translation_macro_declaration,
+      "generic_after_translation");
   const char *generic_typedef_declaration = strstr(
       generic_hover_source, "GenericScore");
   const char *generic_struct_declaration = strstr(
@@ -2387,6 +2407,14 @@ int main(int argc, char **argv) {
       generic_lf_macro_use, "generic_crlf_invocation");
   const char *generic_crlf_macro_use = strstr(
       generic_crlf_invocation, "GENERIC_INVOKED");
+  const char *generic_trigraph_lf_invocation = strstr(
+      generic_crlf_macro_use, "generic_trigraph_lf_invocation");
+  const char *generic_trigraph_lf_macro_use = strstr(
+      generic_trigraph_lf_invocation, "GENERIC_INVOKED");
+  const char *generic_trigraph_crlf_invocation = strstr(
+      generic_trigraph_lf_macro_use, "generic_trigraph_crlf_invocation");
+  const char *generic_trigraph_crlf_macro_use = strstr(
+      generic_trigraph_crlf_invocation, "GENERIC_INVOKED");
   const char *generic_first_control = strstr(
       generic_function_declaration, "_Generic(generic_value");
   const char *generic_first_object_use = strstr(
@@ -2409,8 +2437,15 @@ int main(int argc, char **argv) {
       generic_macro_use, "_Generic(GENERIC_CALL()");
   const char *generic_call_macro_use = strstr(
       generic_call_macro_control, "GENERIC_CALL");
+  const char *generic_trigraph_prefix_use = strstr(
+      generic_call_macro_use, "GENERIC_TRIGRAPH_PREFIX");
+  const char *generic_after_translation_macro_use = strstr(
+      generic_trigraph_prefix_use, "GENERIC_AFTER_TRANSLATION");
+  const char *generic_after_translation_object_use = strstr(
+      generic_after_translation_macro_use, "generic_after_translation");
   const char *generic_typedef_control = strstr(
-      generic_call_macro_use, "_Generic(generic_value, GenericScore");
+      generic_after_translation_object_use,
+      "_Generic(generic_value, GenericScore");
   const char *generic_typedef_use = strstr(
       generic_typedef_control, "GenericScore");
   const char *generic_atomic_query = strstr(
@@ -2507,6 +2542,9 @@ int main(int argc, char **argv) {
   CHECK(generic_macro_declaration && generic_call_macro_declaration &&
             generic_invoked_object_declaration &&
             generic_invoked_macro_declaration &&
+            generic_trigraph_prefix_declaration &&
+            generic_after_translation_macro_declaration &&
+            generic_after_translation_object_declaration &&
             generic_typedef_declaration &&
             generic_struct_declaration && generic_union_declaration &&
             generic_enum_tag_declaration &&
@@ -2514,12 +2552,18 @@ int main(int argc, char **argv) {
             generic_function_declaration && generic_comment_invocation &&
             generic_comment_macro_use && generic_lf_invocation &&
             generic_lf_macro_use && generic_crlf_invocation &&
-            generic_crlf_macro_use && generic_first_control &&
+            generic_crlf_macro_use && generic_trigraph_lf_invocation &&
+            generic_trigraph_lf_macro_use &&
+            generic_trigraph_crlf_invocation &&
+            generic_trigraph_crlf_macro_use && generic_first_control &&
             generic_first_object_use && generic_call_control &&
             generic_function_use && generic_argument_use &&
             generic_enum_control && generic_enum_use &&
             generic_macro_control && generic_macro_use &&
             generic_call_macro_control && generic_call_macro_use &&
+            generic_trigraph_prefix_use &&
+            generic_after_translation_macro_use &&
+            generic_after_translation_object_use &&
             generic_typedef_control && generic_typedef_use &&
             generic_atomic_query && generic_atomic_typedef_use &&
             generic_alignof && generic_alignof_typedef_use &&
@@ -2564,12 +2608,24 @@ int main(int argc, char **argv) {
        generic_macro_declaration, "", "9"},
       {generic_call_macro_use, "GENERIC_CALL", AG_LANGUAGE_SYMBOL_MACRO,
        generic_call_macro_declaration, "", "6"},
+      {generic_trigraph_prefix_use, "GENERIC_TRIGRAPH_PREFIX",
+       AG_LANGUAGE_SYMBOL_MACRO, generic_trigraph_prefix_declaration, "", "11"},
+      {generic_after_translation_macro_use, "GENERIC_AFTER_TRANSLATION",
+       AG_LANGUAGE_SYMBOL_MACRO, generic_after_translation_macro_declaration,
+       "", "13"},
+      {generic_after_translation_object_use, "generic_after_translation",
+       AG_LANGUAGE_SYMBOL_OBJECT, generic_after_translation_object_declaration,
+       "", ""},
       {generic_comment_macro_use, "GENERIC_INVOKED", AG_LANGUAGE_SYMBOL_MACRO,
        generic_invoked_macro_declaration, "", "7"},
       {generic_lf_macro_use, "GENERIC_INVOKED", AG_LANGUAGE_SYMBOL_MACRO,
        generic_invoked_macro_declaration, "", "7"},
       {generic_crlf_macro_use, "GENERIC_INVOKED", AG_LANGUAGE_SYMBOL_MACRO,
        generic_invoked_macro_declaration, "", "7"},
+      {generic_trigraph_lf_macro_use, "GENERIC_INVOKED",
+       AG_LANGUAGE_SYMBOL_MACRO, generic_invoked_macro_declaration, "", "7"},
+      {generic_trigraph_crlf_macro_use, "GENERIC_INVOKED",
+       AG_LANGUAGE_SYMBOL_MACRO, generic_invoked_macro_declaration, "", "7"},
       {generic_typedef_use, "GenericScore", AG_LANGUAGE_SYMBOL_TYPEDEF,
        generic_typedef_declaration, "", ""},
       {generic_atomic_typedef_use, "GenericScore",
@@ -2656,6 +2712,45 @@ int main(int argc, char **argv) {
       }
     }
   }
+
+  const char *trigraph_disabled_source =
+      "const char *text = \"?" "?=\";\n"
+      "int trigraph_disabled_value;\n"
+      "int main(void) { return _Generic(trigraph_disabled_value, int: 1, default: 0); }\n";
+  const char *trigraph_disabled_declaration = strstr(
+      trigraph_disabled_source, "trigraph_disabled_value");
+  const char *trigraph_disabled_use = trigraph_disabled_declaration
+                                          ? strstr(
+                                                trigraph_disabled_declaration +
+                                                    strlen("trigraph_disabled_value"),
+                                                "trigraph_disabled_value")
+                                          : NULL;
+  ag_compilation_session_t *trigraph_disabled_session =
+      ag_compilation_session_create(&target);
+  CHECK(trigraph_disabled_session && trigraph_disabled_declaration &&
+            trigraph_disabled_use,
+        "trigraph-disabled analysis anchors");
+  tk_ctx_set_enable_trigraphs(
+      ag_compilation_session_tokenizer(trigraph_disabled_session), false);
+  CHECK(analyze_named(
+            trigraph_disabled_session, "trigraph-disabled.c",
+            trigraph_disabled_source,
+            (size_t)(trigraph_disabled_use - trigraph_disabled_source) + 3,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "trigraph-disabled analysis");
+  const ag_language_symbol_t *trigraph_disabled_hover =
+      hover_symbol(&snapshot);
+  CHECK(trigraph_disabled_hover &&
+            trigraph_disabled_hover->kind == AG_LANGUAGE_SYMBOL_OBJECT &&
+            trigraph_disabled_hover->declaration.start.offset ==
+                (int)(trigraph_disabled_declaration -
+                      trigraph_disabled_source) &&
+            trigraph_disabled_hover->declaration.start.line == 2 &&
+            trigraph_disabled_hover->declaration.start.column == 5 &&
+            !snapshot.partial && snapshot.diagnostic_count == 0,
+        "trigraph-disabled source range remains unnormalized");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(trigraph_disabled_session);
 
   const char *enum_source =
       "enum {\n"
