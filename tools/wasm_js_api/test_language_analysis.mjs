@@ -172,6 +172,55 @@ const documentationSource = {
     "/** definition fallback */\n" +
     "int fallback_definition(int value) { return value; }\n" +
     "\n" +
+    "/// ヘビが進む方向を表します。\n" +
+    "enum DocumentedDirection {\n" +
+    "  /// 左へ進む方向です。\n" +
+    "  DOCUMENTED_DIRECTION_LEFT,\n" +
+    "  DOCUMENTED_DIRECTION_RIGHT,\n" +
+    "  /**\n" +
+    "   * 上へ進む方向です。\n" +
+    "   *\n" +
+    "   * 明示値を使用します。\n" +
+    "   */\n" +
+    "  DOCUMENTED_DIRECTION_UP = (1 << 2)\n" +
+    "  ,\r\n" +
+    "\t/// 下へ進む方向です。\r\n" +
+    "\t/// CRLFでも関連付けます。\r\n" +
+    "\tDOCUMENTED_DIRECTION_DOWN\r\n" +
+    "};\n" +
+    "int read_documented_direction(enum DocumentedDirection direction) {\n" +
+    "  return direction == DOCUMENTED_DIRECTION_LEFT\n" +
+    "             ? DOCUMENTED_DIRECTION_UP\n" +
+    "             : DOCUMENTED_DIRECTION_RIGHT;\n" +
+    "}\n" +
+    "\n" +
+    "/// tagだけの説明です。\n" +
+    "enum TagOnlyDirection { TAG_ONLY_LEFT, TAG_ONLY_RIGHT };\n" +
+    "enum ConstantOnlyDirection {\n" +
+    "  /// constantだけの説明です。\n" +
+    "  CONSTANT_ONLY_DIRECTION = 7\n" +
+    "};\n" +
+    "enum {\n" +
+    "  /** anonymous constantの説明です。 */\n" +
+    "  ANONYMOUS_DIRECTION = 8,\n" +
+    "  ANONYMOUS_DIRECTION_UNDOCUMENTED\n" +
+    "};\n" +
+    "/** enum空行で切れる */\n" +
+    "\n" +
+    "enum BlankGapDirection { BLANK_GAP_DIRECTION };\n" +
+    "/** enum通常commentで切れる */\n" +
+    "/* separator */\n" +
+    "enum OrdinaryGapDirection { ORDINARY_GAP_DIRECTION };\n" +
+    "/** enumdirectiveで切れる */\n" +
+    "#define ENUM_DOCUMENTATION_BREAK 1\n" +
+    "enum DirectiveGapDirection { DIRECTIVE_GAP_DIRECTION };\n" +
+    "int read_misc_directions(enum TagOnlyDirection tag_only,\n" +
+    "                         enum ConstantOnlyDirection constant_only) {\n" +
+    "  return tag_only == TAG_ONLY_LEFT ||\n" +
+    "         constant_only == CONSTANT_ONLY_DIRECTION ||\n" +
+    "         ANONYMOUS_DIRECTION;\n" +
+    "}\n" +
+    "\n" +
     "/** 空行で切れる */\n" +
     "\n" +
     "int blank_gap;\n" +
@@ -332,6 +381,29 @@ const documentationCases = [
   { name: "fallback_definition", kind: "function",
     documentation: "definition fallback",
     comment: "/** definition fallback */" },
+  { name: "DocumentedDirection", kind: "tag",
+    documentation: "ヘビが進む方向を表します。",
+    comment: "/// ヘビが進む方向を表します。" },
+  { name: "DOCUMENTED_DIRECTION_LEFT", kind: "enumConstant",
+    documentation: "左へ進む方向です。",
+    comment: "/// 左へ進む方向です。" },
+  { name: "DOCUMENTED_DIRECTION_UP", kind: "enumConstant",
+    documentation: "上へ進む方向です。\n\n明示値を使用します。",
+    comment: "/**\n   * 上へ進む方向です。\n   *\n" +
+      "   * 明示値を使用します。\n   */" },
+  { name: "DOCUMENTED_DIRECTION_DOWN", kind: "enumConstant",
+    documentation: "下へ進む方向です。\nCRLFでも関連付けます。",
+    comment: "/// 下へ進む方向です。\r\n" +
+      "\t/// CRLFでも関連付けます。" },
+  { name: "TagOnlyDirection", kind: "tag",
+    documentation: "tagだけの説明です。",
+    comment: "/// tagだけの説明です。" },
+  { name: "CONSTANT_ONLY_DIRECTION", kind: "enumConstant",
+    documentation: "constantだけの説明です。",
+    comment: "/// constantだけの説明です。" },
+  { name: "ANONYMOUS_DIRECTION", kind: "enumConstant",
+    documentation: "anonymous constantの説明です。",
+    comment: "/** anonymous constantの説明です。 */" },
   { name: "first_only", kind: "object", documentation: "最初の宣言だけ",
     comment: "/** 最初の宣言だけ */" },
   { name: "crlf_value", kind: "object",
@@ -388,7 +460,13 @@ for (const documentationCase of documentationCases) {
 }
 
 const stableDocumentationCases = documentationCases.filter(
-  ({ name }) => ["enemy_x", "walk_frame", "PLAYER_SIZE", "DOUBLE"].includes(name),
+  ({ name }) => [
+    "enemy_x", "walk_frame", "DocumentedDirection",
+    "DOCUMENTED_DIRECTION_LEFT", "DOCUMENTED_DIRECTION_UP",
+    "DOCUMENTED_DIRECTION_DOWN", "TagOnlyDirection",
+    "CONSTANT_ONLY_DIRECTION", "ANONYMOUS_DIRECTION",
+    "PLAYER_SIZE", "DOUBLE",
+  ].includes(name),
 );
 for (const documentationCase of stableDocumentationCases) {
   const declarationIndex = documentationSource.source.indexOf(
@@ -447,10 +525,40 @@ for (const documentationCase of stableDocumentationCases) {
   }
 }
 
+const undocumentedEnumName = "DOCUMENTED_DIRECTION_RIGHT";
+for (const occurrence of [
+  documentationSource.source.indexOf(undocumentedEnumName),
+  documentationSource.source.lastIndexOf(undocumentedEnumName),
+]) {
+  for (const delta of [
+    0,
+    Math.floor(Buffer.byteLength(undocumentedEnumName) / 2),
+    Buffer.byteLength(undocumentedEnumName),
+  ]) {
+    const byteOffset = documentationByteOffset(occurrence) + delta;
+    const wasmResult = compiler.analyzeSource(documentationSource, {
+      cursor: { sourceName: documentationSource.name, byteOffset },
+    });
+    assert.equal(wasmResult.hover?.name, undocumentedEnumName);
+    assert.equal(wasmResult.hover?.kind, "enumConstant");
+    assert.equal(wasmResult.hover?.documentation, "");
+    assert.equal(wasmResult.hover?.documentationRange, null);
+    assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--documentation-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    )), `native and Wasm undocumented enum differ at byte ${byteOffset}`);
+  }
+}
+
 for (const name of [
   "blank_gap", "directive_gap", "directive_continuation_gap",
   "declaration_after", "ordinary_block", "ordinary_line", "comment_text",
   "string_after", "comment_character", "character_after",
+  "DOCUMENTED_DIRECTION_RIGHT",
+  "ConstantOnlyDirection", "TAG_ONLY_LEFT", "TAG_ONLY_RIGHT",
+  "ANONYMOUS_DIRECTION_UNDOCUMENTED", "BlankGapDirection",
+  "OrdinaryGapDirection", "DirectiveGapDirection",
   "BLANK_DOC_MACRO", "ORDINARY_GAP_MACRO", "CONDITIONAL_GAP_MACRO",
   "PRAGMA_GAP_MACRO",
   "documentation_main",
@@ -1174,6 +1282,84 @@ for (const macroCase of snakeMacroCases) {
   }
 }
 
+const snakeEnumCases = [
+  {
+    name: "Direction", kind: "tag",
+    documentation: "ヘビが進む方向を表します。",
+    comment: "/// ヘビが進む方向を表します。",
+  },
+  {
+    name: "DIRECTION_LEFT", kind: "enumConstant",
+    documentation: "左へ進む方向です。", comment: "/// 左へ進む方向です。",
+  },
+  {
+    name: "DIRECTION_RIGHT", kind: "enumConstant",
+    documentation: "", comment: null,
+  },
+  {
+    name: "DIRECTION_UP", kind: "enumConstant",
+    documentation: "上へ進む方向です。", comment: "/** 上へ進む方向です。 */",
+  },
+  {
+    name: "DIRECTION_DOWN", kind: "enumConstant",
+    documentation: "下へ進む方向です。", comment: "/// 下へ進む方向です。",
+  },
+];
+for (const enumCase of snakeEnumCases) {
+  const declarationIndex = macroDefinitionSnake.source.indexOf(enumCase.name);
+  const useIndex = macroDefinitionSnake.source.lastIndexOf(enumCase.name);
+  const commentIndex = enumCase.comment === null ? -1
+    : macroDefinitionSnake.source.indexOf(enumCase.comment);
+  for (const [lifecycle, index] of [
+    ["declaration", declarationIndex], ["use", useIndex],
+  ]) {
+    const byteOffset = byteOffsetForIndex(macroDefinitionSnake.source, index) +
+      Math.floor(Buffer.byteLength(enumCase.name) / 2);
+    const result = compiler.analyzeSource(macroDefinitionSnake, {
+      headers: { "game.h": macroDefinitionGameHeader },
+      cursor: { sourceName: macroDefinitionSnake.name, byteOffset },
+    });
+    const completion = symbol(result, enumCase.name, enumCase.kind);
+    assert.equal(result.hover?.name, enumCase.name,
+      `${enumCase.name} snake ${lifecycle} hover`);
+    assert.equal(result.hover?.kind, enumCase.kind,
+      `${enumCase.name} snake ${lifecycle} kind`);
+    assert.equal(result.hover?.documentation, enumCase.documentation,
+      `${enumCase.name} snake ${lifecycle} documentation`);
+    assert.equal(completion?.documentation, enumCase.documentation,
+      `${enumCase.name} snake ${lifecycle} completion documentation`);
+    if (enumCase.comment === null) {
+      assert.equal(result.hover?.documentationRange, null,
+        `${enumCase.name} snake ${lifecycle} range`);
+      assert.equal(completion?.documentationRange, null,
+        `${enumCase.name} snake ${lifecycle} completion range`);
+    } else {
+      const commentStart = byteOffsetForIndex(
+        macroDefinitionSnake.source, commentIndex,
+      );
+      assert.equal(result.hover?.documentationRange?.sourceName, "snake.c");
+      assert.equal(result.hover?.documentationRange?.start.offset, commentStart);
+      assert.equal(
+        result.hover?.documentationRange?.end.offset,
+        commentStart + Buffer.byteLength(enumCase.comment),
+      );
+      assert.deepStrictEqual(
+        result.hover?.documentationRange, completion?.documentationRange,
+      );
+    }
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--macro-definition-snake-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      result,
+      nativeResult,
+      `native and Wasm snake enum ${lifecycle} differ for ${enumCase.name}`,
+    );
+  }
+}
+
 const macroHeaderDefinitionSource = {
   name: "macro-definition.h",
   source: "/// virtual header definition\n" +
@@ -1248,6 +1434,268 @@ try {
 } finally {
   macroDefinitionProjectCompiler.dispose();
 }
+
+const enumHeaderMain = {
+  name: "enum-header-main.c",
+  source: "#include \"enum-doc.h\"\n" +
+    "int read_header_direction(enum HeaderDirection direction) {\n" +
+    "  return direction == HEADER_DIRECTION_VALUE;\n" +
+    "}\n",
+};
+const enumHeaderRevisions = [
+  "/// header enum v1\n" +
+    "enum HeaderDirection {\n" +
+    "  /// header constant v1\n" +
+    "  HEADER_DIRECTION_VALUE = 1\n" +
+    "};\n",
+  "/** header enum v2 */\n" +
+    "enum HeaderDirection {\n" +
+    "  /** header constant v2 */\n" +
+    "  HEADER_DIRECTION_VALUE = 2\n" +
+    "};\n",
+  "enum HeaderDirection { HEADER_DIRECTION_VALUE = 3 };\n",
+];
+const enumHeaderTagUse = enumHeaderMain.source.lastIndexOf("HeaderDirection");
+const enumHeaderValueUse = enumHeaderMain.source.lastIndexOf(
+  "HEADER_DIRECTION_VALUE",
+);
+for (let revision = 1; revision <= enumHeaderRevisions.length; revision++) {
+  const header = enumHeaderRevisions[revision - 1];
+  const expectedTag = revision === 1 ? "header enum v1"
+    : revision === 2 ? "header enum v2" : "";
+  const expectedValue = revision === 1 ? "header constant v1"
+    : revision === 2 ? "header constant v2" : "";
+  const options = {
+    headers: { "enum-doc.h": header },
+    cursor: {
+      sourceName: enumHeaderMain.name,
+      byteOffset: enumHeaderValueUse + 3,
+    },
+  };
+  const result = compiler.analyzeSource(enumHeaderMain, options);
+  const tag = symbol(result, "HeaderDirection", "tag");
+  const value = symbol(result, "HEADER_DIRECTION_VALUE", "enumConstant");
+  assert.equal(result.hover?.name, "HEADER_DIRECTION_VALUE");
+  assert.equal(result.hover?.documentation, expectedValue);
+  assert.equal(value?.documentation, expectedValue);
+  assert.equal(tag?.documentation, expectedTag);
+  for (const documented of [tag, value]) {
+    assert.equal(
+      documented?.documentationRange?.sourceName ?? null,
+      documented?.documentation ? "enum-doc.h" : null,
+    );
+  }
+  const nativeResult = JSON.parse(execFileSync(
+    nativeAnalysisPath,
+    ["--enum-documentation-header-parity-json", String(revision)],
+    { encoding: "utf8" },
+  ));
+  assert.deepStrictEqual(
+    result,
+    nativeResult,
+    `native and Wasm header enum documentation differ at revision ${revision}`,
+  );
+  const tagResult = compiler.analyzeSource(enumHeaderMain, {
+    ...options,
+    cursor: {
+      sourceName: enumHeaderMain.name,
+      byteOffset: enumHeaderTagUse + 2,
+    },
+  });
+  assert.equal(tagResult.hover?.name, "HeaderDirection");
+  assert.equal(tagResult.hover?.documentation, expectedTag);
+}
+
+const enumProjectRevisions = [
+  "/// project enum v1\n" +
+    "enum ProjectDirection {\n" +
+    "  /// project constant v1\n" +
+    "  PROJECT_DIRECTION_VALUE = 1\n" +
+    "};\n" +
+    "int read_project_direction(enum ProjectDirection direction) {\n" +
+    "  return direction == PROJECT_DIRECTION_VALUE;\n" +
+    "}\n",
+  "/** project enum v2 */\n" +
+    "enum ProjectDirection {\n" +
+    "  /** project constant v2 */\n" +
+    "  PROJECT_DIRECTION_VALUE = 2\n" +
+    "};\n" +
+    "int read_project_direction(enum ProjectDirection direction) {\n" +
+    "  return direction == PROJECT_DIRECTION_VALUE;\n" +
+    "}\n",
+  "enum ProjectDirection { PROJECT_DIRECTION_VALUE = 3 };\n" +
+    "int read_project_direction(enum ProjectDirection direction) {\n" +
+    "  return direction == PROJECT_DIRECTION_VALUE;\n" +
+    "}\n",
+];
+const enumProjectCompiler = await createCompiler(wasmModule);
+try {
+  for (let revision = 1; revision <= enumProjectRevisions.length; revision++) {
+    const input = {
+      name: "main.c", source: enumProjectRevisions[revision - 1],
+    };
+    const valueUse = input.source.lastIndexOf("PROJECT_DIRECTION_VALUE");
+    const expectedTag = revision === 1 ? "project enum v1"
+      : revision === 2 ? "project enum v2" : "";
+    const expectedValue = revision === 1 ? "project constant v1"
+      : revision === 2 ? "project constant v2" : "";
+    const result = enumProjectCompiler.analyzeProjectSource(input, {
+      projectRevision: revision,
+      projectSources: [input],
+      cursor: {
+        sourceName: input.name,
+        byteOffset: valueUse + 3,
+      },
+    });
+    assert.equal(result.hover?.name, "PROJECT_DIRECTION_VALUE");
+    assert.equal(result.hover?.documentation, expectedValue);
+    assert.equal(
+      symbol(result, "PROJECT_DIRECTION_VALUE", "enumConstant")
+        ?.documentation,
+      expectedValue,
+    );
+    assert.equal(
+      symbol(result, "ProjectDirection", "tag")?.documentation,
+      expectedTag,
+    );
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--enum-documentation-project-parity-json", String(revision)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(
+      result,
+      nativeResult,
+      `native and Wasm project enum documentation differ at revision ${revision}`,
+    );
+    const tagUse = input.source.lastIndexOf("ProjectDirection");
+    const tagResult = enumProjectCompiler.analyzeProjectSource(input, {
+      projectRevision: revision,
+      projectSources: [input],
+      cursor: { sourceName: input.name, byteOffset: tagUse + 2 },
+    });
+    assert.equal(tagResult.hover?.name, "ProjectDirection");
+    assert.equal(tagResult.hover?.documentation, expectedTag);
+  }
+} finally {
+  enumProjectCompiler.dispose();
+}
+
+const enumScopeSource = {
+  name: "enum-scope.c",
+  source: "/** outer enum */\n" +
+    "enum ScopedDirection {\n" +
+    "  /** outer value */\n" +
+    "  SCOPED_DIRECTION_VALUE = 1\n" +
+    "};\n" +
+    "int read_inner_direction(void) {\n" +
+    "  /** inner enum */\n" +
+    "  enum ScopedDirection {\n" +
+    "    /** inner value */\n" +
+    "    SCOPED_DIRECTION_VALUE = 2\n" +
+    "  };\n" +
+    "  enum ScopedDirection value = SCOPED_DIRECTION_VALUE;\n" +
+    "  return value;\n" +
+    "}\n" +
+    "enum ScopedDirection outer_direction = SCOPED_DIRECTION_VALUE;\n",
+};
+const innerScopeAnchor = enumScopeSource.source.indexOf("inner enum");
+const innerTagUse = enumScopeSource.source.indexOf(
+  "ScopedDirection", enumScopeSource.source.indexOf("enum ScopedDirection value"),
+);
+const innerValueUse = enumScopeSource.source.indexOf(
+  "SCOPED_DIRECTION_VALUE", innerTagUse,
+);
+const enumScopeCases = [
+  { index: innerTagUse, name: "ScopedDirection", documentation: "inner enum" },
+  { index: innerValueUse, name: "SCOPED_DIRECTION_VALUE",
+    documentation: "inner value" },
+  { index: enumScopeSource.source.lastIndexOf("ScopedDirection"),
+    name: "ScopedDirection", documentation: "outer enum" },
+  { index: enumScopeSource.source.lastIndexOf("SCOPED_DIRECTION_VALUE"),
+    name: "SCOPED_DIRECTION_VALUE", documentation: "outer value" },
+];
+assert.notEqual(innerScopeAnchor, -1);
+for (const scopeCase of enumScopeCases) {
+  const byteOffset = scopeCase.index + 2;
+  const result = compiler.analyzeSource(enumScopeSource, {
+    cursor: { sourceName: enumScopeSource.name, byteOffset },
+  });
+  assert.equal(result.hover?.name, scopeCase.name);
+  assert.equal(result.hover?.documentation, scopeCase.documentation);
+  assert.deepStrictEqual(result, JSON.parse(execFileSync(
+    nativeAnalysisPath,
+    ["--enum-documentation-scope-parity-json", String(byteOffset)],
+    { encoding: "utf8" },
+  )), `native and Wasm nested enum differ for ${scopeCase.documentation}`);
+}
+
+const limitedEnumSource = {
+  name: "enum-limit.c", source: "/** 12345678901234 */\nenum E { V };\n",
+};
+try {
+  compiler.analyzeSource(limitedEnumSource, {
+    cursor: {
+      sourceName: limitedEnumSource.name,
+      byteOffset: limitedEnumSource.source.indexOf(" E ") + 1,
+    },
+    limits: { maxAnalysisStringBytes: 13 },
+  });
+  throw new Error("enum documentation string limit unexpectedly succeeded");
+} catch (error) {
+  if (!(error instanceof AgcResourceLimitError) ||
+      error.code !== "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES" ||
+      error.limit !== "maxAnalysisStringBytes" || error.max !== 13 ||
+      error.actual !== 14) {
+    throw error;
+  }
+}
+const enumEntryLimitSource = {
+  name: "enum-entry-limit.c",
+  source: "/** first */\nenum A { A_VALUE };\n" +
+    "/** second */\nenum B { B_VALUE };\n",
+};
+try {
+  compiler.analyzeSource(enumEntryLimitSource, {
+    cursor: {
+      sourceName: enumEntryLimitSource.name,
+      byteOffset: Buffer.byteLength(enumEntryLimitSource.source),
+    },
+    limits: { maxAnalysisSymbols: 1 },
+  });
+  throw new Error("enum documentation entry limit unexpectedly succeeded");
+} catch (error) {
+  if (!(error instanceof AgcResourceLimitError) ||
+      error.code !== "AGC_LIMIT_MAX_ANALYSIS_SYMBOLS" ||
+      error.limit !== "maxAnalysisSymbols" || error.max !== 1 ||
+      error.actual !== 2) {
+    throw error;
+  }
+}
+const plainEnumSnapshotInput = {
+  name: "enum-snapshot.c", source: "enum S { S_VALUE };\n",
+};
+const documentedEnumSnapshotInput = {
+  name: "enum-snapshot.c",
+  source: "/** bounded enum doc */\nenum S { S_VALUE };\n",
+};
+const plainEnumSnapshotMinimum = minimumDocumentationSnapshotLimit(
+  plainEnumSnapshotInput,
+);
+const documentedEnumSnapshotMinimum = minimumDocumentationSnapshotLimit(
+  documentedEnumSnapshotInput,
+);
+assert.ok(documentedEnumSnapshotMinimum > plainEnumSnapshotMinimum,
+  "enum documentation did not contribute to the Wasm snapshot byte limit");
+assert.equal(documentationSnapshotSucceeds(
+  plainEnumSnapshotInput, documentedEnumSnapshotMinimum - 1,
+), true);
+assert.equal(documentationSnapshotSucceeds(
+  documentedEnumSnapshotInput, documentedEnumSnapshotMinimum - 1,
+), false);
+assert.equal(documentationSnapshotSucceeds(
+  plainEnumSnapshotInput, documentedEnumSnapshotMinimum - 1,
+), true, "Wasm session was not reusable after enum documentation limits");
 
 const macroDefinitionLimitSource = {
   name: "macro-definition-limit.c",

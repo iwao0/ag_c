@@ -3206,6 +3206,54 @@ static const ag_language_documentation_entry_t *documentation_for_range(
       (size_t)range->start.offset);
 }
 
+static const ag_language_documentation_entry_t *
+documentation_for_exact_declaration_start(
+    const snapshot_builder_t *builder,
+    const ag_language_source_range_t *range) {
+  if (!builder || !builder->documentation_index || !range ||
+      !range->source_name || range->start.offset < 0)
+    return NULL;
+  size_t declaration_start = (size_t)range->start.offset;
+  for (size_t i = 0; i < builder->documentation_index->count; i++) {
+    const ag_language_documentation_entry_t *entry =
+        &builder->documentation_index->entries[i];
+    if (strcmp(entry->source_name, range->source_name) == 0 &&
+        entry->declaration_start == declaration_start)
+      return entry;
+  }
+  return NULL;
+}
+
+static const ag_language_documentation_entry_t *
+documentation_for_enum_tag(
+    const snapshot_builder_t *builder,
+    const ag_language_source_range_t *range) {
+  if (!builder || !builder->documentation_index || !range ||
+      !range->source_name || range->start.offset < 0)
+    return NULL;
+  size_t tag_start = (size_t)range->start.offset;
+  static const char enum_keyword[] = "enum";
+  size_t enum_length = sizeof(enum_keyword) - 1;
+  for (size_t i = 0; i < builder->documentation_index->count; i++) {
+    const ag_language_documentation_entry_t *entry =
+        &builder->documentation_index->entries[i];
+    if (strcmp(entry->source_name, range->source_name) != 0 ||
+        entry->declaration_start > entry->source_length ||
+        enum_length > entry->source_length - entry->declaration_start)
+      continue;
+    size_t cursor = entry->declaration_start;
+    if (memcmp(entry->source + cursor, enum_keyword, enum_length) != 0 ||
+        (cursor + enum_length < entry->source_length &&
+         is_identifier_byte(
+             (unsigned char)entry->source[cursor + enum_length])))
+      continue;
+    cursor = skip_analysis_space_and_comments(
+        entry->source, entry->source_length, cursor + enum_length);
+    if (cursor == tag_start) return entry;
+  }
+  return NULL;
+}
+
 static int set_symbol_documentation(
     snapshot_builder_t *builder, ag_language_symbol_t *symbol,
     const ag_language_documentation_entry_t *entry) {
@@ -3237,12 +3285,22 @@ static int set_symbol_documentation(
 
 static void fill_documentation(
     snapshot_builder_t *builder, ag_language_symbol_t *symbol) {
-  if (!builder || !symbol ||
-      (symbol->kind != AG_LANGUAGE_SYMBOL_OBJECT &&
-       symbol->kind != AG_LANGUAGE_SYMBOL_FUNCTION))
+  if (!builder || !symbol) return;
+  const ag_language_documentation_entry_t *declaration_entry = NULL;
+  if (symbol->kind == AG_LANGUAGE_SYMBOL_OBJECT ||
+      symbol->kind == AG_LANGUAGE_SYMBOL_FUNCTION) {
+    declaration_entry = documentation_for_range(
+        builder, &symbol->declaration);
+  } else if (symbol->kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT) {
+    declaration_entry = documentation_for_exact_declaration_start(
+        builder, &symbol->declaration);
+  } else if (symbol->kind == AG_LANGUAGE_SYMBOL_TAG && symbol->type &&
+             strncmp(symbol->type, "enum ", 5) == 0) {
+    declaration_entry = documentation_for_enum_tag(
+        builder, &symbol->declaration);
+  } else {
     return;
-  const ag_language_documentation_entry_t *declaration_entry =
-      documentation_for_range(builder, &symbol->declaration);
+  }
   int declaration_is_definition =
       symbol->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
       symbol->has_definition &&

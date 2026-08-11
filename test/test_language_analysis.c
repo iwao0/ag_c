@@ -12,6 +12,8 @@ typedef struct {
   size_t length;
 } header_bundle_t;
 
+static const char *last_occurrence(const char *text, const char *needle);
+
 static char *read_fixture_source(const char *path, size_t *length) {
   if (length) *length = 0;
   FILE *file = fopen(path, "rb");
@@ -326,6 +328,55 @@ static const char documentation_hover_source[] =
     "/** definition fallback */\n"
     "int fallback_definition(int value) { return value; }\n"
     "\n"
+    "/// ヘビが進む方向を表します。\n"
+    "enum DocumentedDirection {\n"
+    "  /// 左へ進む方向です。\n"
+    "  DOCUMENTED_DIRECTION_LEFT,\n"
+    "  DOCUMENTED_DIRECTION_RIGHT,\n"
+    "  /**\n"
+    "   * 上へ進む方向です。\n"
+    "   *\n"
+    "   * 明示値を使用します。\n"
+    "   */\n"
+    "  DOCUMENTED_DIRECTION_UP = (1 << 2)\n"
+    "  ,\r\n"
+    "\t/// 下へ進む方向です。\r\n"
+    "\t/// CRLFでも関連付けます。\r\n"
+    "\tDOCUMENTED_DIRECTION_DOWN\r\n"
+    "};\n"
+    "int read_documented_direction(enum DocumentedDirection direction) {\n"
+    "  return direction == DOCUMENTED_DIRECTION_LEFT\n"
+    "             ? DOCUMENTED_DIRECTION_UP\n"
+    "             : DOCUMENTED_DIRECTION_RIGHT;\n"
+    "}\n"
+    "\n"
+    "/// tagだけの説明です。\n"
+    "enum TagOnlyDirection { TAG_ONLY_LEFT, TAG_ONLY_RIGHT };\n"
+    "enum ConstantOnlyDirection {\n"
+    "  /// constantだけの説明です。\n"
+    "  CONSTANT_ONLY_DIRECTION = 7\n"
+    "};\n"
+    "enum {\n"
+    "  /** anonymous constantの説明です。 */\n"
+    "  ANONYMOUS_DIRECTION = 8,\n"
+    "  ANONYMOUS_DIRECTION_UNDOCUMENTED\n"
+    "};\n"
+    "/** enum空行で切れる */\n"
+    "\n"
+    "enum BlankGapDirection { BLANK_GAP_DIRECTION };\n"
+    "/** enum通常commentで切れる */\n"
+    "/* separator */\n"
+    "enum OrdinaryGapDirection { ORDINARY_GAP_DIRECTION };\n"
+    "/** enumdirectiveで切れる */\n"
+    "#define ENUM_DOCUMENTATION_BREAK 1\n"
+    "enum DirectiveGapDirection { DIRECTIVE_GAP_DIRECTION };\n"
+    "int read_misc_directions(enum TagOnlyDirection tag_only,\n"
+    "                         enum ConstantOnlyDirection constant_only) {\n"
+    "  return tag_only == TAG_ONLY_LEFT ||\n"
+    "         constant_only == CONSTANT_ONLY_DIRECTION ||\n"
+    "         ANONYMOUS_DIRECTION;\n"
+    "}\n"
+    "\n"
     "/** 空行で切れる */\n"
     "\n"
     "int blank_gap;\n"
@@ -468,6 +519,63 @@ static const char *const macro_definition_project_sources[] = {
 static const char macro_definition_header_source[] =
     "/// virtual header definition\n"
     "#define HEADER_DEFINITION(value) ((value) + 2)\n";
+
+static const char *const enum_documentation_header_revisions[] = {
+    "/// header enum v1\n"
+    "enum HeaderDirection {\n"
+    "  /// header constant v1\n"
+    "  HEADER_DIRECTION_VALUE = 1\n"
+    "};\n",
+    "/** header enum v2 */\n"
+    "enum HeaderDirection {\n"
+    "  /** header constant v2 */\n"
+    "  HEADER_DIRECTION_VALUE = 2\n"
+    "};\n",
+    "enum HeaderDirection { HEADER_DIRECTION_VALUE = 3 };\n",
+};
+static const char enum_documentation_header_main[] =
+    "#include \"enum-doc.h\"\n"
+    "int read_header_direction(enum HeaderDirection direction) {\n"
+    "  return direction == HEADER_DIRECTION_VALUE;\n"
+    "}\n";
+static const char *const enum_documentation_project_revisions[] = {
+    "/// project enum v1\n"
+    "enum ProjectDirection {\n"
+    "  /// project constant v1\n"
+    "  PROJECT_DIRECTION_VALUE = 1\n"
+    "};\n"
+    "int read_project_direction(enum ProjectDirection direction) {\n"
+    "  return direction == PROJECT_DIRECTION_VALUE;\n"
+    "}\n",
+    "/** project enum v2 */\n"
+    "enum ProjectDirection {\n"
+    "  /** project constant v2 */\n"
+    "  PROJECT_DIRECTION_VALUE = 2\n"
+    "};\n"
+    "int read_project_direction(enum ProjectDirection direction) {\n"
+    "  return direction == PROJECT_DIRECTION_VALUE;\n"
+    "}\n",
+    "enum ProjectDirection { PROJECT_DIRECTION_VALUE = 3 };\n"
+    "int read_project_direction(enum ProjectDirection direction) {\n"
+    "  return direction == PROJECT_DIRECTION_VALUE;\n"
+    "}\n",
+};
+static const char enum_documentation_scope_source[] =
+    "/** outer enum */\n"
+    "enum ScopedDirection {\n"
+    "  /** outer value */\n"
+    "  SCOPED_DIRECTION_VALUE = 1\n"
+    "};\n"
+    "int read_inner_direction(void) {\n"
+    "  /** inner enum */\n"
+    "  enum ScopedDirection {\n"
+    "    /** inner value */\n"
+    "    SCOPED_DIRECTION_VALUE = 2\n"
+    "  };\n"
+    "  enum ScopedDirection value = SCOPED_DIRECTION_VALUE;\n"
+    "  return value;\n"
+    "}\n"
+    "enum ScopedDirection outer_direction = SCOPED_DIRECTION_VALUE;\n";
 
 static int update_guard_project(
     ag_compilation_session_t *session,
@@ -1615,6 +1723,88 @@ static int print_macro_definition_source_snapshot(
   return result;
 }
 
+static int print_enum_documentation_header_parity_snapshot(
+    const char *revision_text) {
+  char *end = NULL;
+  unsigned long revision = strtoul(revision_text, &end, 10);
+  if (!revision_text[0] || !end || *end != '\0' ||
+      revision < 1 || revision > 3)
+    return 1;
+  const char *paths[] = {"enum-doc.h"};
+  const char *headers[] = {
+      enum_documentation_header_revisions[revision - 1]};
+  header_bundle_t bundle = make_bundle(paths, headers, 1);
+  const char *use = last_occurrence(
+      enum_documentation_header_main, "HEADER_DIRECTION_VALUE");
+  int result = bundle.bytes && use
+                   ? print_macro_definition_source_snapshot(
+                         "enum-header-main.c",
+                         enum_documentation_header_main,
+                         (size_t)(use - enum_documentation_header_main) + 3,
+                         bundle)
+                   : 1;
+  free(bundle.bytes);
+  return result;
+}
+
+static int print_enum_documentation_scope_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(enum_documentation_scope_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "enum-scope.c", enum_documentation_scope_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_enum_documentation_project_parity_snapshot(
+    const char *revision_text) {
+  char *end = NULL;
+  unsigned long requested_revision = strtoul(revision_text, &end, 10);
+  if (!revision_text[0] || !end || *end != '\0' ||
+      requested_revision < 1 || requested_revision > 3)
+    return 1;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  ag_language_analysis_limits_t limits =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_error_t error = {0};
+  ag_language_analysis_snapshot_t snapshot = {0};
+  int result = 1;
+  for (unsigned long revision = 1;
+       session && project && revision <= requested_revision; revision++) {
+    const char *source = enum_documentation_project_revisions[revision - 1];
+    if (!update_single_source_project(
+            session, project, (unsigned int)revision, source,
+            (header_bundle_t){0}, limits, &error))
+      break;
+    if (revision != requested_revision) continue;
+    const char *use = last_occurrence(source, "PROJECT_DIRECTION_VALUE");
+    int ok = use && analyze_project_named(
+        session, project, "main.c", source,
+        (size_t)(use - source) + 3, (header_bundle_t){0}, limits,
+        &snapshot, &error);
+    int length = ok ? ag_language_analysis_snapshot_write_json(
+                          &snapshot, NULL, 0) : -1;
+    char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+    if (json && ag_language_analysis_snapshot_write_json(
+                    &snapshot, json, (size_t)length + 1) == length) {
+      puts(json);
+      result = 0;
+    }
+    free(json);
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  ag_language_project_index_destroy(project);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
 static int print_macro_definition_forms_parity_snapshot(
     const char *cursor_text) {
   char *end = NULL;
@@ -2107,6 +2297,286 @@ static int test_macro_definition_hover(ag_target_info_t target) {
   return 0;
 }
 
+static int test_enum_documentation_analysis(ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "enum documentation session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+
+  size_t snake_length = 0;
+  char *snake_source = read_fixture_source(
+      "test/fixtures/language_analysis/macro_definition_snake.txt",
+      &snake_length);
+  const char *game_paths[] = {"game.h"};
+  const char *game_headers[] = {macro_definition_game_header};
+  header_bundle_t game_bundle = make_bundle(game_paths, game_headers, 1);
+  CHECK(snake_source && snake_length == strlen(snake_source) &&
+            game_bundle.bytes,
+        "enum documentation snake fixture");
+  struct {
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *documentation;
+    const char *comment;
+  } snake_symbols[] = {
+      {"Direction", AG_LANGUAGE_SYMBOL_TAG,
+       "ヘビが進む方向を表します。",
+       "/// ヘビが進む方向を表します。"},
+      {"DIRECTION_LEFT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "左へ進む方向です。", "/// 左へ進む方向です。"},
+      {"DIRECTION_RIGHT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "", NULL},
+      {"DIRECTION_UP", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "上へ進む方向です。", "/** 上へ進む方向です。 */"},
+      {"DIRECTION_DOWN", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "下へ進む方向です。", "/// 下へ進む方向です。"},
+  };
+  for (size_t i = 0;
+       i < sizeof(snake_symbols) / sizeof(snake_symbols[0]); i++) {
+    const char *declaration = strstr(snake_source, snake_symbols[i].name);
+    const char *use = last_occurrence(snake_source, snake_symbols[i].name);
+    const char *comment = snake_symbols[i].comment
+                              ? strstr(snake_source, snake_symbols[i].comment)
+                              : NULL;
+    CHECK(declaration && use && analyze_named(
+              session, "snake.c", snake_source,
+              (size_t)(use - snake_source) + strlen(snake_symbols[i].name) / 2,
+              game_bundle, defaults, &snapshot, &error),
+          "snake enum documentation use analysis");
+    const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+    const ag_language_symbol_t *completion = find_symbol(
+        &snapshot, snake_symbols[i].name, snake_symbols[i].kind);
+    if (snake_symbols[i].documentation[0]) {
+      CHECK(hover && completion &&
+                check_documentation_symbol(
+                    hover, snake_symbols[i].documentation, "snake.c",
+                    (size_t)(comment - snake_source),
+                    (size_t)(comment - snake_source) +
+                        strlen(snake_symbols[i].comment)) &&
+                check_documentation_symbol(
+                    completion, snake_symbols[i].documentation, "snake.c",
+                    (size_t)(comment - snake_source),
+                    (size_t)(comment - snake_source) +
+                        strlen(snake_symbols[i].comment)),
+            "snake enum documentation fields");
+    } else {
+      CHECK(hover && completion && hover->documentation &&
+                hover->documentation[0] == '\0' &&
+                !hover->has_documentation_range &&
+                completion->documentation &&
+                completion->documentation[0] == '\0' &&
+                !completion->has_documentation_range,
+            "snake undocumented enum constant does not inherit");
+    }
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  free(game_bundle.bytes);
+  free(snake_source);
+
+  const char *scope_source = enum_documentation_scope_source;
+  const char *inner_anchor = strstr(scope_source, "inner enum");
+  const char *inner_tag_use = inner_anchor
+                                  ? strstr(inner_anchor,
+                                           "enum ScopedDirection value")
+                                  : NULL;
+  const char *inner_value_use = inner_tag_use
+                                    ? strstr(inner_tag_use,
+                                             "SCOPED_DIRECTION_VALUE")
+                                    : NULL;
+  const char *outer_tag_use = last_occurrence(
+      scope_source, "ScopedDirection");
+  const char *outer_value_use = last_occurrence(
+      scope_source, "SCOPED_DIRECTION_VALUE");
+  struct {
+    const char *cursor;
+    const char *name;
+    const char *documentation;
+  } scope_cases[] = {
+      {inner_tag_use ? strstr(inner_tag_use, "ScopedDirection") : NULL,
+       "ScopedDirection", "inner enum"},
+      {inner_value_use, "SCOPED_DIRECTION_VALUE", "inner value"},
+      {outer_tag_use, "ScopedDirection", "outer enum"},
+      {outer_value_use, "SCOPED_DIRECTION_VALUE", "outer value"},
+  };
+  for (size_t i = 0;
+       i < sizeof(scope_cases) / sizeof(scope_cases[0]); i++) {
+    CHECK(scope_cases[i].cursor && analyze_named(
+              session, "enum-scope.c", scope_source,
+              (size_t)(scope_cases[i].cursor - scope_source) + 2,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "nested enum documentation analysis");
+    CHECK(hover_symbol(&snapshot) &&
+              strcmp(hover_symbol(&snapshot)->name,
+                     scope_cases[i].name) == 0 &&
+              strcmp(hover_symbol(&snapshot)->documentation,
+                     scope_cases[i].documentation) == 0,
+          "nested enum documentation scope isolation");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+
+  const char *header_paths[] = {"enum-doc.h"};
+  const char *header_tag_use = last_occurrence(
+      enum_documentation_header_main, "HeaderDirection");
+  const char *header_value_use = last_occurrence(
+      enum_documentation_header_main, "HEADER_DIRECTION_VALUE");
+  for (size_t revision = 0; revision < 3; revision++) {
+    const char *header_sources[] = {
+        enum_documentation_header_revisions[revision]};
+    header_bundle_t bundle = make_bundle(header_paths, header_sources, 1);
+    const char *expected_tag = revision == 0 ? "header enum v1"
+                               : revision == 1 ? "header enum v2" : "";
+    const char *expected_value = revision == 0 ? "header constant v1"
+                                 : revision == 1
+                                       ? "header constant v2" : "";
+    CHECK(bundle.bytes && header_tag_use && analyze_named(
+              session, "enum-header-main.c",
+              enum_documentation_header_main,
+              (size_t)(header_tag_use - enum_documentation_header_main) + 2,
+              bundle, defaults, &snapshot, &error),
+          "virtual header enum tag documentation analysis");
+    CHECK(hover_symbol(&snapshot) &&
+              strcmp(hover_symbol(&snapshot)->documentation,
+                     expected_tag) == 0 &&
+              (expected_tag[0]
+                   ? hover_symbol(&snapshot)->has_documentation_range &&
+                         strcmp(hover_symbol(&snapshot)
+                                    ->documentation_range.source_name,
+                                "enum-doc.h") == 0
+                   : !hover_symbol(&snapshot)->has_documentation_range),
+          "virtual header enum tag revision fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    CHECK(header_value_use && analyze_named(
+              session, "enum-header-main.c",
+              enum_documentation_header_main,
+              (size_t)(header_value_use - enum_documentation_header_main) + 2,
+              bundle, defaults, &snapshot, &error),
+          "virtual header enum constant documentation analysis");
+    CHECK(hover_symbol(&snapshot) &&
+              strcmp(hover_symbol(&snapshot)->documentation,
+                     expected_value) == 0 &&
+              (expected_value[0]
+                   ? hover_symbol(&snapshot)->has_documentation_range &&
+                         strcmp(hover_symbol(&snapshot)
+                                    ->documentation_range.source_name,
+                                "enum-doc.h") == 0
+                   : !hover_symbol(&snapshot)->has_documentation_range),
+          "virtual header enum constant revision fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    free(bundle.bytes);
+  }
+
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  CHECK(project != NULL, "enum documentation project index");
+  for (size_t revision = 0; revision < 3; revision++) {
+    const char *source = enum_documentation_project_revisions[revision];
+    CHECK(update_single_source_project(
+              session, project, (unsigned int)revision + 1, source,
+              (header_bundle_t){0}, defaults, &error),
+          "enum documentation project update");
+    const char *tag_use = last_occurrence(source, "ProjectDirection");
+    const char *value_use = last_occurrence(
+        source, "PROJECT_DIRECTION_VALUE");
+    const char *expected_tag = revision == 0 ? "project enum v1"
+                               : revision == 1 ? "project enum v2" : "";
+    const char *expected_value = revision == 0 ? "project constant v1"
+                                 : revision == 1
+                                       ? "project constant v2" : "";
+    CHECK(tag_use && analyze_project_named(
+              session, project, "main.c", source,
+              (size_t)(tag_use - source) + 2, (header_bundle_t){0},
+              defaults, &snapshot, &error),
+          "enum documentation project tag analysis");
+    CHECK(hover_symbol(&snapshot) &&
+              strcmp(hover_symbol(&snapshot)->documentation,
+                     expected_tag) == 0,
+          "enum documentation project tag revision fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    CHECK(value_use && analyze_project_named(
+              session, project, "main.c", source,
+              (size_t)(value_use - source) + 2, (header_bundle_t){0},
+              defaults, &snapshot, &error),
+          "enum documentation project constant analysis");
+    CHECK(hover_symbol(&snapshot) &&
+              strcmp(hover_symbol(&snapshot)->documentation,
+                     expected_value) == 0,
+          "enum documentation project constant revision fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  ag_language_project_index_destroy(project);
+
+  const char *limited_source =
+      "/** 12345678901234 */\nenum E { V };\n";
+  ag_language_analysis_limits_t tiny = defaults;
+  tiny.max_string_bytes = 13;
+  CHECK(!analyze_named(
+            session, "enum-limit.c", limited_source,
+            (size_t)(strstr(limited_source, "E") - limited_source),
+            (header_bundle_t){0}, tiny, &snapshot, &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code, "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES") == 0 &&
+            error.max == 13 && error.actual == 14,
+        "enum documentation string limit");
+  const char *entry_limit_source =
+      "/** first */\nenum A { A_VALUE };\n"
+      "/** second */\nenum B { B_VALUE };\n";
+  tiny = defaults;
+  tiny.max_symbols = 1;
+  CHECK(!analyze_named(
+            session, "enum-entry-limit.c", entry_limit_source,
+            strlen(entry_limit_source), (header_bundle_t){0}, tiny,
+            &snapshot, &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code, "AGC_LIMIT_MAX_ANALYSIS_SYMBOLS") == 0,
+        "enum documentation entry limit");
+  const char *plain_snapshot_source = "enum S { S_VALUE };\n";
+  const char *documented_snapshot_source =
+      "/** bounded enum doc */\nenum S { S_VALUE };\n";
+  CHECK(analyze_named(
+            session, "enum-snapshot.c", plain_snapshot_source,
+            strlen(plain_snapshot_source), (header_bundle_t){0}, defaults,
+            &snapshot, &error),
+        "plain enum documentation snapshot sizing");
+  size_t plain_snapshot_bytes = snapshot.allocated_bytes;
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  CHECK(analyze_named(
+            session, "enum-snapshot.c", documented_snapshot_source,
+            strlen(documented_snapshot_source), (header_bundle_t){0},
+            defaults, &snapshot, &error),
+        "documented enum snapshot sizing");
+  size_t documented_snapshot_bytes = snapshot.allocated_bytes;
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  CHECK(documented_snapshot_bytes > plain_snapshot_bytes,
+        "enum documentation contributes to snapshot limit");
+  tiny = defaults;
+  tiny.max_snapshot_bytes = documented_snapshot_bytes - 1;
+  CHECK(analyze_named(
+            session, "enum-snapshot.c", plain_snapshot_source,
+            strlen(plain_snapshot_source), (header_bundle_t){0}, tiny,
+            &snapshot, &error),
+        "plain enum snapshot within documentation boundary");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  CHECK(!analyze_named(
+            session, "enum-snapshot.c", documented_snapshot_source,
+            strlen(documented_snapshot_source), (header_bundle_t){0}, tiny,
+            &snapshot, &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code,
+                   "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES") == 0,
+        "documented enum snapshot limit");
+  CHECK(analyze_named(
+            session, "enum-limit.c", "enum Safe { SAFE_VALUE };\n",
+            strlen("enum Safe { SAFE_VALUE };\n"),
+            (header_bundle_t){0}, defaults, &snapshot, &error) &&
+            find_symbol(&snapshot, "Safe", AG_LANGUAGE_SYMBOL_TAG),
+        "enum documentation session reusable after limits");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_documentation_analysis(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "documentation session");
@@ -2151,6 +2621,30 @@ static int test_documentation_analysis(ag_target_info_t target) {
        "/** prototype wins */", NULL, 0, NULL},
       {"fallback_definition", AG_LANGUAGE_SYMBOL_FUNCTION,
        "definition fallback", "/** definition fallback */", NULL, 0, NULL},
+      {"DocumentedDirection", AG_LANGUAGE_SYMBOL_TAG,
+       "ヘビが進む方向を表します。",
+       "/// ヘビが進む方向を表します。", NULL, 0, NULL},
+      {"DOCUMENTED_DIRECTION_LEFT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "左へ進む方向です。", "/// 左へ進む方向です。", NULL, 0, NULL},
+      {"DOCUMENTED_DIRECTION_UP", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "上へ進む方向です。\n\n明示値を使用します。",
+       "/**\n"
+       "   * 上へ進む方向です。\n"
+       "   *\n"
+       "   * 明示値を使用します。\n"
+       "   */", NULL, 0, NULL},
+      {"DOCUMENTED_DIRECTION_DOWN", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "下へ進む方向です。\nCRLFでも関連付けます。",
+       "/// 下へ進む方向です。\r\n"
+       "\t/// CRLFでも関連付けます。", NULL, 0, NULL},
+      {"TagOnlyDirection", AG_LANGUAGE_SYMBOL_TAG,
+       "tagだけの説明です。", "/// tagだけの説明です。", NULL, 0, NULL},
+      {"CONSTANT_ONLY_DIRECTION", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "constantだけの説明です。", "/// constantだけの説明です。",
+       NULL, 0, NULL},
+      {"ANONYMOUS_DIRECTION", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "anonymous constantの説明です。",
+       "/** anonymous constantの説明です。 */", NULL, 0, NULL},
       {"first_only", AG_LANGUAGE_SYMBOL_OBJECT, "最初の宣言だけ",
        "/** 最初の宣言だけ */", NULL, 0, NULL},
       {"crlf_value", AG_LANGUAGE_SYMBOL_OBJECT, "CRLFの説明\n二行目",
@@ -2221,7 +2715,11 @@ static int test_documentation_analysis(ag_target_info_t target) {
   }
 
   const char *stable_names[] = {
-      "enemy_x", "walk_frame", "PLAYER_SIZE", "DOUBLE"};
+      "enemy_x", "walk_frame", "DocumentedDirection",
+      "DOCUMENTED_DIRECTION_LEFT", "DOCUMENTED_DIRECTION_UP",
+      "DOCUMENTED_DIRECTION_DOWN", "TagOnlyDirection",
+      "CONSTANT_ONLY_DIRECTION", "ANONYMOUS_DIRECTION",
+      "PLAYER_SIZE", "DOUBLE"};
   for (size_t name_index = 0;
        name_index < sizeof(stable_names) / sizeof(stable_names[0]);
        name_index++) {
@@ -2267,6 +2765,10 @@ static int test_documentation_analysis(ag_target_info_t target) {
       "declaration_after",
       "ordinary_block", "ordinary_line", "comment_text",
       "string_after",   "comment_character", "character_after",
+      "DOCUMENTED_DIRECTION_RIGHT",
+      "ConstantOnlyDirection", "TAG_ONLY_LEFT", "TAG_ONLY_RIGHT",
+      "ANONYMOUS_DIRECTION_UNDOCUMENTED", "BlankGapDirection",
+      "OrdinaryGapDirection", "DirectiveGapDirection",
       "BLANK_DOC_MACRO", "ORDINARY_GAP_MACRO",
       "CONDITIONAL_GAP_MACRO", "PRAGMA_GAP_MACRO",
       "documentation_main",
@@ -2744,6 +3246,15 @@ int main(int argc, char **argv) {
   if (argc == 3 &&
       strcmp(argv[1], "--macro-definition-project-parity-json") == 0)
     return print_macro_definition_project_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--enum-documentation-header-parity-json") == 0)
+    return print_enum_documentation_header_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--enum-documentation-scope-parity-json") == 0)
+    return print_enum_documentation_scope_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--enum-documentation-project-parity-json") == 0)
+    return print_enum_documentation_project_parity_snapshot(argv[2]);
   if (argc == 2 &&
       strcmp(argv[1], "--project-failure-recovery-parity-json") == 0)
     return test_project_failure_recovery(1);
@@ -2758,6 +3269,8 @@ int main(int argc, char **argv) {
 
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
+  CHECK(test_enum_documentation_analysis(target) == 0,
+        "enum documentation analysis scenarios");
   CHECK(test_documentation_analysis(target) == 0,
         "documentation analysis scenarios");
 
@@ -5766,6 +6279,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (38 scenarios)");
+  puts("language analysis tests passed (39 scenarios)");
   return 0;
 }

@@ -11,10 +11,14 @@
 #define START_LENGTH 4
 #define MOVE_INTERVAL 6
 
+/// ヘビが進む方向を表します。
 enum Direction {
+  /// 左へ進む方向です。
   DIRECTION_LEFT,
   DIRECTION_RIGHT,
+  /** 上へ進む方向です。 */
   DIRECTION_UP,
+  /// 下へ進む方向です。
   DIRECTION_DOWN
 };
 
@@ -23,7 +27,7 @@ static int snake_y[MAX_SNAKE_LENGTH];
 static int snake_length;
 static int food_x;
 static int food_y;
-static int direction;
+static enum Direction direction;
 static int queued_direction;
 static int direction_queued;
 static int move_timer;
