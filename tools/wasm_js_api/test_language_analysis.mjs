@@ -1282,6 +1282,339 @@ for (const macroCase of snakeMacroCases) {
   }
 }
 
+const castOperandHoverSource = {
+  name: "cast-operand.c",
+  source: "/// cast operand macro documentation\n" +
+    "#define CAST_OPERAND_MACRO 17\n" +
+    "typedef unsigned long CastSize;\n" +
+    "struct CastRecord { int value; };\n" +
+    "enum CastMode { CAST_MODE_VALUE = 3 };\n" +
+    "static int cast_object = 5;\n" +
+    "static int cast_seed = 9;\n" +
+    "static int cast_choose(int value) { return value; }\n" +
+    "static int cast_context(int parameter_value, int condition,\n" +
+    "                        int *values, int index_value) {\n" +
+    "  int simple = (int)CAST_OPERAND_MACRO;\n" +
+    "  int nested = (int)((unsigned long)cast_object);\n" +
+    "  int binary_rhs = cast_seed % (unsigned int)cast_object;\n" +
+    "  int argument = cast_choose((const int)parameter_value);\n" +
+    "  int conditional = condition ? (int)CAST_OPERAND_MACRO : 0;\n" +
+    "  int subscript = values[(unsigned int)index_value];\n" +
+    "  int typedef_name = (CastSize)cast_object;\n" +
+    "  const volatile int *pointer = (const volatile int *)values;\n" +
+    "  struct CastRecord *tag_pointer = (struct CastRecord *)values;\n" +
+    "  int enum_cast = (enum CastMode)CAST_MODE_VALUE;\n" +
+    "  int comment_gap = (int) /* operand gap */ CAST_OPERAND_MACRO;\n" +
+    "  int splice_lf = (unsigned int) \\\n" +
+    "cast_object;\n" +
+    "  int splice_crlf = (unsigned int) \\\r\n" +
+    "cast_object;\r\n" +
+    "  int nested_cast = (int)((unsigned long)CAST_OPERAND_MACRO);\n" +
+    "  int normal_call = cast_choose(parameter_value) + cast_object;\n" +
+    "  int grouped = (cast_object + cast_seed) + CAST_OPERAND_MACRO;\n" +
+    "  int type_size = (int)sizeof(unsigned int) + CAST_OPERAND_MACRO;\n" +
+    "  int type_align = (int)_Alignof(unsigned int) + CAST_OPERAND_MACRO;\n" +
+    "  int compound = ((struct CastRecord){ 1 }).value + " +
+    "CAST_OPERAND_MACRO;\n" +
+    "  return simple + nested + binary_rhs + argument + conditional +\n" +
+    "         subscript + typedef_name + (pointer != 0) +\n" +
+    "         (tag_pointer != 0) + enum_cast +\n" +
+    "         comment_gap + splice_lf + splice_crlf + nested_cast +\n" +
+    "         normal_call + grouped + type_size + type_align + compound;\n" +
+    "}\n",
+};
+const castOperandCases = [
+  ["simple = (int)CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
+  ["nested = (int)((unsigned long)cast_object", "cast_object", "object"],
+  ["binary_rhs = cast_seed % (unsigned int)cast_object", "cast_object", "object"],
+  ["argument = cast_choose((const int)parameter_value", "parameter_value", "parameter"],
+  ["conditional = condition ? (int)CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
+  ["subscript = values[(unsigned int)index_value", "index_value", "parameter"],
+  ["typedef_name = (CastSize)cast_object", "cast_object", "object"],
+  ["pointer = (const volatile int *)values", "values", "parameter"],
+  ["tag_pointer = (struct CastRecord *)values", "values", "parameter"],
+  ["enum_cast = (enum CastMode)CAST_MODE_VALUE", "CAST_MODE_VALUE", "enumConstant"],
+  ["comment_gap = (int) /* operand gap */ CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
+  ["splice_lf = (unsigned int) \\\ncast_object", "cast_object", "object"],
+  ["splice_crlf = (unsigned int) \\\r\ncast_object", "cast_object", "object"],
+  ["nested_cast = (int)((unsigned long)CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
+];
+for (const [fragmentText, name, kind] of castOperandCases) {
+  const fragmentIndex = castOperandHoverSource.source.indexOf(fragmentText);
+  const useIndex = castOperandHoverSource.source.indexOf(name, fragmentIndex);
+  assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+    `cast operand anchor missing for ${name}`);
+  const useStart = byteOffsetForIndex(castOperandHoverSource.source, useIndex);
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(castOperandHoverSource, {
+      cursor: { sourceName: castOperandHoverSource.name, byteOffset },
+    });
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, false,
+      `${name} cast operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} cast operand diagnostics`);
+    assert.equal(result.hover?.name, name, `${name} cast operand hover`);
+    assert.equal(result.hover?.kind, kind, `${name} cast operand kind`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} cast operand declaration`);
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.replacement, "17");
+      assert.equal(result.hover?.documentation,
+        "cast operand macro documentation");
+    }
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--cast-operand-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    assert.deepStrictEqual(result, nativeResult,
+      `native and Wasm cast operand differ for ${name} at ${delta}`);
+  }
+}
+
+for (const [fragmentText, name, kind] of [
+  ["normal_call = cast_choose(parameter_value) + cast_object", "cast_object", "object"],
+  ["grouped = (cast_object + cast_seed) + CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
+  ["type_size = (int)sizeof(unsigned int) + CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
+  ["type_align = (int)_Alignof(unsigned int) + CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
+  ["compound = ((struct CastRecord){ 1 }).value + CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
+]) {
+  const fragmentIndex = castOperandHoverSource.source.indexOf(fragmentText);
+  const useIndex = castOperandHoverSource.source.indexOf(name, fragmentIndex);
+  const byteOffset = byteOffsetForIndex(castOperandHoverSource.source, useIndex) +
+    Math.floor(Buffer.byteLength(name) / 2);
+  const result = compiler.analyzeSource(castOperandHoverSource, {
+    cursor: { sourceName: castOperandHoverSource.name, byteOffset },
+  });
+  assert.equal(result.partial, false, `${name} non-cast context partial`);
+  assert.deepStrictEqual(result.diagnostics, [], `${name} non-cast diagnostics`);
+  assert.equal(result.hover?.name, name, `${name} non-cast hover`);
+  assert.equal(result.hover?.kind, kind, `${name} non-cast kind`);
+  assert.deepStrictEqual(
+    result,
+    JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--cast-operand-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    )),
+    `native and Wasm non-cast context differ for ${name}`,
+  );
+}
+
+const snakeCastFragment = "(unsigned int)MAX_SNAKE_LENGTH";
+const snakeCastFragmentIndex = macroDefinitionSnake.source.indexOf(
+  snakeCastFragment,
+);
+const snakeCastIndex = macroDefinitionSnake.source.indexOf(
+  "MAX_SNAKE_LENGTH", snakeCastFragmentIndex,
+);
+assert.ok(snakeCastFragmentIndex >= 0 && snakeCastIndex >= 0,
+  "snake cast operand anchor missing");
+const snakeCastStart = byteOffsetForIndex(
+  macroDefinitionSnake.source, snakeCastIndex,
+);
+let snakeCastResult;
+for (const delta of [0, Math.floor("MAX_SNAKE_LENGTH".length / 2),
+  "MAX_SNAKE_LENGTH".length]) {
+  const byteOffset = snakeCastStart + delta;
+  snakeCastResult = compiler.analyzeSource(macroDefinitionSnake, {
+    headers: { "game.h": macroDefinitionGameHeader },
+    cursor: { sourceName: macroDefinitionSnake.name, byteOffset },
+  });
+  assertMacroDefinitionSnapshot(snakeCastResult, {
+    name: "MAX_SNAKE_LENGTH",
+    replacement: "( BOARD_COLUMNS * BOARD_ROWS )",
+    documentation: "盤面に収まるヘビの最大の長さです。",
+    parameters: [],
+  }, `snake cast operand at ${delta}`);
+  assert.equal(snakeCastResult.partial, false);
+  assert.deepStrictEqual(snakeCastResult.diagnostics, []);
+  assert.deepStrictEqual(
+    snakeCastResult,
+    JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--macro-definition-snake-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    )),
+    `native and Wasm snake cast operand differ at ${delta}`,
+  );
+}
+const snakeOrdinaryIndex = macroDefinitionSnake.source.lastIndexOf(
+  "MAX_SNAKE_LENGTH",
+);
+const snakeOrdinaryResult = compiler.analyzeSource(macroDefinitionSnake, {
+  headers: { "game.h": macroDefinitionGameHeader },
+  cursor: {
+    sourceName: macroDefinitionSnake.name,
+    byteOffset: byteOffsetForIndex(
+      macroDefinitionSnake.source, snakeOrdinaryIndex,
+    ) + Math.floor("MAX_SNAKE_LENGTH".length / 2),
+  },
+});
+assert.deepStrictEqual(
+  snakeCastResult.hover.declaration, snakeOrdinaryResult.hover.declaration,
+  "cast and ordinary snake macro uses resolve to different declarations",
+);
+assert.equal(snakeCastResult.hover.macro.replacement,
+  snakeOrdinaryResult.hover.macro.replacement);
+assert.equal(snakeCastResult.hover.documentation,
+  snakeOrdinaryResult.hover.documentation);
+
+const freshCastCompiler = await createCompiler(wasmModule);
+try {
+  const freshResult = freshCastCompiler.analyzeSource(macroDefinitionSnake, {
+    headers: { "game.h": macroDefinitionGameHeader },
+    cursor: {
+      sourceName: macroDefinitionSnake.name,
+      byteOffset: snakeCastStart + Math.floor("MAX_SNAKE_LENGTH".length / 2),
+    },
+  });
+  assertMacroDefinitionSnapshot(freshResult, {
+    name: "MAX_SNAKE_LENGTH",
+    replacement: "( BOARD_COLUMNS * BOARD_ROWS )",
+    parameters: [],
+  }, "fresh snake cast operand");
+} finally {
+  freshCastCompiler.dispose();
+}
+
+for (const input of [
+  {
+    name: "invalid-cast.c",
+    source: "int target; int f(void) { return (unsigned mystery)target; }\n",
+    cursorName: "target",
+  },
+  {
+    name: "invalid-cast.c",
+    source: "int f(void) { return (unsigned int); }\n",
+    cursorName: null,
+  },
+  {
+    name: "invalid-cast.c",
+    source: "int target; int f(void) { return (struct)target; }\n",
+    cursorName: "target",
+  },
+]) {
+  let invalidResult = null;
+  let invalidError = null;
+  const cursorIndex = input.cursorName === null
+    ? input.source.length
+    : input.source.lastIndexOf(input.cursorName) + 3;
+  try {
+    invalidResult = compiler.analyzeSource(input, {
+      cursor: { sourceName: input.name, byteOffset: cursorIndex },
+    });
+  } catch (error) {
+    invalidError = error;
+  }
+  assert.ok(
+    invalidResult
+      ? invalidResult.partial && invalidResult.diagnostics.length > 0
+      : invalidError?.name === "AgcLanguageAnalysisError" &&
+        invalidError.diagnostics?.length > 0,
+    `invalid cast lost diagnostics: ${JSON.stringify(invalidResult || invalidError)}`,
+  );
+}
+
+const castProjectCompiler = await createCompiler(wasmModule);
+try {
+  const castProjectSources = [
+    "/// project cast v1\n#define PROJECT_CAST_VALUE 31\n" +
+      "int project_cast(void) { return (unsigned int)PROJECT_CAST_VALUE; }\n",
+    "\n/// project cast v2\n#define PROJECT_CAST_VALUE 32\n" +
+      "int project_cast(void) { return (long)PROJECT_CAST_VALUE; }\n",
+  ];
+  for (let revision = 1; revision <= castProjectSources.length; revision++) {
+    const input = { name: "main.c", source: castProjectSources[revision - 1] };
+    const useIndex = input.source.indexOf(")PROJECT_CAST_VALUE") + 1;
+    const result = castProjectCompiler.analyzeProjectSource(input, {
+      projectRevision: revision,
+      projectSources: [input],
+      cursor: {
+        sourceName: input.name,
+        byteOffset: byteOffsetForIndex(input.source, useIndex) + 4,
+      },
+    });
+    assertMacroDefinitionSnapshot(result, {
+      name: "PROJECT_CAST_VALUE", replacement: String(30 + revision),
+      parameters: [],
+    }, `cast project revision ${revision}`);
+    assert.equal(result.hover.documentation, `project cast v${revision}`);
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--cast-operand-project-parity-json", String(revision)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm cast project differ at revision ${revision}`,
+    );
+  }
+} finally {
+  castProjectCompiler.dispose();
+}
+
+const castLimitUseIndex = castOperandHoverSource.source.indexOf(
+  "CAST_OPERAND_MACRO",
+  castOperandHoverSource.source.indexOf("simple = (int)CAST_OPERAND_MACRO"),
+);
+const castLimitCursor = byteOffsetForIndex(
+  castOperandHoverSource.source, castLimitUseIndex,
+) + 3;
+const exactCastLimitResult = compiler.analyzeSource(castOperandHoverSource, {
+  cursor: {
+    sourceName: castOperandHoverSource.name,
+    byteOffset: castLimitCursor,
+  },
+  limits: { maxSourceBytes: Buffer.byteLength(castOperandHoverSource.source) },
+});
+assert.equal(exactCastLimitResult.hover?.name, "CAST_OPERAND_MACRO");
+assert.throws(
+  () => compiler.analyzeSource(castOperandHoverSource, {
+    cursor: {
+      sourceName: castOperandHoverSource.name,
+      byteOffset: castLimitCursor,
+    },
+    limits: {
+      maxSourceBytes: Buffer.byteLength(castOperandHoverSource.source) - 1,
+    },
+  }),
+  (error) => error instanceof AgcResourceLimitError &&
+    error.code === "AGC_LIMIT_MAX_SOURCE_BYTES",
+);
+function castSnapshotSucceeds(maxAnalysisSnapshotBytes) {
+  try {
+    compiler.analyzeSource(castOperandHoverSource, {
+      cursor: {
+        sourceName: castOperandHoverSource.name,
+        byteOffset: castLimitCursor,
+      },
+      limits: { maxAnalysisSnapshotBytes },
+    });
+    return true;
+  } catch (error) {
+    if (!(error instanceof AgcResourceLimitError) ||
+        error.code !== "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES") throw error;
+    return false;
+  }
+}
+let castSnapshotLow = 1;
+let castSnapshotHigh = 1024 * 1024;
+assert.equal(castSnapshotSucceeds(castSnapshotHigh), true);
+while (castSnapshotLow < castSnapshotHigh) {
+  const middle = castSnapshotLow +
+    Math.floor((castSnapshotHigh - castSnapshotLow) / 2);
+  if (castSnapshotSucceeds(middle)) castSnapshotHigh = middle;
+  else castSnapshotLow = middle + 1;
+}
+assert.equal(castSnapshotSucceeds(castSnapshotLow - 1), false);
+assert.equal(castSnapshotSucceeds(castSnapshotLow), true,
+  "Wasm session was not reusable after cast snapshot limit");
+
 const snakeEnumCases = [
   {
     name: "Direction", kind: "tag",

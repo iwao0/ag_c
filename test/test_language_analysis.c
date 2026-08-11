@@ -477,6 +477,52 @@ static const char macro_definition_game_header[] =
     "void draw_rect(int x, int y, int width, int height, int color);\n"
     "int game_running(void);\n";
 
+static const char cast_operand_hover_source[] =
+    "/// cast operand macro documentation\n"
+    "#define CAST_OPERAND_MACRO 17\n"
+    "typedef unsigned long CastSize;\n"
+    "struct CastRecord { int value; };\n"
+    "enum CastMode { CAST_MODE_VALUE = 3 };\n"
+    "static int cast_object = 5;\n"
+    "static int cast_seed = 9;\n"
+    "static int cast_choose(int value) { return value; }\n"
+    "static int cast_context(int parameter_value, int condition,\n"
+    "                        int *values, int index_value) {\n"
+    "  int simple = (int)CAST_OPERAND_MACRO;\n"
+    "  int nested = (int)((unsigned long)cast_object);\n"
+    "  int binary_rhs = cast_seed % (unsigned int)cast_object;\n"
+    "  int argument = cast_choose((const int)parameter_value);\n"
+    "  int conditional = condition ? (int)CAST_OPERAND_MACRO : 0;\n"
+    "  int subscript = values[(unsigned int)index_value];\n"
+    "  int typedef_name = (CastSize)cast_object;\n"
+    "  const volatile int *pointer = (const volatile int *)values;\n"
+    "  struct CastRecord *tag_pointer = (struct CastRecord *)values;\n"
+    "  int enum_cast = (enum CastMode)CAST_MODE_VALUE;\n"
+    "  int comment_gap = (int) /* operand gap */ CAST_OPERAND_MACRO;\n"
+    "  int splice_lf = (unsigned int) \\\n"
+    "cast_object;\n"
+    "  int splice_crlf = (unsigned int) \\\r\n"
+    "cast_object;\r\n"
+    "  int nested_cast = (int)((unsigned long)CAST_OPERAND_MACRO);\n"
+    "  int normal_call = cast_choose(parameter_value) + cast_object;\n"
+    "  int grouped = (cast_object + cast_seed) + CAST_OPERAND_MACRO;\n"
+    "  int type_size = (int)sizeof(unsigned int) + CAST_OPERAND_MACRO;\n"
+    "  int type_align = (int)_Alignof(unsigned int) + CAST_OPERAND_MACRO;\n"
+    "  int compound = ((struct CastRecord){ 1 }).value + "
+    "CAST_OPERAND_MACRO;\n"
+    "  return simple + nested + binary_rhs + argument + conditional +\n"
+    "         subscript + typedef_name + (pointer != 0) +\n"
+    "         (tag_pointer != 0) + enum_cast +\n"
+    "         comment_gap + splice_lf + splice_crlf + nested_cast +\n"
+    "         normal_call + grouped + type_size + type_align + compound;\n"
+    "}\n";
+static const char *const cast_operand_project_sources[] = {
+    "/// project cast v1\n#define PROJECT_CAST_VALUE 31\n"
+    "int project_cast(void) { return (unsigned int)PROJECT_CAST_VALUE; }\n",
+    "\n/// project cast v2\n#define PROJECT_CAST_VALUE 32\n"
+    "int project_cast(void) { return (long)PROJECT_CAST_VALUE; }\n",
+};
+
 static const char macro_definition_forms_source[] =
     "#define SIMPLE_MACRO 1\n"
     "# define PARENTHESIZED_MACRO (2 + 3)\r\n"
@@ -1818,6 +1864,69 @@ static int print_macro_definition_forms_parity_snapshot(
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
+static int print_cast_operand_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(cast_operand_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "cast-operand.c", cast_operand_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_cast_operand_project_parity_snapshot(
+    const char *revision_text) {
+  char *end = NULL;
+  unsigned long requested_revision = strtoul(revision_text, &end, 10);
+  if (!revision_text[0] || !end || *end != '\0' ||
+      requested_revision < 1 || requested_revision > 2)
+    return 1;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  ag_language_analysis_limits_t limits =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_error_t error = {0};
+  ag_language_analysis_snapshot_t snapshot = {0};
+  int result = 1;
+  for (unsigned long revision = 1;
+       session && project && revision <= requested_revision; revision++) {
+    const char *source = cast_operand_project_sources[revision - 1];
+    if (!update_single_source_project(
+            session, project, (unsigned int)revision, source,
+            (header_bundle_t){0}, limits, &error))
+      goto done;
+  }
+  const char *source =
+      cast_operand_project_sources[requested_revision - 1];
+  const char *fragment = strstr(source, ")PROJECT_CAST_VALUE");
+  const char *use = fragment
+                        ? strstr(fragment, "PROJECT_CAST_VALUE")
+                        : NULL;
+  int ok = use && analyze_project_named(
+      session, project, "main.c", source,
+      (size_t)(use - source) + 4, (header_bundle_t){0}, limits,
+      &snapshot, &error);
+  int length = ok ? ag_language_analysis_snapshot_write_json(
+                        &snapshot, NULL, 0) : -1;
+  char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+  if (json && ag_language_analysis_snapshot_write_json(
+                  &snapshot, json, (size_t)length + 1) == length) {
+    puts(json);
+    result = 0;
+  }
+  free(json);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+done:
+  ag_language_project_index_destroy(project);
+  ag_compilation_session_destroy(session);
+  return result;
+}
+
 static int print_macro_definition_snake_parity_snapshot(
     const char *cursor_text) {
   size_t source_length = 0;
@@ -1949,6 +2058,303 @@ static int macro_definition_snapshot_matches(
   return macro_snapshot_fields_match(
              snapshot, name, replacement, parameter_count) &&
          !snapshot->partial && snapshot->diagnostic_count == 0;
+}
+
+static int test_cast_operand_hover(ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "cast operand session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+  } cases[] = {
+      {"simple = (int)CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO",
+       AG_LANGUAGE_SYMBOL_MACRO},
+      {"nested = (int)((unsigned long)cast_object", "cast_object",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"binary_rhs = cast_seed % (unsigned int)cast_object", "cast_object",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"argument = cast_choose((const int)parameter_value", "parameter_value",
+       AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"conditional = condition ? (int)CAST_OPERAND_MACRO",
+       "CAST_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
+      {"subscript = values[(unsigned int)index_value", "index_value",
+       AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"typedef_name = (CastSize)cast_object", "cast_object",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"pointer = (const volatile int *)values", "values",
+       AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"tag_pointer = (struct CastRecord *)values", "values",
+       AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"enum_cast = (enum CastMode)CAST_MODE_VALUE", "CAST_MODE_VALUE",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT},
+      {"comment_gap = (int) /* operand gap */ CAST_OPERAND_MACRO",
+       "CAST_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
+      {"splice_lf = (unsigned int) \\\ncast_object", "cast_object",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"splice_crlf = (unsigned int) \\\r\ncast_object", "cast_object",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"nested_cast = (int)((unsigned long)CAST_OPERAND_MACRO",
+       "CAST_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
+  };
+  const char *macro_declaration =
+      strstr(cast_operand_hover_source, "CAST_OPERAND_MACRO");
+  const char *macro_comment = strstr(
+      cast_operand_hover_source, "/// cast operand macro documentation");
+  CHECK(macro_declaration && macro_comment, "cast operand macro anchors");
+  for (size_t case_index = 0;
+       case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+    const char *fragment = strstr(
+        cast_operand_hover_source, cases[case_index].fragment);
+    const char *use = fragment
+                          ? strstr(fragment, cases[case_index].name)
+                          : NULL;
+    CHECK(use != NULL, "cast operand case anchor");
+    size_t name_length = strlen(cases[case_index].name);
+    size_t deltas[] = {0, name_length / 2, name_length};
+    for (size_t delta_index = 0;
+         delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+      CHECK(analyze_named(
+                session, "cast-operand.c", cast_operand_hover_source,
+                (size_t)(use - cast_operand_hover_source) +
+                    deltas[delta_index],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "cast operand analysis");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      const ag_language_symbol_t *completion = find_symbol(
+          &snapshot, cases[case_index].name, cases[case_index].kind);
+      CHECK(hover && completion && !snapshot.partial &&
+                snapshot.diagnostic_count == 0 &&
+                hover->kind == cases[case_index].kind &&
+                strcmp(hover->name, cases[case_index].name) == 0 &&
+                same_range(&hover->declaration, &completion->declaration),
+            "cast operand symbol fields");
+      if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO) {
+        CHECK(hover->macro_replacement &&
+                  strcmp(hover->macro_replacement, "17") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(macro_declaration - cast_operand_hover_source) &&
+                  check_documentation_symbol(
+                      hover, "cast operand macro documentation",
+                      "cast-operand.c",
+                      (size_t)(macro_comment - cast_operand_hover_source),
+                      (size_t)(macro_comment - cast_operand_hover_source) +
+                          strlen("/// cast operand macro documentation")),
+              "cast operand macro fields");
+      }
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+  } non_cast_cases[] = {
+      {"normal_call = cast_choose(parameter_value) + cast_object",
+       "cast_object", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"grouped = (cast_object + cast_seed) + CAST_OPERAND_MACRO",
+       "CAST_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
+      {"type_size = (int)sizeof(unsigned int) + CAST_OPERAND_MACRO",
+       "CAST_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
+      {"type_align = (int)_Alignof(unsigned int) + CAST_OPERAND_MACRO",
+       "CAST_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
+      {"compound = ((struct CastRecord){ 1 }).value + CAST_OPERAND_MACRO",
+       "CAST_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
+  };
+  for (size_t i = 0;
+       i < sizeof(non_cast_cases) / sizeof(non_cast_cases[0]); i++) {
+    const char *fragment = strstr(
+        cast_operand_hover_source, non_cast_cases[i].fragment);
+    const char *use = fragment
+                          ? strstr(fragment, non_cast_cases[i].name)
+                          : NULL;
+    CHECK(use && analyze_named(
+              session, "cast-operand.c", cast_operand_hover_source,
+              (size_t)(use - cast_operand_hover_source) +
+                  strlen(non_cast_cases[i].name) / 2,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "non-cast parenthesized context analysis");
+    const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+    CHECK(hover && hover->kind == non_cast_cases[i].kind &&
+              strcmp(hover->name, non_cast_cases[i].name) == 0 &&
+              !snapshot.partial && snapshot.diagnostic_count == 0,
+          "non-cast parenthesized context fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+
+  size_t snake_length = 0;
+  char *snake_source = read_fixture_source(
+      "test/fixtures/language_analysis/macro_definition_snake.txt",
+      &snake_length);
+  const char *game_paths[] = {"game.h"};
+  const char *game_headers[] = {macro_definition_game_header};
+  header_bundle_t game_bundle = make_bundle(game_paths, game_headers, 1);
+  const char *cast_fragment = snake_source
+                                  ? strstr(snake_source,
+                                           "(unsigned int)MAX_SNAKE_LENGTH")
+                                  : NULL;
+  const char *cast_use = cast_fragment
+                             ? strstr(cast_fragment, "MAX_SNAKE_LENGTH")
+                             : NULL;
+  const char *ordinary_use = snake_source
+                                 ? last_occurrence(
+                                       snake_source, "MAX_SNAKE_LENGTH")
+                                 : NULL;
+  CHECK(snake_source && snake_length == strlen(snake_source) &&
+            game_bundle.bytes && cast_use && ordinary_use &&
+            cast_use != ordinary_use,
+        "snake cast operand anchors");
+  size_t snake_deltas[] = {0, strlen("MAX_SNAKE_LENGTH") / 2,
+                           strlen("MAX_SNAKE_LENGTH")};
+  for (size_t i = 0;
+       i < sizeof(snake_deltas) / sizeof(snake_deltas[0]); i++) {
+    CHECK(analyze_named(
+              session, "snake.c", snake_source,
+              (size_t)(cast_use - snake_source) + snake_deltas[i],
+              game_bundle, defaults, &snapshot, &error),
+          "snake cast operand analysis");
+    CHECK(macro_definition_snapshot_matches(
+              &snapshot, "MAX_SNAKE_LENGTH",
+              "( BOARD_COLUMNS * BOARD_ROWS )", 0) &&
+              strcmp(hover_symbol(&snapshot)->documentation,
+                     "盤面に収まるヘビの最大の長さです。") == 0,
+          "snake cast operand fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  CHECK(analyze_named(
+            session, "snake.c", snake_source,
+            (size_t)(ordinary_use - snake_source) +
+                strlen("MAX_SNAKE_LENGTH") / 2,
+            game_bundle, defaults, &snapshot, &error),
+        "snake ordinary macro use analysis");
+  const ag_language_symbol_t *ordinary_hover = hover_symbol(&snapshot);
+  CHECK(macro_definition_snapshot_matches(
+            &snapshot, "MAX_SNAKE_LENGTH",
+            "( BOARD_COLUMNS * BOARD_ROWS )", 0) &&
+            ordinary_hover->declaration.start.offset ==
+                (int)(strstr(snake_source, "MAX_SNAKE_LENGTH") -
+                      snake_source),
+        "snake cast and ordinary use resolve equally");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  ag_compilation_session_t *fresh =
+      ag_compilation_session_create(&target);
+  CHECK(fresh && analyze_named(
+            fresh, "snake.c", snake_source,
+            (size_t)(cast_use - snake_source) +
+                strlen("MAX_SNAKE_LENGTH") / 2,
+            game_bundle, defaults, &snapshot, &error),
+        "fresh snake cast operand analysis");
+  CHECK(macro_definition_snapshot_matches(
+            &snapshot, "MAX_SNAKE_LENGTH",
+            "( BOARD_COLUMNS * BOARD_ROWS )", 0),
+        "fresh snake cast operand fields");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(fresh);
+  free(game_bundle.bytes);
+  free(snake_source);
+
+  const char *invalid_sources[] = {
+      "int target; int f(void) { return (unsigned mystery)target; }\n",
+      "int f(void) { return (unsigned int); }\n",
+      "int target; int f(void) { return (struct)target; }\n",
+  };
+  for (size_t i = 0;
+       i < sizeof(invalid_sources) / sizeof(invalid_sources[0]); i++) {
+    const char *cursor_name = strstr(invalid_sources[i], "target");
+    size_t cursor = cursor_name
+                        ? (size_t)(last_occurrence(
+                              invalid_sources[i], "target") -
+                          invalid_sources[i]) + 3
+                        : strlen(invalid_sources[i]);
+    int ok = analyze_named(
+        session, "invalid-cast.c", invalid_sources[i], cursor,
+        (header_bundle_t){0}, defaults, &snapshot, &error);
+    CHECK((ok && snapshot.partial && snapshot.diagnostic_count > 0) ||
+              (!ok && error.status == AG_LANGUAGE_ANALYSIS_FAILED),
+          "invalid cast diagnostic preserved");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  CHECK(project != NULL, "cast operand project");
+  for (size_t revision = 0; revision < 2; revision++) {
+    CHECK(update_single_source_project(
+              session, project, (unsigned int)revision + 1,
+              cast_operand_project_sources[revision],
+              (header_bundle_t){0}, defaults,
+              &error),
+          "cast operand project update");
+    const char *fragment = strstr(
+        cast_operand_project_sources[revision], ")PROJECT_CAST_VALUE");
+    const char *use = fragment
+                          ? strstr(fragment, "PROJECT_CAST_VALUE")
+                          : NULL;
+    CHECK(use && analyze_project_named(
+              session, project, "main.c",
+              cast_operand_project_sources[revision],
+              (size_t)(use - cast_operand_project_sources[revision]) + 4,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "cast operand project analysis");
+    char expected[3] = {'3', (char)('1' + revision), '\0'};
+    CHECK(macro_definition_snapshot_matches(
+              &snapshot, "PROJECT_CAST_VALUE", expected, 0) &&
+              strstr(hover_symbol(&snapshot)->documentation,
+                     revision == 0 ? "v1" : "v2"),
+          "cast operand project revision fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  ag_language_project_index_destroy(project);
+
+  const char *limit_use = strstr(
+      cast_operand_hover_source, "simple = (int)CAST_OPERAND_MACRO");
+  limit_use = limit_use
+                  ? strstr(limit_use, "CAST_OPERAND_MACRO")
+                  : NULL;
+  ag_language_analysis_limits_t tiny = defaults;
+  tiny.max_source_bytes = strlen(cast_operand_hover_source);
+  CHECK(limit_use && analyze_named(
+            session, "cast-operand.c", cast_operand_hover_source,
+            (size_t)(limit_use - cast_operand_hover_source) + 3,
+            (header_bundle_t){0}, tiny, &snapshot, &error),
+        "cast operand exact source limit");
+  size_t snapshot_bytes = snapshot.allocated_bytes;
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  tiny.max_source_bytes = strlen(cast_operand_hover_source) - 1;
+  CHECK(!analyze_named(
+            session, "cast-operand.c", cast_operand_hover_source,
+            (size_t)(limit_use - cast_operand_hover_source) + 3,
+            (header_bundle_t){0}, tiny, &snapshot, &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code, "AGC_LIMIT_MAX_SOURCE_BYTES") == 0,
+        "cast operand source limit rejection");
+  tiny = defaults;
+  tiny.max_snapshot_bytes = snapshot_bytes - 1;
+  CHECK(!analyze_named(
+            session, "cast-operand.c", cast_operand_hover_source,
+            (size_t)(limit_use - cast_operand_hover_source) + 3,
+            (header_bundle_t){0}, tiny, &snapshot, &error) &&
+            error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT &&
+            strcmp(error.code,
+                   "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES") == 0,
+        "cast operand snapshot limit rejection");
+  CHECK(analyze_named(
+            session, "cast-operand.c", cast_operand_hover_source,
+            (size_t)(limit_use - cast_operand_hover_source) + 3,
+            (header_bundle_t){0}, defaults, &snapshot, &error) &&
+            macro_definition_snapshot_matches(
+                &snapshot, "CAST_OPERAND_MACRO", "17", 0),
+        "cast operand session reusable after limits");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+
+  ag_compilation_session_destroy(session);
+  return 0;
 }
 
 static int test_macro_definition_hover(ag_target_info_t target) {
@@ -3238,6 +3644,12 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--macro-definition-parity-json") == 0)
     return print_macro_definition_forms_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
+    return print_cast_operand_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--cast-operand-project-parity-json") == 0)
+    return print_cast_operand_project_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--macro-definition-snake-parity-json") == 0)
     return print_macro_definition_snake_parity_snapshot(argv[2]);
   if (argc == 2 &&
@@ -3267,6 +3679,8 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_t snapshot = {0};
   ag_language_analysis_error_t error = {0};
 
+  CHECK(test_cast_operand_hover(target) == 0,
+        "cast operand hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -6279,6 +6693,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (39 scenarios)");
+  puts("language analysis tests passed (40 scenarios)");
   return 0;
 }

@@ -1927,6 +1927,7 @@ static char *append_conditional_validation_tail(
 
 typedef struct {
   char open;
+  size_t open_offset;
   int is_for_control;
   size_t for_separator_count;
   int is_generic_selection;
@@ -1934,8 +1935,139 @@ typedef struct {
   int generic_association_has_colon;
   int generic_has_default_association;
   int requires_type_name;
+  int is_sizeof_context;
+  int is_postfix_parenthesized;
   size_t pending_conditional_count;
 } recovery_delimiter_t;
+
+static int analysis_type_name_qualifier_word(
+    const char *source, size_t start, size_t length) {
+  static const char *const words[] = {
+      "const", "volatile", "restrict",
+  };
+  for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++)
+    if (analysis_word_is(source, start, length, words[i])) return 1;
+  return 0;
+}
+
+static int analysis_parenthesized_range_is_type_name_mode(
+    const char *source, size_t source_length, size_t start, size_t end,
+    int enable_trigraphs) {
+  if (!source || start > end || end > source_length) return 0;
+  int saw_type_specifier = 0;
+  int expects_tag_name = 0;
+  int saw_typedef_candidate = 0;
+  size_t paren_depth = 0;
+  size_t bracket_depth = 0;
+  for (size_t i = start; i < end;) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, source_length, i, enable_trigraphs);
+    if (splice_size) {
+      i += splice_size;
+      continue;
+    }
+    unsigned char c = (unsigned char)source[i];
+    if (isspace(c)) {
+      i++;
+      continue;
+    }
+    if (c == '/' && i + 1 < end && source[i + 1] == '/') {
+      i += 2;
+      while (i < end && source[i] != '\n') i++;
+      continue;
+    }
+    if (c == '/' && i + 1 < end && source[i + 1] == '*') {
+      i += 2;
+      while (i + 1 < end &&
+             !(source[i] == '*' && source[i + 1] == '/'))
+        i++;
+      if (i + 1 >= end) return 0;
+      i += 2;
+      continue;
+    }
+    if (is_identifier_byte(c)) {
+      analysis_identifier_span_t identifier = {0};
+      if (!analysis_identifier_span_at_mode(
+              source, source_length, i, enable_trigraphs,
+              &identifier) ||
+          identifier.start != i || identifier.end > end)
+        return 0;
+      int is_tag_keyword =
+          analysis_identifier_span_matches(
+              source, source_length, &identifier, enable_trigraphs,
+              "struct", 6) ||
+          analysis_identifier_span_matches(
+              source, source_length, &identifier, enable_trigraphs,
+              "union", 5) ||
+          analysis_identifier_span_matches(
+              source, source_length, &identifier, enable_trigraphs,
+              "enum", 4);
+      int is_type_word = 0;
+      static const char *const type_words[] = {
+          "void", "char", "short", "int", "long", "float",
+          "double", "signed", "unsigned", "_Bool", "_Atomic",
+          "_Complex", "_Imaginary",
+      };
+      for (size_t word = 0;
+           word < sizeof(type_words) / sizeof(type_words[0]); word++) {
+        size_t word_length = strlen(type_words[word]);
+        if (analysis_identifier_span_matches(
+                source, source_length, &identifier, enable_trigraphs,
+                type_words[word], word_length)) {
+          is_type_word = 1;
+          break;
+        }
+      }
+      int is_qualifier = 0;
+      if (!is_tag_keyword && !is_type_word &&
+          identifier.logical_length == identifier.end - identifier.start)
+        is_qualifier = analysis_type_name_qualifier_word(
+            source, identifier.start, identifier.logical_length);
+      if (expects_tag_name) {
+        expects_tag_name = 0;
+      } else if (is_tag_keyword) {
+        saw_type_specifier = 1;
+        expects_tag_name = 1;
+      } else if (is_type_word) {
+        saw_type_specifier = 1;
+      } else if (is_qualifier) {
+        /* Qualifiers may precede a builtin or typedef type name. */
+      } else if (!saw_type_specifier && !saw_typedef_candidate) {
+        saw_type_specifier = 1;
+        saw_typedef_candidate = 1;
+      } else if (paren_depth == 0 && bracket_depth == 0) {
+        return 0;
+      }
+      i = identifier.end;
+      continue;
+    }
+    if (c == '(') {
+      if (saw_typedef_candidate && paren_depth == 0) return 0;
+      paren_depth++;
+    } else if (c == ')') {
+      if (paren_depth == 0) return 0;
+      paren_depth--;
+    } else if (c == '[') {
+      bracket_depth++;
+    } else if (c == ']') {
+      if (bracket_depth == 0) return 0;
+      bracket_depth--;
+    } else if (c == '*' ||
+               (c == ',' && paren_depth > 0) ||
+               ((isdigit(c) || c == '+' || c == '-' || c == '/' ||
+                 c == '%' || c == '<' || c == '>' || c == '&' ||
+                 c == '|' || c == '^' || c == '!' || c == '~' ||
+                 c == '?' || c == ':' || c == '.') &&
+                bracket_depth > 0)) {
+      /* Abstract declarators and array bounds remain within the type name. */
+    } else {
+      return 0;
+    }
+    i++;
+  }
+  return saw_type_specifier && !expects_tag_name &&
+         paren_depth == 0 && bracket_depth == 0;
+}
 
 static char *build_recovery_source(const char *source, size_t source_length,
                                    size_t cursor,
@@ -2062,9 +2194,13 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int previous_token_is_for = 0;
   int previous_token_is_generic = 0;
   int previous_token_requires_type_name = 0;
+  int previous_token_is_sizeof = 0;
   int previous_token_is_tag_keyword = 0;
+  int previous_token_ends_expression = 0;
   size_t root_pending_conditional_count = 0;
   char last_significant = 0;
+  size_t last_closed_parenthesized_end = 0;
+  int last_closed_parenthesized_is_type_name = 0;
   for (size_t i = 0; i < recovery_cursor; i++) {
     size_t splice_size = analysis_line_splice_size_mode(
         result, recovery_cursor, i, enable_trigraphs);
@@ -2111,7 +2247,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
       previous_token_is_for = 0;
       previous_token_is_generic = 0;
       previous_token_requires_type_name = 0;
+      previous_token_is_sizeof = 0;
       previous_token_is_tag_keyword = 0;
+      previous_token_ends_expression = 1;
       continue;
     }
     if (c == '\n') {
@@ -2133,6 +2271,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
     int opens_for_control = 0;
     int opens_generic_selection = 0;
     int opens_type_name_context = 0;
+    int opens_sizeof_context = 0;
+    int opens_postfix_parenthesized = 0;
     int current_identifier_is_default = 0;
     if (is_identifier_byte((unsigned char)c)) {
       if (i == 0 ||
@@ -2151,6 +2291,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
              memcmp(result + i, "_Alignof", strlen("_Alignof")) == 0) ||
             (identifier_end - i == strlen("_Atomic") &&
              memcmp(result + i, "_Atomic", strlen("_Atomic")) == 0);
+        previous_token_is_sizeof =
+            identifier_end - i == strlen("sizeof") &&
+            memcmp(result + i, "sizeof", strlen("sizeof")) == 0;
         previous_token_is_tag_keyword =
             (identifier_end - i == strlen("struct") &&
              memcmp(result + i, "struct", strlen("struct")) == 0) ||
@@ -2161,20 +2304,35 @@ static char *build_recovery_source(const char *source, size_t source_length,
         current_identifier_is_default =
             identifier_end - i == strlen("default") &&
             memcmp(result + i, "default", strlen("default")) == 0;
+        int identifier_is_expression_prefix_keyword =
+            previous_token_is_for || previous_token_is_generic ||
+            previous_token_requires_type_name || previous_token_is_sizeof ||
+            (identifier_end - i == strlen("return") &&
+             memcmp(result + i, "return", strlen("return")) == 0) ||
+            (identifier_end - i == strlen("case") &&
+             memcmp(result + i, "case", strlen("case")) == 0);
+        previous_token_ends_expression =
+            !identifier_is_expression_prefix_keyword;
       }
     } else if (!isspace((unsigned char)c)) {
       opens_for_control = c == '(' && previous_token_is_for;
       opens_generic_selection = c == '(' && previous_token_is_generic;
       opens_type_name_context =
           c == '(' && previous_token_requires_type_name;
+      opens_sizeof_context = c == '(' && previous_token_is_sizeof;
+      opens_postfix_parenthesized =
+          c == '(' && previous_token_ends_expression;
       previous_token_is_for = 0;
       previous_token_is_generic = 0;
       previous_token_requires_type_name = 0;
+      previous_token_is_sizeof = 0;
       previous_token_is_tag_keyword = 0;
+      previous_token_ends_expression = 0;
     }
     if (c == '(' || c == '[' || c == '{') {
       stack[stack_count++] = (recovery_delimiter_t){
           .open = c,
+          .open_offset = i,
           .is_for_control = opens_for_control,
           .for_separator_count = 0,
           .is_generic_selection = opens_generic_selection,
@@ -2182,12 +2340,30 @@ static char *build_recovery_source(const char *source, size_t source_length,
           .generic_association_has_colon = 0,
           .generic_has_default_association = 0,
           .requires_type_name = opens_type_name_context,
+          .is_sizeof_context = opens_sizeof_context,
+          .is_postfix_parenthesized = opens_postfix_parenthesized,
           .pending_conditional_count = 0,
       };
     } else if ((c == ')' || c == ']' || c == '}') && stack_count > 0) {
-      char open = stack[stack_count - 1].open;
+      recovery_delimiter_t closing = stack[stack_count - 1];
+      char open = closing.open;
       if ((open == '(' && c == ')') || (open == '[' && c == ']') ||
-          (open == '{' && c == '}')) stack_count--;
+          (open == '{' && c == '}')) {
+        if (open == '(' && c == ')') {
+          last_closed_parenthesized_end = i + 1;
+          last_closed_parenthesized_is_type_name =
+              !closing.is_for_control &&
+              !closing.is_generic_selection &&
+              !closing.requires_type_name &&
+              !closing.is_sizeof_context &&
+              !closing.is_postfix_parenthesized &&
+              analysis_parenthesized_range_is_type_name_mode(
+                  source, source_length, closing.open_offset + 1, i,
+                  enable_trigraphs);
+        }
+        stack_count--;
+        previous_token_ends_expression = c == ')' || c == ']';
+      }
     } else if (c == ';' && stack_count > 0 &&
                stack[stack_count - 1].open == '(' &&
                stack[stack_count - 1].is_for_control) {
@@ -2251,6 +2427,16 @@ static char *build_recovery_source(const char *source, size_t source_length,
   }
   int cursor_in_required_type_name =
       stack_count > 0 && stack[stack_count - 1].requires_type_name;
+  int cursor_after_complete_type_name_cast = 0;
+  if (has_complete_identifier &&
+      last_closed_parenthesized_is_type_name &&
+      last_closed_parenthesized_end <= cursor_identifier.start) {
+    size_t after_cast = skip_analysis_space_and_comments_mode(
+        source, source_length, last_closed_parenthesized_end,
+        enable_trigraphs);
+    cursor_after_complete_type_name_cast =
+        after_cast == cursor_identifier.start;
+  }
   int cursor_on_complete_tag_name =
       has_complete_identifier && previous_token_is_tag_keyword;
   size_t cursor_tag_tail_end = cursor_name_end;
@@ -2297,6 +2483,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     APPEND_LITERAL(" int");
   } else if (!cursor_in_generic_association_type &&
       (cursor_identifier_starts_conditional ||
+      cursor_after_complete_type_name_cast ||
       last_significant == '=' || last_significant == ',' ||
       last_significant == '(' || last_significant == '[' ||
       last_significant == '+' || last_significant == '-' ||
