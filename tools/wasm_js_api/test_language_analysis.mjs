@@ -2282,6 +2282,280 @@ try {
   freshInitializerDesignatorCompiler.dispose();
 }
 
+const compoundLiteralDesignatorOperandHoverSource = {
+  name: "compound-literal-designator-operand.c",
+  source: "/// compound literal designator macro documentation\n" +
+    "#define COMPOUND_LITERAL_DESIGNATOR_MACRO 5\n" +
+    "typedef int CompoundLiteralDesignatorArray[8];\n" +
+    "enum CompoundLiteralDesignatorValue {\n" +
+    "  COMPOUND_LITERAL_DESIGNATOR_A = 2,\n" +
+    "  COMPOUND_LITERAL_DESIGNATOR_B = 3,\n" +
+    "  COMPOUND_LITERAL_DESIGNATOR_C = 4,\n" +
+    "  COMPOUND_LITERAL_DESIGNATOR_CONDITION = 1\n" +
+    "};\n" +
+    "struct CompoundLiteralDesignatorRecord { int values[8]; };\n" +
+    "int *compound_literal_designator_file_direct = (int[8]){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n" +
+    "int *compound_literal_designator_file_unary = (int[8]){ " +
+    "[+COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n" +
+    "int *compound_literal_designator_file_binary = (int[8]){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_A + COMPOUND_LITERAL_DESIGNATOR_B] = 1 };\n" +
+    "int *compound_literal_designator_file_grouped = (int[8]){ " +
+    "[(COMPOUND_LITERAL_DESIGNATOR_C)] = 1 };\n" +
+    "int *compound_literal_designator_file_conditional = (int[8]){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_CONDITION ? " +
+    "COMPOUND_LITERAL_DESIGNATOR_A : COMPOUND_LITERAL_DESIGNATOR_B] = 1 };\n" +
+    "int *compound_literal_designator_file_macro = (int[8]){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_MACRO] = 1 };\n" +
+    "int *compound_literal_designator_file_comment = (int[8]){ " +
+    "[/* expression gap */ COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n" +
+    "int *compound_literal_designator_file_splice_lf = (int[8]){ [\\\n" +
+    "COMPOUND_LITERAL_DESIGNATOR_B] = 1 };\n" +
+    "int *compound_literal_designator_file_splice_crlf = (int[8]){ [\\\r\n" +
+    "COMPOUND_LITERAL_DESIGNATOR_C] = 1 };\r\n" +
+    "int *compound_literal_designator_file_typedef = " +
+    "(CompoundLiteralDesignatorArray){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n" +
+    "int (*compound_literal_designator_file_nested)[8] = (int[2][8]){ " +
+    "[1] = { [COMPOUND_LITERAL_DESIGNATOR_B] = 1 } };\n" +
+    "struct CompoundLiteralDesignatorRecord " +
+    "*compound_literal_designator_file_member = " +
+    "&(struct CompoundLiteralDesignatorRecord){ " +
+    ".values[COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n" +
+    "int (*compound_literal_designator_file_chain)[8] = (int[8][8]){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_A][COMPOUND_LITERAL_DESIGNATOR_B] = 1 };\n" +
+    "int *compound_literal_designator_file_multi = (int[8]){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_C] = 1 }, " +
+    "*compound_literal_designator_file_later;\n" +
+    "int compound_literal_designator_file_after;\n" +
+    "static int compound_literal_designator_take(int *values) { " +
+    "return values[0]; }\n" +
+    "static int compound_literal_designator_block(int designator_parameter) {\n" +
+    "  int designator_before = designator_parameter;\n" +
+    "  int designator_value = ((int[8]){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_A] = 1 })" +
+    "[COMPOUND_LITERAL_DESIGNATOR_A];\n" +
+    "  int designator_call = compound_literal_designator_take((int[8]){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_B] = 1 });\n" +
+    "  int *designator_multi = (int[8]){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_C] = 1 }, *designator_later;\n" +
+    "  int designator_after = designator_before;\n" +
+    "  return designator_value + designator_call + designator_after +\n" +
+    "         (designator_multi != 0) + (designator_later != 0);\n" +
+    "}\n",
+};
+
+const compoundLiteralDesignatorOperandCases = [
+  ["file_direct = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_A", "enumConstant", 0],
+  ["file_unary = (int[8]){ [+COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_A", "enumConstant", 0],
+  ["file_binary = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_A +",
+    "COMPOUND_LITERAL_DESIGNATOR_A", "enumConstant", 0],
+  ["+ COMPOUND_LITERAL_DESIGNATOR_B] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_B", "enumConstant", 0],
+  ["file_grouped = (int[8]){ [(COMPOUND_LITERAL_DESIGNATOR_C)] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_C", "enumConstant", 0],
+  ["? COMPOUND_LITERAL_DESIGNATOR_A : COMPOUND_LITERAL_DESIGNATOR_B] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_B", "enumConstant", 0],
+  ["file_macro = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_MACRO] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_MACRO", "macro", 0],
+  ["[/* expression gap */ COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_A", "enumConstant", 0],
+  ["[\\\nCOMPOUND_LITERAL_DESIGNATOR_B] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_B", "enumConstant", 0],
+  ["[\\\r\nCOMPOUND_LITERAL_DESIGNATOR_C] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_C", "enumConstant", 0],
+  ["(CompoundLiteralDesignatorArray){ [COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_A", "enumConstant", 0],
+  ["[1] = { [COMPOUND_LITERAL_DESIGNATOR_B] = 1 }",
+    "COMPOUND_LITERAL_DESIGNATOR_B", "enumConstant", 0],
+  [".values[COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_A", "enumConstant", 0],
+  ["file_chain)[8] = (int[8][8]){ [COMPOUND_LITERAL_DESIGNATOR_A][",
+    "COMPOUND_LITERAL_DESIGNATOR_A", "enumConstant", 0],
+  ["][COMPOUND_LITERAL_DESIGNATOR_B] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_B", "enumConstant", 0],
+  ["file_multi = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_C] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_C", "enumConstant", 1],
+  ["designator_value = ((int[8]){ [COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_A", "enumConstant", 2],
+  ["compound_literal_designator_take((int[8]){ " +
+    "[COMPOUND_LITERAL_DESIGNATOR_B] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_B", "enumConstant", 2],
+  ["designator_multi = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_C] = 1",
+    "COMPOUND_LITERAL_DESIGNATOR_C", "enumConstant", 3],
+];
+
+for (const [fragmentText, name, kind, boundaryCase] of
+  compoundLiteralDesignatorOperandCases) {
+  const fragmentIndex =
+    compoundLiteralDesignatorOperandHoverSource.source.indexOf(fragmentText);
+  const useIndex =
+    compoundLiteralDesignatorOperandHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+  assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+    `compound literal designator operand anchor missing for ${name}`);
+  const useStart = byteOffsetForIndex(
+    compoundLiteralDesignatorOperandHoverSource.source, useIndex,
+  );
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(
+      compoundLiteralDesignatorOperandHoverSource,
+      {
+        cursor: {
+          sourceName: compoundLiteralDesignatorOperandHoverSource.name,
+          byteOffset,
+        },
+      },
+    );
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, false,
+      `${name} compound literal designator unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} compound literal designator diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `${name} compound literal designator hover`);
+    assert.equal(result.hover?.kind, kind,
+      `${name} compound literal designator kind`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} compound literal designator declaration`);
+    if (kind === "enumConstant")
+      assert.ok(["2", "3", "4"].includes(
+        result.hover?.initializer.constantValue,
+      ));
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.replacement, "5");
+      assert.equal(result.hover?.documentation,
+        "compound literal designator macro documentation");
+    }
+    if (boundaryCase <= 1)
+      assert.equal(symbol(
+        result, "compound_literal_designator_file_after", "object",
+      ), undefined, "later file object remains invisible");
+    if (boundaryCase === 1)
+      assert.equal(symbol(
+        result, "compound_literal_designator_file_later", "object",
+      ), undefined, "later file comma declarator remains invisible");
+    if (boundaryCase >= 2) {
+      assert.ok(symbol(result, "designator_parameter", "parameter"));
+      assert.ok(symbol(result, "designator_before", "object"));
+      assert.equal(symbol(result, "designator_after", "object"), undefined,
+        "compound literal block lookup point");
+    }
+    if (boundaryCase === 3)
+      assert.equal(symbol(result, "designator_later", "object"), undefined,
+        "later block comma declarator remains invisible");
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--compound-literal-designator-operand-hover-parity-json",
+          String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm compound literal designator differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+const freshCompoundLiteralDesignatorCompiler = await createCompiler(wasmModule);
+try {
+  for (const caseIndex of [11, 18]) {
+    const [fragmentText, name, kind] =
+      compoundLiteralDesignatorOperandCases[caseIndex];
+    const fragmentIndex =
+      compoundLiteralDesignatorOperandHoverSource.source.indexOf(fragmentText);
+    const useIndex =
+      compoundLiteralDesignatorOperandHoverSource.source.indexOf(
+        name, fragmentIndex,
+      );
+    const result = freshCompoundLiteralDesignatorCompiler.analyzeSource(
+      compoundLiteralDesignatorOperandHoverSource,
+      {
+        cursor: {
+          sourceName: compoundLiteralDesignatorOperandHoverSource.name,
+          byteOffset: byteOffsetForIndex(
+            compoundLiteralDesignatorOperandHoverSource.source, useIndex,
+          ) + Math.floor(Buffer.byteLength(name) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, false,
+      `fresh ${name} compound literal designator unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `fresh ${name} compound literal designator diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `fresh ${name} compound literal designator hover`);
+    assert.equal(result.hover?.kind, kind,
+      `fresh ${name} compound literal designator kind`);
+  }
+} finally {
+  freshCompoundLiteralDesignatorCompiler.dispose();
+}
+
+for (const input of [
+  {
+    name: "invalid-compound-literal-designator.c",
+    source: "enum { INDEX = 2 }; int f(void) { " +
+      "return ((int[4]){ [INDEX] }); }\n",
+  },
+  {
+    name: "invalid-compound-literal-designator.c",
+    source: "enum { INDEX = 2 }; int f(void) { " +
+      "return ((int[4]){ [INDEX] = 7;\n",
+  },
+]) {
+  let invalidResult = null;
+  let invalidError = null;
+  const useIndex = input.source.indexOf("[INDEX]") + 3;
+  try {
+    invalidResult = compiler.analyzeSource(input, {
+      cursor: { sourceName: input.name, byteOffset: useIndex },
+    });
+  } catch (error) {
+    invalidError = error;
+  }
+  assert.ok(
+    invalidResult
+      ? invalidResult.partial
+      : invalidError?.name === "AgcLanguageAnalysisError",
+    `invalid compound literal designator became complete: ${JSON.stringify(
+      invalidResult || invalidError,
+    )}`,
+  );
+}
+
+const compoundLiteralReuseName = "COMPOUND_LITERAL_DESIGNATOR_A";
+const compoundLiteralReuseFragment =
+  compoundLiteralDesignatorOperandHoverSource.source.indexOf(
+    "file_direct = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+  );
+const compoundLiteralReuseUse =
+  compoundLiteralDesignatorOperandHoverSource.source.indexOf(
+    compoundLiteralReuseName, compoundLiteralReuseFragment,
+  );
+const compoundLiteralReuseResult = compiler.analyzeSource(
+  compoundLiteralDesignatorOperandHoverSource,
+  {
+    cursor: {
+      sourceName: compoundLiteralDesignatorOperandHoverSource.name,
+      byteOffset: byteOffsetForIndex(
+        compoundLiteralDesignatorOperandHoverSource.source,
+        compoundLiteralReuseUse,
+      ) + 3,
+    },
+  },
+);
+assert.equal(compoundLiteralReuseResult.partial, false,
+  "compound literal designator compiler did not recover after failure");
+assert.deepStrictEqual(compoundLiteralReuseResult.diagnostics, [],
+  "compound literal designator reuse diagnostics");
+
 const typeNameArrayBoundOperandHoverSource = {
   name: "type-name-array-bound-operand.c",
   source: "/// type-name array bound macro documentation\n" +

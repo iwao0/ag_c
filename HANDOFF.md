@@ -32161,3 +32161,36 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 続き1095から残るcompound literal内designatorを、object declaration initializerとは別のmarker経路で扱う。
   - 末尾`,` / `}`のないenum initializerのpartial契約も独立候補のまま残す。
+
+### このセッション（続き1098）: compound literal designator内のoperand hoverを安定化した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1095/1097に残した通常サイズのcompound literal内array designatorだけを独立して調査した。
+- 原因と修正:
+  - object宣言initializer専用回復は直前が`=`のbraceだけを対象にするため、type-nameの`)`に続く
+    compound literal braceを選ばず、有効なsourceをE2006の解析失敗にしていた。
+  - main delimiter stackでbounded type-name分類済み`)`に空白・comment・行継続だけを挟んで直結する
+    `{`をcompound literalとして記録した。
+  - cursorを含む完全な`[...]`、後続`.member` / `[...]` designator chain、最終`=`、対応する`}`、
+    浅い式statementの実在する`;`またはtop-level comma境界をすべて確認した場合だけ原文を保持する。
+  - comma境界では後続declarator/式を取り込まず`;`へ閉じ、file scopeまたは元block scopeへmarkerを置く。
+  - designator式の意味評価や再帰的な式走査、深度上限の拡張は追加していない。
+- 回帰範囲:
+  - file/block scope、postfix selection、function argument、builtin/typedef type-name、nested initializer、
+    member/array chain、同一宣言の後続declarator非可視を網羅した。
+  - 単項、二項、括弧、浅い条件演算子、enum constant、object-like macro、block comment、
+    LF/CRLF行継続を網羅した。
+  - 各identifierの先頭・中央・末尾、正確なdeclaration range・lookup point、enum値、macro replacementと
+    documentation、失敗後再利用、同一session/fresh sessionをNativeで固定した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、fresh compilerと失敗後再利用を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (48 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - 末尾`,` / `}`のないenum initializerのpartial契約を、complete source回復とは分けて扱う。

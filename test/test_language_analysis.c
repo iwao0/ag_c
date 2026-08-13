@@ -715,6 +715,67 @@ static const char initializer_designator_operand_hover_source[] =
     "  return designator_local[INITIALIZER_DESIGNATOR_LOCAL] + designator_after;\n"
     "}\n";
 
+static const char compound_literal_designator_operand_hover_source[] =
+    "/// compound literal designator macro documentation\n"
+    "#define COMPOUND_LITERAL_DESIGNATOR_MACRO 5\n"
+    "typedef int CompoundLiteralDesignatorArray[8];\n"
+    "enum CompoundLiteralDesignatorValue {\n"
+    "  COMPOUND_LITERAL_DESIGNATOR_A = 2,\n"
+    "  COMPOUND_LITERAL_DESIGNATOR_B = 3,\n"
+    "  COMPOUND_LITERAL_DESIGNATOR_C = 4,\n"
+    "  COMPOUND_LITERAL_DESIGNATOR_CONDITION = 1\n"
+    "};\n"
+    "struct CompoundLiteralDesignatorRecord { int values[8]; };\n"
+    "int *compound_literal_designator_file_direct = (int[8]){ "
+    "[COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n"
+    "int *compound_literal_designator_file_unary = (int[8]){ "
+    "[+COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n"
+    "int *compound_literal_designator_file_binary = (int[8]){ "
+    "[COMPOUND_LITERAL_DESIGNATOR_A + COMPOUND_LITERAL_DESIGNATOR_B] = 1 };\n"
+    "int *compound_literal_designator_file_grouped = (int[8]){ "
+    "[(COMPOUND_LITERAL_DESIGNATOR_C)] = 1 };\n"
+    "int *compound_literal_designator_file_conditional = (int[8]){ "
+    "[COMPOUND_LITERAL_DESIGNATOR_CONDITION ? "
+    "COMPOUND_LITERAL_DESIGNATOR_A : COMPOUND_LITERAL_DESIGNATOR_B] = 1 };\n"
+    "int *compound_literal_designator_file_macro = (int[8]){ "
+    "[COMPOUND_LITERAL_DESIGNATOR_MACRO] = 1 };\n"
+    "int *compound_literal_designator_file_comment = (int[8]){ "
+    "[/* expression gap */ COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n"
+    "int *compound_literal_designator_file_splice_lf = (int[8]){ [\\\n"
+    "COMPOUND_LITERAL_DESIGNATOR_B] = 1 };\n"
+    "int *compound_literal_designator_file_splice_crlf = (int[8]){ [\\\r\n"
+    "COMPOUND_LITERAL_DESIGNATOR_C] = 1 };\r\n"
+    "int *compound_literal_designator_file_typedef = "
+    "(CompoundLiteralDesignatorArray){ "
+    "[COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n"
+    "int (*compound_literal_designator_file_nested)[8] = (int[2][8]){ "
+    "[1] = { [COMPOUND_LITERAL_DESIGNATOR_B] = 1 } };\n"
+    "struct CompoundLiteralDesignatorRecord "
+    "*compound_literal_designator_file_member = "
+    "&(struct CompoundLiteralDesignatorRecord){ "
+    ".values[COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n"
+    "int (*compound_literal_designator_file_chain)[8] = (int[8][8]){ "
+    "[COMPOUND_LITERAL_DESIGNATOR_A][COMPOUND_LITERAL_DESIGNATOR_B] = 1 };\n"
+    "int *compound_literal_designator_file_multi = (int[8]){ "
+    "[COMPOUND_LITERAL_DESIGNATOR_C] = 1 }, "
+    "*compound_literal_designator_file_later;\n"
+    "int compound_literal_designator_file_after;\n"
+    "static int compound_literal_designator_take(int *values) { "
+    "return values[0]; }\n"
+    "static int compound_literal_designator_block(int designator_parameter) {\n"
+    "  int designator_before = designator_parameter;\n"
+    "  int designator_value = ((int[8]){ "
+    "[COMPOUND_LITERAL_DESIGNATOR_A] = 1 })"
+    "[COMPOUND_LITERAL_DESIGNATOR_A];\n"
+    "  int designator_call = compound_literal_designator_take((int[8]){ "
+    "[COMPOUND_LITERAL_DESIGNATOR_B] = 1 });\n"
+    "  int *designator_multi = (int[8]){ "
+    "[COMPOUND_LITERAL_DESIGNATOR_C] = 1 }, *designator_later;\n"
+    "  int designator_after = designator_before;\n"
+    "  return designator_value + designator_call + designator_after +\n"
+    "         (designator_multi != 0) + (designator_later != 0);\n"
+    "}\n";
+
 static const char type_name_array_bound_operand_hover_source[] =
     "/// type-name array bound macro documentation\n"
     "#define TYPE_NAME_ARRAY_BOUND_MACRO 5\n"
@@ -2189,6 +2250,21 @@ static int print_initializer_designator_operand_hover_parity_snapshot(
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
+static int print_compound_literal_designator_operand_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length =
+      strlen(compound_literal_designator_operand_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "compound-literal-designator-operand.c",
+      compound_literal_designator_operand_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
 static int print_type_name_array_bound_operand_hover_parity_snapshot(
     const char *cursor_text) {
   char *end = NULL;
@@ -3462,6 +3538,245 @@ static int test_initializer_designator_operand_hover(
       }
     }
   }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
+static int test_compound_literal_designator_operand_hover(
+    ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "compound literal designator operand session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+    const char *constant_value;
+    int boundary_case;
+  } cases[] = {
+      {"file_direct = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_A = 2", "2", 0},
+      {"file_unary = (int[8]){ [+COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_A = 2", "2", 0},
+      {"file_binary = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_A +",
+       "COMPOUND_LITERAL_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_A = 2", "2", 0},
+      {"+ COMPOUND_LITERAL_DESIGNATOR_B] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_B = 3", "3", 0},
+      {"file_grouped = (int[8]){ [(COMPOUND_LITERAL_DESIGNATOR_C)] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_C = 4", "4", 0},
+      {"? COMPOUND_LITERAL_DESIGNATOR_A : "
+       "COMPOUND_LITERAL_DESIGNATOR_B] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_B = 3", "3", 0},
+      {"file_macro = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_MACRO] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "COMPOUND_LITERAL_DESIGNATOR_MACRO 5", "", 0},
+      {"[/* expression gap */ COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_A = 2", "2", 0},
+      {"[\\\nCOMPOUND_LITERAL_DESIGNATOR_B] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_B = 3", "3", 0},
+      {"[\\\r\nCOMPOUND_LITERAL_DESIGNATOR_C] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_C = 4", "4", 0},
+      {"(CompoundLiteralDesignatorArray){ "
+       "[COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_A = 2", "2", 0},
+      {"[1] = { [COMPOUND_LITERAL_DESIGNATOR_B] = 1 }",
+       "COMPOUND_LITERAL_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_B = 3", "3", 0},
+      {".values[COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_A = 2", "2", 0},
+      {"file_chain)[8] = (int[8][8]){ "
+       "[COMPOUND_LITERAL_DESIGNATOR_A][",
+       "COMPOUND_LITERAL_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_A = 2", "2", 0},
+      {"][COMPOUND_LITERAL_DESIGNATOR_B] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_B = 3", "3", 0},
+      {"file_multi = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_C] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_C = 4", "4", 1},
+      {"designator_value = ((int[8]){ "
+       "[COMPOUND_LITERAL_DESIGNATOR_A] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_A = 2", "2", 2},
+      {"compound_literal_designator_take((int[8]){ "
+       "[COMPOUND_LITERAL_DESIGNATOR_B] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_B = 3", "3", 2},
+      {"designator_multi = (int[8]){ "
+       "[COMPOUND_LITERAL_DESIGNATOR_C] = 1",
+       "COMPOUND_LITERAL_DESIGNATOR_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_C = 4", "4", 3},
+  };
+  const char *macro_comment = strstr(
+      compound_literal_designator_operand_hover_source,
+      "/// compound literal designator macro documentation");
+  CHECK(macro_comment != NULL,
+        "compound literal designator macro comment anchor");
+  for (size_t case_index = 0;
+       case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+    const char *fragment = strstr(
+        compound_literal_designator_operand_hover_source,
+        cases[case_index].fragment);
+    const char *use = fragment
+                          ? strstr(fragment, cases[case_index].name)
+                          : NULL;
+    const char *declaration = strstr(
+        compound_literal_designator_operand_hover_source,
+        cases[case_index].declaration_fragment);
+    CHECK(use && declaration,
+          "compound literal designator operand anchors");
+    size_t name_length = strlen(cases[case_index].name);
+    size_t deltas[] = {0, name_length / 2, name_length};
+    for (size_t delta_index = 0;
+         delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+      CHECK(analyze_named(
+                session, "compound-literal-designator-operand.c",
+                compound_literal_designator_operand_hover_source,
+                (size_t)(use -
+                         compound_literal_designator_operand_hover_source) +
+                    deltas[delta_index],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "compound literal designator operand analysis");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      const ag_language_symbol_t *completion = find_symbol(
+          &snapshot, cases[case_index].name, cases[case_index].kind);
+      CHECK(hover && completion && !snapshot.partial &&
+                snapshot.diagnostic_count == 0 &&
+                hover->kind == cases[case_index].kind &&
+                strcmp(hover->name, cases[case_index].name) == 0 &&
+                hover->declaration.start.offset ==
+                    (int)(declaration -
+                          compound_literal_designator_operand_hover_source) &&
+                hover->declaration.end.offset ==
+                    (int)(declaration -
+                          compound_literal_designator_operand_hover_source +
+                          name_length) &&
+                same_range(&hover->declaration, &completion->declaration),
+            "compound literal designator operand fields");
+      if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+        CHECK(strcmp(hover->constant_value,
+                     cases[case_index].constant_value) == 0,
+              "compound literal designator operand value");
+      if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+        CHECK(hover->macro_replacement &&
+                  strcmp(hover->macro_replacement, "5") == 0 &&
+                  check_documentation_symbol(
+                      hover, "compound literal designator macro documentation",
+                      "compound-literal-designator-operand.c",
+                      (size_t)(macro_comment -
+                               compound_literal_designator_operand_hover_source),
+                      (size_t)(macro_comment -
+                               compound_literal_designator_operand_hover_source) +
+                          strlen("/// compound literal designator macro documentation")),
+              "compound literal designator macro fields");
+      if (cases[case_index].boundary_case <= 1)
+        CHECK(!find_symbol(
+                  &snapshot, "compound_literal_designator_file_after",
+                  AG_LANGUAGE_SYMBOL_OBJECT),
+              "later file object remains invisible");
+      if (cases[case_index].boundary_case == 1)
+        CHECK(!find_symbol(
+                  &snapshot, "compound_literal_designator_file_later",
+                  AG_LANGUAGE_SYMBOL_OBJECT),
+              "later compound literal comma declarator remains invisible");
+      if (cases[case_index].boundary_case >= 2)
+        CHECK(find_symbol(
+                  &snapshot, "designator_parameter",
+                  AG_LANGUAGE_SYMBOL_PARAMETER) &&
+                  find_symbol(
+                      &snapshot, "designator_before",
+                      AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(
+                      &snapshot, "designator_after",
+                      AG_LANGUAGE_SYMBOL_OBJECT),
+              "compound literal block lookup point");
+      if (cases[case_index].boundary_case == 3)
+        CHECK(!find_symbol(
+                  &snapshot, "designator_later",
+                  AG_LANGUAGE_SYMBOL_OBJECT),
+              "later block comma declarator remains invisible");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  const size_t fresh_case_indices[] = {11, 18};
+  for (size_t i = 0;
+       i < sizeof(fresh_case_indices) / sizeof(fresh_case_indices[0]); i++) {
+    size_t case_index = fresh_case_indices[i];
+    const char *fragment = strstr(
+        compound_literal_designator_operand_hover_source,
+        cases[case_index].fragment);
+    const char *use = fragment
+                          ? strstr(fragment, cases[case_index].name)
+                          : NULL;
+    ag_compilation_session_t *fresh =
+        ag_compilation_session_create(&target);
+    CHECK(fresh && use && analyze_named(
+              fresh, "compound-literal-designator-operand.c",
+              compound_literal_designator_operand_hover_source,
+              (size_t)(use -
+                       compound_literal_designator_operand_hover_source) +
+                  strlen(cases[case_index].name) / 2,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "fresh compound literal designator operand analysis");
+    const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+    CHECK(hover && hover->kind == cases[case_index].kind &&
+              strcmp(hover->name, cases[case_index].name) == 0 &&
+              !snapshot.partial && snapshot.diagnostic_count == 0,
+          "fresh compound literal designator operand fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    ag_compilation_session_destroy(fresh);
+  }
+
+  const char *invalid_sources[] = {
+      "enum { INDEX = 2 }; int f(void) { "
+      "return ((int[4]){ [INDEX] }); }\n",
+      "enum { INDEX = 2 }; int f(void) { "
+      "return ((int[4]){ [INDEX] = 7;\n",
+  };
+  for (size_t i = 0;
+       i < sizeof(invalid_sources) / sizeof(invalid_sources[0]); i++) {
+    const char *use = strstr(invalid_sources[i], "[INDEX]");
+    int ok = analyze_named(
+        session, "invalid-compound-literal-designator.c",
+        invalid_sources[i],
+        (size_t)(use - invalid_sources[i]) + 3,
+        (header_bundle_t){0}, defaults, &snapshot, &error);
+    CHECK((ok && snapshot.partial) ||
+              (!ok && error.status == AG_LANGUAGE_ANALYSIS_FAILED),
+          "invalid compound literal designator remains incomplete");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  const char *reuse_fragment = strstr(
+      compound_literal_designator_operand_hover_source,
+      cases[0].fragment);
+  const char *reuse_use = reuse_fragment
+                              ? strstr(reuse_fragment, cases[0].name)
+                              : NULL;
+  CHECK(reuse_use && analyze_named(
+            session, "compound-literal-designator-operand.c",
+            compound_literal_designator_operand_hover_source,
+            (size_t)(reuse_use -
+                     compound_literal_designator_operand_hover_source) + 3,
+            (header_bundle_t){0}, defaults, &snapshot, &error) &&
+            !snapshot.partial && snapshot.diagnostic_count == 0,
+        "compound literal designator session reusable after failure");
+  ag_language_analysis_snapshot_dispose(&snapshot);
   ag_compilation_session_destroy(session);
   return 0;
 }
@@ -4981,6 +5296,11 @@ int main(int argc, char **argv) {
         argv[2]);
   if (argc == 3 &&
       strcmp(argv[1],
+             "--compound-literal-designator-operand-hover-parity-json") == 0)
+    return print_compound_literal_designator_operand_hover_parity_snapshot(
+        argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1],
              "--type-name-array-bound-operand-hover-parity-json") == 0)
     return print_type_name_array_bound_operand_hover_parity_snapshot(
         argv[2]);
@@ -5031,6 +5351,8 @@ int main(int argc, char **argv) {
         "enum initializer operand hover scenarios");
   CHECK(test_initializer_designator_operand_hover(target) == 0,
         "initializer designator operand hover scenarios");
+  CHECK(test_compound_literal_designator_operand_hover(target) == 0,
+        "compound literal designator operand hover scenarios");
   CHECK(test_type_name_array_bound_operand_hover(target) == 0,
         "type-name array bound operand hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
@@ -8045,6 +8367,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (47 scenarios)");
+  puts("language analysis tests passed (48 scenarios)");
   return 0;
 }

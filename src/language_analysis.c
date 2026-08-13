@@ -1763,6 +1763,54 @@ typedef struct {
   int is_initializer_brace;
 } analysis_designator_frame_t;
 
+static int analysis_designator_assignment_end_mode(
+    const char *source, size_t length, size_t bracket_open,
+    const analysis_identifier_span_t *identifier,
+    int enable_trigraphs, size_t *designator_end) {
+  if (!source || !identifier || bracket_open >= length ||
+      source[bracket_open] != '[')
+    return 0;
+  size_t candidate_end = 0;
+  if (!analysis_delimited_tail_end_mode(
+          source, length, bracket_open + 1, ']', 1,
+          enable_trigraphs, &candidate_end) ||
+      identifier->end > candidate_end)
+    return 0;
+  size_t after_designator = candidate_end + 1;
+  for (;;) {
+    after_designator = skip_analysis_space_and_comments_mode(
+        source, length, after_designator, enable_trigraphs);
+    if (after_designator >= length) return 0;
+    if (source[after_designator] == '.') {
+      analysis_identifier_span_t member = {0};
+      size_t member_start = skip_analysis_space_and_comments_mode(
+          source, length, after_designator + 1, enable_trigraphs);
+      if (!analysis_identifier_span_at_mode(
+              source, length, member_start, enable_trigraphs,
+              &member) || member.start != member_start)
+        return 0;
+      after_designator = member.end;
+      continue;
+    }
+    if (source[after_designator] == '[') {
+      size_t nested_end = 0;
+      if (!analysis_delimited_tail_end_mode(
+              source, length, after_designator + 1, ']', 1,
+              enable_trigraphs, &nested_end))
+        return 0;
+      after_designator = nested_end + 1;
+      continue;
+    }
+    break;
+  }
+  after_designator = skip_analysis_space_and_comments_mode(
+      source, length, after_designator, enable_trigraphs);
+  if (after_designator >= length || source[after_designator] != '=')
+    return 0;
+  if (designator_end) *designator_end = candidate_end;
+  return 1;
+}
+
 static char *build_initializer_designator_recovery_source(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs, int *changed, size_t *source_consumed) {
@@ -1871,43 +1919,10 @@ static char *build_initializer_designator_recovery_source(
   size_t designator_end = 0;
   for (size_t i = frame_count; i > 0; i--) {
     if (frames[i - 1].open != '[') continue;
-    size_t candidate_end = 0;
-    if (!analysis_delimited_tail_end_mode(
-            source, length, frames[i - 1].open_offset + 1, ']', 1,
-            enable_trigraphs, &candidate_end))
-      continue;
-    size_t after_designator = candidate_end + 1;
-    for (;;) {
-      after_designator = skip_analysis_space_and_comments_mode(
-          source, length, after_designator, enable_trigraphs);
-      if (after_designator >= length) break;
-      if (source[after_designator] == '.') {
-        analysis_identifier_span_t member = {0};
-        size_t member_start = skip_analysis_space_and_comments_mode(
-            source, length, after_designator + 1, enable_trigraphs);
-        if (!analysis_identifier_span_at_mode(
-                source, length, member_start, enable_trigraphs,
-                &member) || member.start != member_start)
-          break;
-        after_designator = member.end;
-        continue;
-      }
-      if (source[after_designator] == '[') {
-        size_t nested_end = 0;
-        if (!analysis_delimited_tail_end_mode(
-                source, length, after_designator + 1, ']', 1,
-                enable_trigraphs, &nested_end))
-          break;
-        after_designator = nested_end + 1;
-        continue;
-      }
-      break;
-    }
-    after_designator = skip_analysis_space_and_comments_mode(
-        source, length, after_designator, enable_trigraphs);
-    if (after_designator < length && source[after_designator] == '=') {
+    if (analysis_designator_assignment_end_mode(
+            source, length, frames[i - 1].open_offset,
+            &identifier, enable_trigraphs, &designator_end)) {
       designator_frame = i - 1;
-      designator_end = candidate_end;
       break;
     }
   }
@@ -2355,6 +2370,7 @@ typedef struct {
   int requires_type_name;
   int is_sizeof_context;
   int is_postfix_parenthesized;
+  int is_compound_literal;
   size_t pending_conditional_count;
 } recovery_delimiter_t;
 
@@ -2526,7 +2542,9 @@ static int analysis_complete_expression_statement_tail_end_mode(
     const char *source, size_t source_length,
     const recovery_delimiter_t *stack, size_t context_frame,
     size_t start, int allow_compound_brace, int enable_trigraphs,
-    size_t *statement_end) {
+    int allow_comma_boundary, size_t *statement_end,
+    int *ends_with_comma) {
+  if (ends_with_comma) *ends_with_comma = 0;
   size_t paren_depth = 0;
   size_t bracket_depth = 0;
   size_t brace_depth = 0;
@@ -2599,7 +2617,10 @@ static int analysis_complete_expression_statement_tail_end_mode(
       brace_depth--;
     } else if (c == ',' && paren_depth == 0 && bracket_depth == 0 &&
                brace_depth == 0) {
-      return 0;
+      if (!allow_comma_boundary) return 0;
+      if (statement_end) *statement_end = cursor;
+      if (ends_with_comma) *ends_with_comma = 1;
+      return 1;
     } else if (c == ';' && paren_depth == 0 && bracket_depth == 0 &&
                brace_depth == 0) {
       if (statement_end) *statement_end = cursor;
@@ -2607,6 +2628,86 @@ static int analysis_complete_expression_statement_tail_end_mode(
     }
   }
   return 0;
+}
+
+static char *build_compound_literal_designator_recovery_source(
+    const char *source, size_t source_length,
+    const recovery_delimiter_t *stack, size_t stack_count,
+    const analysis_identifier_span_t *identifier,
+    int enable_trigraphs, int *changed, size_t *source_consumed) {
+  if (!source || !stack || !identifier || identifier->logical_length == 0)
+    return NULL;
+  size_t designator_frame = SIZE_MAX;
+  size_t designator_end = 0;
+  for (size_t i = stack_count; i > 0; i--) {
+    if (stack[i - 1].open != '[') continue;
+    if (analysis_designator_assignment_end_mode(
+            source, source_length, stack[i - 1].open_offset,
+            identifier, enable_trigraphs, &designator_end)) {
+      designator_frame = i - 1;
+      break;
+    }
+  }
+  if (designator_frame == SIZE_MAX) return NULL;
+  size_t compound_frame = SIZE_MAX;
+  for (size_t i = designator_frame; i > 0; i--) {
+    if (stack[i - 1].open != '{' ||
+        !stack[i - 1].is_compound_literal)
+      continue;
+    int valid_initializer_nesting = 1;
+    for (size_t inner = i; inner < designator_frame; inner++)
+      if (stack[inner].open != '{') {
+        valid_initializer_nesting = 0;
+        break;
+      }
+    if (valid_initializer_nesting) {
+      compound_frame = i - 1;
+      break;
+    }
+  }
+  if (compound_frame == SIZE_MAX) return NULL;
+  size_t compound_end = 0;
+  if (!analysis_delimited_tail_end_mode(
+          source, source_length, stack[compound_frame].open_offset + 1,
+          '}', 1, enable_trigraphs, &compound_end) ||
+      compound_end <= designator_end)
+    return NULL;
+  size_t statement_end = 0;
+  int ends_with_comma = 0;
+  if (!analysis_complete_expression_statement_tail_end_mode(
+          source, source_length, stack, compound_frame,
+          compound_end + 1, 0, enable_trigraphs, 1,
+          &statement_end, &ends_with_comma))
+    return NULL;
+  size_t outer_brace_count = 0;
+  for (size_t i = 0; i < compound_frame; i++)
+    if (stack[i].open == '{') outer_brace_count++;
+  static const char marker[] =
+      ";\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  size_t prefix_length = statement_end + (ends_with_comma ? 0 : 1);
+  size_t marker_offset = ends_with_comma ? 0 : 1;
+  if (outer_brace_count > SIZE_MAX / 2 ||
+      prefix_length > SIZE_MAX - (sizeof(marker) - marker_offset) ||
+      prefix_length + sizeof(marker) - marker_offset >
+          SIZE_MAX - outer_brace_count * 2)
+    return NULL;
+  size_t result_length = prefix_length + sizeof(marker) - 1 - marker_offset +
+                         outer_brace_count * 2;
+  char *result = malloc(result_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, prefix_length);
+  size_t output = prefix_length;
+  memcpy(result + output, marker + marker_offset,
+         sizeof(marker) - 1 - marker_offset);
+  output += sizeof(marker) - 1 - marker_offset;
+  for (size_t i = 0; i < outer_brace_count; i++) {
+    result[output++] = '}';
+    result[output++] = '\n';
+  }
+  result[output] = '\0';
+  if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+  if (source_consumed) *source_consumed = prefix_length;
+  return result;
 }
 
 static analysis_type_name_array_bound_tail_t
@@ -2681,7 +2782,8 @@ analysis_complete_type_name_array_bound_tail(
         !is_explicit_type_name_context &&
         analysis_complete_expression_statement_tail_end_mode(
             source, source_length, stack, i - 1, type_name_end + 1,
-            append_compound_literal, enable_trigraphs, &statement_end);
+            append_compound_literal, enable_trigraphs, 0,
+            &statement_end, NULL);
     tail.kind = ANALYSIS_TYPE_NAME_ARRAY_BOUND_PARENTHESIZED;
     tail.context_frame = i - 1;
     tail.tail_end = preserve_statement ? statement_end : type_name_end;
@@ -2924,6 +3026,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     int opens_type_name_context = 0;
     int opens_sizeof_context = 0;
     int opens_postfix_parenthesized = 0;
+    int opens_compound_literal = 0;
     int current_identifier_is_default = 0;
     if (is_identifier_byte((unsigned char)c)) {
       if (i == 0 ||
@@ -3012,6 +3115,13 @@ static char *build_recovery_source(const char *source, size_t source_length,
       opens_postfix_parenthesized =
           c == '(' && previous_token_ends_expression &&
           !adjacent_definite_type_name_cast;
+      if (c == '{' && last_closed_parenthesized_is_type_name &&
+          last_closed_parenthesized_end <= i) {
+        size_t after_type_name = skip_analysis_space_and_comments_mode(
+            source, source_length, last_closed_parenthesized_end,
+            enable_trigraphs);
+        opens_compound_literal = after_type_name == i;
+      }
       previous_token_is_for = 0;
       previous_token_is_generic = 0;
       previous_token_requires_type_name = 0;
@@ -3035,6 +3145,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
           .requires_type_name = opens_type_name_context,
           .is_sizeof_context = opens_sizeof_context,
           .is_postfix_parenthesized = opens_postfix_parenthesized,
+          .is_compound_literal = opens_compound_literal,
           .pending_conditional_count = 0,
       };
     } else if ((c == ')' || c == ']' || c == '}') && stack_count > 0) {
@@ -3099,6 +3210,21 @@ static char *build_recovery_source(const char *source, size_t source_length,
     }
     if (closes_case_expression) case_expression_active = 0;
     if (!isspace((unsigned char)c)) last_significant = c;
+  }
+  if (has_complete_identifier) {
+    size_t compound_literal_consumed = recovery_cursor;
+    char *compound_literal_designator_recovery =
+        build_compound_literal_designator_recovery_source(
+            source, source_length, stack, stack_count,
+            &cursor_identifier, enable_trigraphs, changed,
+            &compound_literal_consumed);
+    if (compound_literal_designator_recovery) {
+      free(stack);
+      free(result);
+      return append_conditional_validation_tail(
+          compound_literal_designator_recovery, source,
+          source_length, compound_literal_consumed);
+    }
   }
   size_t length = recovery_cursor;
 #define APPEND_LITERAL(text)                                                     \
