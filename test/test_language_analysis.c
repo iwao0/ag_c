@@ -22,6 +22,9 @@ static char *enum_two_argument_macro_source(
     const char *source, int argument_index, int revision);
 static char *enum_two_argument_paired_macro_source(
     const char *source, int missing_argument_mode);
+static char *enum_two_argument_paired_rename_source(
+    const char *source, int renamed_argument_index,
+    int other_argument_missing);
 
 static char *read_fixture_source(const char *path, size_t *length) {
   if (length) *length = 0;
@@ -2831,17 +2834,24 @@ static int print_enum_two_argument_call_parity_snapshot(
       !state_text[0] || !state_end || *state_end != '\0' ||
       parsed_state > 1 || !argument_mode_text[0] ||
       !argument_mode_end || *argument_mode_end != '\0' ||
-      parsed_argument_mode > 3 || !argument_revision_text[0] ||
+      parsed_argument_mode > 5 || !argument_revision_text[0] ||
       !argument_revision_end || *argument_revision_end != '\0' ||
       parsed_argument_revision > 3 ||
       (parsed_argument_mode == 0 && parsed_argument_revision != 0) ||
+      (parsed_argument_mode >= 4 && parsed_argument_revision > 1) ||
       !cursor_text[0] || !cursor_end ||
       *cursor_end != '\0')
     return 1;
   const char *source =
       enum_two_argument_call_sources[(size_t)parsed_variant];
   char *owned_source = NULL;
-  if (parsed_argument_mode == 3) {
+  if (parsed_argument_mode >= 4) {
+    owned_source = enum_two_argument_paired_rename_source(
+        source, (int)parsed_argument_mode - 3,
+        (int)parsed_argument_revision);
+    if (!owned_source) return 1;
+    source = owned_source;
+  } else if (parsed_argument_mode == 3) {
     owned_source = enum_two_argument_paired_macro_source(
         source, (int)parsed_argument_revision);
     if (!owned_source) return 1;
@@ -3201,6 +3211,28 @@ static char *enum_two_argument_paired_macro_source(
   if (!first) return NULL;
   char *second = enum_two_argument_macro_source(
       first, 2, (missing_argument_mode & 2) ? 3 : 0);
+  free(first);
+  return second;
+}
+
+static char *enum_two_argument_paired_rename_source(
+    const char *source, int renamed_argument_index,
+    int other_argument_missing) {
+  if (!source || renamed_argument_index < 1 ||
+      renamed_argument_index > 2 || other_argument_missing < 0 ||
+      other_argument_missing > 1)
+    return NULL;
+  int first_revision = renamed_argument_index == 1
+                           ? 2
+                           : other_argument_missing ? 3 : 0;
+  int second_revision = renamed_argument_index == 2
+                            ? 2
+                            : other_argument_missing ? 3 : 0;
+  char *first = enum_two_argument_macro_source(
+      source, 1, first_revision);
+  if (!first) return NULL;
+  char *second = enum_two_argument_macro_source(
+      first, 2, second_revision);
   free(first);
   return second;
 }
@@ -5849,6 +5881,10 @@ static int test_enum_two_argument_call_cursor(
       {1, 0, 3, 2}, {1, 0, 3, 0},
       {2, 0, 3, 0}, {2, 0, 3, 2}, {2, 0, 3, 3},
       {2, 0, 3, 1}, {2, 0, 3, 0},
+      {1, 0, 3, 0}, {1, 0, 4, 0}, {1, 0, 4, 1},
+      {1, 0, 4, 0}, {1, 0, 3, 0}, {1, 1, 4, 1},
+      {3, 0, 3, 0}, {3, 0, 5, 0}, {3, 0, 5, 1},
+      {3, 0, 5, 0}, {3, 0, 3, 0}, {3, 1, 5, 1},
       {0, 0, 0, 0}, {3, 1, 0, 0},
   };
   for (size_t pass_index = 0;
@@ -5859,7 +5895,13 @@ static int test_enum_two_argument_call_cursor(
     int argument_revision = passes[pass_index].argument_revision;
     const char *source = enum_two_argument_call_sources[variant];
     char *owned_source = NULL;
-    if (argument_mode == 3) {
+    if (argument_mode >= 4) {
+      owned_source = enum_two_argument_paired_rename_source(
+          source, argument_mode - 3, argument_revision);
+      CHECK(owned_source != NULL,
+            "enum two argument paired rename source");
+      source = owned_source;
+    } else if (argument_mode == 3) {
       owned_source = enum_two_argument_paired_macro_source(
           source, argument_revision);
       CHECK(owned_source != NULL,
@@ -5876,25 +5918,38 @@ static int test_enum_two_argument_call_cursor(
         NULL,
         argument_mode == 1
             ? argument_macro_names[argument_revision][1]
-            : argument_mode == 3
+            : argument_mode == 3 || argument_mode == 5
                 ? argument_macro_names[0][1]
+            : argument_mode == 4
+                ? argument_macro_names[2][1]
                 : NULL,
         argument_mode == 2
             ? argument_macro_names[argument_revision][2]
-            : argument_mode == 3
+            : argument_mode == 3 || argument_mode == 4
                 ? argument_macro_names[0][2]
+            : argument_mode == 5
+                ? argument_macro_names[2][2]
                 : NULL};
     int missing_argument_mode =
         argument_mode == 3
             ? argument_revision
+        : argument_mode == 4
+            ? argument_revision ? 2 : 0
+        : argument_mode == 5
+            ? argument_revision ? 1 : 0
             : argument_revision == 3 ? argument_mode : 0;
     int argument_missing[] = {
         0, (missing_argument_mode & 1) != 0,
         (missing_argument_mode & 2) != 0};
     int first_missing_argument_index =
         argument_missing[1] ? 1 : argument_missing[2] ? 2 : 0;
-    int argument_metadata_revision =
-        argument_mode == 3 ? 0 : argument_revision;
+    int argument_metadata_revisions[] = {0, 0, 0};
+    if (argument_mode == 1 || argument_mode == 2)
+      argument_metadata_revisions[argument_mode] = argument_revision;
+    else if (argument_mode == 4)
+      argument_metadata_revisions[1] = 2;
+    else if (argument_mode == 5)
+      argument_metadata_revisions[2] = 2;
     const char *argument_names[] = {
         NULL,
         active_macro_names[1]
@@ -6088,7 +6143,7 @@ static int test_enum_two_argument_call_cursor(
             source, argument_macro_name);
         const char *comment = strstr(
             source,
-            argument_macro_comments[argument_metadata_revision]
+            argument_macro_comments[argument_metadata_revisions[macro_index]]
                                     [macro_index]);
         CHECK(declaration && comment &&
                   argument_macro_candidates[macro_index] &&
@@ -6102,7 +6157,8 @@ static int test_enum_two_argument_call_cursor(
                       ->macro_replacement &&
                   strcmp(argument_macro_candidates[macro_index]
                              ->macro_replacement,
-                         argument_macro_values[argument_metadata_revision]
+                         argument_macro_values
+                             [argument_metadata_revisions[macro_index]]
                                               [macro_index]) == 0 &&
                   argument_macro_candidates[macro_index]
                       ->declaration.source_name &&
@@ -6118,13 +6174,14 @@ static int test_enum_two_argument_call_cursor(
                             strlen(argument_macro_name)) &&
                   check_documentation_symbol(
                       argument_macro_candidates[macro_index],
-                      argument_macro_documentation[argument_metadata_revision]
+                      argument_macro_documentation
+                          [argument_metadata_revisions[macro_index]]
                                                   [macro_index],
                       "enum-two-argument-call.c",
                       (size_t)(comment - source),
                       (size_t)(comment - source) +
                           strlen(argument_macro_comments
-                                     [argument_metadata_revision]
+                                     [argument_metadata_revisions[macro_index]]
                                      [macro_index])),
               "enum two argument object macro fields");
       }

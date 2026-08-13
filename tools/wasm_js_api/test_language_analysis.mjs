@@ -2964,6 +2964,19 @@ function enumTwoArgumentPairedMacroSource(input, missingArgumentMode) {
     first, 2, (missingArgumentMode & 2) !== 0 ? 3 : 0,
   );
 }
+function enumTwoArgumentPairedRenameSource(
+  input, renamedArgumentIndex, otherArgumentMissing,
+) {
+  assert.ok(renamedArgumentIndex >= 1 && renamedArgumentIndex <= 2 &&
+    (otherArgumentMissing === 0 || otherArgumentMissing === 1),
+  "enum two argument paired rename source revision");
+  const firstRevision = renamedArgumentIndex === 1
+    ? 2 : otherArgumentMissing ? 3 : 0;
+  const secondRevision = renamedArgumentIndex === 2
+    ? 2 : otherArgumentMissing ? 3 : 0;
+  const first = enumTwoArgumentMacroSource(input, 1, firstRevision);
+  return enumTwoArgumentMacroSource(first, 2, secondRevision);
+}
 const incompleteEnumHeaderCases = [
   [0, "INCOMPLETE_HEADER_ENUM_VALUE", "INCOMPLETE_HEADER_ENUM_VALUE",
     "enumConstant", "17", "header enum value documentation", false],
@@ -4189,9 +4202,18 @@ try {
     [1, 0, 3, 2], [1, 0, 3, 0],
     [2, 0, 3, 0], [2, 0, 3, 2], [2, 0, 3, 3],
     [2, 0, 3, 1], [2, 0, 3, 0],
+    [1, 0, 3, 0], [1, 0, 4, 0], [1, 0, 4, 1],
+    [1, 0, 4, 0], [1, 0, 3, 0], [1, 1, 4, 1],
+    [3, 0, 3, 0], [3, 0, 5, 0], [3, 0, 5, 1],
+    [3, 0, 5, 0], [3, 0, 3, 0], [3, 1, 5, 1],
     [0, 0, 0, 0], [3, 1, 0, 0],
   ]) {
-    const source = argumentMode === 3
+    const source = argumentMode >= 4
+      ? enumTwoArgumentPairedRenameSource(
+        enumTwoArgumentCallSources[variant], argumentMode - 3,
+        argumentRevision,
+      )
+      : argumentMode === 3
       ? enumTwoArgumentPairedMacroSource(
         enumTwoArgumentCallSources[variant], argumentRevision,
       )
@@ -4206,13 +4228,21 @@ try {
       null,
       argumentMode === 1
         ? enumTwoArgumentMacroNames[argumentRevision][1]
-        : argumentMode === 3 ? enumTwoArgumentMacroNames[0][1] : null,
+        : argumentMode === 3 || argumentMode === 5
+          ? enumTwoArgumentMacroNames[0][1]
+          : argumentMode === 4 ? enumTwoArgumentMacroNames[2][1] : null,
       argumentMode === 2
         ? enumTwoArgumentMacroNames[argumentRevision][2]
-        : argumentMode === 3 ? enumTwoArgumentMacroNames[0][2] : null,
+        : argumentMode === 3 || argumentMode === 4
+          ? enumTwoArgumentMacroNames[0][2]
+          : argumentMode === 5 ? enumTwoArgumentMacroNames[2][2] : null,
     ];
     const missingArgumentMode = argumentMode === 3
       ? argumentRevision
+      : argumentMode === 4
+        ? argumentRevision ? 2 : 0
+      : argumentMode === 5
+        ? argumentRevision ? 1 : 0
       : argumentRevision === 3 ? argumentMode : 0;
     const argumentMissing = [
       false,
@@ -4221,8 +4251,14 @@ try {
     ];
     const firstMissingArgumentIndex = argumentMissing[1]
       ? 1 : argumentMissing[2] ? 2 : 0;
-    const argumentMetadataRevision = argumentMode === 3
-      ? 0 : argumentRevision;
+    const argumentMetadataRevisions = [0, 0, 0];
+    if (argumentMode === 1 || argumentMode === 2) {
+      argumentMetadataRevisions[argumentMode] = argumentRevision;
+    } else if (argumentMode === 4) {
+      argumentMetadataRevisions[1] = 2;
+    } else if (argumentMode === 5) {
+      argumentMetadataRevisions[2] = 2;
+    }
     const argumentNames = [
       null,
       activeMacroNames[1] ?? enumTwoArgumentNames[1],
@@ -4395,14 +4431,15 @@ try {
         }
         const declarationIndex = text.indexOf(argumentMacroName);
         const comment = enumTwoArgumentMacroComments
-          [argumentMetadataRevision][macroIndex];
+          [argumentMetadataRevisions[macroIndex]][macroIndex];
         const commentIndex = text.indexOf(comment);
         const argumentMacroCandidate = argumentMacroCandidates[macroIndex];
         assert.equal(argumentMacroCandidate?.macro?.functionLike, false);
         assert.equal(argumentMacroCandidate?.macro?.variadic, false);
         assert.deepStrictEqual(argumentMacroCandidate?.macro?.parameters, []);
         assert.equal(argumentMacroCandidate?.macro?.replacement,
-          enumTwoArgumentMacroValues[argumentMetadataRevision][macroIndex]);
+          enumTwoArgumentMacroValues
+            [argumentMetadataRevisions[macroIndex]][macroIndex]);
         assert.equal(argumentMacroCandidate?.declaration.sourceName,
           source.name);
         assert.equal(argumentMacroCandidate?.declaration.start.offset,
@@ -4411,7 +4448,7 @@ try {
           declarationIndex + Buffer.byteLength(argumentMacroName));
         assert.equal(argumentMacroCandidate?.documentation,
           enumTwoArgumentMacroDocumentation
-            [argumentMetadataRevision][macroIndex]);
+            [argumentMetadataRevisions[macroIndex]][macroIndex]);
         assert.equal(argumentMacroCandidate?.documentationRange?.sourceName,
           source.name);
         assert.equal(argumentMacroCandidate?.documentationRange?.start.offset,
