@@ -32734,3 +32734,35 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ2引数callで第1・第2引数のどちらか一方だけをobject-like macroへ切り替え、comment/splice variant間を往復しても
     各引数のhover kindとmacro metadataがcallee macroのmetadataへ混線しない境界を確認する。
+
+### このセッション（続き1117）: 2引数callの片側object-like macro引数を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1116と同じ通常サイズの単一の完結した2引数callで、第1・第2引数のどちらか片側だけをobject-like macroへ切り替えた。
+- 調査結果:
+  - comment、LF line splice、CRLF line spliceの全variantで、引数macro上のhoverはsource側object-like macro自身を選び、
+    header側calleeのfunction-like macro metadataと混線しなかった。
+  - 引数macroは空parameter列、replacement 1/2、source上のdeclaration/documentation rangeを返し、反対側のenum定数と
+    calleeの2 parameter・replacementを独立に維持した。
+  - macro有効時は派生enumerator値103を維持し、代表的なenum-only状態では引数macro候補を残したまま実際の`(`にE3102を付け、
+    invalid derived enumeratorを公開しなかった。Native/Wasm差や追加のproduction code不具合は見つからなかった。
+- 回帰範囲:
+  - 第1引数macro・第2引数macroそれぞれについてcomment/LF/CRLF variantを確認し、代表的なcomment/CRLF variantは
+    enum-only状態も確認した。
+  - callee、`(`直後、両引数の先頭・中央・末尾・前後、comma前後、`)`直後、comment内部、両line splice位置を往復し、
+    hover kind、macro/enum metadata、documentation/range、dependency、派生値またはE3102を固定した。
+  - 同一Native/Wasm instanceで元のenum引数状態と片側macro状態を往復し、各位置のfresh Native JSON snapshot完全一致と
+    復帰snapshotの完全一致を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - regression追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ片側object-like macro引数のreplacementだけを通常サイズで更新・復元し、comment/splice variant間を往復しても
+    引数macro metadata、派生enumerator値、callee metadataに旧revisionの状態を残さない境界を確認する。

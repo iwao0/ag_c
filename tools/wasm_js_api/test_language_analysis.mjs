@@ -2903,6 +2903,33 @@ const enumTwoArgumentCallSources = [
   name: "enum-two-argument-call.c",
   source: enumTwoArgumentCallPrefix + source,
 }));
+function enumTwoArgumentMacroSource(input, argumentMode) {
+  const enumNames = [
+    "ENUM_TWO_ARGUMENT_FIRST", "ENUM_TWO_ARGUMENT_SECOND",
+  ];
+  const macroNames = [
+    "ENUM_TWO_ARGUMENT_FIRST_MACRO",
+    "ENUM_TWO_ARGUMENT_SECOND_MACRO",
+  ];
+  const declarations = [
+    "/// enum two argument first macro\n" +
+      "#define ENUM_TWO_ARGUMENT_FIRST_MACRO 1\n",
+    "/// enum two argument second macro\n" +
+      "#define ENUM_TWO_ARGUMENT_SECOND_MACRO 2\n",
+  ];
+  const index = argumentMode - 1;
+  const insertionIndex = input.source.indexOf("\n") + 1;
+  const useIndex = input.source.lastIndexOf(enumNames[index]);
+  assert.ok(argumentMode >= 1 && argumentMode <= 2 &&
+    insertionIndex > 0 && useIndex > insertionIndex,
+  "enum two argument macro source anchors");
+  return {
+    name: input.name,
+    source: input.source.slice(0, insertionIndex) + declarations[index] +
+      input.source.slice(insertionIndex, useIndex) + macroNames[index] +
+      input.source.slice(useIndex + enumNames[index].length),
+  };
+}
 const incompleteEnumHeaderCases = [
   [0, "INCOMPLETE_HEADER_ENUM_VALUE", "INCOMPLETE_HEADER_ENUM_VALUE",
     "enumConstant", "17", "header enum value documentation", false],
@@ -4061,30 +4088,57 @@ const enumTwoArgumentComments = [
   "/// enum two argument first",
   "/// enum two argument second",
 ];
+const enumTwoArgumentMacroNames = [
+  null, "ENUM_TWO_ARGUMENT_FIRST_MACRO",
+  "ENUM_TWO_ARGUMENT_SECOND_MACRO",
+];
+const enumTwoArgumentMacroValues = [null, "1", "2"];
+const enumTwoArgumentMacroDocumentation = [
+  null, "enum two argument first macro",
+  "enum two argument second macro",
+];
+const enumTwoArgumentMacroComments = [
+  null, "/// enum two argument first macro",
+  "/// enum two argument second macro",
+];
 const enumTwoArgumentFirstResults = new Map();
 try {
-  for (const [variant, state] of [
-    [0, 0], [1, 0], [2, 0], [3, 0],
-    [0, 1], [1, 1], [2, 1], [3, 1],
-    [0, 0], [3, 1],
+  for (const [variant, state, argumentMode] of [
+    [0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0],
+    [0, 1, 0], [1, 1, 0], [2, 1, 0], [3, 1, 0],
+    [1, 0, 1], [2, 0, 1], [3, 0, 1],
+    [1, 0, 2], [2, 0, 2], [3, 0, 2],
+    [1, 1, 1], [3, 1, 2],
+    [0, 0, 0], [3, 1, 0], [1, 0, 1], [3, 1, 2],
   ]) {
-    const source = enumTwoArgumentCallSources[variant];
+    const source = argumentMode > 0
+      ? enumTwoArgumentMacroSource(
+        enumTwoArgumentCallSources[variant], argumentMode,
+      )
+      : enumTwoArgumentCallSources[variant];
     const text = source.source;
+    const argumentNames = [
+      null,
+      argumentMode === 1
+        ? enumTwoArgumentMacroNames[1] : enumTwoArgumentNames[1],
+      argumentMode === 2
+        ? enumTwoArgumentMacroNames[2] : enumTwoArgumentNames[2],
+    ];
     const calleeIndex = text.lastIndexOf(enumTwoArgumentNames[0]);
     const callOpenIndex = text.indexOf(
       "(", calleeIndex + enumTwoArgumentNames[0].length,
     );
     const firstIndex = text.indexOf(
-      enumTwoArgumentNames[1], callOpenIndex + 1,
+      argumentNames[1], callOpenIndex + 1,
     );
     const commaIndex = text.indexOf(
-      ",", firstIndex + enumTwoArgumentNames[1].length,
+      ",", firstIndex + argumentNames[1].length,
     );
     const secondIndex = text.indexOf(
-      enumTwoArgumentNames[2], commaIndex + 1,
+      argumentNames[2], commaIndex + 1,
     );
     const callCloseIndex = text.indexOf(
-      ")", secondIndex + enumTwoArgumentNames[2].length,
+      ")", secondIndex + argumentNames[2].length,
     );
     assert.ok(calleeIndex >= 0 && callOpenIndex >= 0 && firstIndex >= 0 &&
       commaIndex >= 0 && secondIndex >= 0 && callCloseIndex >= 0,
@@ -4092,11 +4146,11 @@ try {
     const calleeStart = byteOffsetForIndex(text, calleeIndex);
     const callOpen = byteOffsetForIndex(text, callOpenIndex);
     const firstStart = byteOffsetForIndex(text, firstIndex);
-    const firstEnd = firstStart + Buffer.byteLength(enumTwoArgumentNames[1]);
+    const firstEnd = firstStart + Buffer.byteLength(argumentNames[1]);
     const comma = byteOffsetForIndex(text, commaIndex);
     const secondStart = byteOffsetForIndex(text, secondIndex);
     const secondEnd = secondStart +
-      Buffer.byteLength(enumTwoArgumentNames[2]);
+      Buffer.byteLength(argumentNames[2]);
     const callEnd = byteOffsetForIndex(text, callCloseIndex + 1);
     const calleeMiddle = calleeStart +
       Math.floor(Buffer.byteLength(enumTwoArgumentNames[0]) / 2);
@@ -4106,7 +4160,7 @@ try {
         0, "callee-end"],
       [callOpen + 1, -1, "call-open"],
       [firstStart, 1, "first-start"],
-      [firstStart + Math.floor(Buffer.byteLength(enumTwoArgumentNames[1]) / 2),
+      [firstStart + Math.floor(Buffer.byteLength(argumentNames[1]) / 2),
         1, "first-middle"],
       [firstEnd, 1, "first-end"],
       [firstEnd + 1, -1, "first-after"],
@@ -4115,7 +4169,7 @@ try {
       [secondStart - 1, -1, "second-before"],
       [secondStart, 2, "second-start"],
       [secondStart +
-        Math.floor(Buffer.byteLength(enumTwoArgumentNames[2]) / 2),
+        Math.floor(Buffer.byteLength(argumentNames[2]) / 2),
       2, "second-middle"],
       [secondEnd, 2, "second-end"],
       [secondEnd + 1, -1, "second-after"],
@@ -4166,11 +4220,14 @@ try {
       assert.deepStrictEqual(
         result.dependencies, ["enum-two-argument-call.h"],
       );
+      const enumBlockIndex = text.indexOf(
+        "enum EnumTwoArgumentValues {\n",
+      );
       const enumCandidates = enumTwoArgumentNames.map((name, index) => {
         const candidate = symbol(result, name, "enumConstant");
-        const declarationIndex = text.indexOf(name);
+        const declarationIndex = text.indexOf(name, enumBlockIndex);
         const commentIndex = text.indexOf(
-          enumTwoArgumentComments[index],
+          enumTwoArgumentComments[index], enumBlockIndex,
         );
         assert.equal(candidate?.initializer.constantValue,
           enumTwoArgumentValues[index]);
@@ -4221,6 +4278,40 @@ try {
         assert.equal(macroCandidate?.documentationRange?.end.offset,
           commentIndex + Buffer.byteLength(comment));
       }
+      const argumentMacroCandidate = argumentMode > 0
+        ? symbol(
+          result, enumTwoArgumentMacroNames[argumentMode], "macro",
+        )
+        : undefined;
+      if (argumentMode > 0) {
+        const otherMode = argumentMode === 1 ? 2 : 1;
+        const argumentMacroName = enumTwoArgumentMacroNames[argumentMode];
+        const declarationIndex = text.indexOf(argumentMacroName);
+        const comment = enumTwoArgumentMacroComments[argumentMode];
+        const commentIndex = text.indexOf(comment);
+        assert.equal(argumentMacroCandidate?.macro?.functionLike, false);
+        assert.equal(argumentMacroCandidate?.macro?.variadic, false);
+        assert.deepStrictEqual(argumentMacroCandidate?.macro?.parameters, []);
+        assert.equal(argumentMacroCandidate?.macro?.replacement,
+          enumTwoArgumentMacroValues[argumentMode]);
+        assert.equal(argumentMacroCandidate?.declaration.sourceName,
+          source.name);
+        assert.equal(argumentMacroCandidate?.declaration.start.offset,
+          declarationIndex);
+        assert.equal(argumentMacroCandidate?.declaration.end.offset,
+          declarationIndex + Buffer.byteLength(argumentMacroName));
+        assert.equal(argumentMacroCandidate?.documentation,
+          enumTwoArgumentMacroDocumentation[argumentMode]);
+        assert.equal(argumentMacroCandidate?.documentationRange?.sourceName,
+          source.name);
+        assert.equal(argumentMacroCandidate?.documentationRange?.start.offset,
+          commentIndex);
+        assert.equal(argumentMacroCandidate?.documentationRange?.end.offset,
+          commentIndex + Buffer.byteLength(comment));
+        assert.equal(symbol(
+          result, enumTwoArgumentMacroNames[otherMode], "macro",
+        ), undefined);
+      }
       const derived = symbol(
         result, "ENUM_TWO_ARGUMENT_DERIVED", "enumConstant",
       );
@@ -4242,7 +4333,9 @@ try {
       const expectedHover = hoverEnumIndex < 0
         ? null
         : hoverEnumIndex === 0 && !enumOnly
-          ? macroCandidate : enumCandidates[hoverEnumIndex];
+          ? macroCandidate
+          : hoverEnumIndex === argumentMode && argumentMode > 0
+            ? argumentMacroCandidate : enumCandidates[hoverEnumIndex];
       if (expectedHover) {
         assert.equal(result.hover?.kind, expectedHover.kind);
         assert.deepStrictEqual(result.hover?.declaration,
@@ -4250,11 +4343,11 @@ try {
       } else {
         assert.equal(result.hover, null);
       }
-      const key = `${variant}:${state}:${byteOffset}`;
+      const key = `${variant}:${state}:${argumentMode}:${byteOffset}`;
       const firstResult = enumTwoArgumentFirstResults.get(key);
       if (firstResult) {
         assert.deepStrictEqual(result, firstResult,
-          `Wasm enum two argument call retained stale state for ${variant}, ${state}, ${label}`);
+          `Wasm enum two argument call retained stale state for ${variant}, ${state}, ${argumentMode}, ${label}`);
       } else {
         enumTwoArgumentFirstResults.set(key, result);
         assert.deepStrictEqual(
@@ -4262,10 +4355,10 @@ try {
           JSON.parse(execFileSync(
             nativeAnalysisPath,
             ["--enum-two-argument-call-parity-json", String(variant),
-              String(state), String(byteOffset)],
+              String(state), String(argumentMode), String(byteOffset)],
             { encoding: "utf8" },
           )),
-          `native and Wasm enum two argument call differ for ${variant}, ${state}, ${label}`,
+          `native and Wasm enum two argument call differ for ${variant}, ${state}, ${argumentMode}, ${label}`,
         );
       }
     }
