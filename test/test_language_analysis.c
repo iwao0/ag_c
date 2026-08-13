@@ -31,6 +31,8 @@ static char *enum_two_argument_paired_update_source(
 static char *enum_two_argument_paired_rename_update_source(
     const char *source, int renamed_argument_index,
     int updated_argument_missing);
+static char *enum_two_argument_both_renamed_source(
+    const char *source, int missing_argument_mode);
 
 static char *read_fixture_source(const char *path, size_t *length) {
   if (length) *length = 0;
@@ -2840,18 +2842,24 @@ static int print_enum_two_argument_call_parity_snapshot(
       !state_text[0] || !state_end || *state_end != '\0' ||
       parsed_state > 1 || !argument_mode_text[0] ||
       !argument_mode_end || *argument_mode_end != '\0' ||
-      parsed_argument_mode > 9 || !argument_revision_text[0] ||
+      parsed_argument_mode > 10 || !argument_revision_text[0] ||
       !argument_revision_end || *argument_revision_end != '\0' ||
       parsed_argument_revision > 3 ||
       (parsed_argument_mode == 0 && parsed_argument_revision != 0) ||
-      (parsed_argument_mode >= 4 && parsed_argument_revision > 1) ||
+      (parsed_argument_mode >= 4 && parsed_argument_mode <= 9 &&
+       parsed_argument_revision > 1) ||
       !cursor_text[0] || !cursor_end ||
       *cursor_end != '\0')
     return 1;
   const char *source =
       enum_two_argument_call_sources[(size_t)parsed_variant];
   char *owned_source = NULL;
-  if (parsed_argument_mode >= 8) {
+  if (parsed_argument_mode == 10) {
+    owned_source = enum_two_argument_both_renamed_source(
+        source, (int)parsed_argument_revision);
+    if (!owned_source) return 1;
+    source = owned_source;
+  } else if (parsed_argument_mode >= 8) {
     owned_source = enum_two_argument_paired_rename_update_source(
         source, (int)parsed_argument_mode - 7,
         (int)parsed_argument_revision);
@@ -3297,6 +3305,37 @@ static char *enum_two_argument_paired_rename_update_source(
       first, 2, second_revision);
   free(first);
   return second;
+}
+
+static char *enum_two_argument_both_renamed_source(
+    const char *source, int missing_argument_mode) {
+  static const char *const renamed_declarations[] = {
+      "/// enum two argument first renamed macro\n"
+      "#define ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO 1\n",
+      "/// enum two argument second renamed macro\n"
+      "#define ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO 2\n"};
+  if (!source || missing_argument_mode < 0 ||
+      missing_argument_mode > 3)
+    return NULL;
+  char *first = enum_two_argument_macro_source(
+      source, 1, 2);
+  if (!first) return NULL;
+  char *renamed = enum_two_argument_macro_source(first, 2, 2);
+  free(first);
+  if (!renamed) return NULL;
+  for (int argument_index = 0; argument_index < 2; argument_index++) {
+    if (!(missing_argument_mode & (1 << argument_index))) continue;
+    const char *declaration = renamed_declarations[argument_index];
+    char *position = strstr(renamed, declaration);
+    if (!position) {
+      free(renamed);
+      return NULL;
+    }
+    size_t declaration_length = strlen(declaration);
+    memmove(position, position + declaration_length,
+            strlen(position + declaration_length) + 1);
+  }
+  return renamed;
 }
 
 static int check_documentation_symbol(
@@ -5955,6 +5994,12 @@ static int test_enum_two_argument_call_cursor(
       {1, 0, 8, 0}, {1, 0, 3, 0}, {1, 1, 8, 1},
       {3, 0, 3, 0}, {3, 0, 9, 0}, {3, 0, 9, 1},
       {3, 0, 9, 0}, {3, 0, 3, 0}, {3, 1, 9, 1},
+      {1, 0, 3, 0}, {1, 0, 10, 0}, {1, 0, 10, 1},
+      {1, 0, 10, 0}, {1, 0, 10, 2}, {1, 0, 10, 0},
+      {1, 0, 3, 0}, {1, 1, 10, 1},
+      {3, 0, 3, 0}, {3, 0, 10, 0}, {3, 0, 10, 2},
+      {3, 0, 10, 0}, {3, 0, 10, 1}, {3, 0, 10, 0},
+      {3, 0, 3, 0}, {3, 1, 10, 2},
       {0, 0, 0, 0}, {3, 1, 0, 0},
   };
   for (size_t pass_index = 0;
@@ -5965,7 +6010,13 @@ static int test_enum_two_argument_call_cursor(
     int argument_revision = passes[pass_index].argument_revision;
     const char *source = enum_two_argument_call_sources[variant];
     char *owned_source = NULL;
-    if (argument_mode >= 8) {
+    if (argument_mode == 10) {
+      owned_source = enum_two_argument_both_renamed_source(
+          source, argument_revision);
+      CHECK(owned_source != NULL,
+            "enum two argument both renamed source");
+      source = owned_source;
+    } else if (argument_mode >= 8) {
       owned_source = enum_two_argument_paired_rename_update_source(
           source, argument_mode - 7, argument_revision);
       CHECK(owned_source != NULL,
@@ -6004,7 +6055,8 @@ static int test_enum_two_argument_call_cursor(
                   argument_mode == 6 || argument_mode == 7 ||
                   argument_mode == 9
                 ? argument_macro_names[0][1]
-            : argument_mode == 4 || argument_mode == 8
+            : argument_mode == 4 || argument_mode == 8 ||
+                  argument_mode == 10
                 ? argument_macro_names[2][1]
                 : NULL,
         argument_mode == 2
@@ -6013,7 +6065,8 @@ static int test_enum_two_argument_call_cursor(
                   argument_mode == 6 || argument_mode == 7 ||
                   argument_mode == 8
                 ? argument_macro_names[0][2]
-            : argument_mode == 5 || argument_mode == 9
+            : argument_mode == 5 || argument_mode == 9 ||
+                  argument_mode == 10
                 ? argument_macro_names[2][2]
                 : NULL};
     int missing_argument_mode =
@@ -6031,6 +6084,8 @@ static int test_enum_two_argument_call_cursor(
             ? argument_revision ? 2 : 0
         : argument_mode == 9
             ? argument_revision ? 1 : 0
+        : argument_mode == 10
+            ? argument_revision
             : argument_revision == 3 ? argument_mode : 0;
     int argument_missing[] = {
         0, (missing_argument_mode & 1) != 0,
@@ -6053,6 +6108,9 @@ static int test_enum_two_argument_call_cursor(
       argument_metadata_revisions[2] = 1;
     } else if (argument_mode == 9) {
       argument_metadata_revisions[1] = 1;
+      argument_metadata_revisions[2] = 2;
+    } else if (argument_mode == 10) {
+      argument_metadata_revisions[1] = 2;
       argument_metadata_revisions[2] = 2;
     }
     const char *argument_names[] = {

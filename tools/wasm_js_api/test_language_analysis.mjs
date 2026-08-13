@@ -3003,6 +3003,27 @@ function enumTwoArgumentPairedRenameUpdateSource(
   const first = enumTwoArgumentMacroSource(input, 1, firstRevision);
   return enumTwoArgumentMacroSource(first, 2, secondRevision);
 }
+function enumTwoArgumentBothRenamedSource(input, missingArgumentMode) {
+  const renamedDeclarations = [
+    "/// enum two argument first renamed macro\n" +
+      "#define ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO 1\n",
+    "/// enum two argument second renamed macro\n" +
+      "#define ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO 2\n",
+  ];
+  assert.ok(missingArgumentMode >= 0 && missingArgumentMode <= 3,
+    "enum two argument both renamed source revision");
+  const first = enumTwoArgumentMacroSource(input, 1, 2);
+  const renamed = enumTwoArgumentMacroSource(first, 2, 2);
+  let source = renamed.source;
+  for (let argumentIndex = 0; argumentIndex < 2; argumentIndex++) {
+    if ((missingArgumentMode & (1 << argumentIndex)) === 0) continue;
+    const declaration = renamedDeclarations[argumentIndex];
+    assert.ok(source.includes(declaration),
+      "enum two argument renamed declaration anchor");
+    source = source.replace(declaration, "");
+  }
+  return {name: renamed.name, source};
+}
 const incompleteEnumHeaderCases = [
   [0, "INCOMPLETE_HEADER_ENUM_VALUE", "INCOMPLETE_HEADER_ENUM_VALUE",
     "enumConstant", "17", "header enum value documentation", false],
@@ -4240,9 +4261,19 @@ try {
     [1, 0, 8, 0], [1, 0, 3, 0], [1, 1, 8, 1],
     [3, 0, 3, 0], [3, 0, 9, 0], [3, 0, 9, 1],
     [3, 0, 9, 0], [3, 0, 3, 0], [3, 1, 9, 1],
+    [1, 0, 3, 0], [1, 0, 10, 0], [1, 0, 10, 1],
+    [1, 0, 10, 0], [1, 0, 10, 2], [1, 0, 10, 0],
+    [1, 0, 3, 0], [1, 1, 10, 1],
+    [3, 0, 3, 0], [3, 0, 10, 0], [3, 0, 10, 2],
+    [3, 0, 10, 0], [3, 0, 10, 1], [3, 0, 10, 0],
+    [3, 0, 3, 0], [3, 1, 10, 2],
     [0, 0, 0, 0], [3, 1, 0, 0],
   ]) {
-    const source = argumentMode >= 8
+    const source = argumentMode === 10
+      ? enumTwoArgumentBothRenamedSource(
+        enumTwoArgumentCallSources[variant], argumentRevision,
+      )
+      : argumentMode >= 8
       ? enumTwoArgumentPairedRenameUpdateSource(
         enumTwoArgumentCallSources[variant], argumentMode - 7,
         argumentRevision,
@@ -4275,14 +4306,14 @@ try {
         : argumentMode === 3 || argumentMode === 5 ||
             argumentMode === 6 || argumentMode === 7 || argumentMode === 9
           ? enumTwoArgumentMacroNames[0][1]
-          : argumentMode === 4 || argumentMode === 8
+          : argumentMode === 4 || argumentMode === 8 || argumentMode === 10
             ? enumTwoArgumentMacroNames[2][1] : null,
       argumentMode === 2
         ? enumTwoArgumentMacroNames[argumentRevision][2]
         : argumentMode === 3 || argumentMode === 4 ||
             argumentMode === 6 || argumentMode === 7 || argumentMode === 8
           ? enumTwoArgumentMacroNames[0][2]
-          : argumentMode === 5 || argumentMode === 9
+          : argumentMode === 5 || argumentMode === 9 || argumentMode === 10
             ? enumTwoArgumentMacroNames[2][2] : null,
     ];
     const missingArgumentMode = argumentMode === 3
@@ -4299,6 +4330,8 @@ try {
         ? argumentRevision ? 2 : 0
       : argumentMode === 9
         ? argumentRevision ? 1 : 0
+      : argumentMode === 10
+        ? argumentRevision
       : argumentRevision === 3 ? argumentMode : 0;
     const argumentMissing = [
       false,
@@ -4323,6 +4356,9 @@ try {
       argumentMetadataRevisions[2] = 1;
     } else if (argumentMode === 9) {
       argumentMetadataRevisions[1] = 1;
+      argumentMetadataRevisions[2] = 2;
+    } else if (argumentMode === 10) {
+      argumentMetadataRevisions[1] = 2;
       argumentMetadataRevisions[2] = 2;
     }
     const argumentNames = [
