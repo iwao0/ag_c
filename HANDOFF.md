@@ -32018,3 +32018,35 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `git diff --check`問題なし。
 - 未実施:
   - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+
+### このセッション（続き1094）: 列挙子initializer内のoperand hoverを安定化した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 通常サイズの浅い宣言内定数式を横断probeし、解析例外になるenum initializerを選んだ。
+- 原因と修正:
+  - enum専用recoveryはcursor識別子が列挙子の宣言名である場合だけ選択中のenumeratorを保持していた。
+  - initializer中の先行enum定数やmacroでは汎用recoveryへ落ちてenum本体を閉じず、valid sourceを
+    E2006の解析例外にしていた。
+  - 現在のenumerator区間でtop-levelの`=`がcursorより前にあり、対応する`,`または`}`がsource中に
+    実在する場合だけ、そのenumerator末尾まで原文を保持してenum宣言を閉じる。
+  - initializerの意味評価や再帰的な式走査、深度上限の拡張は追加していない。
+- 回帰範囲:
+  - file-scopeとblock-scope、単項、二項、括弧、式中2個目のidentifier、浅い条件演算子を網羅した。
+  - enum constantとobject-like macro、block comment、LF/CRLF行継続を網羅した。
+  - 各identifierの先頭・中央・末尾、正確なdeclaration range、enum値、macro replacementと
+    documentation、同一session/fresh sessionをNativeで固定した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、fresh compilerを確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (45 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - 同じ横断probeではdesignated initializerのindex operandとtype-name配列境界のoperandにも
+    解析例外が残った。いずれも独立したrecovery経路として次回切り分ける。
+  - 末尾`,`/`}`のないenum initializerは今回の専用経路には入らないが、既存の汎用recoveryが
+    仮operandでcomplete扱いにする別挙動があるため、未完了sourceのpartial契約として別途扱う。

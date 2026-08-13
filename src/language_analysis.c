@@ -1004,6 +1004,84 @@ static int enum_enumerator_bounds(
   return 0;
 }
 
+static int enum_initializer_operand_end(
+    const char *source, size_t length, size_t enum_open,
+    size_t operand_start, size_t *item_end) {
+  size_t segment_start = enum_open + 1;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int saw_initializer = 0;
+  for (size_t i = segment_start; i < length; i++) {
+    char c = source[i];
+    char next = i + 1 < length ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') line_comment = 0;
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      continue;
+    }
+    if ((c == ',' || c == '}') && paren_depth == 0 &&
+        bracket_depth == 0 && brace_depth == 0) {
+      if (operand_start >= segment_start && operand_start < i) {
+        if (!saw_initializer) return 0;
+        *item_end = i;
+        return 1;
+      }
+      if (c == '}') return 0;
+      segment_start = i + 1;
+      saw_initializer = 0;
+      continue;
+    }
+    if (i < operand_start && c == '=' && paren_depth == 0 &&
+        bracket_depth == 0 && brace_depth == 0)
+      saw_initializer = 1;
+    if (c == '(') paren_depth++;
+    else if (c == ')') {
+      if (paren_depth == 0) return 0;
+      paren_depth--;
+    } else if (c == '[') bracket_depth++;
+    else if (c == ']') {
+      if (bracket_depth == 0) return 0;
+      bracket_depth--;
+    } else if (c == '{') brace_depth++;
+    else if (c == '}') {
+      if (brace_depth == 0) return 0;
+      brace_depth--;
+    }
+  }
+  return 0;
+}
+
 static char *build_enum_declaration_recovery_source(
     const char *source, size_t length, size_t cursor, int *changed,
     size_t *source_consumed) {
@@ -1018,28 +1096,28 @@ static char *build_enum_declaration_recovery_source(
   size_t item_end = 0;
   if (!tag_body_open_at(
           source, name_start, "enum", &enum_open,
-          &outer_brace_count) ||
-      !enum_enumerator_bounds(
-          source, length, enum_open, name_start, name_end, &item_end))
+          &outer_brace_count))
+    return NULL;
+  if (!enum_enumerator_bounds(
+          source, length, enum_open, name_start, name_end, &item_end) &&
+      !enum_initializer_operand_end(
+          source, length, enum_open, name_start, &item_end))
     return NULL;
   static const char suffix[] =
       "} __agc_language_enum_holder;\n"
       "int " AG_LANGUAGE_CURSOR_MARKER ";\n";
-  size_t item_length = item_end - name_start;
-  if (name_start > SIZE_MAX - item_length ||
-      outer_brace_count > SIZE_MAX / 2 ||
-      name_start + item_length > SIZE_MAX - sizeof(suffix) ||
-      name_start + item_length + sizeof(suffix) >
+  if (outer_brace_count > SIZE_MAX / 2 ||
+      item_end > SIZE_MAX - sizeof(suffix) ||
+      item_end + sizeof(suffix) >
           SIZE_MAX - outer_brace_count * 2)
     return NULL;
   size_t result_length =
-      name_start + item_length + sizeof(suffix) - 1 +
+      item_end + sizeof(suffix) - 1 +
       outer_brace_count * 2;
   char *result = malloc(result_length + 1);
   if (!result) return NULL;
-  memcpy(result, source, name_start);
-  memcpy(result + name_start, source + name_start, item_length);
-  size_t output = name_start + item_length;
+  memcpy(result, source, item_end);
+  size_t output = item_end;
   memcpy(result + output, suffix, sizeof(suffix) - 1);
   output += sizeof(suffix) - 1;
   for (size_t i = 0; i < outer_brace_count; i++) {

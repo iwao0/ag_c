@@ -1933,6 +1933,149 @@ try {
   freshCaseExpressionCompiler.dispose();
 }
 
+const enumInitializerOperandHoverSource = {
+  name: "enum-initializer-operand.c",
+  source: "/// enum initializer macro documentation\n" +
+    "#define ENUM_INITIALIZER_MACRO 5\n" +
+    "enum EnumInitializerValue {\n" +
+    "  ENUM_INITIALIZER_BASE = 3,\n" +
+    "  ENUM_INITIALIZER_OTHER = 4,\n" +
+    "  ENUM_INITIALIZER_CONDITION = 0,\n" +
+    "  ENUM_INITIALIZER_UNARY = -ENUM_INITIALIZER_BASE,\n" +
+    "  ENUM_INITIALIZER_BINARY = 1 + ENUM_INITIALIZER_OTHER,\n" +
+    "  ENUM_INITIALIZER_GROUPED = (ENUM_INITIALIZER_BASE),\n" +
+    "  ENUM_INITIALIZER_SECOND = ENUM_INITIALIZER_BASE + ENUM_INITIALIZER_OTHER,\n" +
+    "  ENUM_INITIALIZER_CONDITIONAL = ENUM_INITIALIZER_CONDITION\n" +
+    "      ? ENUM_INITIALIZER_BASE : ENUM_INITIALIZER_OTHER,\n" +
+    "  ENUM_INITIALIZER_MACRO_USE = ENUM_INITIALIZER_BASE + ENUM_INITIALIZER_MACRO,\n" +
+    "  ENUM_INITIALIZER_COMMENT = ENUM_INITIALIZER_BASE /* expression gap */ + ENUM_INITIALIZER_OTHER,\n" +
+    "  ENUM_INITIALIZER_SPLICE_LF = ENUM_INITIALIZER_BASE + \\\n" +
+    "ENUM_INITIALIZER_OTHER,\n" +
+    "  ENUM_INITIALIZER_SPLICE_CRLF = ENUM_INITIALIZER_BASE + \\\r\n" +
+    "ENUM_INITIALIZER_OTHER\r\n" +
+    "};\n" +
+    "static int enum_initializer_block(void) {\n" +
+    "  enum { ENUM_INITIALIZER_BLOCK_BASE = 7,\n" +
+    "         ENUM_INITIALIZER_BLOCK_DERIVED = ENUM_INITIALIZER_BLOCK_BASE + 1 };\n" +
+    "  return ENUM_INITIALIZER_BLOCK_DERIVED;\n" +
+    "}\n",
+};
+const enumInitializerOperandCases = [
+  ["ENUM_INITIALIZER_UNARY = -ENUM_INITIALIZER_BASE",
+    "ENUM_INITIALIZER_BASE", "enumConstant"],
+  ["ENUM_INITIALIZER_BINARY = 1 + ENUM_INITIALIZER_OTHER",
+    "ENUM_INITIALIZER_OTHER", "enumConstant"],
+  ["ENUM_INITIALIZER_GROUPED = (ENUM_INITIALIZER_BASE)",
+    "ENUM_INITIALIZER_BASE", "enumConstant"],
+  ["ENUM_INITIALIZER_BASE + ENUM_INITIALIZER_OTHER",
+    "ENUM_INITIALIZER_OTHER", "enumConstant"],
+  ["? ENUM_INITIALIZER_BASE : ENUM_INITIALIZER_OTHER",
+    "ENUM_INITIALIZER_OTHER", "enumConstant"],
+  ["ENUM_INITIALIZER_BASE + ENUM_INITIALIZER_MACRO",
+    "ENUM_INITIALIZER_MACRO", "macro"],
+  ["/* expression gap */ + ENUM_INITIALIZER_OTHER",
+    "ENUM_INITIALIZER_OTHER", "enumConstant"],
+  ["ENUM_INITIALIZER_BASE + \\\nENUM_INITIALIZER_OTHER",
+    "ENUM_INITIALIZER_OTHER", "enumConstant"],
+  ["ENUM_INITIALIZER_BASE + \\\r\nENUM_INITIALIZER_OTHER",
+    "ENUM_INITIALIZER_OTHER", "enumConstant"],
+  ["ENUM_INITIALIZER_BLOCK_DERIVED = ENUM_INITIALIZER_BLOCK_BASE + 1",
+    "ENUM_INITIALIZER_BLOCK_BASE", "enumConstant"],
+];
+for (const [fragmentText, name, kind] of enumInitializerOperandCases) {
+  const fragmentIndex = enumInitializerOperandHoverSource.source.indexOf(
+    fragmentText,
+  );
+  const useIndex = enumInitializerOperandHoverSource.source.indexOf(
+    name, fragmentIndex,
+  );
+  assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+    `enum initializer operand anchor missing for ${name}`);
+  const useStart = byteOffsetForIndex(
+    enumInitializerOperandHoverSource.source, useIndex,
+  );
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(enumInitializerOperandHoverSource, {
+      cursor: {
+        sourceName: enumInitializerOperandHoverSource.name,
+        byteOffset,
+      },
+    });
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, false,
+      `${name} enum initializer operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} enum initializer operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `${name} enum initializer operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `${name} enum initializer operand kind`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} enum initializer operand declaration`);
+    if (kind === "enumConstant")
+      assert.ok(["3", "4", "7"].includes(
+        result.hover?.initializer.constantValue,
+      ));
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.replacement, "5");
+      assert.equal(result.hover?.documentation,
+        "enum initializer macro documentation");
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--enum-initializer-operand-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm enum initializer operand differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+const freshEnumInitializerCompiler = await createCompiler(wasmModule);
+try {
+  for (const [fragmentText, name, kind] of [
+    ["? ENUM_INITIALIZER_BASE : ENUM_INITIALIZER_OTHER",
+      "ENUM_INITIALIZER_OTHER", "enumConstant"],
+    ["ENUM_INITIALIZER_BASE + \\\r\nENUM_INITIALIZER_OTHER",
+      "ENUM_INITIALIZER_OTHER", "enumConstant"],
+    ["ENUM_INITIALIZER_BLOCK_DERIVED = ENUM_INITIALIZER_BLOCK_BASE + 1",
+      "ENUM_INITIALIZER_BLOCK_BASE", "enumConstant"],
+  ]) {
+    const fragmentIndex = enumInitializerOperandHoverSource.source.indexOf(
+      fragmentText,
+    );
+    const useIndex = enumInitializerOperandHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+    const result = freshEnumInitializerCompiler.analyzeSource(
+      enumInitializerOperandHoverSource,
+      {
+        cursor: {
+          sourceName: enumInitializerOperandHoverSource.name,
+          byteOffset: byteOffsetForIndex(
+            enumInitializerOperandHoverSource.source, useIndex,
+          ) + Math.floor(Buffer.byteLength(name) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, false,
+      `fresh ${name} enum initializer operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `fresh ${name} enum initializer operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `fresh ${name} enum initializer operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `fresh ${name} enum initializer operand kind`);
+  }
+} finally {
+  freshEnumInitializerCompiler.dispose();
+}
+
 const snakeCastFragment = "(unsigned int)MAX_SNAKE_LENGTH";
 const snakeCastFragmentIndex = macroDefinitionSnake.source.indexOf(
   snakeCastFragment,
