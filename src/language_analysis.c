@@ -2142,12 +2142,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
       analysis_identifier_is_complete_member_access(
           source, source_length, &cursor_identifier);
   int cursor_identifier_starts_conditional = 0;
+  int cursor_identifier_starts_parenthesized_suffix = 0;
   if (has_complete_identifier) {
     size_t after_name = skip_analysis_space_and_comments_mode(
         source, source_length, cursor_identifier.end,
         enable_trigraphs);
     cursor_identifier_starts_conditional =
         after_name < source_length && source[after_name] == '?';
+    cursor_identifier_starts_parenthesized_suffix =
+        after_name < source_length && source[after_name] == '(';
   }
   if (recovery_cursor > SIZE_MAX - 8192 ||
       source_length > SIZE_MAX - recovery_cursor - 8192)
@@ -2195,6 +2198,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int previous_token_is_generic = 0;
   int previous_token_requires_type_name = 0;
   int previous_token_is_sizeof = 0;
+  int previous_token_is_case = 0;
+  int previous_token_requires_expression = 0;
   int previous_token_is_tag_keyword = 0;
   int previous_token_ends_expression = 0;
   size_t root_pending_conditional_count = 0;
@@ -2248,6 +2253,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
       previous_token_is_generic = 0;
       previous_token_requires_type_name = 0;
       previous_token_is_sizeof = 0;
+      previous_token_is_case = 0;
+      previous_token_requires_expression = 0;
       previous_token_is_tag_keyword = 0;
       previous_token_ends_expression = 1;
       continue;
@@ -2294,6 +2301,14 @@ static char *build_recovery_source(const char *source, size_t source_length,
         previous_token_is_sizeof =
             identifier_end - i == strlen("sizeof") &&
             memcmp(result + i, "sizeof", strlen("sizeof")) == 0;
+        previous_token_is_case =
+            identifier_end - i == strlen("case") &&
+            memcmp(result + i, "case", strlen("case")) == 0;
+        previous_token_requires_expression =
+            previous_token_is_sizeof ||
+            (identifier_end - i == strlen("return") &&
+             memcmp(result + i, "return", strlen("return")) == 0) ||
+            previous_token_is_case;
         previous_token_is_tag_keyword =
             (identifier_end - i == strlen("struct") &&
              memcmp(result + i, "struct", strlen("struct")) == 0) ||
@@ -2306,11 +2321,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
             memcmp(result + i, "default", strlen("default")) == 0;
         int identifier_is_expression_prefix_keyword =
             previous_token_is_for || previous_token_is_generic ||
-            previous_token_requires_type_name || previous_token_is_sizeof ||
-            (identifier_end - i == strlen("return") &&
-             memcmp(result + i, "return", strlen("return")) == 0) ||
-            (identifier_end - i == strlen("case") &&
-             memcmp(result + i, "case", strlen("case")) == 0);
+            previous_token_requires_type_name ||
+            previous_token_requires_expression;
         previous_token_ends_expression =
             !identifier_is_expression_prefix_keyword;
       }
@@ -2326,6 +2338,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
       previous_token_is_generic = 0;
       previous_token_requires_type_name = 0;
       previous_token_is_sizeof = 0;
+      previous_token_is_case = 0;
+      previous_token_requires_expression = 0;
       previous_token_is_tag_keyword = 0;
       previous_token_ends_expression = 0;
     }
@@ -2482,9 +2496,20 @@ static char *build_recovery_source(const char *source, size_t source_length,
   } else if (cursor_in_required_type_name) {
     APPEND_LITERAL(" int");
   } else if (!cursor_in_generic_association_type &&
+             previous_token_is_case &&
+             !cursor_identifier_starts_parenthesized_suffix) {
+    if (has_complete_identifier) {
+      APPEND_BYTES(source + cursor_identifier.start,
+                   cursor_identifier.end - cursor_identifier.start);
+    } else {
+      APPEND_LITERAL("0");
+    }
+    APPEND_LITERAL(": 0");
+  } else if (!cursor_in_generic_association_type &&
       (cursor_identifier_starts_conditional ||
       cursor_after_complete_type_name_cast ||
-      previous_token_is_sizeof ||
+      (previous_token_requires_expression &&
+       !cursor_identifier_starts_parenthesized_suffix) ||
       last_significant == '=' || last_significant == ',' ||
       last_significant == '(' || last_significant == '[' ||
       last_significant == '+' || last_significant == '-' ||

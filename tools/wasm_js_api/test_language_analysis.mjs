@@ -1523,6 +1523,139 @@ try {
   freshSizeofExpressionCompiler.dispose();
 }
 
+const statementKeywordOperandHoverSource = {
+  name: "statement-keyword-operand.c",
+  source: "/// statement operand macro documentation\n" +
+    "#define STATEMENT_OPERAND_MACRO 7\n" +
+    "enum StatementOperandMode { STATEMENT_OPERAND_ENUM = 3 };\n" +
+    "static int statement_global = 5;\n" +
+    "static int statement_return_context(int statement_parameter) {\n" +
+    "  int statement_local = statement_parameter;\n" +
+    "  if (statement_parameter == 0) return statement_local;\n" +
+    "  if (statement_parameter == 1) return statement_global;\n" +
+    "  if (statement_parameter == 2) return statement_parameter;\n" +
+    "  if (statement_parameter == 3) return STATEMENT_OPERAND_MACRO;\n" +
+    "  if (statement_parameter == 4) return STATEMENT_OPERAND_ENUM;\n" +
+    "  if (statement_parameter == 5)\n" +
+    "    return /* operand gap */ statement_global;\n" +
+    "  if (statement_parameter == 6) return \\\n" +
+    "statement_parameter;\n" +
+    "  return \\\r\n" +
+    "statement_local;\r\n" +
+    "}\n" +
+    "static int statement_case_context(int statement_parameter) {\n" +
+    "  int statement_local = statement_parameter;\n" +
+    "  switch (statement_parameter) {\n" +
+    "    case STATEMENT_OPERAND_ENUM: return statement_global;\n" +
+    "    case /* operand gap */ STATEMENT_OPERAND_MACRO:\n" +
+    "      return statement_parameter;\n" +
+    "    default: return statement_local;\n" +
+    "  }\n" +
+    "}\n",
+};
+const statementKeywordOperandCases = [
+  ["return statement_local;", "statement_local", "object"],
+  ["return statement_global;", "statement_global", "object"],
+  ["return statement_parameter;", "statement_parameter", "parameter"],
+  ["return STATEMENT_OPERAND_MACRO;", "STATEMENT_OPERAND_MACRO", "macro"],
+  ["return STATEMENT_OPERAND_ENUM;", "STATEMENT_OPERAND_ENUM", "enumConstant"],
+  ["return /* operand gap */ statement_global;", "statement_global", "object"],
+  ["return \\\nstatement_parameter;", "statement_parameter", "parameter"],
+  ["return \\\r\nstatement_local;", "statement_local", "object"],
+  ["case STATEMENT_OPERAND_ENUM:", "STATEMENT_OPERAND_ENUM", "enumConstant"],
+  ["case /* operand gap */ STATEMENT_OPERAND_MACRO:", "STATEMENT_OPERAND_MACRO", "macro"],
+];
+for (const [fragmentText, name, kind] of statementKeywordOperandCases) {
+  const fragmentIndex = statementKeywordOperandHoverSource.source.indexOf(
+    fragmentText,
+  );
+  const useIndex = statementKeywordOperandHoverSource.source.indexOf(
+    name, fragmentIndex,
+  );
+  assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+    `statement keyword operand anchor missing for ${name}`);
+  const useStart = byteOffsetForIndex(
+    statementKeywordOperandHoverSource.source, useIndex,
+  );
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(statementKeywordOperandHoverSource, {
+      cursor: {
+        sourceName: statementKeywordOperandHoverSource.name,
+        byteOffset,
+      },
+    });
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, false,
+      `${name} statement keyword operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} statement keyword operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `${name} statement keyword operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `${name} statement keyword operand kind`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} statement keyword operand declaration`);
+    if (kind === "object" || kind === "parameter")
+      assert.equal(result.hover?.type, "int");
+    if (kind === "enumConstant")
+      assert.equal(result.hover?.initializer.constantValue, "3");
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.replacement, "7");
+      assert.equal(result.hover?.documentation,
+        "statement operand macro documentation");
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--statement-keyword-operand-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm statement keyword operand differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+const freshStatementKeywordCompiler = await createCompiler(wasmModule);
+try {
+  for (const [fragmentText, name, kind] of [
+    ["return \\\nstatement_parameter;", "statement_parameter", "parameter"],
+    ["case /* operand gap */ STATEMENT_OPERAND_MACRO:",
+      "STATEMENT_OPERAND_MACRO", "macro"],
+  ]) {
+    const fragmentIndex = statementKeywordOperandHoverSource.source.indexOf(
+      fragmentText,
+    );
+    const useIndex = statementKeywordOperandHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+    const result = freshStatementKeywordCompiler.analyzeSource(
+      statementKeywordOperandHoverSource,
+      {
+        cursor: {
+          sourceName: statementKeywordOperandHoverSource.name,
+          byteOffset: byteOffsetForIndex(
+            statementKeywordOperandHoverSource.source, useIndex,
+          ) + Math.floor(Buffer.byteLength(name) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, false,
+      `fresh ${name} statement keyword operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `fresh ${name} statement keyword operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `fresh ${name} statement keyword operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `fresh ${name} statement keyword operand kind`);
+  }
+} finally {
+  freshStatementKeywordCompiler.dispose();
+}
+
 const snakeCastFragment = "(unsigned int)MAX_SNAKE_LENGTH";
 const snakeCastFragmentIndex = macroDefinitionSnake.source.indexOf(
   snakeCastFragment,
