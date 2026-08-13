@@ -31903,3 +31903,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 状態:
   - 当初対象のparser syntax / semantic resolve-typecheck / loweringの直接依存分離は完了。
   - 未commit。worktreeには型正本化、parser命名整理、semantic分割、今回のphase分離がまとまって残る。
+
+### このセッション（続き1090）: 括弧なし`sizeof`式operandのhover回復を安定化した
+- 対象選定:
+  - 深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 通常サイズの有効なCソースだけで再現するlanguage-analysisの未対応を調査した。
+- 原因と修正:
+  - `sizeof identifier`のidentifier上へcursorを置くと、recovery sourceはcursor識別子を一時的に
+    除く一方、直前の有意文字が`sizeof`末尾の`f`になるため仮operandを補わなかった。
+  - その結果、有効な式がoperand欠落としてpartial snapshotになり、local/parameter hoverを失っていた。
+  - delimiter走査が既に保持していた`previous_token_is_sizeof`を式operand補完条件へ追加した。
+  - `sizeof(type)`の型名contextやparser/semantic本体の動作は変更していない。
+- 回帰範囲:
+  - object、parameter、enum constant、macroを網羅した。
+  - `sizeof`とoperand間のblock comment、LF/CRLF行継続を網羅した。
+  - 各identifierの先頭・中央・末尾、正確なdeclaration range、type/constant value、macro replacementと
+    documentation、同一session/fresh sessionをNativeで固定した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、fresh compilerを確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (41 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。

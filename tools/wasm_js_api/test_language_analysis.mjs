@@ -1405,6 +1405,124 @@ for (const [fragmentText, name, kind] of [
   );
 }
 
+const sizeofExpressionOperandHoverSource = {
+  name: "sizeof-expression-operand.c",
+  source: "/// sizeof operand macro documentation\n" +
+    "#define SIZEOF_OPERAND_MACRO 17\n" +
+    "enum SizeofOperandMode { SIZEOF_OPERAND_ENUM = 3 };\n" +
+    "static int sizeof_global = 5;\n" +
+    "static int sizeof_context(int sizeof_parameter) {\n" +
+    "  int sizeof_local = 9;\n" +
+    "  int global_size = (int)sizeof sizeof_global;\n" +
+    "  int parameter_size = (int)sizeof sizeof_parameter;\n" +
+    "  int local_size = (int)sizeof sizeof_local;\n" +
+    "  int macro_size = (int)sizeof SIZEOF_OPERAND_MACRO;\n" +
+    "  int enum_size = (int)sizeof SIZEOF_OPERAND_ENUM;\n" +
+    "  int comment_size = (int)sizeof /* operand gap */ sizeof_global;\n" +
+    "  int splice_lf_size = (int)sizeof \\\n" +
+    "sizeof_parameter;\n" +
+    "  int splice_crlf_size = (int)sizeof \\\r\n" +
+    "sizeof_local;\r\n" +
+    "  return global_size + parameter_size + local_size + macro_size +\n" +
+    "         enum_size + comment_size + splice_lf_size + splice_crlf_size;\n" +
+    "}\n",
+};
+const sizeofExpressionOperandCases = [
+  ["global_size = (int)sizeof sizeof_global", "sizeof_global", "object"],
+  ["parameter_size = (int)sizeof sizeof_parameter", "sizeof_parameter", "parameter"],
+  ["local_size = (int)sizeof sizeof_local", "sizeof_local", "object"],
+  ["macro_size = (int)sizeof SIZEOF_OPERAND_MACRO", "SIZEOF_OPERAND_MACRO", "macro"],
+  ["enum_size = (int)sizeof SIZEOF_OPERAND_ENUM", "SIZEOF_OPERAND_ENUM", "enumConstant"],
+  ["comment_size = (int)sizeof /* operand gap */ sizeof_global", "sizeof_global", "object"],
+  ["splice_lf_size = (int)sizeof \\\nsizeof_parameter", "sizeof_parameter", "parameter"],
+  ["splice_crlf_size = (int)sizeof \\\r\nsizeof_local", "sizeof_local", "object"],
+];
+for (const [fragmentText, name, kind] of sizeofExpressionOperandCases) {
+  const fragmentIndex = sizeofExpressionOperandHoverSource.source.indexOf(
+    fragmentText,
+  );
+  const useIndex = sizeofExpressionOperandHoverSource.source.indexOf(
+    name, fragmentIndex,
+  );
+  assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+    `sizeof expression operand anchor missing for ${name}`);
+  const useStart = byteOffsetForIndex(
+    sizeofExpressionOperandHoverSource.source, useIndex,
+  );
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(sizeofExpressionOperandHoverSource, {
+      cursor: {
+        sourceName: sizeofExpressionOperandHoverSource.name,
+        byteOffset,
+      },
+    });
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, false,
+      `${name} sizeof expression operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} sizeof expression operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `${name} sizeof expression operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `${name} sizeof expression operand kind`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} sizeof expression operand declaration`);
+    if (kind === "object" || kind === "parameter")
+      assert.equal(result.hover?.type, "int");
+    if (kind === "enumConstant")
+      assert.equal(result.hover?.initializer.constantValue, "3");
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.replacement, "17");
+      assert.equal(result.hover?.documentation,
+        "sizeof operand macro documentation");
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--sizeof-expression-operand-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm sizeof expression operand differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+const freshSizeofExpressionCompiler = await createCompiler(wasmModule);
+try {
+  const name = "sizeof_parameter";
+  const fragmentIndex = sizeofExpressionOperandHoverSource.source.indexOf(
+    "splice_lf_size = (int)sizeof \\\nsizeof_parameter",
+  );
+  const useIndex = sizeofExpressionOperandHoverSource.source.indexOf(
+    name, fragmentIndex,
+  );
+  const result = freshSizeofExpressionCompiler.analyzeSource(
+    sizeofExpressionOperandHoverSource,
+    {
+      cursor: {
+        sourceName: sizeofExpressionOperandHoverSource.name,
+        byteOffset: byteOffsetForIndex(
+          sizeofExpressionOperandHoverSource.source, useIndex,
+        ) + Math.floor(Buffer.byteLength(name) / 2),
+      },
+    },
+  );
+  assert.equal(result.partial, false,
+    "fresh sizeof expression operand unexpectedly partial");
+  assert.deepStrictEqual(result.diagnostics, [],
+    "fresh sizeof expression operand diagnostics");
+  assert.equal(result.hover?.name, name,
+    "fresh sizeof expression operand hover");
+  assert.equal(result.hover?.kind, "parameter",
+    "fresh sizeof expression operand kind");
+} finally {
+  freshSizeofExpressionCompiler.dispose();
+}
+
 const snakeCastFragment = "(unsigned int)MAX_SNAKE_LENGTH";
 const snakeCastFragmentIndex = macroDefinitionSnake.source.indexOf(
   snakeCastFragment,

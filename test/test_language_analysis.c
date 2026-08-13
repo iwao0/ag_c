@@ -523,6 +523,27 @@ static const char *const cast_operand_project_sources[] = {
     "int project_cast(void) { return (long)PROJECT_CAST_VALUE; }\n",
 };
 
+static const char sizeof_expression_operand_hover_source[] =
+    "/// sizeof operand macro documentation\n"
+    "#define SIZEOF_OPERAND_MACRO 17\n"
+    "enum SizeofOperandMode { SIZEOF_OPERAND_ENUM = 3 };\n"
+    "static int sizeof_global = 5;\n"
+    "static int sizeof_context(int sizeof_parameter) {\n"
+    "  int sizeof_local = 9;\n"
+    "  int global_size = (int)sizeof sizeof_global;\n"
+    "  int parameter_size = (int)sizeof sizeof_parameter;\n"
+    "  int local_size = (int)sizeof sizeof_local;\n"
+    "  int macro_size = (int)sizeof SIZEOF_OPERAND_MACRO;\n"
+    "  int enum_size = (int)sizeof SIZEOF_OPERAND_ENUM;\n"
+    "  int comment_size = (int)sizeof /* operand gap */ sizeof_global;\n"
+    "  int splice_lf_size = (int)sizeof \\\n"
+    "sizeof_parameter;\n"
+    "  int splice_crlf_size = (int)sizeof \\\r\n"
+    "sizeof_local;\r\n"
+    "  return global_size + parameter_size + local_size + macro_size +\n"
+    "         enum_size + comment_size + splice_lf_size + splice_crlf_size;\n"
+    "}\n";
+
 static const char macro_definition_forms_source[] =
     "#define SIMPLE_MACRO 1\n"
     "# define PARENTHESIZED_MACRO (2 + 3)\r\n"
@@ -1877,6 +1898,19 @@ static int print_cast_operand_hover_parity_snapshot(
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
+static int print_sizeof_expression_operand_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(sizeof_expression_operand_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "sizeof-expression-operand.c", sizeof_expression_operand_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
 static int print_cast_operand_project_parity_snapshot(
     const char *revision_text) {
   char *end = NULL;
@@ -2353,6 +2387,118 @@ static int test_cast_operand_hover(ag_target_info_t target) {
         "cast operand session reusable after limits");
   ag_language_analysis_snapshot_dispose(&snapshot);
 
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
+static int test_sizeof_expression_operand_hover(ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "sizeof expression operand session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+    const char *constant_value;
+  } cases[] = {
+      {"global_size = (int)sizeof sizeof_global", "sizeof_global",
+       AG_LANGUAGE_SYMBOL_OBJECT, "sizeof_global = 5", ""},
+      {"parameter_size = (int)sizeof sizeof_parameter", "sizeof_parameter",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "sizeof_parameter) {", ""},
+      {"local_size = (int)sizeof sizeof_local", "sizeof_local",
+       AG_LANGUAGE_SYMBOL_OBJECT, "sizeof_local = 9", ""},
+      {"macro_size = (int)sizeof SIZEOF_OPERAND_MACRO",
+       "SIZEOF_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "SIZEOF_OPERAND_MACRO 17", ""},
+      {"enum_size = (int)sizeof SIZEOF_OPERAND_ENUM", "SIZEOF_OPERAND_ENUM",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "SIZEOF_OPERAND_ENUM = 3", "3"},
+      {"comment_size = (int)sizeof /* operand gap */ sizeof_global",
+       "sizeof_global", AG_LANGUAGE_SYMBOL_OBJECT, "sizeof_global = 5", ""},
+      {"splice_lf_size = (int)sizeof \\\nsizeof_parameter", "sizeof_parameter",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "sizeof_parameter) {", ""},
+      {"splice_crlf_size = (int)sizeof \\\r\nsizeof_local", "sizeof_local",
+       AG_LANGUAGE_SYMBOL_OBJECT, "sizeof_local = 9", ""},
+  };
+  const char *macro_comment = strstr(
+      sizeof_expression_operand_hover_source,
+      "/// sizeof operand macro documentation");
+  CHECK(macro_comment != NULL, "sizeof expression macro comment anchor");
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          sizeof_expression_operand_hover_source,
+          cases[case_index].fragment);
+      const char *use = fragment
+                            ? strstr(fragment, cases[case_index].name)
+                            : NULL;
+      const char *declaration = strstr(
+          sizeof_expression_operand_hover_source,
+          cases[case_index].declaration_fragment);
+      CHECK(use && declaration, "sizeof expression operand anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh sizeof expression operand session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "sizeof-expression-operand.c",
+                  sizeof_expression_operand_hover_source,
+                  (size_t)(use - sizeof_expression_operand_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "sizeof expression operand analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(hover && completion && !snapshot.partial &&
+                  snapshot.diagnostic_count == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            sizeof_expression_operand_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            sizeof_expression_operand_hover_source +
+                            name_length) &&
+                  same_range(&hover->declaration, &completion->declaration),
+              "sizeof expression operand fields");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_OBJECT ||
+            cases[case_index].kind == AG_LANGUAGE_SYMBOL_PARAMETER)
+          CHECK(strcmp(hover->type, "int") == 0,
+                "sizeof expression object type");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(strcmp(hover->constant_value,
+                       cases[case_index].constant_value) == 0,
+                "sizeof expression enum value");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+          CHECK(hover->macro_replacement &&
+                    strcmp(hover->macro_replacement, "17") == 0 &&
+                    check_documentation_symbol(
+                        hover, "sizeof operand macro documentation",
+                        "sizeof-expression-operand.c",
+                        (size_t)(macro_comment -
+                                 sizeof_expression_operand_hover_source),
+                        (size_t)(macro_comment -
+                                 sizeof_expression_operand_hover_source) +
+                            strlen("/// sizeof operand macro documentation")),
+                "sizeof expression macro fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
   ag_compilation_session_destroy(session);
   return 0;
 }
@@ -3647,6 +3793,10 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1],
+             "--sizeof-expression-operand-hover-parity-json") == 0)
+    return print_sizeof_expression_operand_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-project-parity-json") == 0)
     return print_cast_operand_project_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -3681,6 +3831,8 @@ int main(int argc, char **argv) {
 
   CHECK(test_cast_operand_hover(target) == 0,
         "cast operand hover scenarios");
+  CHECK(test_sizeof_expression_operand_hover(target) == 0,
+        "sizeof expression operand hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -6693,6 +6845,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (40 scenarios)");
+  puts("language analysis tests passed (41 scenarios)");
   return 0;
 }

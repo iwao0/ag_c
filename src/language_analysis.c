@@ -2484,6 +2484,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
   } else if (!cursor_in_generic_association_type &&
       (cursor_identifier_starts_conditional ||
       cursor_after_complete_type_name_cast ||
+      previous_token_is_sizeof ||
       last_significant == '=' || last_significant == ',' ||
       last_significant == '(' || last_significant == '[' ||
       last_significant == '+' || last_significant == '-' ||
