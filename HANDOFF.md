@@ -32371,3 +32371,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じmacro名をvirtual header revision間でobject-like→function-like→object-likeへ切り替えた場合に、bare完全名の
     未終端EOF operandがresolved→partial→resolvedへ遷移し、macro parameter/replacement metadataも更新される境界を確認する。
+
+### このセッション（続き1105）: bare function-like macroのEOF partial契約を修正した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1104に残した、通常サイズのvirtual header macro形状差し替えとbare EOF identifierだけを確認した。
+- 不具合と修正:
+  - function-like macroのbare完全名はenum operandとして再解析されず派生値がsynthetic 0になる一方、最終hover選択が
+    同名macro候補を再採用し、hoverあり・diagnostics空という解決済み風の不整合を返していた。
+  - 初回のbounded eligibility判定を最終hover選択まで保持し、enum定数/object-like macroとして解決できない
+    ambiguous EOF identifierは候補一覧を維持したままhoverを抑止して`AGC_PARTIAL_IDENTIFIER`を付けるようにした。
+- 回帰範囲:
+  - 同名macroをobject-like 19→2引数function-like 61→object-like 19へ、同じNative sessionおよび同じWasm compiler
+    instanceで往復させた。bare完全名はresolved→partial→resolved、prefixはpartialのまま遷移する。
+  - 現revisionのfunction-like flag、variadic flag、parameter名、replacement、declaration/documentation range、
+    dependency、partial diagnostic range、object-like時のhoverと派生enumerator値を固定した。
+  - 専用シナリオを追加し、language analysisの表示を54 scenariosへ更新した。
+  - Wasm JS APIの全遷移をfresh Native JSON snapshotと完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (54 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis API内だけの修正のためnative/Wasm E2Eは未実施し、fuzz・深度/資源stress系も対象外とした。
+- 浅い次候補:
+  - virtual headerで同じ綴りのfunction-like macroとenum定数が共存する場合に、bare EOF identifierはordinary namespaceの
+    enum定数を、完結したmacro invocationはmacroを選び、二段階recoveryとhover kindが混線しない境界を確認する。

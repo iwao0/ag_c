@@ -5732,12 +5732,14 @@ int ag_language_analyze_source(
               "AGC_LANGUAGE_ANALYSIS_PARSE_START_FAILED", NULL, 0, 0);
     return 0;
   }
-  if ((recovery_changed &
+  int ambiguous_eof_identifier_resolved =
+      (recovery_changed &
        AG_LANGUAGE_RECOVERY_AMBIGUOUS_EOF_IDENTIFIER) &&
       ambiguous_eof_identifier_resolves_as_enum_operand(
           request, builder.enable_trigraphs,
           ag_compilation_session_scope_graph(session),
-          ag_compilation_session_preprocessor_context(session))) {
+          ag_compilation_session_preprocessor_context(session));
+  if (ambiguous_eof_identifier_resolved) {
     parse_state->documentation_index_owned = NULL;
     finish_analysis_parse_state(parse_state);
     parse_state = NULL;
@@ -6007,7 +6009,9 @@ int ag_language_analyze_source(
   int unresolved_ambiguous_eof_identifier =
       (recovery_changed &
        AG_LANGUAGE_RECOVERY_AMBIGUOUS_EOF_IDENTIFIER) &&
-      snapshot->hover_index < 0;
+      !ambiguous_eof_identifier_resolved;
+  if (unresolved_ambiguous_eof_identifier)
+    snapshot->hover_index = -1;
   if (unresolved_ambiguous_eof_identifier &&
       !append_partial_identifier_diagnostic(&builder, request)) {
     dispose_saved_diagnostic(&saved_fatal);

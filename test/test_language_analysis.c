@@ -747,6 +747,8 @@ static const char *const incomplete_enum_header_revisions[] = {
     "  /// switched macro enum documentation\n"
     "  INCOMPLETE_HEADER_ENUM_MACRO = 59\n"
     "};\n",
+    "/// function-like header macro documentation\n"
+    "#define INCOMPLETE_HEADER_ENUM_MACRO(left, right) 61\n",
 };
 
 static const char *const incomplete_enum_header_main_sources[] = {
@@ -4338,6 +4340,127 @@ static int test_incomplete_enum_header_kind_transitions(
   return 0;
 }
 
+static int test_incomplete_enum_header_macro_shape_transitions(
+    ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "incomplete enum header macro shape session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  const char *header_paths[] = {"incomplete-enum.h"};
+  struct {
+    size_t revision_index;
+    size_t source_index;
+    const char *cursor_name;
+    int function_like;
+    int resolves;
+    const char *replacement;
+    const char *documentation;
+    const char *comment;
+  } cases[] = {
+      {0, 1, "INCOMPLETE_HEADER_ENUM_MACRO", 0, 1, "19",
+       "header enum macro documentation",
+       "/// header enum macro documentation"},
+      {0, 3, "INCOMPLETE_HEADER_ENUM_MA", 0, 0, "19",
+       "header enum macro documentation",
+       "/// header enum macro documentation"},
+      {5, 1, "INCOMPLETE_HEADER_ENUM_MACRO", 1, 0, "61",
+       "function-like header macro documentation",
+       "/// function-like header macro documentation"},
+      {5, 3, "INCOMPLETE_HEADER_ENUM_MA", 1, 0, "61",
+       "function-like header macro documentation",
+       "/// function-like header macro documentation"},
+      {0, 1, "INCOMPLETE_HEADER_ENUM_MACRO", 0, 1, "19",
+       "header enum macro documentation",
+       "/// header enum macro documentation"},
+      {0, 3, "INCOMPLETE_HEADER_ENUM_MA", 0, 0, "19",
+       "header enum macro documentation",
+       "/// header enum macro documentation"},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+    const char *header =
+        incomplete_enum_header_revisions[cases[case_index].revision_index];
+    const char *header_sources[] = {header};
+    header_bundle_t bundle = make_bundle(header_paths, header_sources, 1);
+    const char *source =
+        incomplete_enum_header_main_sources[cases[case_index].source_index];
+    const char *cursor_name = last_occurrence(
+        source, cases[case_index].cursor_name);
+    const char *declaration = strstr(header, "INCOMPLETE_HEADER_ENUM_MACRO");
+    const char *comment = strstr(header, cases[case_index].comment);
+    CHECK(bundle.bytes && cursor_name && declaration && comment,
+          "incomplete enum header macro shape anchors");
+    size_t cursor_name_length = strlen(cases[case_index].cursor_name);
+    size_t candidate_name_length = strlen("INCOMPLETE_HEADER_ENUM_MACRO");
+    CHECK(analyze_named(
+              session, "incomplete-enum-header-main.c", source,
+              (size_t)(cursor_name - source) + cursor_name_length / 2,
+              bundle, defaults, &snapshot, &error),
+          "incomplete enum header macro shape analysis");
+    const ag_language_symbol_t *candidate = find_symbol(
+        &snapshot, "INCOMPLETE_HEADER_ENUM_MACRO",
+        AG_LANGUAGE_SYMBOL_MACRO);
+    CHECK(snapshot.partial && candidate &&
+              candidate->declaration.source_name &&
+              strcmp(candidate->declaration.source_name,
+                     "incomplete-enum.h") == 0 &&
+              candidate->declaration.start.offset ==
+                  (int)(declaration - header) &&
+              candidate->declaration.end.offset ==
+                  (int)(declaration - header + candidate_name_length) &&
+              check_documentation_symbol(
+                  candidate, cases[case_index].documentation,
+                  "incomplete-enum.h", (size_t)(comment - header),
+                  (size_t)(comment - header) +
+                      strlen(cases[case_index].comment)) &&
+              candidate->macro_replacement &&
+              strcmp(candidate->macro_replacement,
+                     cases[case_index].replacement) == 0 &&
+              candidate->macro_is_function_like ==
+                  cases[case_index].function_like &&
+              !candidate->macro_is_variadic &&
+              candidate->macro_parameter_count ==
+                  (cases[case_index].function_like ? 2 : 0) &&
+              (!cases[case_index].function_like ||
+               (candidate->macro_parameters &&
+                strcmp(candidate->macro_parameters[0], "left") == 0 &&
+                strcmp(candidate->macro_parameters[1], "right") == 0)) &&
+              snapshot.dependency_count == 1 &&
+              strcmp(snapshot.dependencies[0], "incomplete-enum.h") == 0,
+          "incomplete enum header macro shape candidate fields");
+    if (cases[case_index].resolves) {
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      const ag_language_symbol_t *derived = find_symbol(
+          &snapshot, "INCOMPLETE_HEADER_DERIVED",
+          AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+      CHECK(snapshot.diagnostic_count == 0 && hover &&
+                strcmp(hover->name, "INCOMPLETE_HEADER_ENUM_MACRO") == 0 &&
+                same_range(&hover->declaration,
+                           &candidate->declaration) &&
+                derived && derived->constant_value &&
+                strcmp(derived->constant_value,
+                       cases[case_index].replacement) == 0,
+            "incomplete enum header macro shape resolved fields");
+    } else {
+      const ag_language_diagnostic_t *partial =
+          find_diagnostic(&snapshot, "AGC_PARTIAL_IDENTIFIER");
+      CHECK(!hover_symbol(&snapshot) &&
+                snapshot.diagnostic_count == 1 && partial &&
+                partial->range.start.offset ==
+                    (int)(cursor_name - source) &&
+                partial->range.end.offset ==
+                    (int)(cursor_name - source + cursor_name_length),
+            "incomplete enum header macro shape partial fields");
+    }
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    free(bundle.bytes);
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_initializer_designator_operand_hover(
     ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
@@ -6327,6 +6450,8 @@ int main(int argc, char **argv) {
         "incomplete enum header rename transition scenarios");
   CHECK(test_incomplete_enum_header_kind_transitions(target) == 0,
         "incomplete enum header kind transition scenarios");
+  CHECK(test_incomplete_enum_header_macro_shape_transitions(target) == 0,
+        "incomplete enum header macro shape transition scenarios");
   CHECK(test_initializer_designator_operand_hover(target) == 0,
         "initializer designator operand hover scenarios");
   CHECK(test_compound_literal_designator_operand_hover(target) == 0,
@@ -9345,6 +9470,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (53 scenarios)");
+  puts("language analysis tests passed (54 scenarios)");
   return 0;
 }
