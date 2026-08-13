@@ -2423,6 +2423,21 @@ const incompleteEnumHeaderRevisions = [
     macroDocumentation: "",
     macroComment: null,
   },
+  {
+    header: "/** renamed header enum documentation */\n" +
+      "enum RenamedHeaderEnum {\n" +
+      "  /** renamed header enum value documentation */\n" +
+      "  RENAMED_HEADER_ENUM_VALUE = 47\n" +
+      "};\n" +
+      "/** renamed header enum macro documentation */\n" +
+      "#define RENAMED_HEADER_ENUM_MACRO 49\n",
+    enumValue: "47",
+    macroValue: "49",
+    enumDocumentation: "renamed header enum value documentation",
+    enumComment: "/** renamed header enum value documentation */",
+    macroDocumentation: "renamed header enum macro documentation",
+    macroComment: "/** renamed header enum macro documentation */",
+  },
 ];
 const incompleteEnumHeaderSources = [
   {
@@ -2444,6 +2459,16 @@ const incompleteEnumHeaderSources = [
     name: "incomplete-enum-header-main.c",
     source: "#include <incomplete-enum.h>\n" +
       "enum { INCOMPLETE_HEADER_DERIVED = INCOMPLETE_HEADER_ENUM_MA",
+  },
+  {
+    name: "incomplete-enum-header-main.c",
+    source: "#include <incomplete-enum.h>\n" +
+      "enum { INCOMPLETE_HEADER_DERIVED = RENAMED_HEADER_ENUM_VALUE",
+  },
+  {
+    name: "incomplete-enum-header-main.c",
+    source: "#include <incomplete-enum.h>\n" +
+      "enum { INCOMPLETE_HEADER_DERIVED = RENAMED_HEADER_ENUM_MACRO",
   },
 ];
 const incompleteEnumHeaderCases = [
@@ -2631,6 +2656,102 @@ try {
   }
 } finally {
   incompleteEnumHeaderRevisionCompiler.dispose();
+}
+
+const incompleteEnumHeaderRenameCases = [
+  [0, 0, "INCOMPLETE_HEADER_ENUM_VALUE", "enumConstant", true, "17",
+    "header enum value documentation",
+    "/// header enum value documentation"],
+  [0, 1, "INCOMPLETE_HEADER_ENUM_MACRO", "macro", true, "19",
+    "header enum macro documentation",
+    "/// header enum macro documentation"],
+  [3, 0, "INCOMPLETE_HEADER_ENUM_VALUE", "enumConstant", false],
+  [3, 1, "INCOMPLETE_HEADER_ENUM_MACRO", "macro", false],
+  [3, 4, "RENAMED_HEADER_ENUM_VALUE", "enumConstant", true, "47",
+    "renamed header enum value documentation",
+    "/** renamed header enum value documentation */"],
+  [3, 5, "RENAMED_HEADER_ENUM_MACRO", "macro", true, "49",
+    "renamed header enum macro documentation",
+    "/** renamed header enum macro documentation */"],
+  [0, 0, "INCOMPLETE_HEADER_ENUM_VALUE", "enumConstant", true, "17",
+    "header enum value documentation",
+    "/// header enum value documentation"],
+  [0, 1, "INCOMPLETE_HEADER_ENUM_MACRO", "macro", true, "19",
+    "header enum macro documentation",
+    "/// header enum macro documentation"],
+  [0, 4, "RENAMED_HEADER_ENUM_VALUE", "enumConstant", false],
+  [0, 5, "RENAMED_HEADER_ENUM_MACRO", "macro", false],
+];
+const incompleteEnumHeaderRenameCompiler = await createCompiler(wasmModule);
+try {
+  for (const [revisionIndex, sourceIndex, operandName, kind, resolves,
+    value, documentation, commentText] of incompleteEnumHeaderRenameCases) {
+    const revision = incompleteEnumHeaderRevisions[revisionIndex];
+    const source = incompleteEnumHeaderSources[sourceIndex];
+    const operandIndex = source.source.lastIndexOf(operandName);
+    const operandStart = byteOffsetForIndex(source.source, operandIndex);
+    const byteOffset = operandStart +
+      Math.floor(Buffer.byteLength(operandName) / 2);
+    assert.ok(operandIndex >= 0,
+      `${operandName} incomplete enum header rename anchor`);
+    const result = incompleteEnumHeaderRenameCompiler.analyzeSource(source, {
+      headers: { "incomplete-enum.h": revision.header },
+      cursor: { sourceName: source.name, byteOffset },
+    });
+    const candidate = symbol(result, operandName, kind);
+    assert.equal(result.partial, true);
+    assert.deepStrictEqual(result.dependencies, ["incomplete-enum.h"]);
+    if (resolves) {
+      const declarationIndex = revision.header.indexOf(operandName);
+      const commentIndex = revision.header.indexOf(commentText);
+      assert.ok(declarationIndex >= 0 && commentIndex >= 0);
+      assert.deepStrictEqual(result.diagnostics, []);
+      assert.equal(result.hover?.name, operandName);
+      assert.deepStrictEqual(result.hover?.declaration,
+        candidate?.declaration);
+      assert.equal(candidate?.declaration.sourceName, "incomplete-enum.h");
+      assert.equal(candidate?.declaration.start.offset,
+        byteOffsetForIndex(revision.header, declarationIndex));
+      assert.equal(candidate?.declaration.end.offset,
+        byteOffsetForIndex(revision.header, declarationIndex) +
+          Buffer.byteLength(operandName));
+      assert.equal(candidate?.documentation, documentation);
+      assert.equal(candidate?.documentationRange?.sourceName,
+        "incomplete-enum.h");
+      assert.equal(candidate?.documentationRange?.start.offset,
+        byteOffsetForIndex(revision.header, commentIndex));
+      assert.equal(candidate?.documentationRange?.end.offset,
+        byteOffsetForIndex(revision.header, commentIndex) +
+          Buffer.byteLength(commentText));
+      if (kind === "enumConstant")
+        assert.equal(candidate?.initializer.constantValue, value);
+      else
+        assert.equal(candidate?.macro?.replacement, value);
+      assert.equal(symbol(
+        result, "INCOMPLETE_HEADER_DERIVED", "enumConstant",
+      )?.initializer.constantValue, value);
+    } else {
+      assert.equal(candidate, undefined);
+      assert.equal(result.hover, null);
+      assert.equal(result.diagnostics.length, 1);
+      assert.equal(result.diagnostics[0].code, "AGC_PARTIAL_IDENTIFIER");
+      assert.equal(result.diagnostics[0].start.offset, operandStart);
+      assert.equal(result.diagnostics[0].end.offset,
+        operandStart + Buffer.byteLength(operandName));
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--incomplete-enum-header-revision-parity-json",
+          String(revisionIndex + 1), String(sourceIndex), String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm incomplete enum header rename differ for ${operandName} at revision ${revisionIndex + 1}`,
+    );
+  }
+} finally {
+  incompleteEnumHeaderRenameCompiler.dispose();
 }
 
 const initializerDesignatorOperandHoverSource = {

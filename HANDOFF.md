@@ -32313,3 +32313,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同一sessionでvirtual headerから対象enum定数/macroを削除またはrenameした場合に、完全名の未終端EOF
     operandがresolved hoverから正確な`AGC_PARTIAL_IDENTIFIER`へ遷移し、定義を戻すと再び解決する境界を確認する。
+
+### このセッション（続き1103）: virtual header rename遷移を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1102に残した、通常サイズのvirtual header renameと未終端enum initializerだけを確認した。
+- 調査結果:
+  - 同一session内で旧名定義→別名定義→旧名復元と差し替えても、既存のpreprocessor/ScopeGraph resetが正しく働き、
+    production codeの追加修正は不要だった。
+  - 現revisionから消えた完全名operandは旧hover・候補・値を残さず、primary source上のidentifier全体に
+    `AGC_PARTIAL_IDENTIFIER`を返した。別名定義と復元後の旧名はそれぞれ現revisionの値・documentationで解決した。
+- 回帰範囲:
+  - enum定数とobject-like macroを、旧名解決→旧名未解決→別名解決→旧名復元→別名未解決の順で、
+    同じNative sessionおよび同じWasm compiler instanceに通した。
+  - resolved側はheader上のdeclaration/documentation range、値またはmacro replacement、派生enumerator値、
+    dependency、diagnostics空を固定した。unresolved側は候補・hoverなし、正確なpartial range、dependencyを固定した。
+  - 専用シナリオを追加し、language analysisの表示を52 scenariosへ更新した。
+  - Wasm JS APIの全遷移をfresh Native JSON snapshotと完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (52 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - production compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - 同じ完全名をvirtual header revision間でenum定数→object-like macro→enum定数へ切り替えた場合に、未終端EOF
+    operandの二段階recoveryがsymbol kind・metadata・派生値を現revisionへ切り替える境界を確認する。
