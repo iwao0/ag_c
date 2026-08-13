@@ -2954,14 +2954,14 @@ function enumTwoArgumentMacroSource(input, argumentMode, argumentRevision) {
       ),
   };
 }
-function enumTwoArgumentPairedMacroSource(input, missingArgumentIndex) {
-  assert.ok(missingArgumentIndex >= 0 && missingArgumentIndex <= 2,
+function enumTwoArgumentPairedMacroSource(input, missingArgumentMode) {
+  assert.ok(missingArgumentMode >= 0 && missingArgumentMode <= 3,
     "enum two argument paired macro source revision");
   const first = enumTwoArgumentMacroSource(
-    input, 1, missingArgumentIndex === 1 ? 3 : 0,
+    input, 1, (missingArgumentMode & 1) !== 0 ? 3 : 0,
   );
   return enumTwoArgumentMacroSource(
-    first, 2, missingArgumentIndex === 2 ? 3 : 0,
+    first, 2, (missingArgumentMode & 2) !== 0 ? 3 : 0,
   );
 }
 const incompleteEnumHeaderCases = [
@@ -4180,6 +4180,9 @@ try {
     [2, 0, 3, 0], [3, 0, 3, 1],
     [1, 0, 3, 0], [1, 1, 3, 0],
     [3, 1, 3, 2],
+    [2, 0, 3, 3], [3, 0, 3, 0],
+    [1, 0, 3, 3], [2, 0, 3, 0],
+    [2, 1, 3, 3],
     [0, 0, 0, 0], [3, 1, 0, 0],
   ]) {
     const source = argumentMode === 3
@@ -4202,9 +4205,16 @@ try {
         ? enumTwoArgumentMacroNames[argumentRevision][2]
         : argumentMode === 3 ? enumTwoArgumentMacroNames[0][2] : null,
     ];
-    const missingArgumentIndex = argumentMode === 3
+    const missingArgumentMode = argumentMode === 3
       ? argumentRevision
       : argumentRevision === 3 ? argumentMode : 0;
+    const argumentMissing = [
+      false,
+      (missingArgumentMode & 1) !== 0,
+      (missingArgumentMode & 2) !== 0,
+    ];
+    const firstMissingArgumentIndex = argumentMissing[1]
+      ? 1 : argumentMissing[2] ? 2 : 0;
     const argumentMetadataRevision = argumentMode === 3
       ? 0 : argumentRevision;
     const argumentNames = [
@@ -4373,7 +4383,7 @@ try {
         argumentMacroCandidates[macroIndex] = symbol(
           result, argumentMacroName, "macro",
         );
-        if (macroIndex === missingArgumentIndex) {
+        if (argumentMissing[macroIndex]) {
           assert.equal(argumentMacroCandidates[macroIndex], undefined);
           continue;
         }
@@ -4407,7 +4417,7 @@ try {
         for (const revisionNames of enumTwoArgumentMacroNames) {
           for (const inactiveName of revisionNames.slice(1)) {
             const active = activeMacroNames.some((name, macroIndex) =>
-              macroIndex !== missingArgumentIndex && name === inactiveName,
+              !argumentMissing[macroIndex] && name === inactiveName,
             );
             if (!active) {
               assert.equal(symbol(result, inactiveName, "macro"), undefined);
@@ -4418,20 +4428,24 @@ try {
       const derived = symbol(
         result, "ENUM_TWO_ARGUMENT_DERIVED", "enumConstant",
       );
-      if (enumOnly || missingArgumentIndex) {
+      if (enumOnly || firstMissingArgumentIndex) {
         assert.equal(derived, undefined);
       } else {
         assert.equal(derived?.initializer.constantValue,
           argumentMode !== 3 && argumentRevision === 1 ? "113" : "103");
       }
-      const expectedDiagnosticCount = !enumOnly && missingArgumentIndex
+      const expectedDiagnosticCount = !enumOnly && firstMissingArgumentIndex
         ? 1
         : enumOnly && byteOffset >= callOpen ? 1 : 0;
       assert.equal(result.diagnostics.length, expectedDiagnosticCount);
-      if (!enumOnly && missingArgumentIndex) {
+      if (!enumOnly && firstMissingArgumentIndex) {
         assert.equal(result.diagnostics[0].code, "E3066");
         assert.match(result.diagnostics[0].message,
-          new RegExp(activeMacroNames[missingArgumentIndex]));
+          new RegExp(activeMacroNames[firstMissingArgumentIndex]));
+        if (argumentMissing[1] && argumentMissing[2]) {
+          assert.doesNotMatch(result.diagnostics[0].message,
+            new RegExp(activeMacroNames[2]));
+        }
         assert.equal(result.diagnostics[0].start.offset, calleeStart);
         assert.equal(result.diagnostics[0].end.offset, callOpen);
       } else if (expectedDiagnosticCount) {

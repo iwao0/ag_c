@@ -21,7 +21,7 @@ static char *project_enum_macro_identifier_argument_source(
 static char *enum_two_argument_macro_source(
     const char *source, int argument_index, int revision);
 static char *enum_two_argument_paired_macro_source(
-    const char *source, int missing_argument_index);
+    const char *source, int missing_argument_mode);
 
 static char *read_fixture_source(const char *path, size_t *length) {
   if (length) *length = 0;
@@ -2835,7 +2835,6 @@ static int print_enum_two_argument_call_parity_snapshot(
       !argument_revision_end || *argument_revision_end != '\0' ||
       parsed_argument_revision > 3 ||
       (parsed_argument_mode == 0 && parsed_argument_revision != 0) ||
-      (parsed_argument_mode == 3 && parsed_argument_revision > 2) ||
       !cursor_text[0] || !cursor_end ||
       *cursor_end != '\0')
     return 1;
@@ -3193,15 +3192,15 @@ static char *enum_two_argument_macro_source(
 }
 
 static char *enum_two_argument_paired_macro_source(
-    const char *source, int missing_argument_index) {
-  if (!source || missing_argument_index < 0 ||
-      missing_argument_index > 2)
+    const char *source, int missing_argument_mode) {
+  if (!source || missing_argument_mode < 0 ||
+      missing_argument_mode > 3)
     return NULL;
   char *first = enum_two_argument_macro_source(
-      source, 1, missing_argument_index == 1 ? 3 : 0);
+      source, 1, (missing_argument_mode & 1) ? 3 : 0);
   if (!first) return NULL;
   char *second = enum_two_argument_macro_source(
-      first, 2, missing_argument_index == 2 ? 3 : 0);
+      first, 2, (missing_argument_mode & 2) ? 3 : 0);
   free(first);
   return second;
 }
@@ -5841,6 +5840,9 @@ static int test_enum_two_argument_call_cursor(
       {2, 0, 3, 0}, {3, 0, 3, 1},
       {1, 0, 3, 0}, {1, 1, 3, 0},
       {3, 1, 3, 2},
+      {2, 0, 3, 3}, {3, 0, 3, 0},
+      {1, 0, 3, 3}, {2, 0, 3, 0},
+      {2, 1, 3, 3},
       {0, 0, 0, 0}, {3, 1, 0, 0},
   };
   for (size_t pass_index = 0;
@@ -5876,10 +5878,15 @@ static int test_enum_two_argument_call_cursor(
             : argument_mode == 3
                 ? argument_macro_names[0][2]
                 : NULL};
-    int missing_argument_index =
+    int missing_argument_mode =
         argument_mode == 3
             ? argument_revision
             : argument_revision == 3 ? argument_mode : 0;
+    int argument_missing[] = {
+        0, (missing_argument_mode & 1) != 0,
+        (missing_argument_mode & 2) != 0};
+    int first_missing_argument_index =
+        argument_missing[1] ? 1 : argument_missing[2] ? 2 : 0;
     int argument_metadata_revision =
         argument_mode == 3 ? 0 : argument_revision;
     const char *argument_names[] = {
@@ -6066,7 +6073,7 @@ static int test_enum_two_argument_call_cursor(
         if (!argument_macro_name) continue;
         argument_macro_candidates[macro_index] = find_symbol(
             &snapshot, argument_macro_name, AG_LANGUAGE_SYMBOL_MACRO);
-        if (macro_index == missing_argument_index) {
+        if (argument_missing[macro_index]) {
           CHECK(!argument_macro_candidates[macro_index],
                 "enum two argument deleted macro removed");
           continue;
@@ -6123,7 +6130,7 @@ static int test_enum_two_argument_call_cursor(
                 argument_macro_names[revision_index][mode_index];
             int active = 0;
             for (int macro_index = 1; macro_index < 3; macro_index++)
-              if (macro_index != missing_argument_index &&
+              if (!argument_missing[macro_index] &&
                   active_macro_names[macro_index] &&
                   strcmp(inactive_name,
                          active_macro_names[macro_index]) == 0)
@@ -6139,25 +6146,28 @@ static int test_enum_two_argument_call_cursor(
       const ag_language_symbol_t *derived = find_symbol(
           &snapshot, "ENUM_TWO_ARGUMENT_DERIVED",
           AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
-      CHECK(((enum_only || missing_argument_index) && !derived) ||
-                (!enum_only && !missing_argument_index && derived &&
+      CHECK(((enum_only || first_missing_argument_index) && !derived) ||
+                (!enum_only && !first_missing_argument_index && derived &&
                  derived->constant_value &&
                  strcmp(derived->constant_value,
                         argument_mode != 3 && argument_revision == 1
                             ? "113" : "103") == 0),
             "enum two argument derived value");
       int expected_diagnostic_count =
-          (!enum_only && missing_argument_index) ||
+          (!enum_only && first_missing_argument_index) ||
           (enum_only && cursor >= (size_t)(call_open - source));
       CHECK(snapshot.diagnostic_count == expected_diagnostic_count,
             "enum two argument diagnostics count");
-      if (!enum_only && missing_argument_index) {
+      if (!enum_only && first_missing_argument_index) {
         const ag_language_diagnostic_t *undefined_argument =
             find_diagnostic(&snapshot, "E3066");
         CHECK(undefined_argument &&
                   undefined_argument->message &&
                   strstr(undefined_argument->message,
-                         active_macro_names[missing_argument_index]) &&
+                         active_macro_names[first_missing_argument_index]) &&
+                  (!argument_missing[1] || !argument_missing[2] ||
+                   !strstr(undefined_argument->message,
+                           active_macro_names[2])) &&
                   undefined_argument->range.start.offset ==
                       (int)(callee_use - source) &&
                   undefined_argument->range.end.offset ==
