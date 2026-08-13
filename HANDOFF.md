@@ -32342,3 +32342,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ完全名をvirtual header revision間でenum定数→object-like macro→enum定数へ切り替えた場合に、未終端EOF
     operandの二段階recoveryがsymbol kind・metadata・派生値を現revisionへ切り替える境界を確認する。
+
+### このセッション（続き1104）: virtual header symbol kind遷移を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1103に残した、通常サイズのvirtual header kind差し替えと未終端enum initializerだけを確認した。
+- 調査結果:
+  - 同じ完全名をenum定数→object-like macro→enum定数および逆方向へ切り替えても、既存の
+    preprocessor/ScopeGraph resetが正しく働き、production codeの追加修正は不要だった。
+  - 現revisionのkind・値・documentationへ切り替わり、旧kindの同名候補とinitializer/macro metadataを持ち越さなかった。
+- 回帰範囲:
+  - `INCOMPLETE_HEADER_ENUM_VALUE`をenum 17→macro 57→enum 17、`INCOMPLETE_HEADER_ENUM_MACRO`を
+    macro 19→enum 59→macro 19へ、同じNative sessionおよび同じWasm compiler instanceで往復させた。
+  - 完全名は現kindのhover、declaration/documentation range、値またはmacro replacement、派生enumerator値、
+    diagnostics空を固定した。書きかけprefixはhoverなし、現kindの候補metadata、正確なpartial rangeを固定した。
+  - 旧kindの同名候補が存在せず、enum側のmacro metadataとmacro側のconstant valueが空になる境界も固定した。
+  - 専用シナリオを追加し、language analysisの表示を53 scenariosへ更新した。
+  - Wasm JS APIの全遷移をfresh Native JSON snapshotと完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (53 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - production compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - 同じmacro名をvirtual header revision間でobject-like→function-like→object-likeへ切り替えた場合に、bare完全名の
+    未終端EOF operandがresolved→partial→resolvedへ遷移し、macro parameter/replacement metadataも更新される境界を確認する。

@@ -2438,6 +2438,14 @@ const incompleteEnumHeaderRevisions = [
     macroDocumentation: "renamed header enum macro documentation",
     macroComment: "/** renamed header enum macro documentation */",
   },
+  {
+    header: "/// switched value macro documentation\n" +
+      "#define INCOMPLETE_HEADER_ENUM_VALUE 57\n" +
+      "enum SwitchedHeaderEnum {\n" +
+      "  /// switched macro enum documentation\n" +
+      "  INCOMPLETE_HEADER_ENUM_MACRO = 59\n" +
+      "};\n",
+  },
 ];
 const incompleteEnumHeaderSources = [
   {
@@ -2752,6 +2760,122 @@ try {
   }
 } finally {
   incompleteEnumHeaderRenameCompiler.dispose();
+}
+
+const incompleteEnumHeaderKindCases = [
+  [0, 0, "INCOMPLETE_HEADER_ENUM_VALUE", "INCOMPLETE_HEADER_ENUM_VALUE",
+    "enumConstant", "17", "header enum value documentation",
+    "/// header enum value documentation", false],
+  [0, 1, "INCOMPLETE_HEADER_ENUM_MACRO", "INCOMPLETE_HEADER_ENUM_MACRO",
+    "macro", "19", "header enum macro documentation",
+    "/// header enum macro documentation", false],
+  [0, 2, "INCOMPLETE_HEADER_ENUM_VA", "INCOMPLETE_HEADER_ENUM_VALUE",
+    "enumConstant", "17", "header enum value documentation",
+    "/// header enum value documentation", true],
+  [0, 3, "INCOMPLETE_HEADER_ENUM_MA", "INCOMPLETE_HEADER_ENUM_MACRO",
+    "macro", "19", "header enum macro documentation",
+    "/// header enum macro documentation", true],
+  [4, 0, "INCOMPLETE_HEADER_ENUM_VALUE", "INCOMPLETE_HEADER_ENUM_VALUE",
+    "macro", "57", "switched value macro documentation",
+    "/// switched value macro documentation", false],
+  [4, 1, "INCOMPLETE_HEADER_ENUM_MACRO", "INCOMPLETE_HEADER_ENUM_MACRO",
+    "enumConstant", "59", "switched macro enum documentation",
+    "/// switched macro enum documentation", false],
+  [4, 2, "INCOMPLETE_HEADER_ENUM_VA", "INCOMPLETE_HEADER_ENUM_VALUE",
+    "macro", "57", "switched value macro documentation",
+    "/// switched value macro documentation", true],
+  [4, 3, "INCOMPLETE_HEADER_ENUM_MA", "INCOMPLETE_HEADER_ENUM_MACRO",
+    "enumConstant", "59", "switched macro enum documentation",
+    "/// switched macro enum documentation", true],
+  [0, 0, "INCOMPLETE_HEADER_ENUM_VALUE", "INCOMPLETE_HEADER_ENUM_VALUE",
+    "enumConstant", "17", "header enum value documentation",
+    "/// header enum value documentation", false],
+  [0, 1, "INCOMPLETE_HEADER_ENUM_MACRO", "INCOMPLETE_HEADER_ENUM_MACRO",
+    "macro", "19", "header enum macro documentation",
+    "/// header enum macro documentation", false],
+  [0, 2, "INCOMPLETE_HEADER_ENUM_VA", "INCOMPLETE_HEADER_ENUM_VALUE",
+    "enumConstant", "17", "header enum value documentation",
+    "/// header enum value documentation", true],
+  [0, 3, "INCOMPLETE_HEADER_ENUM_MA", "INCOMPLETE_HEADER_ENUM_MACRO",
+    "macro", "19", "header enum macro documentation",
+    "/// header enum macro documentation", true],
+];
+const incompleteEnumHeaderKindCompiler = await createCompiler(wasmModule);
+try {
+  for (const [revisionIndex, sourceIndex, cursorName, candidateName, kind,
+    value, documentation, commentText, partialIdentifier] of
+    incompleteEnumHeaderKindCases) {
+    const revision = incompleteEnumHeaderRevisions[revisionIndex];
+    const source = incompleteEnumHeaderSources[sourceIndex];
+    const cursorIndex = source.source.lastIndexOf(cursorName);
+    const cursorStart = byteOffsetForIndex(source.source, cursorIndex);
+    const byteOffset = cursorStart +
+      Math.floor(Buffer.byteLength(cursorName) / 2);
+    const declarationIndex = revision.header.indexOf(candidateName);
+    const commentIndex = revision.header.indexOf(commentText);
+    assert.ok(cursorIndex >= 0 && declarationIndex >= 0 && commentIndex >= 0,
+      `${cursorName} incomplete enum header kind anchors`);
+    const result = incompleteEnumHeaderKindCompiler.analyzeSource(source, {
+      headers: { "incomplete-enum.h": revision.header },
+      cursor: { sourceName: source.name, byteOffset },
+    });
+    const candidate = symbol(result, candidateName, kind);
+    const previousKind = kind === "enumConstant" ? "macro" : "enumConstant";
+    assert.equal(result.partial, true);
+    assert.ok(candidate);
+    assert.equal(symbol(result, candidateName, previousKind), undefined);
+    assert.equal(candidate?.declaration.sourceName, "incomplete-enum.h");
+    assert.equal(candidate?.declaration.start.offset,
+      byteOffsetForIndex(revision.header, declarationIndex));
+    assert.equal(candidate?.declaration.end.offset,
+      byteOffsetForIndex(revision.header, declarationIndex) +
+        Buffer.byteLength(candidateName));
+    assert.equal(candidate?.documentation, documentation);
+    assert.equal(candidate?.documentationRange?.sourceName,
+      "incomplete-enum.h");
+    assert.equal(candidate?.documentationRange?.start.offset,
+      byteOffsetForIndex(revision.header, commentIndex));
+    assert.equal(candidate?.documentationRange?.end.offset,
+      byteOffsetForIndex(revision.header, commentIndex) +
+        Buffer.byteLength(commentText));
+    assert.deepStrictEqual(result.dependencies, ["incomplete-enum.h"]);
+    if (kind === "enumConstant") {
+      assert.equal(candidate?.initializer.constantValue, value);
+      assert.equal(candidate?.macro, null);
+    } else {
+      assert.equal(candidate?.macro?.replacement, value);
+      assert.equal(candidate?.initializer.constantValue, null);
+    }
+    if (partialIdentifier) {
+      assert.equal(result.hover, null);
+      assert.equal(result.diagnostics.length, 1);
+      assert.equal(result.diagnostics[0].code, "AGC_PARTIAL_IDENTIFIER");
+      assert.equal(result.diagnostics[0].start.offset, cursorStart);
+      assert.equal(result.diagnostics[0].end.offset,
+        cursorStart + Buffer.byteLength(cursorName));
+    } else {
+      assert.deepStrictEqual(result.diagnostics, []);
+      assert.equal(result.hover?.name, candidateName);
+      assert.equal(result.hover?.kind, kind);
+      assert.deepStrictEqual(result.hover?.declaration,
+        candidate?.declaration);
+      assert.equal(symbol(
+        result, "INCOMPLETE_HEADER_DERIVED", "enumConstant",
+      )?.initializer.constantValue, value);
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--incomplete-enum-header-revision-parity-json",
+          String(revisionIndex + 1), String(sourceIndex), String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm incomplete enum header kind differ for ${cursorName} at revision ${revisionIndex + 1}`,
+    );
+  }
+} finally {
+  incompleteEnumHeaderKindCompiler.dispose();
 }
 
 const initializerDesignatorOperandHoverSource = {
