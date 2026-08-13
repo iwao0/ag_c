@@ -32520,3 +32520,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - project revisionを進めながらcurrent editing sourceだけを同じrevision内でbare/invocation間に切り替え、index再構築なしでも
     hover snapshotが前回のcursor source候補・diagnosticを保持しない境界を確認する。
+
+### このセッション（続き1110）: 同revision内のediting source往復を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1109の16 revision列を変えず、通常サイズのcurrent editing sourceだけをbare/invocation間で往復した。
+- 調査結果:
+  - 同じproject revision内で`bare→invocation→bare→invocation`と解析sourceを切り替えても、project index revisionは不変で、
+    Native/Wasmとも各snapshotを現在のsource形から再構築した。
+  - 前の解析にあったhover kind、派生enumerator、`AGC_PARTIAL_IDENTIFIER`またはE3102とそのrangeは次の解析へ残らず、
+    Wasmの2巡目snapshotは対応する1巡目snapshotと完全一致した。
+  - Native/Wasm差や追加のproduction code不具合は見つからず、既存project revision回帰だけを拡張した。
+- 回帰範囲:
+  - 16 revisionすべてで、有効なbare/invocationの名前の先頭・中央・末尾を2巡ずつ解析した。
+    neither revisionは解決対象のないinvocationを除外し、bareを2巡した。
+  - enum+macro、enum-only、macro-only、neither、enum rename中と復元後を含み、候補identity、値、macro metadata、
+    declaration/documentation range、hover、diagnostic、derived value、dependencyを既存期待値で毎回検証した。
+  - 1巡目は各revisionを先頭から再生するfresh Native JSON snapshotとWasmを完全一致させ、2巡目は同一Wasm compilerの
+    1巡目snapshotと完全一致させた。Nativeでは各解析後にproject index revisionが変化しないことも固定した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (57 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - production compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、fuzz・深度/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じrevision・同じediting sourceのままcursorを識別子外→先頭→中央→末尾→識別子外へ動かし、
+    hoverとpartial diagnosticがcursor-local stateだけを反映して前回rangeを保持しない境界を確認する。

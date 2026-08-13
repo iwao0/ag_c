@@ -3643,7 +3643,8 @@ try {
     revisionIndex++) {
     const revision = projectEnumMacroRevisions[revisionIndex];
     const header = projectEnumMacroHeaders[revision.headerIndex];
-    for (const invocation of [false, true]) {
+    const firstSourceModeResults = new Map();
+    for (const invocation of [false, true, false, true]) {
       if (invocation && !revision.enumValue && !revision.macroReplacement) {
         continue;
       }
@@ -3781,17 +3782,28 @@ try {
                 ? revision.macroInvocationValue : revision.enumValue);
           }
         }
-        assert.deepStrictEqual(
-          result,
-          JSON.parse(execFileSync(
-            nativeAnalysisPath,
-            ["--project-enum-macro-revision-parity-json",
-              String(revisionIndex + 1), invocation ? "1" : "0",
-              String(byteOffset)],
-            { encoding: "utf8" },
-          )),
-          `native and Wasm project enum/macro revision differ for ${revisionIndex + 1}, ${invocation}, ${delta}`,
-        );
+        const sourceModeKey = `${invocation}:${delta}`;
+        const firstSourceModeResult = firstSourceModeResults.get(sourceModeKey);
+        if (firstSourceModeResult) {
+          assert.deepStrictEqual(
+            result,
+            firstSourceModeResult,
+            `Wasm project enum/macro source toggle retained stale state for ${revisionIndex + 1}, ${invocation}, ${delta}`,
+          );
+        } else {
+          firstSourceModeResults.set(sourceModeKey, result);
+          assert.deepStrictEqual(
+            result,
+            JSON.parse(execFileSync(
+              nativeAnalysisPath,
+              ["--project-enum-macro-revision-parity-json",
+                String(revisionIndex + 1), invocation ? "1" : "0",
+                String(byteOffset)],
+              { encoding: "utf8" },
+            )),
+            `native and Wasm project enum/macro revision differ for ${revisionIndex + 1}, ${invocation}, ${delta}`,
+          );
+        }
       }
     }
   }

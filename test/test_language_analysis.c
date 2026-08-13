@@ -5091,6 +5091,7 @@ static int test_project_enum_macro_revision_order(
   const char *name = "PROJECT_COLLIDING_SYMBOL";
   size_t name_length = strlen(name);
   size_t deltas[] = {0, name_length / 2, name_length};
+  const size_t source_modes[] = {0, 1, 0, 1};
   for (size_t revision = 0;
        revision < sizeof(project_enum_macro_revisions) /
                       sizeof(project_enum_macro_revisions[0]);
@@ -5107,7 +5108,10 @@ static int test_project_enum_macro_revision_order(
               bundle, defaults, &error) &&
               ag_language_project_index_revision(project) == revision + 1,
           "project enum macro revision update");
-    for (size_t invocation = 0; invocation < 2; invocation++) {
+    for (size_t source_mode_index = 0;
+         source_mode_index < sizeof(source_modes) / sizeof(source_modes[0]);
+         source_mode_index++) {
+      size_t invocation = source_modes[source_mode_index];
       if (invocation && !expected->enum_value &&
           !expected->macro_replacement)
         continue;
@@ -5123,6 +5127,8 @@ static int test_project_enum_macro_revision_order(
                   (size_t)(use - source) + deltas[delta_index],
                   bundle, defaults, &snapshot, &error),
               "project enum macro revision analysis");
+        CHECK(ag_language_project_index_revision(project) == revision + 1,
+              "project enum macro source toggle keeps index revision");
         const ag_language_symbol_t *enum_candidate = find_symbol(
             &snapshot, name, AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
         const ag_language_symbol_t *macro_candidate = find_symbol(
