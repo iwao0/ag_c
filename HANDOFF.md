@@ -32223,3 +32223,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ未終端enum initializer内で識別子自体が書きかけの`DERIVED = BA`は、完全operandのpartial経路へ
     混ぜず、partial identifier診断を維持する独立候補として扱う。
+
+### このセッション（続き1100）: 未終端enum initializer内のpartial identifierを安定化した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1099に残した、通常サイズの`DERIVED = BA`型の書きかけ識別子だけを調査した。
+- 原因と修正:
+  - 続き1099の未終端enum recoveryはEOF識別子をそのまま一時sourceへ保持するため、`BASE`のような
+    解決可能なoperandは扱えても、未解決prefixの`BA`はNative/Wasm APIとも解析失敗になっていた。
+  - EOF識別子をまず仮operand`0`へelideして安全に候補scopeを構築し、可視enum定数またはobject-like macroへ
+    完全一致する場合だけ元operandを保持してsessionを再解析する二段階recoveryへ分けた。
+  - これにより解決済み`BASE`はhoverと派生enumeratorの定数値を維持し、未解決`BA`だけが仮operand解析の
+    snapshotに正確なrangeの`AGC_PARTIAL_IDENTIFIER`を加える。どちらも未終端sourceなので`partial:true`を維持する。
+  - prefix一致からsymbolを推測する処理、式の意味評価、再帰的な式走査、深度上限の拡張は追加していない。
+- 回帰範囲:
+  - file/block scope、式中1個目/2個目、単項、block comment、CRLF行継続、enum定数とobject-like macroを網羅した。
+  - partial identifierの先頭・中央・末尾、診断の正確なsource range、候補側のdeclaration range・enum値・
+    macro replacement/documentation、block lookup point、同一session/fresh sessionをNativeで固定した。
+  - 解決済みEOF operandでは派生enumerator値8/7を保持し、追加診断を出さない境界も固定した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、fresh compilerと失敗後再利用を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (49 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - virtual header由来のenum定数/object-like macroを未終端enum initializerのEOF operandに置いた場合も、
+    primary source内のsymbolと同じ二段階契約になることを独立して確認する。

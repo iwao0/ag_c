@@ -854,6 +854,7 @@ typedef enum {
   AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER = 1 << 1,
   AG_LANGUAGE_RECOVERY_COMPLETE_IDENTIFIER_ELIDED = 1 << 2,
   AG_LANGUAGE_RECOVERY_INCOMPLETE_SOURCE = 1 << 3,
+  AG_LANGUAGE_RECOVERY_AMBIGUOUS_EOF_IDENTIFIER = 1 << 4,
 } ag_language_recovery_flags_t;
 
 static char *build_record_member_recovery_source(
@@ -1097,7 +1098,8 @@ static int enum_initializer_operand_end(
 }
 
 static char *build_enum_declaration_recovery_source(
-    const char *source, size_t length, size_t cursor, int *changed,
+    const char *source, size_t length, size_t cursor,
+    int preserve_ambiguous_eof_identifier, int *changed,
     size_t *source_consumed) {
   const char *name = NULL;
   size_t name_length = 0;
@@ -1131,17 +1133,29 @@ static char *build_enum_declaration_recovery_source(
   size_t suffix_length = unterminated_initializer
                              ? sizeof(incomplete_suffix) - 1
                              : sizeof(complete_suffix) - 1;
+  int ambiguous_eof_identifier =
+      unterminated_initializer && name_end == length;
+  int elide_eof_identifier =
+      ambiguous_eof_identifier && !preserve_ambiguous_eof_identifier;
+  size_t source_prefix_length =
+      elide_eof_identifier ? name_start : item_end;
+  size_t replacement_length = elide_eof_identifier ? 1 : 0;
   if (outer_brace_count > (SIZE_MAX - 1) / 2) return NULL;
   size_t outer_brace_bytes = outer_brace_count * 2;
-  if (suffix_length > SIZE_MAX - 1 - outer_brace_bytes ||
-      item_end > SIZE_MAX - 1 - outer_brace_bytes - suffix_length)
+  if (replacement_length > SIZE_MAX - 1 - outer_brace_bytes ||
+      suffix_length > SIZE_MAX - 1 - outer_brace_bytes - replacement_length ||
+      source_prefix_length >
+          SIZE_MAX - 1 - outer_brace_bytes - replacement_length -
+              suffix_length)
     return NULL;
   size_t result_length =
-      item_end + suffix_length + outer_brace_bytes;
+      source_prefix_length + replacement_length + suffix_length +
+      outer_brace_bytes;
   char *result = malloc(result_length + 1);
   if (!result) return NULL;
-  memcpy(result, source, item_end);
-  size_t output = item_end;
+  memcpy(result, source, source_prefix_length);
+  size_t output = source_prefix_length;
+  if (elide_eof_identifier) result[output++] = '0';
   memcpy(result + output, suffix, suffix_length);
   output += suffix_length;
   for (size_t i = 0; i < outer_brace_count; i++) {
@@ -1153,6 +1167,9 @@ static char *build_enum_declaration_recovery_source(
     *changed = AG_LANGUAGE_RECOVERY_CHANGED |
                (unterminated_initializer
                     ? AG_LANGUAGE_RECOVERY_INCOMPLETE_SOURCE
+                    : 0) |
+               (ambiguous_eof_identifier
+                    ? AG_LANGUAGE_RECOVERY_AMBIGUOUS_EOF_IDENTIFIER
                     : 0);
   if (source_consumed) *source_consumed = item_end;
   return result;
@@ -2820,6 +2837,7 @@ analysis_complete_type_name_array_bound_tail(
 static char *build_recovery_source(const char *source, size_t source_length,
                                    size_t cursor,
                                    int enable_trigraphs,
+                                   int preserve_ambiguous_eof_identifier,
                                    int *changed) {
   size_t macro_definition_end =
       analysis_complete_macro_definition_at_cursor(
@@ -2849,7 +2867,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
           initializer_designator_recovery, source, source_length,
           source_consumed);
     char *enum_recovery = build_enum_declaration_recovery_source(
-        source, source_length, recovery_cursor, changed,
+        source, source_length, recovery_cursor,
+        preserve_ambiguous_eof_identifier, changed,
         &source_consumed);
     if (enum_recovery)
       return append_conditional_validation_tail(
@@ -4652,6 +4671,62 @@ static int cursor_invokes_function_like_macro(
   return 0;
 }
 
+static int ambiguous_eof_identifier_resolves_as_enum_operand(
+    const ag_language_analysis_request_t *request,
+    int enable_trigraphs, const psx_scope_graph_t *scope_graph,
+    const ag_preprocessor_context_t *preprocessor) {
+  if (!request || !scope_graph || !preprocessor) return 0;
+  analysis_identifier_span_t identifier = {0};
+  if (!analysis_identifier_span_at_mode(
+          request->source, request->source_length,
+          request->cursor_byte_offset, enable_trigraphs, &identifier) ||
+      identifier.end != request->source_length)
+    return 0;
+  const psx_scope_declaration_t *marker = NULL;
+  size_t declaration_count =
+      psx_scope_graph_declaration_count(scope_graph);
+  for (size_t i = declaration_count; i > 0; i--) {
+    const psx_scope_declaration_t *candidate =
+        psx_scope_graph_declaration_at(scope_graph, i - 1);
+    if (candidate && candidate->name &&
+        strcmp(candidate->name, AG_LANGUAGE_CURSOR_MARKER) == 0) {
+      marker = candidate;
+      break;
+    }
+  }
+  if (!marker) return 0;
+  psx_scope_lookup_point_t point = {
+      marker->scope_id, marker->declaration_order};
+  for (size_t i = 0; i < declaration_count; i++) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(scope_graph, i);
+    if (!declaration || declaration->kind != PSX_DECL_ENUM_CONSTANT ||
+        declaration->name_space != PSX_NAMESPACE_ORDINARY ||
+        !declaration->name || declaration->name_len <= 0 ||
+        !analysis_identifier_span_matches(
+            request->source, request->source_length, &identifier,
+            enable_trigraphs, declaration->name,
+            (size_t)declaration->name_len))
+      continue;
+    if (psx_scope_graph_lookup(
+            scope_graph, PSX_NAMESPACE_ORDINARY,
+            declaration->name, declaration->name_len,
+            point) == declaration->id)
+      return 1;
+  }
+  int macro_count = pp_macro_count_in(preprocessor);
+  for (int macro_index = 0; macro_index < macro_count; macro_index++) {
+    ag_pp_macro_view_t view = {0};
+    if (pp_macro_view_at_in(preprocessor, macro_index, &view) &&
+        !view.is_function_like && view.name && view.name_len > 0 &&
+        analysis_identifier_span_matches(
+            request->source, request->source_length, &identifier,
+            enable_trigraphs, view.name, (size_t)view.name_len))
+      return 1;
+  }
+  return 0;
+}
+
 static int member_base_at_cursor(
     const ag_language_analysis_request_t *request,
     const char **object_name, size_t *object_name_len, int *uses_arrow) {
@@ -5633,7 +5708,7 @@ int ag_language_analyze_source(
   int recovery_changed = 0;
   char *recovery_source = build_recovery_source(
       request->source, request->source_length,
-      request->cursor_byte_offset, builder.enable_trigraphs,
+      request->cursor_byte_offset, builder.enable_trigraphs, 0,
       &recovery_changed);
   if (!recovery_source) {
     ag_language_documentation_index_dispose(documentation_index);
@@ -5656,6 +5731,59 @@ int ag_language_analyze_source(
     set_error(error, AG_LANGUAGE_ANALYSIS_FAILED,
               "AGC_LANGUAGE_ANALYSIS_PARSE_START_FAILED", NULL, 0, 0);
     return 0;
+  }
+  if ((recovery_changed &
+       AG_LANGUAGE_RECOVERY_AMBIGUOUS_EOF_IDENTIFIER) &&
+      ambiguous_eof_identifier_resolves_as_enum_operand(
+          request, builder.enable_trigraphs,
+          ag_compilation_session_scope_graph(session),
+          ag_compilation_session_preprocessor_context(session))) {
+    parse_state->documentation_index_owned = NULL;
+    finish_analysis_parse_state(parse_state);
+    parse_state = NULL;
+    recovery_source = NULL;
+    if (!ag_compilation_session_reset_translation_unit(session)) {
+      ag_language_documentation_index_dispose(documentation_index);
+      free(documentation_index);
+      set_error(error, AG_LANGUAGE_ANALYSIS_FAILED,
+                "AGC_LANGUAGE_ANALYSIS_SESSION_RESET_FAILED", NULL, 0, 0);
+      return 0;
+    }
+    pp_virtual_headers_configure_in(
+        ag_compilation_session_preprocessor_context(session),
+        header_bundle, header_bundle_length,
+        request->max_header_files > 0 ? request->max_header_files : 128,
+        request->max_header_file_bytes > 0
+            ? request->max_header_file_bytes : 1024 * 1024,
+        request->max_header_total_bytes > 0
+            ? request->max_header_total_bytes : 4 * 1024 * 1024,
+        request->max_include_depth > 0 ? request->max_include_depth : 32);
+    recovery_source = build_recovery_source(
+        request->source, request->source_length,
+        request->cursor_byte_offset, builder.enable_trigraphs, 1,
+        &recovery_changed);
+    if (!recovery_source) {
+      ag_language_documentation_index_dispose(documentation_index);
+      free(documentation_index);
+      set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
+                "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
+      return 0;
+    }
+    tk_set_filename_ctx(tokenizer, request->source_name);
+    parse_state = create_analysis_parse_state(
+        session, tokenizer, recovery_source, documentation_index, request);
+    if (!parse_state) {
+      set_error(error, AG_LANGUAGE_ANALYSIS_OUT_OF_MEMORY,
+                "AGC_LANGUAGE_ANALYSIS_OUT_OF_MEMORY", NULL, 0, 0);
+      return 0;
+    }
+    if (!parse_analysis_source(parse_state)) {
+      finish_analysis_parse_state(parse_state);
+      (void)ag_compilation_session_reset_translation_unit(session);
+      set_error(error, AG_LANGUAGE_ANALYSIS_FAILED,
+                "AGC_LANGUAGE_ANALYSIS_PARSE_START_FAILED", NULL, 0, 0);
+      return 0;
+    }
   }
   saved_analysis_diagnostic_t saved_fatal = {0};
   analysis_parse_state_t *retry_state = NULL;
@@ -5876,6 +6004,19 @@ int ag_language_analyze_source(
         has_hover_identifier ? &hover_identifier : NULL,
         builder.enable_trigraphs,
         declaration_kind(cursor_scoped_declaration));
+  int unresolved_ambiguous_eof_identifier =
+      (recovery_changed &
+       AG_LANGUAGE_RECOVERY_AMBIGUOUS_EOF_IDENTIFIER) &&
+      snapshot->hover_index < 0;
+  if (unresolved_ambiguous_eof_identifier &&
+      !append_partial_identifier_diagnostic(&builder, request)) {
+    dispose_saved_diagnostic(&saved_fatal);
+    finish_analysis_parse_state(parse_state);
+    finish_analysis_parse_state(retry_state);
+    (void)ag_compilation_session_reset_translation_unit(session);
+    ag_language_analysis_snapshot_dispose(snapshot);
+    return 0;
+  }
   int unresolved_elided_identifier =
       (recovery_changed &
        AG_LANGUAGE_RECOVERY_COMPLETE_IDENTIFIER_ELIDED) &&

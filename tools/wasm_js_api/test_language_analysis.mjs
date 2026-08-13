@@ -2137,11 +2137,42 @@ const incompleteEnumInitializerSources = [
       "  enum { INCOMPLETE_ENUM_BLOCK_DERIVED = " +
       "(INCOMPLETE_ENUM_BLOCK_BASE)",
   },
+  {
+    name: "incomplete-enum-initializer.c",
+    source: "enum { INCOMPLETE_ENUM_PARTIAL_BASE = 11,\n" +
+      "       INCOMPLETE_ENUM_PARTIAL_OTHER = 12 };\n" +
+      "enum { INCOMPLETE_ENUM_PARTIAL_DERIVED = " +
+      "INCOMPLETE_ENUM_PARTIAL_BASE + \\\r\n" +
+      "INCOMPLETE_ENUM_PARTIAL_OT",
+  },
+  {
+    name: "incomplete-enum-initializer.c",
+    source: "/// incomplete enum partial macro documentation\n" +
+      "#define INCOMPLETE_ENUM_PARTIAL_MACRO 13\n" +
+      "enum { INCOMPLETE_ENUM_PARTIAL_MACRO_DERIVED = " +
+      "/* gap */ INCOMPLETE_ENUM_PARTIAL_MAC",
+  },
+  {
+    name: "incomplete-enum-initializer.c",
+    source: "enum { INCOMPLETE_ENUM_PARTIAL_BLOCK_BASE = 14 };\n" +
+      "static int incomplete_enum_partial_block(int parameter) {\n" +
+      "  int before = parameter;\n" +
+      "  enum { INCOMPLETE_ENUM_PARTIAL_BLOCK_DERIVED = " +
+      "+INCOMPLETE_ENUM_PARTIAL_BLOCK_BA",
+  },
 ];
 const incompleteEnumInitializerCases = [
   [0, "INCOMPLETE_ENUM_BASE", "enumConstant", "3"],
   [0, "INCOMPLETE_ENUM_MACRO", "macro", ""],
   [1, "INCOMPLETE_ENUM_BLOCK_BASE", "enumConstant", "7"],
+];
+const partialIncompleteEnumInitializerCases = [
+  [2, "INCOMPLETE_ENUM_PARTIAL_OT", "INCOMPLETE_ENUM_PARTIAL_OTHER",
+    "enumConstant", "12"],
+  [3, "INCOMPLETE_ENUM_PARTIAL_MAC", "INCOMPLETE_ENUM_PARTIAL_MACRO",
+    "macro", ""],
+  [4, "INCOMPLETE_ENUM_PARTIAL_BLOCK_BA",
+    "INCOMPLETE_ENUM_PARTIAL_BLOCK_BASE", "enumConstant", "14"],
 ];
 for (const [sourceIndex, name, kind, constantValue] of
   incompleteEnumInitializerCases) {
@@ -2186,6 +2217,16 @@ for (const [sourceIndex, name, kind, constantValue] of
       assert.ok(symbol(result, "parameter", "parameter"));
       assert.ok(symbol(result, "before", "object"));
     }
+    const derived = symbol(
+      result,
+      sourceIndex === 0
+        ? "INCOMPLETE_ENUM_DERIVED"
+        : "INCOMPLETE_ENUM_BLOCK_DERIVED",
+      "enumConstant",
+    );
+    assert.equal(derived?.initializer.constantValue,
+      sourceIndex === 0 ? "8" : "7",
+      `${name} resolved enum initializer value was not preserved`);
     assert.deepStrictEqual(
       result,
       JSON.parse(execFileSync(
@@ -2195,6 +2236,65 @@ for (const [sourceIndex, name, kind, constantValue] of
         { encoding: "utf8" },
       )),
       `native and Wasm incomplete enum initializer differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+for (const [sourceIndex, partialName, completionName, kind, constantValue] of
+  partialIncompleteEnumInitializerCases) {
+  const source = incompleteEnumInitializerSources[sourceIndex];
+  const partialIndex = source.source.lastIndexOf(partialName);
+  const declarationIndex = source.source.indexOf(completionName);
+  assert.ok(partialIndex >= 0 && declarationIndex >= 0,
+    `${partialName} partial incomplete enum initializer anchors`);
+  const partialStart = byteOffsetForIndex(source.source, partialIndex);
+  const declarationStart = byteOffsetForIndex(source.source, declarationIndex);
+  for (const delta of [
+    0,
+    Math.floor(Buffer.byteLength(partialName) / 2),
+    Buffer.byteLength(partialName),
+  ]) {
+    const byteOffset = partialStart + delta;
+    const result = compiler.analyzeSource(source, {
+      cursor: { sourceName: source.name, byteOffset },
+    });
+    const completion = symbol(result, completionName, kind);
+    assert.equal(result.partial, true,
+      `${partialName} partial enum identifier was marked complete`);
+    assert.equal(result.hover, null,
+      `${partialName} partial enum identifier unexpectedly hovered`);
+    assert.equal(result.diagnostics.length, 1,
+      `${partialName} partial enum identifier diagnostic count`);
+    assert.equal(result.diagnostics[0].code, "AGC_PARTIAL_IDENTIFIER");
+    assert.equal(result.diagnostics[0].severity, "note");
+    assert.equal(result.diagnostics[0].start.offset, partialStart);
+    assert.equal(result.diagnostics[0].end.offset,
+      partialStart + Buffer.byteLength(partialName));
+    assert.equal(completion?.declaration.start.offset, declarationStart,
+      `${completionName} partial enum completion declaration start`);
+    assert.equal(completion?.declaration.end.offset,
+      declarationStart + Buffer.byteLength(completionName),
+      `${completionName} partial enum completion declaration end`);
+    if (kind === "enumConstant")
+      assert.equal(completion?.initializer.constantValue, constantValue);
+    if (kind === "macro") {
+      assert.equal(completion?.macro?.replacement, "13");
+      assert.equal(completion?.documentation,
+        "incomplete enum partial macro documentation");
+    }
+    if (sourceIndex === 4) {
+      assert.ok(symbol(result, "parameter", "parameter"));
+      assert.ok(symbol(result, "before", "object"));
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--incomplete-enum-initializer-hover-parity-json",
+          String(sourceIndex), String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm partial enum identifier differ for ${partialName} at ${delta}`,
     );
   }
 }
@@ -2219,6 +2319,26 @@ try {
     assert.deepStrictEqual(result.diagnostics, []);
     assert.equal(result.hover?.name, name);
     assert.equal(result.hover?.kind, kind);
+  }
+  for (const [sourceIndex, partialName, completionName, kind] of
+    partialIncompleteEnumInitializerCases) {
+    const source = incompleteEnumInitializerSources[sourceIndex];
+    const partialIndex = source.source.lastIndexOf(partialName);
+    const result = freshIncompleteEnumInitializerCompiler.analyzeSource(
+      source,
+      {
+        cursor: {
+          sourceName: source.name,
+          byteOffset: byteOffsetForIndex(source.source, partialIndex) +
+            Math.floor(Buffer.byteLength(partialName) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, true);
+    assert.equal(result.hover, null);
+    assert.equal(result.diagnostics.length, 1);
+    assert.equal(result.diagnostics[0].code, "AGC_PARTIAL_IDENTIFIER");
+    assert.ok(symbol(result, completionName, kind));
   }
 } finally {
   freshIncompleteEnumInitializerCompiler.dispose();

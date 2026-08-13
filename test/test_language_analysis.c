@@ -696,7 +696,21 @@ static const char *const incomplete_enum_initializer_sources[] = {
     "static int incomplete_enum_block(int parameter) {\n"
     "  int before = parameter;\n"
     "  enum { INCOMPLETE_ENUM_BLOCK_DERIVED = "
-    "(INCOMPLETE_ENUM_BLOCK_BASE)"};
+    "(INCOMPLETE_ENUM_BLOCK_BASE)",
+    "enum { INCOMPLETE_ENUM_PARTIAL_BASE = 11,\n"
+    "       INCOMPLETE_ENUM_PARTIAL_OTHER = 12 };\n"
+    "enum { INCOMPLETE_ENUM_PARTIAL_DERIVED = "
+    "INCOMPLETE_ENUM_PARTIAL_BASE + \\\r\n"
+    "INCOMPLETE_ENUM_PARTIAL_OT",
+    "/// incomplete enum partial macro documentation\n"
+    "#define INCOMPLETE_ENUM_PARTIAL_MACRO 13\n"
+    "enum { INCOMPLETE_ENUM_PARTIAL_MACRO_DERIVED = "
+    "/* gap */ INCOMPLETE_ENUM_PARTIAL_MAC",
+    "enum { INCOMPLETE_ENUM_PARTIAL_BLOCK_BASE = 14 };\n"
+    "static int incomplete_enum_partial_block(int parameter) {\n"
+    "  int before = parameter;\n"
+    "  enum { INCOMPLETE_ENUM_PARTIAL_BLOCK_DERIVED = "
+    "+INCOMPLETE_ENUM_PARTIAL_BLOCK_BA"};
 
 static const char initializer_designator_operand_hover_source[] =
     "/// initializer designator macro documentation\n"
@@ -3505,6 +3519,112 @@ static int test_incomplete_enum_initializer_hover(
                     find_symbol(
                         &snapshot, "before", AG_LANGUAGE_SYMBOL_OBJECT),
                 "incomplete enum block lookup point");
+        const ag_language_symbol_t *derived = find_symbol(
+            &snapshot,
+            cases[case_index].source_index == 0
+                ? "INCOMPLETE_ENUM_DERIVED"
+                : "INCOMPLETE_ENUM_BLOCK_DERIVED",
+            AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+        CHECK(derived && derived->constant_value &&
+                  strcmp(derived->constant_value,
+                         cases[case_index].source_index == 0
+                             ? "8" : "7") == 0,
+              "incomplete enum resolved operand value preserved");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  struct {
+    size_t source_index;
+    const char *partial_name;
+    const char *completion_name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+    const char *constant_value;
+  } partial_cases[] = {
+      {2, "INCOMPLETE_ENUM_PARTIAL_OT", "INCOMPLETE_ENUM_PARTIAL_OTHER",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INCOMPLETE_ENUM_PARTIAL_OTHER = 12", "12"},
+      {3, "INCOMPLETE_ENUM_PARTIAL_MAC", "INCOMPLETE_ENUM_PARTIAL_MACRO",
+       AG_LANGUAGE_SYMBOL_MACRO, "INCOMPLETE_ENUM_PARTIAL_MACRO 13", ""},
+      {4, "INCOMPLETE_ENUM_PARTIAL_BLOCK_BA",
+       "INCOMPLETE_ENUM_PARTIAL_BLOCK_BASE",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INCOMPLETE_ENUM_PARTIAL_BLOCK_BASE = 14", "14"},
+  };
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(partial_cases) / sizeof(partial_cases[0]);
+         case_index++) {
+      const char *source = incomplete_enum_initializer_sources[
+          partial_cases[case_index].source_index];
+      const char *partial = last_occurrence(
+          source, partial_cases[case_index].partial_name);
+      const char *declaration = strstr(
+          source, partial_cases[case_index].declaration_fragment);
+      CHECK(partial && declaration,
+            "partial incomplete enum initializer anchors");
+      size_t partial_length = strlen(partial_cases[case_index].partial_name);
+      size_t completion_length =
+          strlen(partial_cases[case_index].completion_name);
+      size_t deltas[] = {0, partial_length / 2, partial_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh partial incomplete enum initializer session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "incomplete-enum-initializer.c", source,
+                  (size_t)(partial - source) + deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "partial incomplete enum initializer analysis");
+        const ag_language_diagnostic_t *partial_diagnostic =
+            find_diagnostic(&snapshot, "AGC_PARTIAL_IDENTIFIER");
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, partial_cases[case_index].completion_name,
+            partial_cases[case_index].kind);
+        CHECK(snapshot.partial && snapshot.diagnostic_count == 1 &&
+                  partial_diagnostic && !hover_symbol(&snapshot) &&
+                  completion &&
+                  partial_diagnostic->range.start.offset ==
+                      (int)(partial - source) &&
+                  partial_diagnostic->range.end.offset ==
+                      (int)(partial - source + partial_length) &&
+                  completion->declaration.start.offset ==
+                      (int)(declaration - source) &&
+                  completion->declaration.end.offset ==
+                      (int)(declaration - source + completion_length),
+              "partial incomplete enum initializer fields");
+        if (partial_cases[case_index].kind ==
+            AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(strcmp(completion->constant_value,
+                       partial_cases[case_index].constant_value) == 0,
+                "partial incomplete enum initializer value");
+        if (partial_cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO) {
+          const char *comment = strstr(
+              source, "/// incomplete enum partial macro documentation");
+          CHECK(completion->macro_replacement &&
+                    strcmp(completion->macro_replacement, "13") == 0 &&
+                    comment && check_documentation_symbol(
+                        completion,
+                        "incomplete enum partial macro documentation",
+                        "incomplete-enum-initializer.c",
+                        (size_t)(comment - source),
+                        (size_t)(comment - source) +
+                            strlen("/// incomplete enum partial macro documentation")),
+                "partial incomplete enum macro fields");
+        }
+        if (partial_cases[case_index].source_index == 4)
+          CHECK(find_symbol(
+                    &snapshot, "parameter", AG_LANGUAGE_SYMBOL_PARAMETER) &&
+                    find_symbol(
+                        &snapshot, "before", AG_LANGUAGE_SYMBOL_OBJECT),
+                "partial incomplete enum block lookup point");
         ag_language_analysis_snapshot_dispose(&snapshot);
         if (fresh_session)
           ag_compilation_session_destroy(analysis_session);
