@@ -486,6 +486,7 @@ static const char cast_operand_hover_source[] =
     "static int cast_object = 5;\n"
     "static int cast_seed = 9;\n"
     "static int cast_choose(int value) { return value; }\n"
+    "static int (*cast_pointer)(int) = cast_choose;\n"
     "static int cast_context(int parameter_value, int condition,\n"
     "                        int *values, int index_value) {\n"
     "  int simple = (int)CAST_OPERAND_MACRO;\n"
@@ -504,7 +505,23 @@ static const char cast_operand_hover_source[] =
     "  int splice_crlf = (unsigned int) \\\r\n"
     "cast_object;\r\n"
     "  int nested_cast = (int)((unsigned long)CAST_OPERAND_MACRO);\n"
+    "  int adjacent_builtin = (int)(long)cast_object;\n"
+    "  int adjacent_typedef = (CastSize)(long)cast_object;\n"
+    "  int adjacent_typedef_operand = (int)(CastSize)cast_object;\n"
+    "  int adjacent_comment = (int) /* adjacent cast */ "
+    "(long)CAST_OPERAND_MACRO;\n"
+    "  int adjacent_splice_lf = (int) \\\n"
+    "(long)cast_object;\n"
+    "  int adjacent_splice_crlf = (int) \\\r\n"
+    "(long)CAST_MODE_VALUE;\r\n"
+    "  (void)(int[CAST_MODE_VALUE]){ 1 };\n"
+    "  (void)(int[CAST_MODE_VALUE]){ 1 }[0];\n"
+    "  (void)(int (*)[CAST_MODE_VALUE])0;\n"
     "  int normal_call = cast_choose(parameter_value) + cast_object;\n"
+    "  int parenthesized_call = (cast_choose)(parameter_value);\n"
+    "  int parenthesized_pointer_call = (cast_pointer)(parameter_value);\n"
+    "  int dereferenced_pointer_call = (*cast_pointer)(parameter_value);\n"
+    "  int addressed_call = (&cast_choose)(parameter_value);\n"
     "  int grouped = (cast_object + cast_seed) + CAST_OPERAND_MACRO;\n"
     "  int type_size = (int)sizeof(unsigned int) + CAST_OPERAND_MACRO;\n"
     "  int type_align = (int)_Alignof(unsigned int) + CAST_OPERAND_MACRO;\n"
@@ -514,7 +531,12 @@ static const char cast_operand_hover_source[] =
     "         subscript + typedef_name + (pointer != 0) +\n"
     "         (tag_pointer != 0) + enum_cast +\n"
     "         comment_gap + splice_lf + splice_crlf + nested_cast +\n"
-    "         normal_call + grouped + type_size + type_align + compound;\n"
+    "         adjacent_builtin + adjacent_typedef +\n"
+    "         adjacent_typedef_operand + adjacent_comment +\n"
+    "         adjacent_splice_lf + adjacent_splice_crlf + normal_call +\n"
+    "         parenthesized_call +\n"
+    "         parenthesized_pointer_call + dereferenced_pointer_call +\n"
+    "         addressed_call + grouped + type_size + type_align + compound;\n"
     "}\n";
 static const char *const cast_operand_project_sources[] = {
     "/// project cast v1\n#define PROJECT_CAST_VALUE 31\n"
@@ -2404,6 +2426,25 @@ static int test_cast_operand_hover(ag_target_info_t target) {
        AG_LANGUAGE_SYMBOL_OBJECT},
       {"nested_cast = (int)((unsigned long)CAST_OPERAND_MACRO",
        "CAST_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
+      {"adjacent_builtin = (int)(long)cast_object", "cast_object",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"adjacent_typedef = (CastSize)(long)cast_object", "cast_object",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"adjacent_typedef_operand = (int)(CastSize)cast_object", "cast_object",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"adjacent_comment = (int) /* adjacent cast */ "
+       "(long)CAST_OPERAND_MACRO",
+       "CAST_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
+      {"adjacent_splice_lf = (int) \\\n(long)cast_object", "cast_object",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"adjacent_splice_crlf = (int) \\\r\n(long)CAST_MODE_VALUE",
+       "CAST_MODE_VALUE", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT},
+      {"(void)(int[CAST_MODE_VALUE]){ 1 };", "CAST_MODE_VALUE",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT},
+      {"(void)(int[CAST_MODE_VALUE]){ 1 }[0]", "CAST_MODE_VALUE",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT},
+      {"(void)(int (*)[CAST_MODE_VALUE])0", "CAST_MODE_VALUE",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT},
   };
   const char *macro_declaration =
       strstr(cast_operand_hover_source, "CAST_OPERAND_MACRO");
@@ -2461,6 +2502,14 @@ static int test_cast_operand_hover(ag_target_info_t target) {
   } non_cast_cases[] = {
       {"normal_call = cast_choose(parameter_value) + cast_object",
        "cast_object", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"parenthesized_call = (cast_choose)(parameter_value)",
+       "parameter_value", AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"parenthesized_pointer_call = (cast_pointer)(parameter_value)",
+       "parameter_value", AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"dereferenced_pointer_call = (*cast_pointer)(parameter_value)",
+       "parameter_value", AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"addressed_call = (&cast_choose)(parameter_value)",
+       "parameter_value", AG_LANGUAGE_SYMBOL_PARAMETER},
       {"grouped = (cast_object + cast_seed) + CAST_OPERAND_MACRO",
        "CAST_OPERAND_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
       {"type_size = (int)sizeof(unsigned int) + CAST_OPERAND_MACRO",
@@ -2484,8 +2533,11 @@ static int test_cast_operand_hover(ag_target_info_t target) {
               (header_bundle_t){0}, defaults, &snapshot, &error),
           "non-cast parenthesized context analysis");
     const ag_language_symbol_t *hover = hover_symbol(&snapshot);
-    CHECK(hover && hover->kind == non_cast_cases[i].kind &&
+    const ag_language_symbol_t *completion = find_symbol(
+        &snapshot, non_cast_cases[i].name, non_cast_cases[i].kind);
+    CHECK(hover && completion && hover->kind == non_cast_cases[i].kind &&
               strcmp(hover->name, non_cast_cases[i].name) == 0 &&
+              same_range(&hover->declaration, &completion->declaration) &&
               !snapshot.partial && snapshot.diagnostic_count == 0,
           "non-cast parenthesized context fields");
     ag_language_analysis_snapshot_dispose(&snapshot);
@@ -2558,6 +2610,28 @@ static int test_cast_operand_hover(ag_target_info_t target) {
             &snapshot, "MAX_SNAKE_LENGTH",
             "( BOARD_COLUMNS * BOARD_ROWS )", 0),
         "fresh snake cast operand fields");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  const char *fresh_adjacent_fragment = strstr(
+      cast_operand_hover_source, "adjacent_builtin = (int)(long)cast_object");
+  const char *fresh_adjacent_use = fresh_adjacent_fragment
+                                       ? strstr(fresh_adjacent_fragment,
+                                                "cast_object")
+                                       : NULL;
+  CHECK(fresh_adjacent_use && analyze_named(
+            fresh, "cast-operand.c", cast_operand_hover_source,
+            (size_t)(fresh_adjacent_use - cast_operand_hover_source) + 5,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "fresh adjacent cast operand analysis");
+  const ag_language_symbol_t *fresh_adjacent_hover = hover_symbol(&snapshot);
+  const ag_language_symbol_t *fresh_adjacent_completion = find_symbol(
+      &snapshot, "cast_object", AG_LANGUAGE_SYMBOL_OBJECT);
+  CHECK(fresh_adjacent_hover && fresh_adjacent_completion &&
+            fresh_adjacent_hover->kind == AG_LANGUAGE_SYMBOL_OBJECT &&
+            strcmp(fresh_adjacent_hover->name, "cast_object") == 0 &&
+            same_range(&fresh_adjacent_hover->declaration,
+                       &fresh_adjacent_completion->declaration) &&
+            !snapshot.partial && snapshot.diagnostic_count == 0,
+        "fresh adjacent cast operand fields");
   ag_language_analysis_snapshot_dispose(&snapshot);
   ag_compilation_session_destroy(fresh);
   free(game_bundle.bytes);

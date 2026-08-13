@@ -1292,6 +1292,7 @@ const castOperandHoverSource = {
     "static int cast_object = 5;\n" +
     "static int cast_seed = 9;\n" +
     "static int cast_choose(int value) { return value; }\n" +
+    "static int (*cast_pointer)(int) = cast_choose;\n" +
     "static int cast_context(int parameter_value, int condition,\n" +
     "                        int *values, int index_value) {\n" +
     "  int simple = (int)CAST_OPERAND_MACRO;\n" +
@@ -1310,7 +1311,23 @@ const castOperandHoverSource = {
     "  int splice_crlf = (unsigned int) \\\r\n" +
     "cast_object;\r\n" +
     "  int nested_cast = (int)((unsigned long)CAST_OPERAND_MACRO);\n" +
+    "  int adjacent_builtin = (int)(long)cast_object;\n" +
+    "  int adjacent_typedef = (CastSize)(long)cast_object;\n" +
+    "  int adjacent_typedef_operand = (int)(CastSize)cast_object;\n" +
+    "  int adjacent_comment = (int) /* adjacent cast */ " +
+    "(long)CAST_OPERAND_MACRO;\n" +
+    "  int adjacent_splice_lf = (int) \\\n" +
+    "(long)cast_object;\n" +
+    "  int adjacent_splice_crlf = (int) \\\r\n" +
+    "(long)CAST_MODE_VALUE;\r\n" +
+    "  (void)(int[CAST_MODE_VALUE]){ 1 };\n" +
+    "  (void)(int[CAST_MODE_VALUE]){ 1 }[0];\n" +
+    "  (void)(int (*)[CAST_MODE_VALUE])0;\n" +
     "  int normal_call = cast_choose(parameter_value) + cast_object;\n" +
+    "  int parenthesized_call = (cast_choose)(parameter_value);\n" +
+    "  int parenthesized_pointer_call = (cast_pointer)(parameter_value);\n" +
+    "  int dereferenced_pointer_call = (*cast_pointer)(parameter_value);\n" +
+    "  int addressed_call = (&cast_choose)(parameter_value);\n" +
     "  int grouped = (cast_object + cast_seed) + CAST_OPERAND_MACRO;\n" +
     "  int type_size = (int)sizeof(unsigned int) + CAST_OPERAND_MACRO;\n" +
     "  int type_align = (int)_Alignof(unsigned int) + CAST_OPERAND_MACRO;\n" +
@@ -1320,7 +1337,12 @@ const castOperandHoverSource = {
     "         subscript + typedef_name + (pointer != 0) +\n" +
     "         (tag_pointer != 0) + enum_cast +\n" +
     "         comment_gap + splice_lf + splice_crlf + nested_cast +\n" +
-    "         normal_call + grouped + type_size + type_align + compound;\n" +
+    "         adjacent_builtin + adjacent_typedef +\n" +
+    "         adjacent_typedef_operand + adjacent_comment +\n" +
+    "         adjacent_splice_lf + adjacent_splice_crlf + normal_call +\n" +
+    "         parenthesized_call +\n" +
+    "         parenthesized_pointer_call + dereferenced_pointer_call +\n" +
+    "         addressed_call + grouped + type_size + type_align + compound;\n" +
     "}\n",
 };
 const castOperandCases = [
@@ -1338,6 +1360,15 @@ const castOperandCases = [
   ["splice_lf = (unsigned int) \\\ncast_object", "cast_object", "object"],
   ["splice_crlf = (unsigned int) \\\r\ncast_object", "cast_object", "object"],
   ["nested_cast = (int)((unsigned long)CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
+  ["adjacent_builtin = (int)(long)cast_object", "cast_object", "object"],
+  ["adjacent_typedef = (CastSize)(long)cast_object", "cast_object", "object"],
+  ["adjacent_typedef_operand = (int)(CastSize)cast_object", "cast_object", "object"],
+  ["adjacent_comment = (int) /* adjacent cast */ (long)CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
+  ["adjacent_splice_lf = (int) \\\n(long)cast_object", "cast_object", "object"],
+  ["adjacent_splice_crlf = (int) \\\r\n(long)CAST_MODE_VALUE", "CAST_MODE_VALUE", "enumConstant"],
+  ["(void)(int[CAST_MODE_VALUE]){ 1 };", "CAST_MODE_VALUE", "enumConstant"],
+  ["(void)(int[CAST_MODE_VALUE]){ 1 }[0]", "CAST_MODE_VALUE", "enumConstant"],
+  ["(void)(int (*)[CAST_MODE_VALUE])0", "CAST_MODE_VALUE", "enumConstant"],
 ];
 for (const [fragmentText, name, kind] of castOperandCases) {
   const fragmentIndex = castOperandHoverSource.source.indexOf(fragmentText);
@@ -1378,6 +1409,10 @@ for (const [fragmentText, name, kind] of castOperandCases) {
 
 for (const [fragmentText, name, kind] of [
   ["normal_call = cast_choose(parameter_value) + cast_object", "cast_object", "object"],
+  ["parenthesized_call = (cast_choose)(parameter_value)", "parameter_value", "parameter"],
+  ["parenthesized_pointer_call = (cast_pointer)(parameter_value)", "parameter_value", "parameter"],
+  ["dereferenced_pointer_call = (*cast_pointer)(parameter_value)", "parameter_value", "parameter"],
+  ["addressed_call = (&cast_choose)(parameter_value)", "parameter_value", "parameter"],
   ["grouped = (cast_object + cast_seed) + CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
   ["type_size = (int)sizeof(unsigned int) + CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
   ["type_align = (int)_Alignof(unsigned int) + CAST_OPERAND_MACRO", "CAST_OPERAND_MACRO", "macro"],
@@ -1394,6 +1429,11 @@ for (const [fragmentText, name, kind] of [
   assert.deepStrictEqual(result.diagnostics, [], `${name} non-cast diagnostics`);
   assert.equal(result.hover?.name, name, `${name} non-cast hover`);
   assert.equal(result.hover?.kind, kind, `${name} non-cast kind`);
+  assert.deepStrictEqual(
+    result.hover?.declaration,
+    symbol(result, name, kind)?.declaration,
+    `${name} non-cast declaration`,
+  );
   assert.deepStrictEqual(
     result,
     JSON.parse(execFileSync(
@@ -2556,6 +2596,37 @@ try {
     replacement: "( BOARD_COLUMNS * BOARD_ROWS )",
     parameters: [],
   }, "fresh snake cast operand");
+  const name = "cast_object";
+  const adjacentFragment = castOperandHoverSource.source.indexOf(
+    "adjacent_builtin = (int)(long)cast_object",
+  );
+  const adjacentUse = castOperandHoverSource.source.indexOf(
+    name, adjacentFragment,
+  );
+  const adjacentResult = freshCastCompiler.analyzeSource(
+    castOperandHoverSource,
+    {
+      cursor: {
+        sourceName: castOperandHoverSource.name,
+        byteOffset: byteOffsetForIndex(
+          castOperandHoverSource.source, adjacentUse,
+        ) + Math.floor(Buffer.byteLength(name) / 2),
+      },
+    },
+  );
+  assert.equal(adjacentResult.partial, false,
+    "fresh adjacent cast operand unexpectedly partial");
+  assert.deepStrictEqual(adjacentResult.diagnostics, [],
+    "fresh adjacent cast operand diagnostics");
+  assert.equal(adjacentResult.hover?.name, name,
+    "fresh adjacent cast operand hover");
+  assert.equal(adjacentResult.hover?.kind, "object",
+    "fresh adjacent cast operand kind");
+  assert.deepStrictEqual(
+    adjacentResult.hover?.declaration,
+    symbol(adjacentResult, name, "object")?.declaration,
+    "fresh adjacent cast operand declaration",
+  );
 } finally {
   freshCastCompiler.dispose();
 }

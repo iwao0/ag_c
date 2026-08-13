@@ -32129,3 +32129,35 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 隣接cast chain `(void)(int[BOUND]){...}`は2個目の`(`をpostfix call候補にも解釈できるため、
     今回のarray-bound tail復元とは分けてparenthesized-context分類として扱う。
   - 末尾`,` / `}`のないenum initializerのpartial契約も独立候補のまま残す。
+
+### このセッション（続き1097）: 隣接cast chain内のoperand hoverを安定化した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1096に残した通常サイズの隣接cast chainだけをparenthesized-context分類として調査した。
+- 原因と修正:
+  - 閉じたtype-name castは式終端でもあるため、直後の`(`をpostfix call括弧として固定し、
+    `(int)(long)value`と`(void)(int[BOUND]){ 1 }`をE3064の解析失敗にしていた。
+  - 直前の完全な括弧範囲と次の完全な括弧範囲を既存bounded type-name scannerで分類し、
+    少なくとも片側にbuiltin/tag/qualifierがあってtype-nameと確定できる隣接対だけをcast chainとした。
+  - 両側がtypedef候補だけで字句的にcallと区別できない形は推測せず、従来のpostfix call分類を維持する。
+  - type-nameの意味評価や再帰的な式走査、深度上限の拡張は追加していない。
+- 回帰範囲:
+  - builtinとtypedefを前項・後項に置く二重cast、array compound literal、後続postfix、
+    pointer-to-array cast、block comment、LF/CRLF行継続を網羅した。
+  - `(function)(argument)`、`(pointer)(argument)`、`(*pointer)(argument)`、`(&function)(argument)`を
+    call境界として維持した。
+  - 各identifierの先頭・中央・末尾、正確なdeclaration range、enum値、macro replacementと
+    documentation、同一session/fresh sessionをNativeで固定した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、cast/call境界とfresh compilerを確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (47 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - 続き1095から残るcompound literal内designatorを、object declaration initializerとは別のmarker経路で扱う。
+  - 末尾`,` / `}`のないenum initializerのpartial契約も独立候補のまま残す。
