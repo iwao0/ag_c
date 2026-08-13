@@ -2831,7 +2831,7 @@ static int print_enum_two_argument_call_parity_snapshot(
       !argument_mode_end || *argument_mode_end != '\0' ||
       parsed_argument_mode > 2 || !argument_revision_text[0] ||
       !argument_revision_end || *argument_revision_end != '\0' ||
-      parsed_argument_revision > 1 ||
+      parsed_argument_revision > 2 ||
       (parsed_argument_mode == 0 && parsed_argument_revision != 0) ||
       !cursor_text[0] || !cursor_end ||
       *cursor_end != '\0')
@@ -3121,20 +3121,28 @@ static char *enum_two_argument_macro_source(
     const char *source, int argument_index, int revision) {
   static const char *const enum_names[] = {
       "ENUM_TWO_ARGUMENT_FIRST", "ENUM_TWO_ARGUMENT_SECOND"};
-  static const char *const macro_names[] = {
-      "ENUM_TWO_ARGUMENT_FIRST_MACRO",
-      "ENUM_TWO_ARGUMENT_SECOND_MACRO"};
-  static const char *const declarations[][2] = {
+  static const char *const macro_names[][2] = {
+      {"ENUM_TWO_ARGUMENT_FIRST_MACRO",
+       "ENUM_TWO_ARGUMENT_SECOND_MACRO"},
+      {"ENUM_TWO_ARGUMENT_FIRST_MACRO",
+       "ENUM_TWO_ARGUMENT_SECOND_MACRO"},
+      {"ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO",
+       "ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO"}};
+  static const char *const declarations[][3] = {
       {"/// enum two argument first macro\n"
        "#define ENUM_TWO_ARGUMENT_FIRST_MACRO 1\n",
        "/// enum two argument first macro updated\n"
-       "#define ENUM_TWO_ARGUMENT_FIRST_MACRO 11\n"},
+       "#define ENUM_TWO_ARGUMENT_FIRST_MACRO 11\n",
+       "/// enum two argument first renamed macro\n"
+       "#define ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO 1\n"},
       {"/// enum two argument second macro\n"
        "#define ENUM_TWO_ARGUMENT_SECOND_MACRO 2\n",
        "/// enum two argument second macro updated\n"
-       "#define ENUM_TWO_ARGUMENT_SECOND_MACRO 12\n"}};
+       "#define ENUM_TWO_ARGUMENT_SECOND_MACRO 12\n",
+       "/// enum two argument second renamed macro\n"
+       "#define ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO 2\n"}};
   if (!source || argument_index < 1 || argument_index > 2 ||
-      revision < 0 || revision > 1)
+      revision < 0 || revision > 2)
     return NULL;
   size_t index = (size_t)argument_index - 1;
   const char *insertion = strchr(source, '\n');
@@ -3145,7 +3153,8 @@ static char *enum_two_argument_macro_source(
   const char *declaration = declarations[index][revision];
   size_t declaration_length = strlen(declaration);
   size_t middle_length = (size_t)(use - insertion);
-  size_t macro_length = strlen(macro_names[index]);
+  const char *macro_name = macro_names[revision][index];
+  size_t macro_length = strlen(macro_name);
   size_t enum_length = strlen(enum_names[index]);
   size_t suffix_length = strlen(use + enum_length);
   if (declaration_length > SIZE_MAX - prefix_length ||
@@ -3165,7 +3174,7 @@ static char *enum_two_argument_macro_source(
   output += declaration_length;
   memcpy(result + output, insertion, middle_length);
   output += middle_length;
-  memcpy(result + output, macro_names[index], macro_length);
+  memcpy(result + output, macro_name, macro_length);
   output += macro_length;
   memcpy(result + output, use + enum_length, suffix_length + 1);
   return result;
@@ -5749,21 +5758,30 @@ static int test_enum_two_argument_call_cursor(
       "/// enum two argument callee",
       "/// enum two argument first",
       "/// enum two argument second"};
-  const char *argument_macro_names[] = {
-      NULL, "ENUM_TWO_ARGUMENT_FIRST_MACRO",
-      "ENUM_TWO_ARGUMENT_SECOND_MACRO"};
+  const char *argument_macro_names[][3] = {
+      {NULL, "ENUM_TWO_ARGUMENT_FIRST_MACRO",
+       "ENUM_TWO_ARGUMENT_SECOND_MACRO"},
+      {NULL, "ENUM_TWO_ARGUMENT_FIRST_MACRO",
+       "ENUM_TWO_ARGUMENT_SECOND_MACRO"},
+      {NULL, "ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO",
+       "ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO"}};
   const char *argument_macro_values[][3] = {
-      {NULL, "1", "2"}, {NULL, "11", "12"}};
+      {NULL, "1", "2"}, {NULL, "11", "12"},
+      {NULL, "1", "2"}};
   const char *argument_macro_documentation[][3] = {
       {NULL, "enum two argument first macro",
        "enum two argument second macro"},
       {NULL, "enum two argument first macro updated",
-       "enum two argument second macro updated"}};
+       "enum two argument second macro updated"},
+      {NULL, "enum two argument first renamed macro",
+       "enum two argument second renamed macro"}};
   const char *argument_macro_comments[][3] = {
       {NULL, "/// enum two argument first macro",
        "/// enum two argument second macro"},
       {NULL, "/// enum two argument first macro updated",
-       "/// enum two argument second macro updated"}};
+       "/// enum two argument second macro updated"},
+      {NULL, "/// enum two argument first renamed macro",
+       "/// enum two argument second renamed macro"}};
   size_t callee_length = strlen(callee_name);
   struct {
     size_t variant;
@@ -5778,6 +5796,11 @@ static int test_enum_two_argument_call_cursor(
       {3, 0, 2, 0}, {2, 0, 2, 1}, {1, 0, 2, 0},
       {3, 0, 2, 1}, {2, 0, 2, 0}, {1, 0, 2, 1}, {3, 0, 2, 0},
       {1, 1, 1, 1}, {3, 1, 2, 1},
+      {2, 0, 1, 2}, {3, 0, 1, 0}, {1, 0, 1, 2},
+      {2, 0, 1, 0}, {3, 0, 1, 2}, {1, 0, 1, 0},
+      {2, 0, 2, 2}, {1, 0, 2, 0}, {3, 0, 2, 2},
+      {2, 0, 2, 0}, {1, 0, 2, 2}, {3, 0, 2, 0},
+      {1, 1, 1, 2}, {3, 1, 2, 2},
       {0, 0, 0, 0}, {3, 1, 0, 0},
   };
   for (size_t pass_index = 0;
@@ -5797,10 +5820,12 @@ static int test_enum_two_argument_call_cursor(
     }
     const char *argument_names[] = {
         NULL,
-        argument_mode == 1 ? "ENUM_TWO_ARGUMENT_FIRST_MACRO"
-                           : enum_names[1],
-        argument_mode == 2 ? "ENUM_TWO_ARGUMENT_SECOND_MACRO"
-                           : enum_names[2]};
+        argument_mode == 1
+            ? argument_macro_names[argument_revision][1]
+            : enum_names[1],
+        argument_mode == 2
+            ? argument_macro_names[argument_revision][2]
+            : enum_names[2]};
     const char *callee_use = last_occurrence(source, callee_name);
     const char *call_open = callee_use
                                 ? strchr(callee_use + callee_length, '(')
@@ -5970,16 +5995,19 @@ static int test_enum_two_argument_call_cursor(
                           strlen("/// enum two argument function-like macro")),
               "enum two argument macro fields");
       }
+      const char *argument_macro_name =
+          argument_mode > 0
+              ? argument_macro_names[argument_revision][argument_mode]
+              : NULL;
       const ag_language_symbol_t *argument_macro_candidate =
           argument_mode > 0
               ? find_symbol(
-                    &snapshot, argument_macro_names[argument_mode],
+                    &snapshot, argument_macro_name,
                     AG_LANGUAGE_SYMBOL_MACRO)
               : NULL;
       if (argument_mode > 0) {
-        int other_mode = argument_mode == 1 ? 2 : 1;
         const char *declaration = strstr(
-            source, argument_macro_names[argument_mode]);
+            source, argument_macro_name);
         const char *comment = strstr(
             source,
             argument_macro_comments[argument_revision][argument_mode]);
@@ -5998,7 +6026,7 @@ static int test_enum_two_argument_call_cursor(
                       (int)(declaration - source) &&
                   argument_macro_candidate->declaration.end.offset ==
                       (int)(declaration - source +
-                            strlen(argument_macro_names[argument_mode])) &&
+                            strlen(argument_macro_name)) &&
                   check_documentation_symbol(
                       argument_macro_candidate,
                       argument_macro_documentation[argument_revision]
@@ -6007,11 +6035,20 @@ static int test_enum_two_argument_call_cursor(
                       (size_t)(comment - source),
                       (size_t)(comment - source) +
                           strlen(argument_macro_comments[argument_revision]
-                                                        [argument_mode])) &&
-                  !find_symbol(
-                      &snapshot, argument_macro_names[other_mode],
-                      AG_LANGUAGE_SYMBOL_MACRO),
+                                                        [argument_mode])),
               "enum two argument object macro fields");
+        for (size_t revision_index = 0; revision_index < 3;
+             revision_index++) {
+          for (size_t mode_index = 1; mode_index < 3; mode_index++) {
+            const char *inactive_name =
+                argument_macro_names[revision_index][mode_index];
+            if (strcmp(inactive_name, argument_macro_name) != 0)
+              CHECK(!find_symbol(
+                        &snapshot, inactive_name,
+                        AG_LANGUAGE_SYMBOL_MACRO),
+                    "enum two argument inactive macro removed");
+          }
+        }
       }
       const ag_language_symbol_t *derived = find_symbol(
           &snapshot, "ENUM_TWO_ARGUMENT_DERIVED",
@@ -6019,7 +6056,7 @@ static int test_enum_two_argument_call_cursor(
       CHECK((enum_only && !derived) ||
                 (!enum_only && derived && derived->constant_value &&
                  strcmp(derived->constant_value,
-                        argument_revision ? "113" : "103") == 0),
+                        argument_revision == 1 ? "113" : "103") == 0),
             "enum two argument derived value");
       int expected_diagnostic_count =
           enum_only &&

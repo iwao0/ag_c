@@ -2908,8 +2908,12 @@ function enumTwoArgumentMacroSource(input, argumentMode, argumentRevision) {
     "ENUM_TWO_ARGUMENT_FIRST", "ENUM_TWO_ARGUMENT_SECOND",
   ];
   const macroNames = [
-    "ENUM_TWO_ARGUMENT_FIRST_MACRO",
-    "ENUM_TWO_ARGUMENT_SECOND_MACRO",
+    ["ENUM_TWO_ARGUMENT_FIRST_MACRO",
+      "ENUM_TWO_ARGUMENT_SECOND_MACRO"],
+    ["ENUM_TWO_ARGUMENT_FIRST_MACRO",
+      "ENUM_TWO_ARGUMENT_SECOND_MACRO"],
+    ["ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO",
+      "ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO"],
   ];
   const declarations = [
     [
@@ -2917,19 +2921,23 @@ function enumTwoArgumentMacroSource(input, argumentMode, argumentRevision) {
         "#define ENUM_TWO_ARGUMENT_FIRST_MACRO 1\n",
       "/// enum two argument first macro updated\n" +
         "#define ENUM_TWO_ARGUMENT_FIRST_MACRO 11\n",
+      "/// enum two argument first renamed macro\n" +
+        "#define ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO 1\n",
     ],
     [
       "/// enum two argument second macro\n" +
         "#define ENUM_TWO_ARGUMENT_SECOND_MACRO 2\n",
       "/// enum two argument second macro updated\n" +
         "#define ENUM_TWO_ARGUMENT_SECOND_MACRO 12\n",
+      "/// enum two argument second renamed macro\n" +
+        "#define ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO 2\n",
     ],
   ];
   const index = argumentMode - 1;
   const insertionIndex = input.source.indexOf("\n") + 1;
   const useIndex = input.source.lastIndexOf(enumNames[index]);
   assert.ok(argumentMode >= 1 && argumentMode <= 2 &&
-    argumentRevision >= 0 && argumentRevision <= 1 &&
+    argumentRevision >= 0 && argumentRevision <= 2 &&
     insertionIndex > 0 && useIndex > insertionIndex,
   "enum two argument macro source anchors");
   return {
@@ -2937,7 +2945,7 @@ function enumTwoArgumentMacroSource(input, argumentMode, argumentRevision) {
     source: input.source.slice(0, insertionIndex) +
       declarations[index][argumentRevision] +
       input.source.slice(insertionIndex, useIndex) +
-      macroNames[index] + input.source.slice(
+      macroNames[argumentRevision][index] + input.source.slice(
         useIndex + enumNames[index].length,
       ),
   };
@@ -4101,23 +4109,32 @@ const enumTwoArgumentComments = [
   "/// enum two argument second",
 ];
 const enumTwoArgumentMacroNames = [
-  null, "ENUM_TWO_ARGUMENT_FIRST_MACRO",
-  "ENUM_TWO_ARGUMENT_SECOND_MACRO",
+  [null, "ENUM_TWO_ARGUMENT_FIRST_MACRO",
+    "ENUM_TWO_ARGUMENT_SECOND_MACRO"],
+  [null, "ENUM_TWO_ARGUMENT_FIRST_MACRO",
+    "ENUM_TWO_ARGUMENT_SECOND_MACRO"],
+  [null, "ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO",
+    "ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO"],
 ];
 const enumTwoArgumentMacroValues = [
   [null, "1", "2"], [null, "11", "12"],
+  [null, "1", "2"],
 ];
 const enumTwoArgumentMacroDocumentation = [
   [null, "enum two argument first macro",
     "enum two argument second macro"],
   [null, "enum two argument first macro updated",
     "enum two argument second macro updated"],
+  [null, "enum two argument first renamed macro",
+    "enum two argument second renamed macro"],
 ];
 const enumTwoArgumentMacroComments = [
   [null, "/// enum two argument first macro",
     "/// enum two argument second macro"],
   [null, "/// enum two argument first macro updated",
     "/// enum two argument second macro updated"],
+  [null, "/// enum two argument first renamed macro",
+    "/// enum two argument second renamed macro"],
 ];
 const enumTwoArgumentFirstResults = new Map();
 try {
@@ -4129,6 +4146,11 @@ try {
     [3, 0, 2, 0], [2, 0, 2, 1], [1, 0, 2, 0],
     [3, 0, 2, 1], [2, 0, 2, 0], [1, 0, 2, 1], [3, 0, 2, 0],
     [1, 1, 1, 1], [3, 1, 2, 1],
+    [2, 0, 1, 2], [3, 0, 1, 0], [1, 0, 1, 2],
+    [2, 0, 1, 0], [3, 0, 1, 2], [1, 0, 1, 0],
+    [2, 0, 2, 2], [1, 0, 2, 0], [3, 0, 2, 2],
+    [2, 0, 2, 0], [1, 0, 2, 2], [3, 0, 2, 0],
+    [1, 1, 1, 2], [3, 1, 2, 2],
     [0, 0, 0, 0], [3, 1, 0, 0],
   ]) {
     const source = argumentMode > 0
@@ -4141,9 +4163,11 @@ try {
     const argumentNames = [
       null,
       argumentMode === 1
-        ? enumTwoArgumentMacroNames[1] : enumTwoArgumentNames[1],
+        ? enumTwoArgumentMacroNames[argumentRevision][1]
+        : enumTwoArgumentNames[1],
       argumentMode === 2
-        ? enumTwoArgumentMacroNames[2] : enumTwoArgumentNames[2],
+        ? enumTwoArgumentMacroNames[argumentRevision][2]
+        : enumTwoArgumentNames[2],
     ];
     const calleeIndex = text.lastIndexOf(enumTwoArgumentNames[0]);
     const callOpenIndex = text.indexOf(
@@ -4299,14 +4323,12 @@ try {
         assert.equal(macroCandidate?.documentationRange?.end.offset,
           commentIndex + Buffer.byteLength(comment));
       }
-      const argumentMacroCandidate = argumentMode > 0
-        ? symbol(
-          result, enumTwoArgumentMacroNames[argumentMode], "macro",
-        )
-        : undefined;
+      const argumentMacroName = argumentMode > 0
+        ? enumTwoArgumentMacroNames[argumentRevision][argumentMode]
+        : null;
+      const argumentMacroCandidate = argumentMacroName
+        ? symbol(result, argumentMacroName, "macro") : undefined;
       if (argumentMode > 0) {
-        const otherMode = argumentMode === 1 ? 2 : 1;
-        const argumentMacroName = enumTwoArgumentMacroNames[argumentMode];
         const declarationIndex = text.indexOf(argumentMacroName);
         const comment =
           enumTwoArgumentMacroComments[argumentRevision][argumentMode];
@@ -4330,9 +4352,13 @@ try {
           commentIndex);
         assert.equal(argumentMacroCandidate?.documentationRange?.end.offset,
           commentIndex + Buffer.byteLength(comment));
-        assert.equal(symbol(
-          result, enumTwoArgumentMacroNames[otherMode], "macro",
-        ), undefined);
+        for (const revisionNames of enumTwoArgumentMacroNames) {
+          for (const inactiveName of revisionNames.slice(1)) {
+            if (inactiveName !== argumentMacroName) {
+              assert.equal(symbol(result, inactiveName, "macro"), undefined);
+            }
+          }
+        }
       }
       const derived = symbol(
         result, "ENUM_TWO_ARGUMENT_DERIVED", "enumConstant",

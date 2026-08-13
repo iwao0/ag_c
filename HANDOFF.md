@@ -32797,3 +32797,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ片側object-like macro引数を通常サイズの別名へrename・復元し、comment/splice variant間を往復しても旧名候補を残さず、
     新旧名のhover、declaration/documentation range、派生値、callee metadataが現sourceへ追従する境界を確認する。
+
+### このセッション（続き1119）: 片側object-like macro引数のrename・復元を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1118と同じ通常サイズの2引数callで、片側object-like macroの定義名と使用名だけを別名へ変更・復元した。
+- 調査結果:
+  - rename中は第1・第2引数それぞれの新名macroだけが候補とhoverに現れ、元名候補は候補集合から消えた。
+  - 復元後は新名候補が消え、元名のdeclaration/documentation rangeへ戻った。名前長の変化後も後続cursorのbyte offsetは
+    現sourceから再計算され、反対側enum定数とheader側callee metadataには混線しなかった。
+  - replacement 1/2とmacro有効時の派生enumerator値103を全rename revisionで維持した。代表的なenum-only状態では
+    現在名の引数macro候補を残し、実際の`(`にE3102を付けてinvalid derived enumeratorを公開しなかった。
+  - Native/Wasm差、旧名・rename名候補の残留、追加のproduction code不具合は見つからなかった。
+- 回帰範囲:
+  - 第1・第2引数macroについてcomment、LF、CRLF variantをbase/renamedで往復し、代表variantを元名へ復元した。
+  - callee、`(`直後、両引数の先頭・中央・末尾・前後、comma前後、`)`直後、comment内部、両line splice位置で、
+    現在名のhover、全非アクティブmacro名の不在、metadata、documentation/range、dependency、派生値またはE3102を固定した。
+  - 同一Native/Wasm instanceでbase→replacement更新→base→rename→baseを連続解析し、各位置・revisionのfresh Native JSON
+    snapshot完全一致と、同一source復帰snapshotの完全一致を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - regression追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ片側object-like macro定義だけを通常サイズで削除・復元し、call上の識別子を残したまま、旧候補の消去、
+    structured diagnostic、派生enumeratorの有無、復元後のhover/metadataがNative/Wasmで一致する境界を確認する。
