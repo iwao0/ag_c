@@ -782,6 +782,98 @@ static const char *const incomplete_enum_header_main_sources[] = {
     "enum { INCOMPLETE_HEADER_DERIVED = COLLIDING_HEADER_SYMBOL(1)",
 };
 
+static const char *const project_enum_macro_headers[] = {
+    "/// project header macro v1\n"
+    "#define PROJECT_COLLIDING_SYMBOL(value) ((value) + 110)\n",
+    "",
+    "/// project header macro v2\n"
+    "#define PROJECT_COLLIDING_SYMBOL(value) ((value) + 220)\n",
+};
+
+static const char *const project_enum_macro_index_sources[] = {
+    "#include <project-collision.h>\n"
+    "enum ProjectSourceCollisionV1 {\n"
+    "  /// project source enum v1\n"
+    "  PROJECT_COLLIDING_SYMBOL = 101\n};\n"
+    "int project_collision_anchor(void) { return 1; }\n",
+    "#include <project-collision.h>\n"
+    "int project_collision_anchor(void) { return 1; }\n",
+    "#include <project-collision.h>\n"
+    "enum ProjectSourceCollisionV2 {\n"
+    "  /// project source enum v2\n"
+    "  PROJECT_COLLIDING_SYMBOL = 202\n};\n"
+    "int project_collision_anchor(void) { return 2; }\n",
+};
+
+static const char *const project_enum_macro_edit_sources[][2] = {
+    {
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceCollisionV1 {\n"
+        "  /// project source enum v1\n"
+        "  PROJECT_COLLIDING_SYMBOL = 101\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL",
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceCollisionV1 {\n"
+        "  /// project source enum v1\n"
+        "  PROJECT_COLLIDING_SYMBOL = 101\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
+    },
+    {
+        "#include <project-collision.h>\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL",
+        "#include <project-collision.h>\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
+    },
+    {
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceCollisionV2 {\n"
+        "  /// project source enum v2\n"
+        "  PROJECT_COLLIDING_SYMBOL = 202\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL",
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceCollisionV2 {\n"
+        "  /// project source enum v2\n"
+        "  PROJECT_COLLIDING_SYMBOL = 202\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
+    },
+};
+
+typedef struct {
+  size_t source_index;
+  size_t header_index;
+  const char *enum_value;
+  const char *enum_documentation;
+  const char *enum_comment;
+  const char *macro_replacement;
+  const char *macro_invocation_value;
+  const char *macro_documentation;
+  const char *macro_comment;
+} project_enum_macro_revision_t;
+
+static const project_enum_macro_revision_t project_enum_macro_revisions[] = {
+    {0, 0, "101", "project source enum v1", "/// project source enum v1",
+     "( ( value ) + 110 )", "111", "project header macro v1",
+     "/// project header macro v1"},
+    {1, 0, NULL, NULL, NULL, "( ( value ) + 110 )", "111",
+     "project header macro v1", "/// project header macro v1"},
+    {2, 0, "202", "project source enum v2", "/// project source enum v2",
+     "( ( value ) + 110 )", "111", "project header macro v1",
+     "/// project header macro v1"},
+    {2, 1, "202", "project source enum v2", "/// project source enum v2",
+     NULL, NULL, NULL, NULL},
+    {2, 2, "202", "project source enum v2", "/// project source enum v2",
+     "( ( value ) + 220 )", "221", "project header macro v2",
+     "/// project header macro v2"},
+    {2, 1, "202", "project source enum v2", "/// project source enum v2",
+     NULL, NULL, NULL, NULL},
+    {1, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+    {1, 2, NULL, NULL, NULL, "( ( value ) + 220 )", "221",
+     "project header macro v2", "/// project header macro v2"},
+    {2, 2, "202", "project source enum v2", "/// project source enum v2",
+     "( ( value ) + 220 )", "221", "project header macro v2",
+     "/// project header macro v2"},
+};
+
 static const char initializer_designator_operand_hover_source[] =
     "/// initializer designator macro documentation\n"
     "#define INITIALIZER_DESIGNATOR_MACRO 5\n"
@@ -2423,6 +2515,88 @@ static int print_incomplete_enum_header_revision_parity_snapshot(
                          (size_t)parsed_cursor, bundle)
                    : 1;
   free(bundle.bytes);
+  return result;
+}
+
+static int print_project_enum_macro_revision_parity_snapshot(
+    const char *revision_text, const char *invocation_text,
+    const char *cursor_text) {
+  char *revision_end = NULL;
+  char *invocation_end = NULL;
+  char *cursor_end = NULL;
+  unsigned long long parsed_revision =
+      strtoull(revision_text, &revision_end, 10);
+  unsigned long long parsed_invocation =
+      strtoull(invocation_text, &invocation_end, 10);
+  unsigned long long parsed_cursor =
+      strtoull(cursor_text, &cursor_end, 10);
+  size_t revision_count = sizeof(project_enum_macro_revisions) /
+                          sizeof(project_enum_macro_revisions[0]);
+  if (!revision_text[0] || !revision_end || *revision_end != '\0' ||
+      parsed_revision == 0 ||
+      parsed_revision > (unsigned long long)revision_count ||
+      !invocation_text[0] || !invocation_end || *invocation_end != '\0' ||
+      parsed_invocation > 1 || !cursor_text[0] || !cursor_end ||
+      *cursor_end != '\0')
+    return 1;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  if (!session || !project) {
+    ag_language_project_index_destroy(project);
+    ag_compilation_session_destroy(session);
+    return 1;
+  }
+  const char *header_paths[] = {"project-collision.h"};
+  ag_language_analysis_limits_t limits =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_error_t error = {0};
+  int result = 1;
+  for (size_t revision = 0; revision < (size_t)parsed_revision; revision++) {
+    const project_enum_macro_revision_t *current =
+        &project_enum_macro_revisions[revision];
+    const char *header_sources[] = {
+        project_enum_macro_headers[current->header_index]};
+    header_bundle_t bundle = make_bundle(header_paths, header_sources, 1);
+    int ok = bundle.bytes && update_single_source_project(
+        session, project, (unsigned int)revision + 1,
+        project_enum_macro_index_sources[current->source_index],
+        bundle, limits, &error);
+    free(bundle.bytes);
+    if (!ok) goto cleanup;
+  }
+  const project_enum_macro_revision_t *current =
+      &project_enum_macro_revisions[(size_t)parsed_revision - 1];
+  if (parsed_invocation && !current->enum_value &&
+      !current->macro_replacement)
+    goto cleanup;
+  const char *source = project_enum_macro_edit_sources[
+      current->source_index][(size_t)parsed_invocation];
+  if (parsed_cursor > (unsigned long long)strlen(source)) goto cleanup;
+  const char *header_sources[] = {
+      project_enum_macro_headers[current->header_index]};
+  header_bundle_t bundle = make_bundle(header_paths, header_sources, 1);
+  ag_language_analysis_snapshot_t snapshot = {0};
+  int ok = bundle.bytes && analyze_project_named(
+      session, project, "main.c", source, (size_t)parsed_cursor,
+      bundle, limits, &snapshot, &error);
+  if (ok) {
+    int length = ag_language_analysis_snapshot_write_json(
+        &snapshot, NULL, 0);
+    char *json = length >= 0 ? malloc((size_t)length + 1) : NULL;
+    if (json && ag_language_analysis_snapshot_write_json(
+                    &snapshot, json, (size_t)length + 1) == length) {
+      puts(json);
+      result = 0;
+    }
+    free(json);
+  }
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  free(bundle.bytes);
+cleanup:
+  ag_language_project_index_destroy(project);
+  ag_compilation_session_destroy(session);
   return result;
 }
 
@@ -4794,6 +4968,180 @@ static int test_incomplete_enum_header_namespace_revisions(
   return 0;
 }
 
+static int test_project_enum_macro_revision_order(
+    ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  ag_language_project_index_t *project =
+      ag_language_project_index_create();
+  CHECK(session && project, "project enum macro revision session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  const char *header_paths[] = {"project-collision.h"};
+  const char *name = "PROJECT_COLLIDING_SYMBOL";
+  size_t name_length = strlen(name);
+  size_t deltas[] = {0, name_length / 2, name_length};
+  for (size_t revision = 0;
+       revision < sizeof(project_enum_macro_revisions) /
+                      sizeof(project_enum_macro_revisions[0]);
+       revision++) {
+    const project_enum_macro_revision_t *expected =
+        &project_enum_macro_revisions[revision];
+    const char *header_sources[] = {
+        project_enum_macro_headers[expected->header_index]};
+    header_bundle_t bundle = make_bundle(header_paths, header_sources, 1);
+    CHECK(bundle.bytes != NULL, "project enum macro revision bundle");
+    CHECK(update_single_source_project(
+              session, project, (unsigned int)revision + 1,
+              project_enum_macro_index_sources[expected->source_index],
+              bundle, defaults, &error) &&
+              ag_language_project_index_revision(project) == revision + 1,
+          "project enum macro revision update");
+    for (size_t invocation = 0; invocation < 2; invocation++) {
+      if (invocation && !expected->enum_value &&
+          !expected->macro_replacement)
+        continue;
+      const char *source = project_enum_macro_edit_sources[
+          expected->source_index][invocation];
+      const char *use = last_occurrence(source, name);
+      CHECK(use != NULL, "project enum macro revision use anchor");
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]);
+           delta_index++) {
+        CHECK(analyze_project_named(
+                  session, project, "main.c", source,
+                  (size_t)(use - source) + deltas[delta_index],
+                  bundle, defaults, &snapshot, &error),
+              "project enum macro revision analysis");
+        const ag_language_symbol_t *enum_candidate = find_symbol(
+            &snapshot, name, AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+        const ag_language_symbol_t *macro_candidate = find_symbol(
+            &snapshot, name, AG_LANGUAGE_SYMBOL_MACRO);
+        CHECK(snapshot.partial &&
+                  (!!enum_candidate == !!expected->enum_value) &&
+                  (!!macro_candidate == !!expected->macro_replacement) &&
+                  snapshot.dependency_count == 1 &&
+                  strcmp(snapshot.dependencies[0],
+                         "project-collision.h") == 0,
+              "project enum macro revision common fields");
+        if (enum_candidate) {
+          const char *declaration = strstr(source, name);
+          const char *comment = strstr(source, expected->enum_comment);
+          CHECK(declaration && comment && enum_candidate->constant_value &&
+                    strcmp(enum_candidate->constant_value,
+                           expected->enum_value) == 0 &&
+                    enum_candidate->declaration.source_name &&
+                    strcmp(enum_candidate->declaration.source_name,
+                           "main.c") == 0 &&
+                    enum_candidate->declaration.start.offset ==
+                        (int)(declaration - source) &&
+                    enum_candidate->declaration.end.offset ==
+                        (int)(declaration - source + name_length) &&
+                    check_documentation_symbol(
+                        enum_candidate, expected->enum_documentation,
+                        "main.c", (size_t)(comment - source),
+                        (size_t)(comment - source) +
+                            strlen(expected->enum_comment)),
+                "project enum macro revision enum fields");
+        }
+        if (macro_candidate) {
+          const char *header =
+              project_enum_macro_headers[expected->header_index];
+          const char *declaration = strstr(header, name);
+          const char *comment = strstr(header, expected->macro_comment);
+          CHECK(declaration && comment &&
+                    macro_candidate->macro_is_function_like &&
+                    !macro_candidate->macro_is_variadic &&
+                    macro_candidate->macro_parameter_count == 1 &&
+                    macro_candidate->macro_parameters &&
+                    strcmp(macro_candidate->macro_parameters[0],
+                           "value") == 0 &&
+                    macro_candidate->macro_replacement &&
+                    strcmp(macro_candidate->macro_replacement,
+                           expected->macro_replacement) == 0 &&
+                    macro_candidate->declaration.source_name &&
+                    strcmp(macro_candidate->declaration.source_name,
+                           "project-collision.h") == 0 &&
+                    macro_candidate->declaration.start.offset ==
+                        (int)(declaration - header) &&
+                    macro_candidate->declaration.end.offset ==
+                        (int)(declaration - header + name_length) &&
+                    check_documentation_symbol(
+                        macro_candidate, expected->macro_documentation,
+                        "project-collision.h",
+                        (size_t)(comment - header),
+                        (size_t)(comment - header) +
+                            strlen(expected->macro_comment)),
+                "project enum macro revision macro fields");
+        }
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *derived = find_symbol(
+            &snapshot, "PROJECT_COLLISION_DERIVED",
+            AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+        if (!invocation && !expected->enum_value) {
+          const ag_language_diagnostic_t *partial =
+              find_diagnostic(&snapshot, "AGC_PARTIAL_IDENTIFIER");
+          CHECK(!hover && snapshot.diagnostic_count == 1 && partial &&
+                    partial->range.start.offset == (int)(use - source) &&
+                    partial->range.end.offset ==
+                        (int)(use - source + name_length),
+                "project enum macro revision bare partial");
+        } else {
+          ag_language_symbol_kind_t expected_kind =
+              invocation && expected->macro_replacement
+                  ? AG_LANGUAGE_SYMBOL_MACRO
+                  : AG_LANGUAGE_SYMBOL_ENUM_CONSTANT;
+          const ag_language_symbol_t *expected_symbol =
+              expected_kind == AG_LANGUAGE_SYMBOL_MACRO
+                  ? macro_candidate
+                  : enum_candidate;
+          int invalid_enum_invocation =
+              invocation && !expected->macro_replacement;
+          int expected_diagnostic_count =
+              invalid_enum_invocation &&
+                      deltas[delta_index] == name_length
+                  ? 1
+                  : 0;
+          CHECK(snapshot.diagnostic_count == expected_diagnostic_count &&
+                    hover && expected_symbol &&
+                    hover->kind == expected_kind &&
+                    same_range(&hover->declaration,
+                               &expected_symbol->declaration),
+                "project enum macro revision hover fields");
+          if (invalid_enum_invocation) {
+            CHECK(!derived,
+                  "project enum macro invalid invocation derived");
+            if (expected_diagnostic_count) {
+              const ag_language_diagnostic_t *invalid_call =
+                  find_diagnostic(&snapshot, "E3102");
+              CHECK(invalid_call &&
+                        invalid_call->range.start.offset ==
+                            (int)(use - source + name_length) &&
+                        invalid_call->range.end.offset ==
+                            (int)(use - source + name_length + 1),
+                    "project enum macro invalid invocation range");
+            }
+          } else {
+            const char *derived_value = invocation
+                                            ? expected->macro_invocation_value
+                                            : expected->enum_value;
+            CHECK(derived && derived->constant_value &&
+                      strcmp(derived->constant_value,
+                             derived_value) == 0,
+                  "project enum macro revision derived value");
+          }
+        }
+        ag_language_analysis_snapshot_dispose(&snapshot);
+      }
+    }
+    free(bundle.bytes);
+  }
+  ag_language_project_index_destroy(project);
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_initializer_designator_operand_hover(
     ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
@@ -6713,6 +7061,11 @@ int main(int argc, char **argv) {
              "--incomplete-enum-header-revision-parity-json") == 0)
     return print_incomplete_enum_header_revision_parity_snapshot(
         argv[2], argv[3], argv[4]);
+  if (argc == 5 &&
+      strcmp(argv[1],
+             "--project-enum-macro-revision-parity-json") == 0)
+    return print_project_enum_macro_revision_parity_snapshot(
+        argv[2], argv[3], argv[4]);
   if (argc == 3 &&
       strcmp(argv[1],
              "--initializer-designator-operand-hover-parity-json") == 0)
@@ -6789,6 +7142,8 @@ int main(int argc, char **argv) {
         "incomplete enum header namespace collision scenarios");
   CHECK(test_incomplete_enum_header_namespace_revisions(target) == 0,
         "incomplete enum header namespace revision scenarios");
+  CHECK(test_project_enum_macro_revision_order(target) == 0,
+        "project enum macro revision order scenarios");
   CHECK(test_initializer_designator_operand_hover(target) == 0,
         "initializer designator operand hover scenarios");
   CHECK(test_compound_literal_designator_operand_hover(target) == 0,
@@ -9807,6 +10162,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (56 scenarios)");
+  puts("language analysis tests passed (57 scenarios)");
   return 0;
 }

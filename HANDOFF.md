@@ -32458,3 +32458,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じrevision遷移をproject source側の同名enum定数とvirtual header macroの組合せへ広げ、source/headerの更新順で
     hover kind・候補range・partial診断が旧revisionを保持しない境界を確認する。
+
+### このセッション（続き1108）: project source/headerの更新順を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1107に残した、通常サイズのproject source enumとvirtual header function-like macroのrevision更新だけを確認した。
+- 調査結果:
+  - project indexが統合するのは外部関数の定義情報であり、別TUのenum定数を編集中TUへ可視化するものではないため、
+    `main.c`自身にenum定数、virtual headerに同名macroを置く正しい境界で検証した。
+  - sourceを先に削除・復元してからheaderを更新する順と、headerを先に削除してからsourceを更新する逆順のどちらでも、
+    revisionを進めるたびpreprocessor/ScopeGraph/project stateが現内容へ切り替わり、削除済み候補や旧metadataを保持しなかった。
+  - Native/Wasm差や追加のproduction code不具合は見つからず、回帰テストだけを追加した。
+- 回帰範囲:
+  - 両方→macro-only→両方→enum-only→両方、および両方→enum-only→neither→macro-only→両方を、
+    同じNative sessionと同じWasm compiler instanceで連続実行した。
+  - bare/invocationの名前の先頭・中央・末尾で、候補の有無、source/headerのdeclaration/documentation range、
+    enum値101/202、macro replacement `+110`/`+220`とparameter、hover kind、派生値、dependency、
+    `AGC_PARTIAL_IDENTIFIER`またはE3102の正確なrangeを固定した。neitherはbare identifierだけを対象にした。
+  - 全revision/cursor位置を、先頭revisionから新規Native sessionで再生したJSON snapshotとWasm結果で完全一致させた。
+  - 専用シナリオを追加し、language analysisの表示を57 scenariosへ更新した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (57 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - production compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、fuzz・深度/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じproject revision列で、source側enum定数のrenameとheader側macro parameter名/replacement更新を交互に行い、
+    候補のidentityとdocumentation rangeが同名復元時にも旧revisionへ戻らない境界を確認する。

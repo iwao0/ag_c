@@ -2511,6 +2511,154 @@ const incompleteEnumHeaderSources = [
       "enum { INCOMPLETE_HEADER_DERIVED = COLLIDING_HEADER_SYMBOL(1)",
   },
 ];
+const projectEnumMacroHeaders = [
+  "/// project header macro v1\n" +
+    "#define PROJECT_COLLIDING_SYMBOL(value) ((value) + 110)\n",
+  "",
+  "/// project header macro v2\n" +
+    "#define PROJECT_COLLIDING_SYMBOL(value) ((value) + 220)\n",
+];
+const projectEnumMacroIndexSources = [
+  {
+    name: "main.c",
+    source: "#include <project-collision.h>\n" +
+      "enum ProjectSourceCollisionV1 {\n" +
+      "  /// project source enum v1\n" +
+      "  PROJECT_COLLIDING_SYMBOL = 101\n};\n" +
+      "int project_collision_anchor(void) { return 1; }\n",
+  },
+  {
+    name: "main.c",
+    source: "#include <project-collision.h>\n" +
+      "int project_collision_anchor(void) { return 1; }\n",
+  },
+  {
+    name: "main.c",
+    source: "#include <project-collision.h>\n" +
+      "enum ProjectSourceCollisionV2 {\n" +
+      "  /// project source enum v2\n" +
+      "  PROJECT_COLLIDING_SYMBOL = 202\n};\n" +
+      "int project_collision_anchor(void) { return 2; }\n",
+  },
+];
+const projectEnumMacroEditSources = [
+  [
+    {
+      name: "main.c",
+      source: "#include <project-collision.h>\n" +
+        "enum ProjectSourceCollisionV1 {\n" +
+        "  /// project source enum v1\n" +
+        "  PROJECT_COLLIDING_SYMBOL = 101\n};\n" +
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL",
+    },
+    {
+      name: "main.c",
+      source: "#include <project-collision.h>\n" +
+        "enum ProjectSourceCollisionV1 {\n" +
+        "  /// project source enum v1\n" +
+        "  PROJECT_COLLIDING_SYMBOL = 101\n};\n" +
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
+    },
+  ],
+  [
+    {
+      name: "main.c",
+      source: "#include <project-collision.h>\n" +
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL",
+    },
+    {
+      name: "main.c",
+      source: "#include <project-collision.h>\n" +
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
+    },
+  ],
+  [
+    {
+      name: "main.c",
+      source: "#include <project-collision.h>\n" +
+        "enum ProjectSourceCollisionV2 {\n" +
+        "  /// project source enum v2\n" +
+        "  PROJECT_COLLIDING_SYMBOL = 202\n};\n" +
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL",
+    },
+    {
+      name: "main.c",
+      source: "#include <project-collision.h>\n" +
+        "enum ProjectSourceCollisionV2 {\n" +
+        "  /// project source enum v2\n" +
+        "  PROJECT_COLLIDING_SYMBOL = 202\n};\n" +
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
+    },
+  ],
+];
+const projectEnumMacroRevisions = [
+  {
+    sourceIndex: 0, headerIndex: 0,
+    enumValue: "101", enumDocumentation: "project source enum v1",
+    enumComment: "/// project source enum v1",
+    macroReplacement: "( ( value ) + 110 )", macroInvocationValue: "111",
+    macroDocumentation: "project header macro v1",
+    macroComment: "/// project header macro v1",
+  },
+  {
+    sourceIndex: 1, headerIndex: 0,
+    enumValue: null, enumDocumentation: null, enumComment: null,
+    macroReplacement: "( ( value ) + 110 )", macroInvocationValue: "111",
+    macroDocumentation: "project header macro v1",
+    macroComment: "/// project header macro v1",
+  },
+  {
+    sourceIndex: 2, headerIndex: 0,
+    enumValue: "202", enumDocumentation: "project source enum v2",
+    enumComment: "/// project source enum v2",
+    macroReplacement: "( ( value ) + 110 )", macroInvocationValue: "111",
+    macroDocumentation: "project header macro v1",
+    macroComment: "/// project header macro v1",
+  },
+  {
+    sourceIndex: 2, headerIndex: 1,
+    enumValue: "202", enumDocumentation: "project source enum v2",
+    enumComment: "/// project source enum v2",
+    macroReplacement: null, macroInvocationValue: null,
+    macroDocumentation: null, macroComment: null,
+  },
+  {
+    sourceIndex: 2, headerIndex: 2,
+    enumValue: "202", enumDocumentation: "project source enum v2",
+    enumComment: "/// project source enum v2",
+    macroReplacement: "( ( value ) + 220 )", macroInvocationValue: "221",
+    macroDocumentation: "project header macro v2",
+    macroComment: "/// project header macro v2",
+  },
+  {
+    sourceIndex: 2, headerIndex: 1,
+    enumValue: "202", enumDocumentation: "project source enum v2",
+    enumComment: "/// project source enum v2",
+    macroReplacement: null, macroInvocationValue: null,
+    macroDocumentation: null, macroComment: null,
+  },
+  {
+    sourceIndex: 1, headerIndex: 1,
+    enumValue: null, enumDocumentation: null, enumComment: null,
+    macroReplacement: null, macroInvocationValue: null,
+    macroDocumentation: null, macroComment: null,
+  },
+  {
+    sourceIndex: 1, headerIndex: 2,
+    enumValue: null, enumDocumentation: null, enumComment: null,
+    macroReplacement: "( ( value ) + 220 )", macroInvocationValue: "221",
+    macroDocumentation: "project header macro v2",
+    macroComment: "/// project header macro v2",
+  },
+  {
+    sourceIndex: 2, headerIndex: 2,
+    enumValue: "202", enumDocumentation: "project source enum v2",
+    enumComment: "/// project source enum v2",
+    macroReplacement: "( ( value ) + 220 )", macroInvocationValue: "221",
+    macroDocumentation: "project header macro v2",
+    macroComment: "/// project header macro v2",
+  },
+];
 const incompleteEnumHeaderCases = [
   [0, "INCOMPLETE_HEADER_ENUM_VALUE", "INCOMPLETE_HEADER_ENUM_VALUE",
     "enumConstant", "17", "header enum value documentation", false],
@@ -3300,6 +3448,141 @@ try {
   }
 } finally {
   incompleteEnumHeaderCollisionRevisionCompiler.dispose();
+}
+
+const projectEnumMacroRevisionCompiler = await createCompiler(wasmModule);
+const projectEnumMacroName = "PROJECT_COLLIDING_SYMBOL";
+try {
+  for (let revisionIndex = 0;
+    revisionIndex < projectEnumMacroRevisions.length;
+    revisionIndex++) {
+    const revision = projectEnumMacroRevisions[revisionIndex];
+    const header = projectEnumMacroHeaders[revision.headerIndex];
+    for (const invocation of [false, true]) {
+      if (invocation && !revision.enumValue && !revision.macroReplacement) {
+        continue;
+      }
+      const source = projectEnumMacroEditSources[
+        revision.sourceIndex][invocation ? 1 : 0];
+      const useIndex = source.source.lastIndexOf(projectEnumMacroName);
+      const useStart = byteOffsetForIndex(source.source, useIndex);
+      const nameLength = Buffer.byteLength(projectEnumMacroName);
+      for (const delta of [0, Math.floor(nameLength / 2), nameLength]) {
+        const byteOffset = useStart + delta;
+        const result = projectEnumMacroRevisionCompiler.analyzeProjectSource(
+          source,
+          {
+            projectRevision: revisionIndex + 1,
+            projectSources: [
+              projectEnumMacroIndexSources[revision.sourceIndex],
+            ],
+            headers: { "project-collision.h": header },
+            cursor: { sourceName: source.name, byteOffset },
+          },
+        );
+        const enumCandidate = symbol(
+          result, projectEnumMacroName, "enumConstant",
+        );
+        const macroCandidate = symbol(
+          result, projectEnumMacroName, "macro",
+        );
+        assert.equal(result.partial, true);
+        assert.equal(Boolean(enumCandidate), revision.enumValue !== null);
+        assert.equal(Boolean(macroCandidate),
+          revision.macroReplacement !== null);
+        assert.deepStrictEqual(result.dependencies, ["project-collision.h"]);
+        if (enumCandidate) {
+          const declarationIndex = source.source.indexOf(projectEnumMacroName);
+          const commentIndex = source.source.indexOf(revision.enumComment);
+          assert.equal(enumCandidate.initializer.constantValue,
+            revision.enumValue);
+          assert.equal(enumCandidate.declaration.sourceName, "main.c");
+          assert.equal(enumCandidate.declaration.start.offset,
+            declarationIndex);
+          assert.equal(enumCandidate.declaration.end.offset,
+            declarationIndex + nameLength);
+          assert.equal(enumCandidate.documentation,
+            revision.enumDocumentation);
+          assert.equal(enumCandidate.documentationRange?.sourceName, "main.c");
+          assert.equal(enumCandidate.documentationRange?.start.offset,
+            commentIndex);
+          assert.equal(enumCandidate.documentationRange?.end.offset,
+            commentIndex + Buffer.byteLength(revision.enumComment));
+        }
+        if (macroCandidate) {
+          const declarationIndex = header.indexOf(projectEnumMacroName);
+          const commentIndex = header.indexOf(revision.macroComment);
+          assert.equal(macroCandidate.macro?.functionLike, true);
+          assert.equal(macroCandidate.macro?.variadic, false);
+          assert.deepStrictEqual(macroCandidate.macro?.parameters, ["value"]);
+          assert.equal(macroCandidate.macro?.replacement,
+            revision.macroReplacement);
+          assert.equal(macroCandidate.declaration.sourceName,
+            "project-collision.h");
+          assert.equal(macroCandidate.declaration.start.offset,
+            declarationIndex);
+          assert.equal(macroCandidate.declaration.end.offset,
+            declarationIndex + nameLength);
+          assert.equal(macroCandidate.documentation,
+            revision.macroDocumentation);
+          assert.equal(macroCandidate.documentationRange?.sourceName,
+            "project-collision.h");
+          assert.equal(macroCandidate.documentationRange?.start.offset,
+            commentIndex);
+          assert.equal(macroCandidate.documentationRange?.end.offset,
+            commentIndex + Buffer.byteLength(revision.macroComment));
+        }
+        const derived = symbol(
+          result, "PROJECT_COLLISION_DERIVED", "enumConstant",
+        );
+        if (!invocation && !revision.enumValue) {
+          assert.equal(result.hover, null);
+          assert.equal(result.diagnostics.length, 1);
+          assert.equal(result.diagnostics[0].code, "AGC_PARTIAL_IDENTIFIER");
+          assert.equal(result.diagnostics[0].start.offset, useStart);
+          assert.equal(result.diagnostics[0].end.offset,
+            useStart + nameLength);
+        } else {
+          const expected = invocation && macroCandidate
+            ? macroCandidate : enumCandidate;
+          const invalidEnumInvocation = invocation && !macroCandidate;
+          const expectedDiagnosticCount = invalidEnumInvocation &&
+              delta === nameLength ? 1 : 0;
+          assert.equal(result.diagnostics.length, expectedDiagnosticCount);
+          if (expectedDiagnosticCount) {
+            assert.equal(result.diagnostics[0].code, "E3102");
+            assert.equal(result.diagnostics[0].start.offset,
+              useStart + nameLength);
+            assert.equal(result.diagnostics[0].end.offset,
+              useStart + nameLength + 1);
+          }
+          assert.equal(result.hover?.kind, expected?.kind);
+          assert.deepStrictEqual(result.hover?.declaration,
+            expected?.declaration);
+          if (invalidEnumInvocation) {
+            assert.equal(derived, undefined);
+          } else {
+            assert.equal(derived?.initializer.constantValue,
+              invocation
+                ? revision.macroInvocationValue : revision.enumValue);
+          }
+        }
+        assert.deepStrictEqual(
+          result,
+          JSON.parse(execFileSync(
+            nativeAnalysisPath,
+            ["--project-enum-macro-revision-parity-json",
+              String(revisionIndex + 1), invocation ? "1" : "0",
+              String(byteOffset)],
+            { encoding: "utf8" },
+          )),
+          `native and Wasm project enum/macro revision differ for ${revisionIndex + 1}, ${invocation}, ${delta}`,
+        );
+      }
+    }
+  }
+} finally {
+  projectEnumMacroRevisionCompiler.dispose();
 }
 
 const initializerDesignatorOperandHoverSource = {
