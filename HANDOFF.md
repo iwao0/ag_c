@@ -32766,3 +32766,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ片側object-like macro引数のreplacementだけを通常サイズで更新・復元し、comment/splice variant間を往復しても
     引数macro metadata、派生enumerator値、callee metadataに旧revisionの状態を残さない境界を確認する。
+
+### このセッション（続き1118）: 片側object-like macro引数のreplacement更新・復元を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1117と同じ通常サイズの2引数callで、片側object-like macroのsource定義だけを更新・復元した。
+- 調査結果:
+  - 第1引数macroはreplacement 1→11→1、第2引数macroは2→12→2へ切り替わり、documentation/rangeも現source revisionへ
+    正しく更新・復元された。
+  - header側calleeの2 parameter・replacementと反対側enum定数は全revisionで不変で、引数macro metadataとの混線はなかった。
+  - macro有効時の派生enumerator値は103→113→103へ戻り、代表的なenum-only状態では更新後の引数macro候補を維持したまま
+    実際の`(`にE3102を付け、invalid derived enumeratorを公開しなかった。
+  - Native/Wasm差、復元後の古いreplacement・documentation・派生値、追加のproduction code不具合は見つからなかった。
+- 回帰範囲:
+  - 第1・第2引数macroの両方についてcomment、LF、CRLF variantをbase/updatedの両revisionで解析し、代表variantをbaseへ復元した。
+  - callee、`(`直後、両引数の先頭・中央・末尾・前後、comma前後、`)`直後、comment内部、両line splice位置で、
+    hover kind、macro/enum metadata、documentation/range、dependency、派生値またはE3102を固定した。
+  - 同一Native/Wasm instanceの更新・復元列、各位置・revisionのfresh Native JSON snapshot完全一致、同一source復帰snapshotの
+    完全一致を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - regression追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ片側object-like macro引数を通常サイズの別名へrename・復元し、comment/splice variant間を往復しても旧名候補を残さず、
+    新旧名のhover、declaration/documentation range、派生値、callee metadataが現sourceへ追従する境界を確認する。
