@@ -5090,7 +5090,9 @@ static int test_project_enum_macro_revision_order(
   const char *header_paths[] = {"project-collision.h"};
   const char *name = "PROJECT_COLLIDING_SYMBOL";
   size_t name_length = strlen(name);
-  size_t deltas[] = {0, name_length / 2, name_length};
+  const size_t cursor_deltas[] = {
+      0, 0, name_length / 2, name_length, 0};
+  const int cursor_outside[] = {1, 0, 0, 0, 1};
   const size_t source_modes[] = {0, 1, 0, 1};
   for (size_t revision = 0;
        revision < sizeof(project_enum_macro_revisions) /
@@ -5118,13 +5120,16 @@ static int test_project_enum_macro_revision_order(
       const char *source = project_enum_macro_edit_sources[
           expected->source_index][invocation];
       const char *use = last_occurrence(source, name);
-      CHECK(use != NULL, "project enum macro revision use anchor");
-      for (size_t delta_index = 0;
-           delta_index < sizeof(deltas) / sizeof(deltas[0]);
-           delta_index++) {
+      CHECK(use && use > source, "project enum macro revision use anchor");
+      size_t use_offset = (size_t)(use - source);
+      for (size_t cursor_index = 0;
+           cursor_index < sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+           cursor_index++) {
+        size_t cursor_offset = cursor_outside[cursor_index]
+                                   ? use_offset - 1
+                                   : use_offset + cursor_deltas[cursor_index];
         CHECK(analyze_project_named(
-                  session, project, "main.c", source,
-                  (size_t)(use - source) + deltas[delta_index],
+                  session, project, "main.c", source, cursor_offset,
                   bundle, defaults, &snapshot, &error),
               "project enum macro revision analysis");
         CHECK(ag_language_project_index_revision(project) == revision + 1,
@@ -5225,7 +5230,10 @@ static int test_project_enum_macro_revision_order(
         const ag_language_symbol_t *derived = find_symbol(
             &snapshot, "PROJECT_COLLISION_DERIVED",
             AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
-        if (!invocation && !expected->enum_value) {
+        if (cursor_outside[cursor_index]) {
+          CHECK(!hover && !derived && snapshot.diagnostic_count == 0,
+                "project enum macro cursor outside fields");
+        } else if (!invocation && !expected->enum_value) {
           const ag_language_diagnostic_t *partial =
               find_diagnostic(&snapshot, "AGC_PARTIAL_IDENTIFIER");
           CHECK(!hover && snapshot.diagnostic_count == 1 && partial &&
@@ -5246,7 +5254,7 @@ static int test_project_enum_macro_revision_order(
               invocation && !expected->macro_replacement;
           int expected_diagnostic_count =
               invalid_enum_invocation &&
-                      deltas[delta_index] == name_length
+                      cursor_deltas[cursor_index] == name_length
                   ? 1
                   : 0;
           CHECK(snapshot.diagnostic_count == expected_diagnostic_count &&

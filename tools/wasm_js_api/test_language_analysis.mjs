@@ -3653,8 +3653,15 @@ try {
       const useIndex = source.source.lastIndexOf(projectEnumMacroName);
       const useStart = byteOffsetForIndex(source.source, useIndex);
       const nameLength = Buffer.byteLength(projectEnumMacroName);
-      for (const delta of [0, Math.floor(nameLength / 2), nameLength]) {
-        const byteOffset = useStart + delta;
+      const cursorSteps = [
+        { delta: 0, outside: true },
+        { delta: 0, outside: false },
+        { delta: Math.floor(nameLength / 2), outside: false },
+        { delta: nameLength, outside: false },
+        { delta: 0, outside: true },
+      ];
+      for (const { delta, outside } of cursorSteps) {
+        const byteOffset = useStart + (outside ? -1 : delta);
         const result = projectEnumMacroRevisionCompiler.analyzeProjectSource(
           source,
           {
@@ -3750,7 +3757,11 @@ try {
         const derived = symbol(
           result, "PROJECT_COLLISION_DERIVED", "enumConstant",
         );
-        if (!invocation && !revision.enumValue) {
+        if (outside) {
+          assert.equal(result.hover, null);
+          assert.equal(result.diagnostics.length, 0);
+          assert.equal(derived, undefined);
+        } else if (!invocation && !revision.enumValue) {
           assert.equal(result.hover, null);
           assert.equal(result.diagnostics.length, 1);
           assert.equal(result.diagnostics[0].code, "AGC_PARTIAL_IDENTIFIER");
@@ -3782,13 +3793,13 @@ try {
                 ? revision.macroInvocationValue : revision.enumValue);
           }
         }
-        const sourceModeKey = `${invocation}:${delta}`;
+        const sourceModeKey = `${invocation}:${byteOffset}`;
         const firstSourceModeResult = firstSourceModeResults.get(sourceModeKey);
         if (firstSourceModeResult) {
           assert.deepStrictEqual(
             result,
             firstSourceModeResult,
-            `Wasm project enum/macro source toggle retained stale state for ${revisionIndex + 1}, ${invocation}, ${delta}`,
+            `Wasm project enum/macro cursor/source toggle retained stale state for ${revisionIndex + 1}, ${invocation}, ${outside ? "outside" : delta}`,
           );
         } else {
           firstSourceModeResults.set(sourceModeKey, result);
@@ -3801,7 +3812,7 @@ try {
                 String(byteOffset)],
               { encoding: "utf8" },
             )),
-            `native and Wasm project enum/macro revision differ for ${revisionIndex + 1}, ${invocation}, ${delta}`,
+            `native and Wasm project enum/macro revision differ for ${revisionIndex + 1}, ${invocation}, ${outside ? "outside" : delta}`,
           );
         }
       }

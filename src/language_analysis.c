@@ -1113,7 +1113,21 @@ static char *build_enum_declaration_recovery_source(
   const char *name = NULL;
   size_t name_length = 0;
   identifier_at(source, length, cursor, &name, &name_length);
-  if (!name || name_length == 0) return NULL;
+  int cursor_before_operand = 0;
+  if (!name || name_length == 0) {
+    size_t next_identifier = skip_analysis_space_and_comments_mode(
+        source, length, cursor, enable_trigraphs);
+    if (next_identifier <= cursor || next_identifier >= length ||
+        !is_identifier_byte((unsigned char)source[next_identifier]))
+      return NULL;
+    size_t next_identifier_end = next_identifier + 1;
+    while (next_identifier_end < length &&
+           is_identifier_byte((unsigned char)source[next_identifier_end]))
+      next_identifier_end++;
+    name = source + next_identifier;
+    name_length = next_identifier_end - next_identifier;
+    cursor_before_operand = 1;
+  }
   size_t name_start = (size_t)(name - source);
   size_t name_end = name_start + name_length;
   size_t enum_open = 0;
@@ -1121,15 +1135,17 @@ static char *build_enum_declaration_recovery_source(
   size_t item_start = 0;
   size_t item_end = 0;
   int unterminated_initializer = 0;
+  int initializer_operand = 0;
   if (!tag_body_open_at(
           source, name_start, "enum", &enum_open,
           &outer_brace_count))
     return NULL;
   if (!enum_enumerator_bounds(
-          source, length, enum_open, name_start, name_end, &item_end) &&
-      !enum_initializer_operand_end(
-          source, length, enum_open, name_start, &item_start, &item_end,
-          &unterminated_initializer))
+          source, length, enum_open, name_start, name_end, &item_end))
+    initializer_operand = enum_initializer_operand_end(
+        source, length, enum_open, name_start, &item_start, &item_end,
+        &unterminated_initializer);
+  if (!item_end || (cursor_before_operand && !initializer_operand))
     return NULL;
   static const char complete_suffix[] =
       "} __agc_language_enum_holder;\n"
@@ -1144,7 +1160,8 @@ static char *build_enum_declaration_recovery_source(
                              ? sizeof(incomplete_suffix) - 1
                              : sizeof(complete_suffix) - 1;
   int ambiguous_eof_identifier =
-      unterminated_initializer && name_end == length;
+      !cursor_before_operand && unterminated_initializer &&
+      name_end == length;
   int elide_eof_identifier =
       ambiguous_eof_identifier && !preserve_recoverable_operand;
   size_t after_name = skip_analysis_space_and_comments_mode(
@@ -1159,14 +1176,18 @@ static char *build_enum_declaration_recovery_source(
           enable_trigraphs, &call_end) &&
       skip_analysis_space_and_comments_mode(
           source, item_end, call_end + 1, enable_trigraphs) == item_end;
+  static const char cursor_gap_replacement[] =
+      "__agc_language_cursor_enum_gap = 0";
   static const char invalid_call_replacement[] =
       "__agc_language_invalid_enum_call = 0";
   size_t source_prefix_length =
-      elide_complete_call ? item_start
+      cursor_before_operand ? item_start
+      : elide_complete_call ? item_start
       : elide_eof_identifier ? name_start
                              : item_end;
   size_t replacement_length =
-      elide_complete_call ? sizeof(invalid_call_replacement) - 1
+      cursor_before_operand ? sizeof(cursor_gap_replacement) - 1
+      : elide_complete_call ? sizeof(invalid_call_replacement) - 1
       : elide_eof_identifier ? 1
                              : 0;
   if (outer_brace_count > (SIZE_MAX - 1) / 2) return NULL;
@@ -1184,7 +1205,11 @@ static char *build_enum_declaration_recovery_source(
   if (!result) return NULL;
   memcpy(result, source, source_prefix_length);
   size_t output = source_prefix_length;
-  if (elide_complete_call) {
+  if (cursor_before_operand) {
+    memcpy(result + output, cursor_gap_replacement,
+           sizeof(cursor_gap_replacement) - 1);
+    output += sizeof(cursor_gap_replacement) - 1;
+  } else if (elide_complete_call) {
     memcpy(result + output, invalid_call_replacement,
            sizeof(invalid_call_replacement) - 1);
     output += sizeof(invalid_call_replacement) - 1;

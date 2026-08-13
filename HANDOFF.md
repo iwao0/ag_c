@@ -32550,3 +32550,35 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じrevision・同じediting sourceのままcursorを識別子外→先頭→中央→末尾→識別子外へ動かし、
     hoverとpartial diagnosticがcursor-local stateだけを反映して前回rangeを保持しない境界を確認する。
+
+### このセッション（続き1111）: enum operand直前cursorのWasm trapを修正した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1110の16 revision列を変えず、通常サイズの同一editing source内でcursor位置だけを往復した。
+- 不具合と修正:
+  - 未終端enum initializerのoperand識別子直前の空白へcursorを戻すと、Nativeはhoverなし・diagnosticsなしのpartial snapshotを
+    返す一方、self-host Wasmは内部でE2006を記録した後に`unreachable`へ進んだ。
+  - この位置ではenum専用recoveryがcursor識別子を見つけられず、汎用recoveryがenum内へcursor marker宣言を置く
+    不正な一時sourceを作り、Nativeだけがfatal retryで回復していた。
+  - 空白/commentを越えた次tokenが、現在のenumerator区間のtop-level `=`に続くoperandである場合だけboundedに認識し、
+    現在のenumeratorを内部placeholderへ置換してenumと外側blockを正しく閉じるようにした。
+  - operand直前ではhover・diagnostic・派生enumeratorを公開せず、内部placeholderもcompletionへ公開しない。
+- 回帰範囲:
+  - 16 revisionすべてで、有効なbare/invocationについてcursorをoperand直前→名前の先頭→中央→末尾→operand直前と動かした。
+    neither revisionは既存契約どおりbareだけを対象にした。
+  - enum+macro、enum-only、macro-only、neither、enum rename中と復元後で、現在の候補metadata、documentation/range、
+    dependencyを維持しながら、直前位置の空hover・空diagnostics・派生候補なしと、識別子内のhover/partial/E3102を固定した。
+  - project index revision不変、同一Native/Wasm instanceでのcursor/source往復、各位置のfresh Native JSON snapshot完全一致、
+    operand直前へ戻ったWasm snapshotと初回snapshotの完全一致を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (57 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis recoveryだけの変更のためnative/Wasm E2Eは未実施し、fuzz・深度/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ完結した1引数invocationでcursorを名前末尾→`(`直後→引数末尾→`)`直後へ動かし、macro hover、
+    enum-only時のE3102、呼び出し後の構文診断がNative/Wasmで構造化され、前位置のrangeを保持しない境界を確認する。
