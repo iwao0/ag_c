@@ -2076,6 +2076,172 @@ try {
   freshEnumInitializerCompiler.dispose();
 }
 
+const initializerDesignatorOperandHoverSource = {
+  name: "initializer-designator-operand.c",
+  source: "/// initializer designator macro documentation\n" +
+    "#define INITIALIZER_DESIGNATOR_MACRO 5\n" +
+    "enum InitializerDesignatorValue {\n" +
+    "  INITIALIZER_DESIGNATOR_A = 2,\n" +
+    "  INITIALIZER_DESIGNATOR_B = 3,\n" +
+    "  INITIALIZER_DESIGNATOR_C = 4,\n" +
+    "  INITIALIZER_DESIGNATOR_CONDITION = 1\n" +
+    "};\n" +
+    "int initializer_designator_direct[16] = { [INITIALIZER_DESIGNATOR_A] = 1 };\n" +
+    "int initializer_designator_unary[16] = { [+INITIALIZER_DESIGNATOR_A] = 1 };\n" +
+    "int initializer_designator_binary[16] = { [INITIALIZER_DESIGNATOR_A + INITIALIZER_DESIGNATOR_B] = 1 };\n" +
+    "int initializer_designator_grouped[16] = { [(INITIALIZER_DESIGNATOR_C)] = 1 };\n" +
+    "int initializer_designator_conditional[16] = { [INITIALIZER_DESIGNATOR_CONDITION ? INITIALIZER_DESIGNATOR_A : INITIALIZER_DESIGNATOR_B] = 1 };\n" +
+    "int initializer_designator_macro[16] = { [INITIALIZER_DESIGNATOR_MACRO] = 1 };\n" +
+    "int initializer_designator_comment[16] = { [/* expression gap */ INITIALIZER_DESIGNATOR_A] = 1 };\n" +
+    "int initializer_designator_splice_lf[16] = { [\\\n" +
+    "INITIALIZER_DESIGNATOR_B] = 1 };\n" +
+    "int initializer_designator_splice_crlf[16] = { [\\\r\n" +
+    "INITIALIZER_DESIGNATOR_C] = 1 };\r\n" +
+    "int initializer_designator_nested[2][16] = { [1] = { [INITIALIZER_DESIGNATOR_A] = 1 } };\n" +
+    "struct InitializerDesignatorRecord { int value; };\n" +
+    "struct InitializerDesignatorRecord initializer_designator_member_chain[8] = { [INITIALIZER_DESIGNATOR_A].value = 1 };\n" +
+    "int initializer_designator_array_chain[8][8] = { [INITIALIZER_DESIGNATOR_A][INITIALIZER_DESIGNATOR_B] = 1 };\n" +
+    "int initializer_designator_multi[16] = { [INITIALIZER_DESIGNATOR_B] = 1 }, initializer_designator_later[16];\n" +
+    "static int initializer_designator_block(int designator_parameter) {\n" +
+    "  enum { INITIALIZER_DESIGNATOR_LOCAL = 6 };\n" +
+    "  int designator_before = designator_parameter;\n" +
+    "  int designator_local[16] = { [INITIALIZER_DESIGNATOR_LOCAL] = 1 };\n" +
+    "  int designator_after = designator_before;\n" +
+    "  return designator_local[INITIALIZER_DESIGNATOR_LOCAL] + designator_after;\n" +
+    "}\n",
+};
+const initializerDesignatorOperandCases = [
+  ["[INITIALIZER_DESIGNATOR_A] = 1", "INITIALIZER_DESIGNATOR_A", "enumConstant", 0],
+  ["[+INITIALIZER_DESIGNATOR_A] = 1", "INITIALIZER_DESIGNATOR_A", "enumConstant", 0],
+  ["[INITIALIZER_DESIGNATOR_A + INITIALIZER_DESIGNATOR_B] = 1",
+    "INITIALIZER_DESIGNATOR_A", "enumConstant", 0],
+  ["+ INITIALIZER_DESIGNATOR_B] = 1", "INITIALIZER_DESIGNATOR_B", "enumConstant", 0],
+  ["[(INITIALIZER_DESIGNATOR_C)] = 1", "INITIALIZER_DESIGNATOR_C", "enumConstant", 0],
+  ["? INITIALIZER_DESIGNATOR_A : INITIALIZER_DESIGNATOR_B] = 1",
+    "INITIALIZER_DESIGNATOR_B", "enumConstant", 0],
+  ["[INITIALIZER_DESIGNATOR_MACRO] = 1", "INITIALIZER_DESIGNATOR_MACRO", "macro", 0],
+  ["[/* expression gap */ INITIALIZER_DESIGNATOR_A] = 1",
+    "INITIALIZER_DESIGNATOR_A", "enumConstant", 0],
+  ["[\\\nINITIALIZER_DESIGNATOR_B] = 1", "INITIALIZER_DESIGNATOR_B", "enumConstant", 0],
+  ["[\\\r\nINITIALIZER_DESIGNATOR_C] = 1", "INITIALIZER_DESIGNATOR_C", "enumConstant", 0],
+  ["[1] = { [INITIALIZER_DESIGNATOR_A] = 1 }",
+    "INITIALIZER_DESIGNATOR_A", "enumConstant", 0],
+  ["[INITIALIZER_DESIGNATOR_A].value = 1",
+    "INITIALIZER_DESIGNATOR_A", "enumConstant", 0],
+  ["[INITIALIZER_DESIGNATOR_A][INITIALIZER_DESIGNATOR_B] = 1",
+    "INITIALIZER_DESIGNATOR_A", "enumConstant", 0],
+  ["][INITIALIZER_DESIGNATOR_B] = 1",
+    "INITIALIZER_DESIGNATOR_B", "enumConstant", 0],
+  ["initializer_designator_multi[16] = { [INITIALIZER_DESIGNATOR_B] = 1 }",
+    "INITIALIZER_DESIGNATOR_B", "enumConstant", 1],
+  ["designator_local[16] = { [INITIALIZER_DESIGNATOR_LOCAL] = 1 }",
+    "INITIALIZER_DESIGNATOR_LOCAL", "enumConstant", 2],
+];
+for (const [fragmentText, name, kind, boundaryCase] of
+  initializerDesignatorOperandCases) {
+  const fragmentIndex = initializerDesignatorOperandHoverSource.source.indexOf(
+    fragmentText,
+  );
+  const useIndex = initializerDesignatorOperandHoverSource.source.indexOf(
+    name, fragmentIndex,
+  );
+  assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+    `initializer designator operand anchor missing for ${name}`);
+  const useStart = byteOffsetForIndex(
+    initializerDesignatorOperandHoverSource.source, useIndex,
+  );
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(
+      initializerDesignatorOperandHoverSource,
+      {
+        cursor: {
+          sourceName: initializerDesignatorOperandHoverSource.name,
+          byteOffset,
+        },
+      },
+    );
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, false,
+      `${name} initializer designator operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} initializer designator operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `${name} initializer designator operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `${name} initializer designator operand kind`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} initializer designator operand declaration`);
+    if (kind === "enumConstant")
+      assert.ok(["2", "3", "4", "6"].includes(
+        result.hover?.initializer.constantValue,
+      ));
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.replacement, "5");
+      assert.equal(result.hover?.documentation,
+        "initializer designator macro documentation");
+    }
+    if (boundaryCase === 1)
+      assert.equal(symbol(result, "initializer_designator_later", "object"),
+        undefined, "later comma declarator remains invisible");
+    if (boundaryCase === 2) {
+      assert.ok(symbol(result, "designator_parameter", "parameter"));
+      assert.ok(symbol(result, "designator_before", "object"));
+      assert.equal(symbol(result, "designator_after", "object"), undefined,
+        "block designator preserves cursor lookup point");
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--initializer-designator-operand-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm initializer designator operand differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+const freshInitializerDesignatorCompiler = await createCompiler(wasmModule);
+try {
+  for (const [fragmentText, name, kind] of [
+    ["[1] = { [INITIALIZER_DESIGNATOR_A] = 1 }",
+      "INITIALIZER_DESIGNATOR_A", "enumConstant"],
+    ["designator_local[16] = { [INITIALIZER_DESIGNATOR_LOCAL] = 1 }",
+      "INITIALIZER_DESIGNATOR_LOCAL", "enumConstant"],
+  ]) {
+    const fragmentIndex = initializerDesignatorOperandHoverSource.source.indexOf(
+      fragmentText,
+    );
+    const useIndex = initializerDesignatorOperandHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+    const result = freshInitializerDesignatorCompiler.analyzeSource(
+      initializerDesignatorOperandHoverSource,
+      {
+        cursor: {
+          sourceName: initializerDesignatorOperandHoverSource.name,
+          byteOffset: byteOffsetForIndex(
+            initializerDesignatorOperandHoverSource.source, useIndex,
+          ) + Math.floor(Buffer.byteLength(name) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, false,
+      `fresh ${name} initializer designator operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `fresh ${name} initializer designator operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `fresh ${name} initializer designator operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `fresh ${name} initializer designator operand kind`);
+  }
+} finally {
+  freshInitializerDesignatorCompiler.dispose();
+}
+
 const snakeCastFragment = "(unsigned int)MAX_SNAKE_LENGTH";
 const snakeCastFragmentIndex = macroDefinitionSnake.source.indexOf(
   snakeCastFragment,

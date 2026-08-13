@@ -660,6 +660,39 @@ static const char enum_initializer_operand_hover_source[] =
     "  return ENUM_INITIALIZER_BLOCK_DERIVED;\n"
     "}\n";
 
+static const char initializer_designator_operand_hover_source[] =
+    "/// initializer designator macro documentation\n"
+    "#define INITIALIZER_DESIGNATOR_MACRO 5\n"
+    "enum InitializerDesignatorValue {\n"
+    "  INITIALIZER_DESIGNATOR_A = 2,\n"
+    "  INITIALIZER_DESIGNATOR_B = 3,\n"
+    "  INITIALIZER_DESIGNATOR_C = 4,\n"
+    "  INITIALIZER_DESIGNATOR_CONDITION = 1\n"
+    "};\n"
+    "int initializer_designator_direct[16] = { [INITIALIZER_DESIGNATOR_A] = 1 };\n"
+    "int initializer_designator_unary[16] = { [+INITIALIZER_DESIGNATOR_A] = 1 };\n"
+    "int initializer_designator_binary[16] = { [INITIALIZER_DESIGNATOR_A + INITIALIZER_DESIGNATOR_B] = 1 };\n"
+    "int initializer_designator_grouped[16] = { [(INITIALIZER_DESIGNATOR_C)] = 1 };\n"
+    "int initializer_designator_conditional[16] = { [INITIALIZER_DESIGNATOR_CONDITION ? INITIALIZER_DESIGNATOR_A : INITIALIZER_DESIGNATOR_B] = 1 };\n"
+    "int initializer_designator_macro[16] = { [INITIALIZER_DESIGNATOR_MACRO] = 1 };\n"
+    "int initializer_designator_comment[16] = { [/* expression gap */ INITIALIZER_DESIGNATOR_A] = 1 };\n"
+    "int initializer_designator_splice_lf[16] = { [\\\n"
+    "INITIALIZER_DESIGNATOR_B] = 1 };\n"
+    "int initializer_designator_splice_crlf[16] = { [\\\r\n"
+    "INITIALIZER_DESIGNATOR_C] = 1 };\r\n"
+    "int initializer_designator_nested[2][16] = { [1] = { [INITIALIZER_DESIGNATOR_A] = 1 } };\n"
+    "struct InitializerDesignatorRecord { int value; };\n"
+    "struct InitializerDesignatorRecord initializer_designator_member_chain[8] = { [INITIALIZER_DESIGNATOR_A].value = 1 };\n"
+    "int initializer_designator_array_chain[8][8] = { [INITIALIZER_DESIGNATOR_A][INITIALIZER_DESIGNATOR_B] = 1 };\n"
+    "int initializer_designator_multi[16] = { [INITIALIZER_DESIGNATOR_B] = 1 }, initializer_designator_later[16];\n"
+    "static int initializer_designator_block(int designator_parameter) {\n"
+    "  enum { INITIALIZER_DESIGNATOR_LOCAL = 6 };\n"
+    "  int designator_before = designator_parameter;\n"
+    "  int designator_local[16] = { [INITIALIZER_DESIGNATOR_LOCAL] = 1 };\n"
+    "  int designator_after = designator_before;\n"
+    "  return designator_local[INITIALIZER_DESIGNATOR_LOCAL] + designator_after;\n"
+    "}\n";
+
 static const char macro_definition_forms_source[] =
     "#define SIMPLE_MACRO 1\n"
     "# define PARENTHESIZED_MACRO (2 + 3)\r\n"
@@ -2079,6 +2112,20 @@ static int print_enum_initializer_operand_hover_parity_snapshot(
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
+static int print_initializer_designator_operand_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(initializer_designator_operand_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "initializer-designator-operand.c",
+      initializer_designator_operand_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
 static int print_cast_operand_project_parity_snapshot(
     const char *revision_text) {
   char *end = NULL;
@@ -3123,6 +3170,163 @@ static int test_enum_initializer_operand_hover(ag_target_info_t target) {
                                  enum_initializer_operand_hover_source) +
                             strlen("/// enum initializer macro documentation")),
                 "enum initializer macro fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
+static int test_initializer_designator_operand_hover(
+    ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "initializer designator operand session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+    const char *constant_value;
+    int boundary_case;
+  } cases[] = {
+      {"[INITIALIZER_DESIGNATOR_A] = 1", "INITIALIZER_DESIGNATOR_A",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "INITIALIZER_DESIGNATOR_A = 2",
+       "2", 0},
+      {"[+INITIALIZER_DESIGNATOR_A] = 1", "INITIALIZER_DESIGNATOR_A",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "INITIALIZER_DESIGNATOR_A = 2",
+       "2", 0},
+      {"[INITIALIZER_DESIGNATOR_A + INITIALIZER_DESIGNATOR_B] = 1",
+       "INITIALIZER_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_A = 2", "2", 0},
+      {"+ INITIALIZER_DESIGNATOR_B] = 1", "INITIALIZER_DESIGNATOR_B",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "INITIALIZER_DESIGNATOR_B = 3",
+       "3", 0},
+      {"[(INITIALIZER_DESIGNATOR_C)] = 1", "INITIALIZER_DESIGNATOR_C",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "INITIALIZER_DESIGNATOR_C = 4",
+       "4", 0},
+      {"? INITIALIZER_DESIGNATOR_A : INITIALIZER_DESIGNATOR_B] = 1",
+       "INITIALIZER_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_B = 3", "3", 0},
+      {"[INITIALIZER_DESIGNATOR_MACRO] = 1",
+       "INITIALIZER_DESIGNATOR_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "INITIALIZER_DESIGNATOR_MACRO 5", "", 0},
+      {"[/* expression gap */ INITIALIZER_DESIGNATOR_A] = 1",
+       "INITIALIZER_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_A = 2", "2", 0},
+      {"[\\\nINITIALIZER_DESIGNATOR_B] = 1",
+       "INITIALIZER_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_B = 3", "3", 0},
+      {"[\\\r\nINITIALIZER_DESIGNATOR_C] = 1",
+       "INITIALIZER_DESIGNATOR_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_C = 4", "4", 0},
+      {"[1] = { [INITIALIZER_DESIGNATOR_A] = 1 }",
+       "INITIALIZER_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_A = 2", "2", 0},
+      {"[INITIALIZER_DESIGNATOR_A].value = 1",
+       "INITIALIZER_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_A = 2", "2", 0},
+      {"[INITIALIZER_DESIGNATOR_A][INITIALIZER_DESIGNATOR_B] = 1",
+       "INITIALIZER_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_A = 2", "2", 0},
+      {"][INITIALIZER_DESIGNATOR_B] = 1",
+       "INITIALIZER_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_B = 3", "3", 0},
+      {"initializer_designator_multi[16] = { [INITIALIZER_DESIGNATOR_B] = 1 }",
+       "INITIALIZER_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_B = 3", "3", 1},
+      {"designator_local[16] = { [INITIALIZER_DESIGNATOR_LOCAL] = 1 }",
+       "INITIALIZER_DESIGNATOR_LOCAL", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_LOCAL = 6", "6", 2},
+  };
+  const char *macro_comment = strstr(
+      initializer_designator_operand_hover_source,
+      "/// initializer designator macro documentation");
+  CHECK(macro_comment != NULL, "initializer designator macro comment anchor");
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          initializer_designator_operand_hover_source,
+          cases[case_index].fragment);
+      const char *use = fragment
+                            ? strstr(fragment, cases[case_index].name)
+                            : NULL;
+      const char *declaration = strstr(
+          initializer_designator_operand_hover_source,
+          cases[case_index].declaration_fragment);
+      CHECK(use && declaration, "initializer designator operand anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh initializer designator operand session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "initializer-designator-operand.c",
+                  initializer_designator_operand_hover_source,
+                  (size_t)(use - initializer_designator_operand_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "initializer designator operand analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(hover && completion && !snapshot.partial &&
+                  snapshot.diagnostic_count == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            initializer_designator_operand_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            initializer_designator_operand_hover_source +
+                            name_length) &&
+                  same_range(&hover->declaration, &completion->declaration),
+              "initializer designator operand fields");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(strcmp(hover->constant_value,
+                       cases[case_index].constant_value) == 0,
+                "initializer designator operand value");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+          CHECK(hover->macro_replacement &&
+                    strcmp(hover->macro_replacement, "5") == 0 &&
+                    check_documentation_symbol(
+                        hover, "initializer designator macro documentation",
+                        "initializer-designator-operand.c",
+                        (size_t)(macro_comment -
+                                 initializer_designator_operand_hover_source),
+                        (size_t)(macro_comment -
+                                 initializer_designator_operand_hover_source) +
+                            strlen("/// initializer designator macro documentation")),
+                "initializer designator macro fields");
+        if (cases[case_index].boundary_case == 1)
+          CHECK(!find_symbol(
+                    &snapshot, "initializer_designator_later",
+                    AG_LANGUAGE_SYMBOL_OBJECT),
+                "later comma declarator remains invisible");
+        if (cases[case_index].boundary_case == 2)
+          CHECK(find_symbol(
+                    &snapshot, "designator_parameter",
+                    AG_LANGUAGE_SYMBOL_PARAMETER) &&
+                    find_symbol(
+                        &snapshot, "designator_before",
+                        AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "designator_after",
+                        AG_LANGUAGE_SYMBOL_OBJECT),
+                "block designator preserves cursor lookup point");
         ag_language_analysis_snapshot_dispose(&snapshot);
         if (fresh_session)
           ag_compilation_session_destroy(analysis_session);
@@ -4443,6 +4647,11 @@ int main(int argc, char **argv) {
              "--enum-initializer-operand-hover-parity-json") == 0)
     return print_enum_initializer_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1],
+             "--initializer-designator-operand-hover-parity-json") == 0)
+    return print_initializer_designator_operand_hover_parity_snapshot(
+        argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-project-parity-json") == 0)
     return print_cast_operand_project_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -4487,6 +4696,8 @@ int main(int argc, char **argv) {
         "case expression operand hover scenarios");
   CHECK(test_enum_initializer_operand_hover(target) == 0,
         "enum initializer operand hover scenarios");
+  CHECK(test_initializer_designator_operand_hover(target) == 0,
+        "initializer designator operand hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -7499,6 +7710,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (45 scenarios)");
+  puts("language analysis tests passed (46 scenarios)");
   return 0;
 }

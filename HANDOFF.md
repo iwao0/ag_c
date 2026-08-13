@@ -32050,3 +32050,39 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     解析例外が残った。いずれも独立したrecovery経路として次回切り分ける。
   - 末尾`,`/`}`のないenum initializerは今回の専用経路には入らないが、既存の汎用recoveryが
     仮operandでcomplete扱いにする別挙動があるため、未完了sourceのpartial契約として別途扱う。
+
+### このセッション（続き1095）: array designator index内のoperand hoverを安定化した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1094で記録した浅い候補から、通常サイズのdesignated initializerだけを調査した。
+- 原因と修正:
+  - cursor識別子がarray designatorの最初のoperandだと、汎用recoveryは`]`だけを補って`[0]`とした。
+  - initializer要素に必須の`= value`とbrace終端を保持しないため、valid sourceをE2006の解析例外にしていた。
+  - prefixをquote/comment、preprocessor directive、trigraph directive、LF/CRLF行継続を除外しながら
+    反復走査し、cursorを含む完全な`[...]`から後続の`.member` / `[...]` designator chainをたどり、
+    最終`=`と、それを含む完全なobject brace initializerの対応`}`がsource中に実在する場合だけ
+    initializer末尾まで原文を保持する専用recoveryを追加した。
+  - markerはfile scopeまたは元のblock scopeのinitializer直後へ置き、後続declaratorや後続localを
+    cursor位置から可視にしない。
+  - designator式の意味評価や再帰的な式走査、深度上限の拡張は追加していない。
+- 回帰範囲:
+  - file-scopeとblock-scope、nested initializer、`[INDEX].member` / `[INDEX][INDEX]`の連鎖、
+    同一宣言の後続declarator非可視を網羅した。
+  - 単項、二項、括弧、式中2個目のidentifier、浅い条件演算子を網羅した。
+  - enum constantとobject-like macro、block comment、LF/CRLF行継続を網羅した。
+  - 各identifierの先頭・中央・末尾、正確なdeclaration range・lookup point、enum値、macro replacementと
+    documentation、同一session/fresh sessionをNativeで固定した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、fresh compilerを確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (46 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - 続き1094で再現済みのtype-name配列境界operandを、designatorとは独立したrecovery経路として扱う。
+  - compound literal内のdesignatorはobject宣言initializerとmarker位置が異なるため、今回の経路へ
+    混ぜず独立したrecovery候補として扱う。

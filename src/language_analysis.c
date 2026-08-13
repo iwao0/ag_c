@@ -1241,12 +1241,24 @@ static int analysis_delimited_tail_end_mode(
     } else if (c == '[') {
       bracket_depth++;
     } else if (c == ']') {
-      if (bracket_depth == 0) return 0;
+      if (bracket_depth == 0) {
+        if (terminator == ']' && paren_depth == 0 && brace_depth == 0) {
+          if (tail_end) *tail_end = cursor;
+          return 1;
+        }
+        return 0;
+      }
       bracket_depth--;
     } else if (c == '{') {
       brace_depth++;
     } else if (c == '}') {
-      if (brace_depth == 0) return 0;
+      if (brace_depth == 0) {
+        if (terminator == '}' && paren_depth == 0 && bracket_depth == 0) {
+          if (tail_end) *tail_end = cursor;
+          return 1;
+        }
+        return 0;
+      }
       brace_depth--;
     } else if ((c == ';' || (c == ',' && !allow_top_level_comma)) &&
                paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
@@ -1744,6 +1756,228 @@ typedef enum {
   AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER = 1 << 1,
   AG_LANGUAGE_RECOVERY_COMPLETE_IDENTIFIER_ELIDED = 1 << 2,
 } ag_language_recovery_flags_t;
+
+typedef struct {
+  char open;
+  size_t open_offset;
+  int is_initializer_brace;
+} analysis_designator_frame_t;
+
+static char *build_initializer_designator_recovery_source(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs, int *changed, size_t *source_consumed) {
+  analysis_identifier_span_t identifier = {0};
+  if (!analysis_identifier_span_at_mode(
+          source, length, cursor, enable_trigraphs, &identifier) ||
+      identifier.logical_length == 0)
+    return NULL;
+  analysis_designator_frame_t *frames = calloc(
+      identifier.start + 1, sizeof(*frames));
+  if (!frames) return NULL;
+  size_t frame_count = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = 1;
+  int preprocessor_line = 0;
+  char last_significant = 0;
+  for (size_t i = 0; i < identifier.start; i++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, i, enable_trigraphs);
+    if (splice_size > 0) {
+      i += splice_size - 1;
+      continue;
+    }
+    char c = source[i];
+    char next = i + 1 < identifier.start ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      at_line_start = 1;
+      preprocessor_line = 0;
+      continue;
+    }
+    if (at_line_start && (c == ' ' || c == '\t' || c == '\r'))
+      continue;
+    if (at_line_start && enable_trigraphs &&
+        i + 2 < identifier.start && c == '?' && next == '?' &&
+        source[i + 2] == '=') {
+      preprocessor_line = 1;
+      at_line_start = 0;
+      i += 2;
+      continue;
+    }
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    at_line_start = 0;
+    if (preprocessor_line) continue;
+    if (c == '(' || c == '[' || c == '{') {
+      frames[frame_count++] = (analysis_designator_frame_t){
+          .open = c,
+          .open_offset = i,
+          .is_initializer_brace = c == '{' && last_significant == '=',
+      };
+    } else if (c == ')' || c == ']' || c == '}') {
+      if (frame_count == 0) {
+        free(frames);
+        return NULL;
+      }
+      char open = frames[frame_count - 1].open;
+      if (!((open == '(' && c == ')') ||
+            (open == '[' && c == ']') ||
+            (open == '{' && c == '}'))) {
+        free(frames);
+        return NULL;
+      }
+      frame_count--;
+    }
+    if (!isspace((unsigned char)c)) last_significant = c;
+  }
+  size_t designator_frame = SIZE_MAX;
+  size_t designator_end = 0;
+  for (size_t i = frame_count; i > 0; i--) {
+    if (frames[i - 1].open != '[') continue;
+    size_t candidate_end = 0;
+    if (!analysis_delimited_tail_end_mode(
+            source, length, frames[i - 1].open_offset + 1, ']', 1,
+            enable_trigraphs, &candidate_end))
+      continue;
+    size_t after_designator = candidate_end + 1;
+    for (;;) {
+      after_designator = skip_analysis_space_and_comments_mode(
+          source, length, after_designator, enable_trigraphs);
+      if (after_designator >= length) break;
+      if (source[after_designator] == '.') {
+        analysis_identifier_span_t member = {0};
+        size_t member_start = skip_analysis_space_and_comments_mode(
+            source, length, after_designator + 1, enable_trigraphs);
+        if (!analysis_identifier_span_at_mode(
+                source, length, member_start, enable_trigraphs,
+                &member) || member.start != member_start)
+          break;
+        after_designator = member.end;
+        continue;
+      }
+      if (source[after_designator] == '[') {
+        size_t nested_end = 0;
+        if (!analysis_delimited_tail_end_mode(
+                source, length, after_designator + 1, ']', 1,
+                enable_trigraphs, &nested_end))
+          break;
+        after_designator = nested_end + 1;
+        continue;
+      }
+      break;
+    }
+    after_designator = skip_analysis_space_and_comments_mode(
+        source, length, after_designator, enable_trigraphs);
+    if (after_designator < length && source[after_designator] == '=') {
+      designator_frame = i - 1;
+      designator_end = candidate_end;
+      break;
+    }
+  }
+  if (designator_frame == SIZE_MAX || identifier.end > designator_end) {
+    free(frames);
+    return NULL;
+  }
+  size_t initializer_frame = SIZE_MAX;
+  for (size_t i = designator_frame; i > 0; i--) {
+    if (frames[i - 1].open != '{' ||
+        !frames[i - 1].is_initializer_brace)
+      continue;
+    int valid_outer_initializer = 1;
+    for (size_t outer = 0; outer + 1 < i; outer++)
+      if (frames[outer].open != '{' ||
+          frames[outer].is_initializer_brace) {
+        valid_outer_initializer = 0;
+        break;
+      }
+    if (valid_outer_initializer) {
+      initializer_frame = i - 1;
+      break;
+    }
+  }
+  if (initializer_frame == SIZE_MAX) {
+    free(frames);
+    return NULL;
+  }
+  size_t outer_brace_count = 0;
+  for (size_t i = 0; i < initializer_frame; i++) {
+    if (frames[i].open != '{') {
+      free(frames);
+      return NULL;
+    }
+    outer_brace_count++;
+  }
+  size_t initializer_end = 0;
+  if (!analysis_delimited_tail_end_mode(
+          source, length, frames[initializer_frame].open_offset + 1,
+          '}', 1, enable_trigraphs, &initializer_end) ||
+      initializer_end <= designator_end) {
+    free(frames);
+    return NULL;
+  }
+  free(frames);
+  static const char marker[] =
+      ";\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  size_t prefix_length = initializer_end + 1;
+  if (outer_brace_count > SIZE_MAX / 2 ||
+      prefix_length > SIZE_MAX - sizeof(marker) ||
+      prefix_length + sizeof(marker) >
+          SIZE_MAX - outer_brace_count * 2)
+    return NULL;
+  size_t result_length = prefix_length + sizeof(marker) - 1 +
+                         outer_brace_count * 2;
+  char *result = malloc(result_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, prefix_length);
+  size_t output = prefix_length;
+  memcpy(result + output, marker, sizeof(marker) - 1);
+  output += sizeof(marker) - 1;
+  for (size_t i = 0; i < outer_brace_count; i++) {
+    result[output++] = '}';
+    result[output++] = '\n';
+  }
+  result[output] = '\0';
+  if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+  if (source_consumed) *source_consumed = prefix_length;
+  return result;
+}
 
 static char *build_function_parameter_recovery_source(
     const char *source, size_t length, size_t cursor, int *changed,
@@ -2266,6 +2500,14 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (function_parameter_recovery)
       return append_conditional_validation_tail(
           function_parameter_recovery, source, source_length,
+          source_consumed);
+    char *initializer_designator_recovery =
+        build_initializer_designator_recovery_source(
+            source, source_length, recovery_cursor, enable_trigraphs,
+            changed, &source_consumed);
+    if (initializer_designator_recovery)
+      return append_conditional_validation_tail(
+          initializer_designator_recovery, source, source_length,
           source_consumed);
     char *enum_recovery = build_enum_declaration_recovery_source(
         source, source_length, recovery_cursor, changed,
