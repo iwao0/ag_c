@@ -2713,6 +2713,22 @@ function projectEnumMacroSpacedCallSource(input) {
       " /* project argument after */ )",
   };
 }
+function projectEnumMacroIdentifierArgumentSource(
+  input, declaration, argument,
+) {
+  const derivedPrefix = "enum { PROJECT_COLLISION_DERIVED";
+  const useIndex = input.source.lastIndexOf("PROJECT_COLLIDING_SYMBOL");
+  const insertionIndex = input.source.lastIndexOf(derivedPrefix);
+  const nameEnd = useIndex + "PROJECT_COLLIDING_SYMBOL".length;
+  assert.ok(useIndex >= 0 && insertionIndex >= 0 &&
+    insertionIndex < useIndex && input.source.slice(nameEnd) === "(1)",
+  "project enum/macro identifier argument source");
+  return {
+    ...input,
+    source: input.source.slice(0, insertionIndex) + declaration +
+      input.source.slice(insertionIndex, nameEnd) + `(${argument})`,
+  };
+}
 const projectEnumMacroRevisions = [
   {
     sourceIndex: 0, headerIndex: 0,
@@ -3650,6 +3666,8 @@ try {
 const projectEnumMacroRevisionCompiler = await createCompiler(wasmModule);
 const projectEnumMacroName = "PROJECT_COLLIDING_SYMBOL";
 const projectEnumMacroSpacedRevisionIndices = new Set([0, 3, 7, 9, 11, 15]);
+const projectEnumMacroIdentifierArgumentRevisionIndices =
+  new Set([0, 3, 7, 15]);
 try {
   for (let revisionIndex = 0;
     revisionIndex < projectEnumMacroRevisions.length;
@@ -3657,9 +3675,11 @@ try {
     const revision = projectEnumMacroRevisions[revisionIndex];
     const header = projectEnumMacroHeaders[revision.headerIndex];
     const firstSourceModeResults = new Map();
-    const sourceModes = projectEnumMacroSpacedRevisionIndices.has(
+    const sourceModes = projectEnumMacroIdentifierArgumentRevisionIndices.has(
       revisionIndex,
-    ) ? [0, 1, 2, 1, 2, 0] : [0, 1, 0, 1];
+    ) ? [0, 1, 2, 3, 4, 1, 2, 3, 4, 0]
+      : projectEnumMacroSpacedRevisionIndices.has(revisionIndex)
+        ? [0, 1, 2, 1, 2, 0] : [0, 1, 0, 1];
     for (const sourceMode of sourceModes) {
       const invocation = sourceMode !== 0;
       if (invocation && !revision.enumValue && !revision.macroReplacement) {
@@ -3669,6 +3689,22 @@ try {
         revision.sourceIndex][invocation ? 1 : 0];
       if (sourceMode === 2) {
         source = projectEnumMacroSpacedCallSource(source);
+      } else if (sourceMode === 3) {
+        source = projectEnumMacroIdentifierArgumentSource(
+          source,
+          "enum {\n" +
+            "  /// project call enum argument\n" +
+            "  PROJECT_CALL_ENUM_ARGUMENT = 1\n" +
+            "};\n",
+          "  PROJECT_CALL_ENUM_ARGUMENT  ",
+        );
+      } else if (sourceMode === 4) {
+        source = projectEnumMacroIdentifierArgumentSource(
+          source,
+          "/// project call macro argument\n" +
+            "#define PROJECT_CALL_MACRO_ARGUMENT 1\n",
+          "  PROJECT_CALL_MACRO_ARGUMENT  ",
+        );
       }
       const useIndex = source.source.lastIndexOf(projectEnumMacroName);
       const useStart = byteOffsetForIndex(source.source, useIndex);
@@ -3677,17 +3713,23 @@ try {
       const callOpenIndex = invocation
         ? source.source.indexOf("(", useIndex + projectEnumMacroName.length)
         : -1;
+      const argumentName = sourceMode === 3
+        ? "PROJECT_CALL_ENUM_ARGUMENT"
+        : sourceMode === 4 ? "PROJECT_CALL_MACRO_ARGUMENT" : "1";
       const argumentIndex = callOpenIndex >= 0
-        ? source.source.indexOf("1", callOpenIndex + 1) : -1;
+        ? source.source.indexOf(argumentName, callOpenIndex + 1) : -1;
       const callCloseIndex = argumentIndex >= 0
-        ? source.source.indexOf(")", argumentIndex + 1) : -1;
+        ? source.source.indexOf(")", argumentIndex + argumentName.length)
+        : -1;
       assert.ok(!invocation ||
         (callOpenIndex >= 0 && argumentIndex >= 0 && callCloseIndex >= 0),
       "project enum/macro invocation anchors");
       const callOpen = callOpenIndex >= 0
         ? byteOffsetForIndex(source.source, callOpenIndex) : -1;
       const argumentEnd = argumentIndex >= 0
-        ? byteOffsetForIndex(source.source, argumentIndex + 1) : -1;
+        ? byteOffsetForIndex(
+          source.source, argumentIndex + argumentName.length,
+        ) : -1;
       const callEnd = callCloseIndex >= 0
         ? byteOffsetForIndex(source.source, callCloseIndex + 1) : -1;
       const cursorSteps = [
@@ -3705,7 +3747,42 @@ try {
         cursorSteps.push(
           { byteOffset: nameEnd, outside: false, label: "name-end" },
           { byteOffset: callOpen + 1, outside: false, label: "call-open" },
-          { byteOffset: argumentEnd, outside: false, label: "argument-end" },
+        );
+        if (sourceMode === 3 || sourceMode === 4) {
+          const argumentStart = byteOffsetForIndex(
+            source.source, argumentIndex,
+          );
+          cursorSteps.push(
+            {
+              byteOffset: argumentStart,
+              outside: false,
+              label: "argument-start",
+            },
+            {
+              byteOffset: argumentStart +
+                Math.floor(Buffer.byteLength(argumentName) / 2),
+              outside: false,
+              label: "argument-middle",
+            },
+            {
+              byteOffset: argumentEnd,
+              outside: false,
+              label: "argument-end",
+            },
+            {
+              byteOffset: argumentEnd + 1,
+              outside: false,
+              label: "argument-after",
+            },
+          );
+        } else {
+          cursorSteps.push({
+            byteOffset: argumentEnd,
+            outside: false,
+            label: "argument-end",
+          });
+        }
+        cursorSteps.push(
           { byteOffset: callEnd, outside: false, label: "call-end" },
           { byteOffset: nameEnd, outside: false, label: "name-end" },
         );
@@ -3732,6 +3809,14 @@ try {
         const renamedEnumCandidate = symbol(
           result, renamedEnumName, "enumConstant",
         );
+        const argumentEnumName = "PROJECT_CALL_ENUM_ARGUMENT";
+        const argumentMacroName = "PROJECT_CALL_MACRO_ARGUMENT";
+        const argumentEnumCandidate = symbol(
+          result, argumentEnumName, "enumConstant",
+        );
+        const argumentMacroCandidate = symbol(
+          result, argumentMacroName, "macro",
+        );
         assert.equal(result.partial, true);
         assert.equal(Boolean(enumCandidate), revision.enumValue !== null);
         assert.equal(Boolean(macroCandidate),
@@ -3739,6 +3824,8 @@ try {
         assert.equal(Boolean(renamedEnumCandidate),
           revision.renamedEnumValue !== undefined &&
             revision.renamedEnumValue !== null);
+        assert.equal(Boolean(argumentEnumCandidate), sourceMode === 3);
+        assert.equal(Boolean(argumentMacroCandidate), sourceMode === 4);
         assert.deepStrictEqual(result.dependencies, ["project-collision.h"]);
         if (enumCandidate) {
           const declarationIndex = source.source.indexOf(projectEnumMacroName);
@@ -3778,6 +3865,45 @@ try {
             commentIndex);
           assert.equal(renamedEnumCandidate.documentationRange?.end.offset,
             commentIndex + Buffer.byteLength(revision.renamedEnumComment));
+        }
+        if (argumentEnumCandidate) {
+          const declarationIndex = source.source.indexOf(argumentEnumName);
+          const comment = "/// project call enum argument";
+          const commentIndex = source.source.indexOf(comment);
+          assert.equal(argumentEnumCandidate.initializer.constantValue, "1");
+          assert.equal(argumentEnumCandidate.declaration.sourceName, "main.c");
+          assert.equal(argumentEnumCandidate.declaration.start.offset,
+            declarationIndex);
+          assert.equal(argumentEnumCandidate.declaration.end.offset,
+            declarationIndex + Buffer.byteLength(argumentEnumName));
+          assert.equal(argumentEnumCandidate.documentation,
+            "project call enum argument");
+          assert.equal(argumentEnumCandidate.documentationRange?.sourceName,
+            "main.c");
+          assert.equal(argumentEnumCandidate.documentationRange?.start.offset,
+            commentIndex);
+          assert.equal(argumentEnumCandidate.documentationRange?.end.offset,
+            commentIndex + Buffer.byteLength(comment));
+        }
+        if (argumentMacroCandidate) {
+          const declarationIndex = source.source.indexOf(argumentMacroName);
+          const comment = "/// project call macro argument";
+          const commentIndex = source.source.indexOf(comment);
+          assert.equal(argumentMacroCandidate.macro?.functionLike, false);
+          assert.equal(argumentMacroCandidate.macro?.replacement, "1");
+          assert.equal(argumentMacroCandidate.declaration.sourceName, "main.c");
+          assert.equal(argumentMacroCandidate.declaration.start.offset,
+            declarationIndex);
+          assert.equal(argumentMacroCandidate.declaration.end.offset,
+            declarationIndex + Buffer.byteLength(argumentMacroName));
+          assert.equal(argumentMacroCandidate.documentation,
+            "project call macro argument");
+          assert.equal(argumentMacroCandidate.documentationRange?.sourceName,
+            "main.c");
+          assert.equal(argumentMacroCandidate.documentationRange?.start.offset,
+            commentIndex);
+          assert.equal(argumentMacroCandidate.documentationRange?.end.offset,
+            commentIndex + Buffer.byteLength(comment));
         }
         if (macroCandidate) {
           const declarationIndex = header.indexOf(projectEnumMacroName);
@@ -3822,6 +3948,13 @@ try {
             ? macroCandidate : enumCandidate;
           const invalidEnumInvocation = invocation && !macroCandidate;
           const cursorAfterName = invocation && byteOffset > nameEnd;
+          const argumentStart = argumentIndex >= 0
+            ? byteOffsetForIndex(source.source, argumentIndex) : -1;
+          const cursorInArgument =
+            (sourceMode === 3 || sourceMode === 4) &&
+            byteOffset >= argumentStart && byteOffset <= argumentEnd;
+          const expectedArgument = sourceMode === 3
+            ? argumentEnumCandidate : argumentMacroCandidate;
           const expectedDiagnosticCount = invalidEnumInvocation &&
               byteOffset >= callOpen ? 1 : 0;
           assert.equal(result.diagnostics.length, expectedDiagnosticCount);
@@ -3832,7 +3965,11 @@ try {
             assert.equal(result.diagnostics[0].end.offset,
               callOpen + 1);
           }
-          if (cursorAfterName) {
+          if (cursorInArgument) {
+            assert.equal(result.hover?.kind, expectedArgument?.kind);
+            assert.deepStrictEqual(result.hover?.declaration,
+              expectedArgument?.declaration);
+          } else if (cursorAfterName) {
             assert.equal(result.hover, null);
           } else {
             assert.equal(result.hover?.kind, expected?.kind);

@@ -15,6 +15,9 @@ typedef struct {
 static const char *last_occurrence(const char *text, const char *needle);
 static char *project_enum_macro_spaced_call_source(
     const char *source, const char *name);
+static char *project_enum_macro_identifier_argument_source(
+    const char *source, const char *name, const char *declaration,
+    const char *argument);
 
 static char *read_fixture_source(const char *path, size_t *length) {
   if (length) *length = 0;
@@ -2647,7 +2650,7 @@ static int print_project_enum_macro_revision_parity_snapshot(
       parsed_revision == 0 ||
       parsed_revision > (unsigned long long)revision_count ||
       !source_mode_text[0] || !source_mode_end ||
-      *source_mode_end != '\0' || parsed_source_mode > 2 ||
+      *source_mode_end != '\0' || parsed_source_mode > 4 ||
       !cursor_text[0] || !cursor_end ||
       *cursor_end != '\0')
     return 1;
@@ -2689,6 +2692,24 @@ static int print_project_enum_macro_revision_parity_snapshot(
   if (parsed_source_mode == 2) {
     owned_source = project_enum_macro_spaced_call_source(
         source, "PROJECT_COLLIDING_SYMBOL");
+    if (!owned_source) goto cleanup;
+    source = owned_source;
+  } else if (parsed_source_mode == 3) {
+    owned_source = project_enum_macro_identifier_argument_source(
+        source, "PROJECT_COLLIDING_SYMBOL",
+        "enum {\n"
+        "  /// project call enum argument\n"
+        "  PROJECT_CALL_ENUM_ARGUMENT = 1\n"
+        "};\n",
+        "PROJECT_CALL_ENUM_ARGUMENT");
+    if (!owned_source) goto cleanup;
+    source = owned_source;
+  } else if (parsed_source_mode == 4) {
+    owned_source = project_enum_macro_identifier_argument_source(
+        source, "PROJECT_COLLIDING_SYMBOL",
+        "/// project call macro argument\n"
+        "#define PROJECT_CALL_MACRO_ARGUMENT 1\n",
+        "PROJECT_CALL_MACRO_ARGUMENT");
     if (!owned_source) goto cleanup;
     source = owned_source;
   }
@@ -2924,6 +2945,51 @@ static char *project_enum_macro_spaced_call_source(
   if (!result) return NULL;
   memcpy(result, source, prefix_length);
   memcpy(result + prefix_length, spaced_call_tail, tail_length + 1);
+  return result;
+}
+
+static char *project_enum_macro_identifier_argument_source(
+    const char *source, const char *name, const char *declaration,
+    const char *argument) {
+  static const char derived_prefix[] =
+      "enum { PROJECT_COLLISION_DERIVED";
+  if (!source || !name || !declaration || !argument) return NULL;
+  const char *use = last_occurrence(source, name);
+  const char *insertion = last_occurrence(source, derived_prefix);
+  size_t name_length = strlen(name);
+  if (!use || !insertion || insertion >= use ||
+      strcmp(use + name_length, "(1)") != 0)
+    return NULL;
+  size_t prefix_length = (size_t)(insertion - source);
+  size_t middle_length = (size_t)(use - insertion) + name_length;
+  size_t declaration_length = strlen(declaration);
+  size_t argument_length = strlen(argument);
+  if (declaration_length > SIZE_MAX - prefix_length ||
+      middle_length > SIZE_MAX - prefix_length - declaration_length)
+    return NULL;
+  size_t fixed_length = prefix_length + declaration_length + middle_length;
+  if (fixed_length > SIZE_MAX - 6 ||
+      argument_length > SIZE_MAX - fixed_length - 6)
+    return NULL;
+  size_t result_length = fixed_length + argument_length + 6;
+  char *result = malloc(result_length + 1);
+  if (!result) return NULL;
+  size_t output = 0;
+  memcpy(result + output, source, prefix_length);
+  output += prefix_length;
+  memcpy(result + output, declaration, declaration_length);
+  output += declaration_length;
+  memcpy(result + output, insertion, middle_length);
+  output += middle_length;
+  result[output++] = '(';
+  result[output++] = ' ';
+  result[output++] = ' ';
+  memcpy(result + output, argument, argument_length);
+  output += argument_length;
+  result[output++] = ' ';
+  result[output++] = ' ';
+  result[output++] = ')';
+  result[output] = '\0';
   return result;
 }
 
@@ -5122,6 +5188,8 @@ static int test_project_enum_macro_revision_order(
   size_t name_length = strlen(name);
   const size_t default_source_modes[] = {0, 1, 0, 1};
   const size_t spaced_source_modes[] = {0, 1, 2, 1, 2, 0};
+  const size_t identifier_argument_source_modes[] = {
+      0, 1, 2, 3, 4, 1, 2, 3, 4, 0};
   for (size_t revision = 0;
        revision < sizeof(project_enum_macro_revisions) /
                       sizeof(project_enum_macro_revisions[0]);
@@ -5141,14 +5209,22 @@ static int test_project_enum_macro_revision_order(
     int tests_spaced_call =
         revision == 0 || revision == 3 || revision == 7 ||
         revision == 9 || revision == 11 || revision == 15;
-    const size_t *source_modes = tests_spaced_call
-                                     ? spaced_source_modes
-                                     : default_source_modes;
-    size_t source_mode_count = tests_spaced_call
-                                   ? sizeof(spaced_source_modes) /
-                                         sizeof(spaced_source_modes[0])
-                                   : sizeof(default_source_modes) /
-                                         sizeof(default_source_modes[0]);
+    int tests_identifier_arguments =
+        revision == 0 || revision == 3 || revision == 7 ||
+        revision == 15;
+    const size_t *source_modes =
+        tests_identifier_arguments ? identifier_argument_source_modes
+        : tests_spaced_call         ? spaced_source_modes
+                                    : default_source_modes;
+    size_t source_mode_count =
+        tests_identifier_arguments
+            ? sizeof(identifier_argument_source_modes) /
+                  sizeof(identifier_argument_source_modes[0])
+        : tests_spaced_call
+            ? sizeof(spaced_source_modes) /
+                  sizeof(spaced_source_modes[0])
+            : sizeof(default_source_modes) /
+                  sizeof(default_source_modes[0]);
     for (size_t source_mode_index = 0;
          source_mode_index < source_mode_count;
          source_mode_index++) {
@@ -5165,6 +5241,26 @@ static int test_project_enum_macro_revision_order(
         CHECK(owned_source != NULL,
               "project enum macro spaced call source");
         source = owned_source;
+      } else if (source_mode == 3) {
+        owned_source = project_enum_macro_identifier_argument_source(
+            source, name,
+            "enum {\n"
+            "  /// project call enum argument\n"
+            "  PROJECT_CALL_ENUM_ARGUMENT = 1\n"
+            "};\n",
+            "PROJECT_CALL_ENUM_ARGUMENT");
+        CHECK(owned_source != NULL,
+              "project enum macro enum argument source");
+        source = owned_source;
+      } else if (source_mode == 4) {
+        owned_source = project_enum_macro_identifier_argument_source(
+            source, name,
+            "/// project call macro argument\n"
+            "#define PROJECT_CALL_MACRO_ARGUMENT 1\n",
+            "PROJECT_CALL_MACRO_ARGUMENT");
+        CHECK(owned_source != NULL,
+              "project enum macro macro argument source");
+        source = owned_source;
       }
       const char *use = last_occurrence(source, name);
       CHECK(use && use > source, "project enum macro revision use anchor");
@@ -5172,23 +5268,42 @@ static int test_project_enum_macro_revision_order(
       const char *call_open = invocation
                                   ? strstr(use + name_length, "(")
                                   : NULL;
-      const char *argument = call_open ? strstr(call_open + 1, "1") : NULL;
+      const char *argument_name =
+          source_mode == 3 ? "PROJECT_CALL_ENUM_ARGUMENT"
+          : source_mode == 4 ? "PROJECT_CALL_MACRO_ARGUMENT"
+                             : "1";
+      size_t argument_length = strlen(argument_name);
+      const char *argument =
+          call_open ? strstr(call_open + 1, argument_name) : NULL;
       const char *call_close = argument ? strstr(argument + 1, ")") : NULL;
       CHECK(!invocation || (call_open && argument && call_close),
             "project enum macro invocation anchors");
-      size_t cursor_offsets[] = {
+      size_t cursor_offsets[13] = {
           use_offset - 1, use_offset, use_offset + name_length / 2,
-          use_offset + name_length, use_offset - 1,
-          use_offset + name_length,
-          call_open ? (size_t)(call_open - source) + 1 : 0,
-          argument ? (size_t)(argument - source) + 1 : 0,
-          call_close ? (size_t)(call_close - source) + 1 : 0,
-          use_offset + name_length};
-      const int cursor_outside[] = {1, 0, 0, 0, 1, 0, 0, 0, 0, 0};
-      size_t cursor_step_count = invocation
-                                     ? sizeof(cursor_offsets) /
-                                           sizeof(cursor_offsets[0])
-                                     : 5;
+          use_offset + name_length, use_offset - 1};
+      int cursor_outside[13] = {1, 0, 0, 0, 1};
+      size_t cursor_step_count = 5;
+      if (invocation) {
+        cursor_offsets[cursor_step_count++] = use_offset + name_length;
+        cursor_offsets[cursor_step_count++] =
+            (size_t)(call_open - source) + 1;
+        if (source_mode == 3 || source_mode == 4) {
+          cursor_offsets[cursor_step_count++] =
+              (size_t)(argument - source);
+          cursor_offsets[cursor_step_count++] =
+              (size_t)(argument - source) + argument_length / 2;
+          cursor_offsets[cursor_step_count++] =
+              (size_t)(argument - source) + argument_length;
+          cursor_offsets[cursor_step_count++] =
+              (size_t)(argument - source) + argument_length + 1;
+        } else {
+          cursor_offsets[cursor_step_count++] =
+              (size_t)(argument - source) + argument_length;
+        }
+        cursor_offsets[cursor_step_count++] =
+            (size_t)(call_close - source) + 1;
+        cursor_offsets[cursor_step_count++] = use_offset + name_length;
+      }
       for (size_t cursor_index = 0;
            cursor_index < cursor_step_count;
            cursor_index++) {
@@ -5206,11 +5321,20 @@ static int test_project_enum_macro_revision_order(
         const char *renamed_name = "PROJECT_RENAMED_SYMBOL";
         const ag_language_symbol_t *renamed_enum_candidate = find_symbol(
             &snapshot, renamed_name, AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+        const char *argument_enum_name = "PROJECT_CALL_ENUM_ARGUMENT";
+        const char *argument_macro_name = "PROJECT_CALL_MACRO_ARGUMENT";
+        const ag_language_symbol_t *argument_enum_candidate = find_symbol(
+            &snapshot, argument_enum_name,
+            AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+        const ag_language_symbol_t *argument_macro_candidate = find_symbol(
+            &snapshot, argument_macro_name, AG_LANGUAGE_SYMBOL_MACRO);
         CHECK(snapshot.partial &&
                   (!!enum_candidate == !!expected->enum_value) &&
                   (!!macro_candidate == !!expected->macro_replacement) &&
                   (!!renamed_enum_candidate ==
                    !!expected->renamed_enum_value) &&
+                  (!!argument_enum_candidate == (source_mode == 3)) &&
+                  (!!argument_macro_candidate == (source_mode == 4)) &&
                   snapshot.dependency_count == 1 &&
                   strcmp(snapshot.dependencies[0],
                          "project-collision.h") == 0,
@@ -5257,6 +5381,55 @@ static int test_project_enum_macro_revision_order(
                         (size_t)(comment - source) +
                             strlen(expected->renamed_enum_comment)),
                 "project enum macro revision renamed enum fields");
+        }
+        if (argument_enum_candidate) {
+          const char *declaration = strstr(source, argument_enum_name);
+          const char *comment = strstr(
+              source, "/// project call enum argument");
+          CHECK(declaration && comment &&
+                    argument_enum_candidate->constant_value &&
+                    strcmp(argument_enum_candidate->constant_value,
+                           "1") == 0 &&
+                    argument_enum_candidate->declaration.source_name &&
+                    strcmp(argument_enum_candidate->declaration.source_name,
+                           "main.c") == 0 &&
+                    argument_enum_candidate->declaration.start.offset ==
+                        (int)(declaration - source) &&
+                    argument_enum_candidate->declaration.end.offset ==
+                        (int)(declaration - source +
+                              strlen(argument_enum_name)) &&
+                    check_documentation_symbol(
+                        argument_enum_candidate,
+                        "project call enum argument", "main.c",
+                        (size_t)(comment - source),
+                        (size_t)(comment - source) +
+                            strlen("/// project call enum argument")),
+                "project enum macro enum argument fields");
+        }
+        if (argument_macro_candidate) {
+          const char *declaration = strstr(source, argument_macro_name);
+          const char *comment = strstr(
+              source, "/// project call macro argument");
+          CHECK(declaration && comment &&
+                    !argument_macro_candidate->macro_is_function_like &&
+                    argument_macro_candidate->macro_replacement &&
+                    strcmp(argument_macro_candidate->macro_replacement,
+                           "1") == 0 &&
+                    argument_macro_candidate->declaration.source_name &&
+                    strcmp(argument_macro_candidate->declaration.source_name,
+                           "main.c") == 0 &&
+                    argument_macro_candidate->declaration.start.offset ==
+                        (int)(declaration - source) &&
+                    argument_macro_candidate->declaration.end.offset ==
+                        (int)(declaration - source +
+                              strlen(argument_macro_name)) &&
+                    check_documentation_symbol(
+                        argument_macro_candidate,
+                        "project call macro argument", "main.c",
+                        (size_t)(comment - source),
+                        (size_t)(comment - source) +
+                            strlen("/// project call macro argument")),
+                "project enum macro macro argument fields");
         }
         if (macro_candidate) {
           const char *header =
@@ -5315,6 +5488,14 @@ static int test_project_enum_macro_revision_order(
               expected_kind == AG_LANGUAGE_SYMBOL_MACRO
                   ? macro_candidate
                   : enum_candidate;
+          int cursor_in_argument =
+              (source_mode == 3 || source_mode == 4) &&
+              cursor_offset >= (size_t)(argument - source) &&
+              cursor_offset <=
+                  (size_t)(argument - source) + argument_length;
+          const ag_language_symbol_t *expected_argument_symbol =
+              source_mode == 3 ? argument_enum_candidate
+                               : argument_macro_candidate;
           int invalid_enum_invocation =
               invocation && !expected->macro_replacement;
           int cursor_after_name =
@@ -5325,7 +5506,12 @@ static int test_project_enum_macro_revision_order(
                   ? 1
                   : 0;
           CHECK(snapshot.diagnostic_count == expected_diagnostic_count &&
-                    ((cursor_after_name && !hover) ||
+                    ((cursor_in_argument && hover &&
+                      expected_argument_symbol &&
+                      hover->kind == expected_argument_symbol->kind &&
+                      same_range(&hover->declaration,
+                                 &expected_argument_symbol->declaration)) ||
+                     (cursor_after_name && !cursor_in_argument && !hover) ||
                      (!cursor_after_name && hover && expected_symbol &&
                       hover->kind == expected_kind &&
                       same_range(&hover->declaration,

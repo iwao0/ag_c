@@ -32643,3 +32643,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ単一引数callで引数を通常サイズのenum定数またはobject-like macroへ変え、引数識別子上とその前後へcursorを動かした際に、
     calleeの安全なcall回復と引数自身のhoverが競合せず、Native/Wasmで同じlookup pointを返す境界を確認する。
+
+### このセッション（続き1114）: direct callの識別子引数hoverを固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1113と同じ通常サイズの単一の完結した1引数callで、literal引数だけをenum定数またはobject-like macroへ置き換えた。
+- 調査結果:
+  - calleeのbounded elision/reparseは、引数識別子上の元source lookupと競合せず、引数の前後でもcallee callを維持した。
+  - enum定数引数では現定数値とsource上のdeclaration/documentation range、object-like macro引数ではreplacementと
+    source上のmacro declaration/documentation rangeを正しく返した。
+  - function-like macroが有効なら現revisionの派生enumerator値を維持し、enum-onlyなら実際の`(`にE3102を付けて
+    invalid derived enumeratorを公開しなかった。Native/Wasm差や追加のproduction code不具合は見つからなかった。
+- 回帰範囲:
+  - enum+macro、enum-only、macro-only、最終macro shape更新後の代表4 revisionで、literal/comment付きcallに加えて
+    enum定数引数とobject-like macro引数を同一Native/Wasm instance内で往復した。
+  - callee名、`(`直後、引数直前→名前先頭→中央→末尾→直後、`)`直後について、引数上の正確なhover、前後のnull hover、
+    候補metadata、documentation/range、dependency、派生値またはE3102を固定した。
+  - project index revision不変、各位置のfresh Native JSON snapshot完全一致、同じsource modeへ戻ったWasm snapshotの
+    完全一致を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (57 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - regression追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じbounded direct callを通常サイズの2引数function-like macroへ広げ、top-level commaの前後と第2引数上で、
+    callee回復、各引数hover、enum-only E3102 rangeが競合しない境界を確認する。
