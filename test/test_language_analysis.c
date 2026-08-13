@@ -13,6 +13,8 @@ typedef struct {
 } header_bundle_t;
 
 static const char *last_occurrence(const char *text, const char *needle);
+static char *project_enum_macro_spaced_call_source(
+    const char *source, const char *name);
 
 static char *read_fixture_source(const char *path, size_t *length) {
   if (length) *length = 0;
@@ -2628,15 +2630,15 @@ static int print_incomplete_enum_header_revision_parity_snapshot(
 }
 
 static int print_project_enum_macro_revision_parity_snapshot(
-    const char *revision_text, const char *invocation_text,
+    const char *revision_text, const char *source_mode_text,
     const char *cursor_text) {
   char *revision_end = NULL;
-  char *invocation_end = NULL;
+  char *source_mode_end = NULL;
   char *cursor_end = NULL;
   unsigned long long parsed_revision =
       strtoull(revision_text, &revision_end, 10);
-  unsigned long long parsed_invocation =
-      strtoull(invocation_text, &invocation_end, 10);
+  unsigned long long parsed_source_mode =
+      strtoull(source_mode_text, &source_mode_end, 10);
   unsigned long long parsed_cursor =
       strtoull(cursor_text, &cursor_end, 10);
   size_t revision_count = sizeof(project_enum_macro_revisions) /
@@ -2644,8 +2646,9 @@ static int print_project_enum_macro_revision_parity_snapshot(
   if (!revision_text[0] || !revision_end || *revision_end != '\0' ||
       parsed_revision == 0 ||
       parsed_revision > (unsigned long long)revision_count ||
-      !invocation_text[0] || !invocation_end || *invocation_end != '\0' ||
-      parsed_invocation > 1 || !cursor_text[0] || !cursor_end ||
+      !source_mode_text[0] || !source_mode_end ||
+      *source_mode_end != '\0' || parsed_source_mode > 2 ||
+      !cursor_text[0] || !cursor_end ||
       *cursor_end != '\0')
     return 1;
   ag_target_info_t target = ag_target_info_wasm32();
@@ -2662,6 +2665,7 @@ static int print_project_enum_macro_revision_parity_snapshot(
       ag_language_analysis_default_limits();
   ag_language_analysis_error_t error = {0};
   int result = 1;
+  char *owned_source = NULL;
   for (size_t revision = 0; revision < (size_t)parsed_revision; revision++) {
     const project_enum_macro_revision_t *current =
         &project_enum_macro_revisions[revision];
@@ -2677,11 +2681,17 @@ static int print_project_enum_macro_revision_parity_snapshot(
   }
   const project_enum_macro_revision_t *current =
       &project_enum_macro_revisions[(size_t)parsed_revision - 1];
-  if (parsed_invocation && !current->enum_value &&
+  if (parsed_source_mode && !current->enum_value &&
       !current->macro_replacement)
     goto cleanup;
   const char *source = project_enum_macro_edit_sources[
-      current->source_index][(size_t)parsed_invocation];
+      current->source_index][parsed_source_mode ? 1 : 0];
+  if (parsed_source_mode == 2) {
+    owned_source = project_enum_macro_spaced_call_source(
+        source, "PROJECT_COLLIDING_SYMBOL");
+    if (!owned_source) goto cleanup;
+    source = owned_source;
+  }
   if (parsed_cursor > (unsigned long long)strlen(source)) goto cleanup;
   const char *header_sources[] = {
       project_enum_macro_headers[current->header_index]};
@@ -2704,6 +2714,7 @@ static int print_project_enum_macro_revision_parity_snapshot(
   ag_language_analysis_snapshot_dispose(&snapshot);
   free(bundle.bytes);
 cleanup:
+  free(owned_source);
   ag_language_project_index_destroy(project);
   ag_compilation_session_destroy(session);
   return result;
@@ -2894,6 +2905,25 @@ static const char *last_occurrence(const char *text, const char *needle) {
     result = cursor;
     cursor++;
   }
+  return result;
+}
+
+static char *project_enum_macro_spaced_call_source(
+    const char *source, const char *name) {
+  static const char spaced_call_tail[] =
+      " /* project call gap */ ( /* project argument before */ 1"
+      " /* project argument after */ )";
+  if (!source || !name) return NULL;
+  const char *use = last_occurrence(source, name);
+  size_t name_length = strlen(name);
+  if (!use || strcmp(use + name_length, "(1)") != 0) return NULL;
+  size_t prefix_length = (size_t)(use - source) + name_length;
+  size_t tail_length = sizeof(spaced_call_tail) - 1;
+  if (prefix_length > SIZE_MAX - tail_length - 1) return NULL;
+  char *result = malloc(prefix_length + tail_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, prefix_length);
+  memcpy(result + prefix_length, spaced_call_tail, tail_length + 1);
   return result;
 }
 
@@ -5090,14 +5120,8 @@ static int test_project_enum_macro_revision_order(
   const char *header_paths[] = {"project-collision.h"};
   const char *name = "PROJECT_COLLIDING_SYMBOL";
   size_t name_length = strlen(name);
-  const size_t cursor_deltas[] = {
-      0, 0, name_length / 2, name_length, 0,
-      name_length, name_length + 1, name_length + 2,
-      name_length + 3, name_length};
-  const int cursor_outside[] = {
-      1, 0, 0, 0, 1, 0, 0, 0, 0, 0};
-  const size_t base_cursor_step_count = 5;
-  const size_t source_modes[] = {0, 1, 0, 1};
+  const size_t default_source_modes[] = {0, 1, 0, 1};
+  const size_t spaced_source_modes[] = {0, 1, 2, 1, 2, 0};
   for (size_t revision = 0;
        revision < sizeof(project_enum_macro_revisions) /
                       sizeof(project_enum_macro_revisions[0]);
@@ -5114,28 +5138,61 @@ static int test_project_enum_macro_revision_order(
               bundle, defaults, &error) &&
               ag_language_project_index_revision(project) == revision + 1,
           "project enum macro revision update");
+    int tests_spaced_call =
+        revision == 0 || revision == 3 || revision == 7 ||
+        revision == 9 || revision == 11 || revision == 15;
+    const size_t *source_modes = tests_spaced_call
+                                     ? spaced_source_modes
+                                     : default_source_modes;
+    size_t source_mode_count = tests_spaced_call
+                                   ? sizeof(spaced_source_modes) /
+                                         sizeof(spaced_source_modes[0])
+                                   : sizeof(default_source_modes) /
+                                         sizeof(default_source_modes[0]);
     for (size_t source_mode_index = 0;
-         source_mode_index < sizeof(source_modes) / sizeof(source_modes[0]);
+         source_mode_index < source_mode_count;
          source_mode_index++) {
-      size_t invocation = source_modes[source_mode_index];
+      size_t source_mode = source_modes[source_mode_index];
+      int invocation = source_mode != 0;
       if (invocation && !expected->enum_value &&
           !expected->macro_replacement)
         continue;
       const char *source = project_enum_macro_edit_sources[
-          expected->source_index][invocation];
+          expected->source_index][invocation ? 1 : 0];
+      char *owned_source = NULL;
+      if (source_mode == 2) {
+        owned_source = project_enum_macro_spaced_call_source(source, name);
+        CHECK(owned_source != NULL,
+              "project enum macro spaced call source");
+        source = owned_source;
+      }
       const char *use = last_occurrence(source, name);
       CHECK(use && use > source, "project enum macro revision use anchor");
       size_t use_offset = (size_t)(use - source);
+      const char *call_open = invocation
+                                  ? strstr(use + name_length, "(")
+                                  : NULL;
+      const char *argument = call_open ? strstr(call_open + 1, "1") : NULL;
+      const char *call_close = argument ? strstr(argument + 1, ")") : NULL;
+      CHECK(!invocation || (call_open && argument && call_close),
+            "project enum macro invocation anchors");
+      size_t cursor_offsets[] = {
+          use_offset - 1, use_offset, use_offset + name_length / 2,
+          use_offset + name_length, use_offset - 1,
+          use_offset + name_length,
+          call_open ? (size_t)(call_open - source) + 1 : 0,
+          argument ? (size_t)(argument - source) + 1 : 0,
+          call_close ? (size_t)(call_close - source) + 1 : 0,
+          use_offset + name_length};
+      const int cursor_outside[] = {1, 0, 0, 0, 1, 0, 0, 0, 0, 0};
       size_t cursor_step_count = invocation
-                                     ? sizeof(cursor_deltas) /
-                                           sizeof(cursor_deltas[0])
-                                     : base_cursor_step_count;
+                                     ? sizeof(cursor_offsets) /
+                                           sizeof(cursor_offsets[0])
+                                     : 5;
       for (size_t cursor_index = 0;
            cursor_index < cursor_step_count;
            cursor_index++) {
-        size_t cursor_offset = cursor_outside[cursor_index]
-                                   ? use_offset - 1
-                                   : use_offset + cursor_deltas[cursor_index];
+        size_t cursor_offset = cursor_offsets[cursor_index];
         CHECK(analyze_project_named(
                   session, project, "main.c", source, cursor_offset,
                   bundle, defaults, &snapshot, &error),
@@ -5261,10 +5318,10 @@ static int test_project_enum_macro_revision_order(
           int invalid_enum_invocation =
               invocation && !expected->macro_replacement;
           int cursor_after_name =
-              invocation && cursor_deltas[cursor_index] > name_length;
+              invocation && cursor_offset > use_offset + name_length;
           int expected_diagnostic_count =
-              invalid_enum_invocation &&
-                      cursor_deltas[cursor_index] >= name_length
+              invalid_enum_invocation && call_open &&
+                      cursor_offset >= (size_t)(call_open - source)
                   ? 1
                   : 0;
           CHECK(snapshot.diagnostic_count == expected_diagnostic_count &&
@@ -5282,9 +5339,9 @@ static int test_project_enum_macro_revision_order(
                   find_diagnostic(&snapshot, "E3102");
               CHECK(invalid_call &&
                         invalid_call->range.start.offset ==
-                            (int)(use - source + name_length) &&
+                            (int)(call_open - source) &&
                         invalid_call->range.end.offset ==
-                            (int)(use - source + name_length + 1),
+                            (int)(call_open - source + 1),
                     "project enum macro invalid invocation range");
             }
           } else {
@@ -5299,6 +5356,7 @@ static int test_project_enum_macro_revision_order(
         }
         ag_language_analysis_snapshot_dispose(&snapshot);
       }
+      free(owned_source);
     }
     free(bundle.bytes);
   }

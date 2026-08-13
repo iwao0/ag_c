@@ -2701,6 +2701,18 @@ const projectEnumMacroEditSources = [
     },
   ],
 ];
+function projectEnumMacroSpacedCallSource(input) {
+  const useIndex = input.source.lastIndexOf("PROJECT_COLLIDING_SYMBOL");
+  const nameEnd = useIndex + "PROJECT_COLLIDING_SYMBOL".length;
+  assert.ok(useIndex >= 0 && input.source.slice(nameEnd) === "(1)",
+    "project enum/macro compact call source");
+  return {
+    ...input,
+    source: input.source.slice(0, nameEnd) +
+      " /* project call gap */ ( /* project argument before */ 1" +
+      " /* project argument after */ )",
+  };
+}
 const projectEnumMacroRevisions = [
   {
     sourceIndex: 0, headerIndex: 0,
@@ -3637,6 +3649,7 @@ try {
 
 const projectEnumMacroRevisionCompiler = await createCompiler(wasmModule);
 const projectEnumMacroName = "PROJECT_COLLIDING_SYMBOL";
+const projectEnumMacroSpacedRevisionIndices = new Set([0, 3, 7, 9, 11, 15]);
 try {
   for (let revisionIndex = 0;
     revisionIndex < projectEnumMacroRevisions.length;
@@ -3644,33 +3657,60 @@ try {
     const revision = projectEnumMacroRevisions[revisionIndex];
     const header = projectEnumMacroHeaders[revision.headerIndex];
     const firstSourceModeResults = new Map();
-    for (const invocation of [false, true, false, true]) {
+    const sourceModes = projectEnumMacroSpacedRevisionIndices.has(
+      revisionIndex,
+    ) ? [0, 1, 2, 1, 2, 0] : [0, 1, 0, 1];
+    for (const sourceMode of sourceModes) {
+      const invocation = sourceMode !== 0;
       if (invocation && !revision.enumValue && !revision.macroReplacement) {
         continue;
       }
-      const source = projectEnumMacroEditSources[
+      let source = projectEnumMacroEditSources[
         revision.sourceIndex][invocation ? 1 : 0];
+      if (sourceMode === 2) {
+        source = projectEnumMacroSpacedCallSource(source);
+      }
       const useIndex = source.source.lastIndexOf(projectEnumMacroName);
       const useStart = byteOffsetForIndex(source.source, useIndex);
       const nameLength = Buffer.byteLength(projectEnumMacroName);
+      const nameEnd = useStart + nameLength;
+      const callOpenIndex = invocation
+        ? source.source.indexOf("(", useIndex + projectEnumMacroName.length)
+        : -1;
+      const argumentIndex = callOpenIndex >= 0
+        ? source.source.indexOf("1", callOpenIndex + 1) : -1;
+      const callCloseIndex = argumentIndex >= 0
+        ? source.source.indexOf(")", argumentIndex + 1) : -1;
+      assert.ok(!invocation ||
+        (callOpenIndex >= 0 && argumentIndex >= 0 && callCloseIndex >= 0),
+      "project enum/macro invocation anchors");
+      const callOpen = callOpenIndex >= 0
+        ? byteOffsetForIndex(source.source, callOpenIndex) : -1;
+      const argumentEnd = argumentIndex >= 0
+        ? byteOffsetForIndex(source.source, argumentIndex + 1) : -1;
+      const callEnd = callCloseIndex >= 0
+        ? byteOffsetForIndex(source.source, callCloseIndex + 1) : -1;
       const cursorSteps = [
-        { delta: 0, outside: true },
-        { delta: 0, outside: false },
-        { delta: Math.floor(nameLength / 2), outside: false },
-        { delta: nameLength, outside: false },
-        { delta: 0, outside: true },
+        { byteOffset: useStart - 1, outside: true, label: "outside" },
+        { byteOffset: useStart, outside: false, label: "start" },
+        {
+          byteOffset: useStart + Math.floor(nameLength / 2),
+          outside: false,
+          label: "middle",
+        },
+        { byteOffset: nameEnd, outside: false, label: "name-end" },
+        { byteOffset: useStart - 1, outside: true, label: "outside" },
       ];
       if (invocation) {
         cursorSteps.push(
-          { delta: nameLength, outside: false },
-          { delta: nameLength + 1, outside: false },
-          { delta: nameLength + 2, outside: false },
-          { delta: nameLength + 3, outside: false },
-          { delta: nameLength, outside: false },
+          { byteOffset: nameEnd, outside: false, label: "name-end" },
+          { byteOffset: callOpen + 1, outside: false, label: "call-open" },
+          { byteOffset: argumentEnd, outside: false, label: "argument-end" },
+          { byteOffset: callEnd, outside: false, label: "call-end" },
+          { byteOffset: nameEnd, outside: false, label: "name-end" },
         );
       }
-      for (const { delta, outside } of cursorSteps) {
-        const byteOffset = useStart + (outside ? -1 : delta);
+      for (const { byteOffset, outside, label } of cursorSteps) {
         const result = projectEnumMacroRevisionCompiler.analyzeProjectSource(
           source,
           {
@@ -3781,16 +3821,16 @@ try {
           const expected = invocation && macroCandidate
             ? macroCandidate : enumCandidate;
           const invalidEnumInvocation = invocation && !macroCandidate;
-          const cursorAfterName = invocation && delta > nameLength;
+          const cursorAfterName = invocation && byteOffset > nameEnd;
           const expectedDiagnosticCount = invalidEnumInvocation &&
-              delta >= nameLength ? 1 : 0;
+              byteOffset >= callOpen ? 1 : 0;
           assert.equal(result.diagnostics.length, expectedDiagnosticCount);
           if (expectedDiagnosticCount) {
             assert.equal(result.diagnostics[0].code, "E3102");
             assert.equal(result.diagnostics[0].start.offset,
-              useStart + nameLength);
+              callOpen);
             assert.equal(result.diagnostics[0].end.offset,
-              useStart + nameLength + 1);
+              callOpen + 1);
           }
           if (cursorAfterName) {
             assert.equal(result.hover, null);
@@ -3807,13 +3847,13 @@ try {
                 ? revision.macroInvocationValue : revision.enumValue);
           }
         }
-        const sourceModeKey = `${invocation}:${byteOffset}`;
+        const sourceModeKey = `${sourceMode}:${byteOffset}`;
         const firstSourceModeResult = firstSourceModeResults.get(sourceModeKey);
         if (firstSourceModeResult) {
           assert.deepStrictEqual(
             result,
             firstSourceModeResult,
-            `Wasm project enum/macro cursor/source toggle retained stale state for ${revisionIndex + 1}, ${invocation}, ${outside ? "outside" : delta}`,
+            `Wasm project enum/macro cursor/source toggle retained stale state for ${revisionIndex + 1}, ${sourceMode}, ${label}`,
           );
         } else {
           firstSourceModeResults.set(sourceModeKey, result);
@@ -3822,11 +3862,11 @@ try {
             JSON.parse(execFileSync(
               nativeAnalysisPath,
               ["--project-enum-macro-revision-parity-json",
-                String(revisionIndex + 1), invocation ? "1" : "0",
+                String(revisionIndex + 1), String(sourceMode),
                 String(byteOffset)],
               { encoding: "utf8" },
             )),
-            `native and Wasm project enum/macro revision differ for ${revisionIndex + 1}, ${invocation}, ${outside ? "outside" : delta}`,
+            `native and Wasm project enum/macro revision differ for ${revisionIndex + 1}, ${sourceMode}, ${label}`,
           );
         }
       }

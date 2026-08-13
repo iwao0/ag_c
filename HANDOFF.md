@@ -32613,3 +32613,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - direct callのcalleeと`(`の間、および引数の前後へ空白/commentを置き、同じ右側cursor往復でcallee span、
     macro派生値、enum-only E3102 range、documentation/dependencyがずれない境界を確認する。
+
+### このセッション（続き1113）: 空白/comment付きdirect callのcursor recoveryを固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1112と同じ通常サイズの完結した1引数callに、calleeと`(`の間、および引数の前後の空白/commentだけを加えた。
+- 不具合と修正:
+  - `(`直後へcursorを置くと現在位置に識別子がないため、次token探索が空白/commentを越えて数値`1`へ進み、
+    識別子内部判定が数字も許すことからoperand直前と誤分類してenumerator全体をplaceholderへ置換していた。
+  - その結果、元call自体は正しくmacro展開できるにもかかわらず、macro派生enumeratorだけがsnapshotから消えていた。
+  - 現在のenumerator initializer全体が既存のbounded classifierで単一の完結したidentifier callと確定した場合は、
+    次token探索より先にcallee spanを回復対象へ選び、元callを再解析するようにした。
+- 回帰範囲:
+  - enum+macro、enum-only、macro-only、rename復元後、macro shape更新後を含む代表6 revisionで、compact sourceと
+    comment付きsourceを同一Native/Wasm instance内で往復した。
+  - 名前末尾→実際の`(`直後→引数末尾→実際の`)`直後→名前末尾について、macro派生値、enum-only時の実際の`(`に
+    対するE3102、名前外のnull hover、候補metadata、documentation/range、dependencyを固定した。
+  - project index revision不変、各位置のfresh Native JSON snapshot完全一致、同じsource modeへ戻ったWasm snapshotの
+    完全一致を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (57 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis recoveryだけの変更のためnative/Wasm E2Eは未実施し、fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ単一引数callで引数を通常サイズのenum定数またはobject-like macroへ変え、引数識別子上とその前後へcursorを動かした際に、
+    calleeの安全なcall回復と引数自身のhoverが競合せず、Native/Wasmで同じlookup pointを返す境界を確認する。

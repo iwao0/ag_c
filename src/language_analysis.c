@@ -1168,7 +1168,11 @@ static char *build_enum_declaration_recovery_source(
   if (!name || name_length == 0) {
     size_t next_identifier = skip_analysis_space_and_comments_mode(
         source, length, cursor, enable_trigraphs);
-    if (next_identifier > cursor && next_identifier < length &&
+    if (cursor_in_direct_call) {
+      name = source + direct_call_identifier.start;
+      name_length = direct_call_identifier.end -
+                    direct_call_identifier.start;
+    } else if (next_identifier > cursor && next_identifier < length &&
         is_identifier_byte((unsigned char)source[next_identifier])) {
       size_t next_identifier_end = next_identifier + 1;
       while (next_identifier_end < length &&
@@ -1177,10 +1181,6 @@ static char *build_enum_declaration_recovery_source(
       name = source + next_identifier;
       name_length = next_identifier_end - next_identifier;
       cursor_before_operand = 1;
-    } else if (cursor_in_direct_call) {
-      name = source + direct_call_identifier.start;
-      name_length = direct_call_identifier.end -
-                    direct_call_identifier.start;
     } else {
       return NULL;
     }
