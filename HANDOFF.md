@@ -32859,3 +32859,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズの2引数callで両引数をobject-like macroにし、片側ずつ定義を削除・復元しても、残存側macro metadata、
     最初の未解決引数のE3066、派生enumerator、復元後snapshotがNative/Wasmで混線しない境界を確認する。
+
+### このセッション（続き1121）: 両側object-like macro引数の片側削除・復元を固定した
+- 対象選定:
+  - 続き1120の浅い次候補どおり、同じ通常サイズの2引数enum direct callだけを対象にした。
+  - 深い式、巨大入力、fuzz、資源枯渇などセキュリティ監査で止まりやすい探索には広げなかった。
+- 調査結果:
+  - 両引数をobject-like macroにした状態から、第1定義だけの削除・復元と第2定義だけの削除・復元を同一instanceで往復した。
+  - 続き1120のbounded recoveryは片側だけmacroであることに依存せず、Native/Wasmとも欠落側名を含むE3066をcallee invocation
+    rangeへ返し、raw trapや追加のproduction code不具合は再現しなかった。
+  - 削除中も反対側macroの候補、replacement 1/2、declaration/documentation range、hoverを維持し、欠落側候補と
+    `ENUM_TWO_ARGUMENT_DERIVED`だけを除去した。復元後は両macro候補と派生値103へ戻った。
+- 回帰範囲:
+  - 既存2引数call generatorへ両側macro modeを追加し、base→第1削除→base→第2削除→baseをcomment、LF、CRLF variant間で往復した。
+  - callee、両引数の先頭・中央・末尾、delimiter前後、comment内部、両line splice位置で、欠落側E3066、残存側metadata、
+    復元後hover/派生値を確認した。代表enum-only状態では残存macro metadata、元`(`のE3102、派生enumeratorなしを維持した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、同一source復帰snapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの両側object-like macro callで両定義を同時に削除・復元し、最初の未解決引数を選ぶE3066の決定性、
+    両候補と派生enumeratorの除去、復元後snapshotのNative/Wasm一致を確認する。

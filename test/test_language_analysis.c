@@ -20,6 +20,8 @@ static char *project_enum_macro_identifier_argument_source(
     const char *argument);
 static char *enum_two_argument_macro_source(
     const char *source, int argument_index, int revision);
+static char *enum_two_argument_paired_macro_source(
+    const char *source, int missing_argument_index);
 
 static char *read_fixture_source(const char *path, size_t *length) {
   if (length) *length = 0;
@@ -2829,17 +2831,23 @@ static int print_enum_two_argument_call_parity_snapshot(
       !state_text[0] || !state_end || *state_end != '\0' ||
       parsed_state > 1 || !argument_mode_text[0] ||
       !argument_mode_end || *argument_mode_end != '\0' ||
-      parsed_argument_mode > 2 || !argument_revision_text[0] ||
+      parsed_argument_mode > 3 || !argument_revision_text[0] ||
       !argument_revision_end || *argument_revision_end != '\0' ||
       parsed_argument_revision > 3 ||
       (parsed_argument_mode == 0 && parsed_argument_revision != 0) ||
+      (parsed_argument_mode == 3 && parsed_argument_revision > 2) ||
       !cursor_text[0] || !cursor_end ||
       *cursor_end != '\0')
     return 1;
   const char *source =
       enum_two_argument_call_sources[(size_t)parsed_variant];
   char *owned_source = NULL;
-  if (parsed_argument_mode > 0) {
+  if (parsed_argument_mode == 3) {
+    owned_source = enum_two_argument_paired_macro_source(
+        source, (int)parsed_argument_revision);
+    if (!owned_source) return 1;
+    source = owned_source;
+  } else if (parsed_argument_mode > 0) {
     owned_source = enum_two_argument_macro_source(
         source, (int)parsed_argument_mode,
         (int)parsed_argument_revision);
@@ -3182,6 +3190,20 @@ static char *enum_two_argument_macro_source(
   output += macro_length;
   memcpy(result + output, use + enum_length, suffix_length + 1);
   return result;
+}
+
+static char *enum_two_argument_paired_macro_source(
+    const char *source, int missing_argument_index) {
+  if (!source || missing_argument_index < 0 ||
+      missing_argument_index > 2)
+    return NULL;
+  char *first = enum_two_argument_macro_source(
+      source, 1, missing_argument_index == 1 ? 3 : 0);
+  if (!first) return NULL;
+  char *second = enum_two_argument_macro_source(
+      first, 2, missing_argument_index == 2 ? 3 : 0);
+  free(first);
+  return second;
 }
 
 static int check_documentation_symbol(
@@ -5814,6 +5836,11 @@ static int test_enum_two_argument_call_cursor(
       {2, 0, 2, 3}, {1, 0, 2, 0},
       {3, 0, 2, 3}, {2, 0, 2, 0},
       {1, 1, 1, 3}, {3, 1, 2, 3},
+      {1, 0, 3, 0}, {2, 0, 3, 1},
+      {3, 0, 3, 0}, {1, 0, 3, 2},
+      {2, 0, 3, 0}, {3, 0, 3, 1},
+      {1, 0, 3, 0}, {1, 1, 3, 0},
+      {3, 1, 3, 2},
       {0, 0, 0, 0}, {3, 1, 0, 0},
   };
   for (size_t pass_index = 0;
@@ -5824,20 +5851,44 @@ static int test_enum_two_argument_call_cursor(
     int argument_revision = passes[pass_index].argument_revision;
     const char *source = enum_two_argument_call_sources[variant];
     char *owned_source = NULL;
-    if (argument_mode > 0) {
+    if (argument_mode == 3) {
+      owned_source = enum_two_argument_paired_macro_source(
+          source, argument_revision);
+      CHECK(owned_source != NULL,
+            "enum two argument paired macro source");
+      source = owned_source;
+    } else if (argument_mode > 0) {
       owned_source = enum_two_argument_macro_source(
           source, argument_mode, argument_revision);
       CHECK(owned_source != NULL,
             "enum two argument macro source");
       source = owned_source;
     }
-    const char *argument_names[] = {
+    const char *active_macro_names[] = {
         NULL,
         argument_mode == 1
             ? argument_macro_names[argument_revision][1]
-            : enum_names[1],
+            : argument_mode == 3
+                ? argument_macro_names[0][1]
+                : NULL,
         argument_mode == 2
             ? argument_macro_names[argument_revision][2]
+            : argument_mode == 3
+                ? argument_macro_names[0][2]
+                : NULL};
+    int missing_argument_index =
+        argument_mode == 3
+            ? argument_revision
+            : argument_revision == 3 ? argument_mode : 0;
+    int argument_metadata_revision =
+        argument_mode == 3 ? 0 : argument_revision;
+    const char *argument_names[] = {
+        NULL,
+        active_macro_names[1]
+            ? active_macro_names[1]
+            : enum_names[1],
+        active_macro_names[2]
+            ? active_macro_names[2]
             : enum_names[2]};
     const char *callee_use = last_occurrence(source, callee_name);
     const char *call_open = callee_use
@@ -6008,48 +6059,60 @@ static int test_enum_two_argument_call_cursor(
                           strlen("/// enum two argument function-like macro")),
               "enum two argument macro fields");
       }
-      const char *argument_macro_name =
-          argument_mode > 0
-              ? argument_macro_names[argument_revision][argument_mode]
-              : NULL;
-      int argument_deleted = argument_revision == 3;
-      const ag_language_symbol_t *argument_macro_candidate =
-          argument_mode > 0
-              ? find_symbol(
-                    &snapshot, argument_macro_name,
-                    AG_LANGUAGE_SYMBOL_MACRO)
-              : NULL;
-      if (argument_mode > 0 && !argument_deleted) {
+      const ag_language_symbol_t *argument_macro_candidates[3] = {0};
+      for (int macro_index = 1; macro_index < 3; macro_index++) {
+        const char *argument_macro_name =
+            active_macro_names[macro_index];
+        if (!argument_macro_name) continue;
+        argument_macro_candidates[macro_index] = find_symbol(
+            &snapshot, argument_macro_name, AG_LANGUAGE_SYMBOL_MACRO);
+        if (macro_index == missing_argument_index) {
+          CHECK(!argument_macro_candidates[macro_index],
+                "enum two argument deleted macro removed");
+          continue;
+        }
         const char *declaration = strstr(
             source, argument_macro_name);
         const char *comment = strstr(
             source,
-            argument_macro_comments[argument_revision][argument_mode]);
-        CHECK(declaration && comment && argument_macro_candidate &&
-                  !argument_macro_candidate->macro_is_function_like &&
-                  !argument_macro_candidate->macro_is_variadic &&
-                  argument_macro_candidate->macro_parameter_count == 0 &&
-                  argument_macro_candidate->macro_replacement &&
-                  strcmp(argument_macro_candidate->macro_replacement,
-                         argument_macro_values[argument_revision]
-                                              [argument_mode]) == 0 &&
-                  argument_macro_candidate->declaration.source_name &&
-                  strcmp(argument_macro_candidate->declaration.source_name,
+            argument_macro_comments[argument_metadata_revision]
+                                    [macro_index]);
+        CHECK(declaration && comment &&
+                  argument_macro_candidates[macro_index] &&
+                  !argument_macro_candidates[macro_index]
+                       ->macro_is_function_like &&
+                  !argument_macro_candidates[macro_index]
+                       ->macro_is_variadic &&
+                  argument_macro_candidates[macro_index]
+                          ->macro_parameter_count == 0 &&
+                  argument_macro_candidates[macro_index]
+                      ->macro_replacement &&
+                  strcmp(argument_macro_candidates[macro_index]
+                             ->macro_replacement,
+                         argument_macro_values[argument_metadata_revision]
+                                              [macro_index]) == 0 &&
+                  argument_macro_candidates[macro_index]
+                      ->declaration.source_name &&
+                  strcmp(argument_macro_candidates[macro_index]
+                             ->declaration.source_name,
                          "enum-two-argument-call.c") == 0 &&
-                  argument_macro_candidate->declaration.start.offset ==
+                  argument_macro_candidates[macro_index]
+                          ->declaration.start.offset ==
                       (int)(declaration - source) &&
-                  argument_macro_candidate->declaration.end.offset ==
+                  argument_macro_candidates[macro_index]
+                          ->declaration.end.offset ==
                       (int)(declaration - source +
                             strlen(argument_macro_name)) &&
                   check_documentation_symbol(
-                      argument_macro_candidate,
-                      argument_macro_documentation[argument_revision]
-                                                  [argument_mode],
+                      argument_macro_candidates[macro_index],
+                      argument_macro_documentation[argument_metadata_revision]
+                                                  [macro_index],
                       "enum-two-argument-call.c",
                       (size_t)(comment - source),
                       (size_t)(comment - source) +
-                          strlen(argument_macro_comments[argument_revision]
-                                                        [argument_mode])),
+                          strlen(argument_macro_comments
+                                     [argument_metadata_revision]
+                                     [macro_index])),
               "enum two argument object macro fields");
       }
       if (argument_mode > 0) {
@@ -6058,8 +6121,14 @@ static int test_enum_two_argument_call_cursor(
           for (size_t mode_index = 1; mode_index < 3; mode_index++) {
             const char *inactive_name =
                 argument_macro_names[revision_index][mode_index];
-            if (argument_deleted ||
-                strcmp(inactive_name, argument_macro_name) != 0)
+            int active = 0;
+            for (int macro_index = 1; macro_index < 3; macro_index++)
+              if (macro_index != missing_argument_index &&
+                  active_macro_names[macro_index] &&
+                  strcmp(inactive_name,
+                         active_macro_names[macro_index]) == 0)
+                active = 1;
+            if (!active)
               CHECK(!find_symbol(
                         &snapshot, inactive_name,
                         AG_LANGUAGE_SYMBOL_MACRO),
@@ -6070,24 +6139,25 @@ static int test_enum_two_argument_call_cursor(
       const ag_language_symbol_t *derived = find_symbol(
           &snapshot, "ENUM_TWO_ARGUMENT_DERIVED",
           AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
-      CHECK(((enum_only || argument_deleted) && !derived) ||
-                (!enum_only && !argument_deleted && derived &&
+      CHECK(((enum_only || missing_argument_index) && !derived) ||
+                (!enum_only && !missing_argument_index && derived &&
                  derived->constant_value &&
                  strcmp(derived->constant_value,
-                        argument_revision == 1 ? "113" : "103") == 0),
+                        argument_mode != 3 && argument_revision == 1
+                            ? "113" : "103") == 0),
             "enum two argument derived value");
       int expected_diagnostic_count =
-          (!enum_only && argument_deleted) ||
+          (!enum_only && missing_argument_index) ||
           (enum_only && cursor >= (size_t)(call_open - source));
       CHECK(snapshot.diagnostic_count == expected_diagnostic_count,
             "enum two argument diagnostics count");
-      if (!enum_only && argument_deleted) {
+      if (!enum_only && missing_argument_index) {
         const ag_language_diagnostic_t *undefined_argument =
             find_diagnostic(&snapshot, "E3066");
         CHECK(undefined_argument &&
                   undefined_argument->message &&
                   strstr(undefined_argument->message,
-                         argument_macro_name) &&
+                         active_macro_names[missing_argument_index]) &&
                   undefined_argument->range.start.offset ==
                       (int)(callee_use - source) &&
                   undefined_argument->range.end.offset ==
@@ -6110,8 +6180,9 @@ static int test_enum_two_argument_call_cursor(
               ? NULL
           : hover_enum_index == 0 && !enum_only
               ? macro_candidate
-          : hover_enum_index == argument_mode && argument_mode > 0
-              ? argument_macro_candidate
+          : hover_enum_index > 0 &&
+                active_macro_names[hover_enum_index]
+              ? argument_macro_candidates[hover_enum_index]
               : enum_candidates[hover_enum_index];
       CHECK((!expected_hover && !hover) ||
                 (expected_hover && hover &&
