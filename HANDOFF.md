@@ -33099,3 +33099,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズの両側rename callで両定義を同時に削除・復元しても、source順のE3066対象、両rename候補の除去、
     派生値、最終base snapshotがNative/Wasmで混線しない境界を確認する。
+
+### このセッション（続き1129）: 両側rename済みmacroの同時削除・復元を固定した
+- 対象選定:
+  - 続き1128の通常サイズの2引数enum direct callと既存mode 10だけを使い、両rename定義を同時に削除・復元した。
+  - 深い式、巨大入力、fuzz、資源枯渇などセキュリティ監査で止まりやすい探索には広げなかった。
+- 調査結果:
+  - comment・CRLF variantで両rename定義あり`0`→両定義欠落`3`→両定義復元`0`を共有instanceへ連続投入した。
+  - 同時欠落中は両rename候補、両hover、派生enumeratorを除去し、source順の第1rename名だけをmessageに含む1件のE3066を
+    callee invocation rangeへ返した。第2rename名は診断本文へ混入しなかった。
+  - 同時復元時は両rename名のreplacement 1/2、declaration/documentation range、hover、派生値103を回復した。
+  - 代表enum-only状態では両rename候補なし、元`(`のE3102、派生enumeratorなしを維持した。Native/Wasm差、stale候補・診断・
+    hover・dependency、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、両引数の先頭・中央・末尾、delimiter前後、comment内部または両CRLF line splice位置を確認した。
+  - 名前長変更後のcursor byte offset、同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、同一source復帰snapshotを
+    完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの両側rename callで両定義欠落から片側だけを復元し、E3066対象が残るrename名へ進むこと、復元側metadata、
+    最終の両復元snapshotがNative/Wasmで混線しない境界を確認する。

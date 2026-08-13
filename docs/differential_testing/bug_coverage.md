@@ -763,6 +763,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 
 | **両側object-like macro引数の同時rename中の片側定義削除・復元** both arguments renamed with either definition removed | 🧪 | test_language_analysis (native/Wasm JS API) | 両引数の定義名とcall上の使用名を同時に長い別名へ切り替え、その状態で第1・第2定義を片側ずつ削除・復元してから両側baseへ戻す列を固定する。rename中は両旧名候補を除去して両新名だけを公開し、replacement 1/2、新しいdeclaration/documentation rangeとhoverを維持する。片側削除時は残存するrename名metadataを保ったまま欠落したrename名のE3066をcallee invocation rangeへ返し、欠落候補と派生enumeratorを除去する。復元時は両rename名と派生値103、最終base復帰では元名2件と初回snapshotへ戻す。representative enum-only状態では残存rename名候補と元`(`のE3102を維持する。comment・CRLF variantを同一Native/Wasm instanceで往復し、名前長変更後のcursor byte offset、fresh Native snapshot、同一source復帰snapshotを完全一致させる。深い式・巨大入力・fuzz・資源stressは追加しない |
 
+| **両側rename済みobject-like macro引数の同時定義削除・復元** both renamed definitions removed together | 🧪 | test_language_analysis (native/Wasm JS API) | 両引数を長い別名へrenameした通常サイズの2引数callで、両rename定義を同時に削除してから同時復元する履歴を固定する。同時欠落時は両rename候補・hover・派生enumeratorを除去し、source順で最初の第1rename名だけをmessageに保持した1件のE3066をcallee invocation rangeへ返して、第2rename名を診断本文へ混入させない。復元後は両rename名のreplacement 1/2、declaration/documentation range、hoverと派生値103を回復する。representative enum-only状態では両rename候補なし、元`(`のE3102、派生enumeratorなしを維持する。comment・CRLF variantで同時削除→同時復元を共有Native/Wasm instanceへ投入し、各revisionのfresh Native snapshotと復元後snapshotを完全一致させる。深い式・巨大入力・fuzz・資源stressは追加しない |
+
 ### リンケージ / 複数 TU（extern / static）
 複数ファイルをリンクする差分ハーネス（各 .c を ag_c で .s 化→clang で個別アセンブル→
 まとめてリンク、clang -I include 直ビルドと exit code 比較）で確認。
