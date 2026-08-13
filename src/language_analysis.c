@@ -2143,6 +2143,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
           source, source_length, &cursor_identifier);
   int cursor_identifier_starts_conditional = 0;
   int cursor_identifier_starts_parenthesized_suffix = 0;
+  int cursor_identifier_has_complete_parenthesized_suffix = 0;
+  size_t cursor_parenthesized_suffix_end = 0;
   if (has_complete_identifier) {
     size_t after_name = skip_analysis_space_and_comments_mode(
         source, source_length, cursor_identifier.end,
@@ -2151,6 +2153,11 @@ static char *build_recovery_source(const char *source, size_t source_length,
         after_name < source_length && source[after_name] == '?';
     cursor_identifier_starts_parenthesized_suffix =
         after_name < source_length && source[after_name] == '(';
+    if (cursor_identifier_starts_parenthesized_suffix)
+      cursor_identifier_has_complete_parenthesized_suffix =
+          analysis_delimited_tail_end_mode(
+              source, source_length, after_name + 1, ')', 1,
+              enable_trigraphs, &cursor_parenthesized_suffix_end);
   }
   if (recovery_cursor > SIZE_MAX - 8192 ||
       source_length > SIZE_MAX - recovery_cursor - 8192)
@@ -2497,10 +2504,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
     APPEND_LITERAL(" int");
   } else if (!cursor_in_generic_association_type &&
              previous_token_is_case &&
-             !cursor_identifier_starts_parenthesized_suffix) {
+             (!cursor_identifier_starts_parenthesized_suffix ||
+              cursor_identifier_has_complete_parenthesized_suffix)) {
     if (has_complete_identifier) {
       APPEND_BYTES(source + cursor_identifier.start,
                    cursor_identifier.end - cursor_identifier.start);
+      if (cursor_identifier_has_complete_parenthesized_suffix)
+        APPEND_BYTES(
+            source + cursor_identifier.end,
+            cursor_parenthesized_suffix_end + 1 - cursor_identifier.end);
     } else {
       APPEND_LITERAL("0");
     }
@@ -2509,7 +2521,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
       (cursor_identifier_starts_conditional ||
       cursor_after_complete_type_name_cast ||
       (previous_token_requires_expression &&
-       !cursor_identifier_starts_parenthesized_suffix) ||
+       (!cursor_identifier_starts_parenthesized_suffix ||
+        cursor_identifier_has_complete_parenthesized_suffix)) ||
       last_significant == '=' || last_significant == ',' ||
       last_significant == '(' || last_significant == '[' ||
       last_significant == '+' || last_significant == '-' ||

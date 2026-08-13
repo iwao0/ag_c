@@ -573,6 +573,31 @@ static const char statement_keyword_operand_hover_source[] =
     "  }\n"
     "}\n";
 
+static const char statement_call_operand_hover_source[] =
+    "/// statement call macro documentation\n"
+    "#define STATEMENT_CALL_MACRO(value) (7 + (value))\n"
+    "static int statement_call_target(int value) { return value; }\n"
+    "static int statement_return_call(int parameter) {\n"
+    "  if (parameter == 0) return statement_call_target(parameter);\n"
+    "  if (parameter == 1)\n"
+    "    return statement_call_target /* operand gap */ (parameter);\n"
+    "  if (parameter == 2) return statement_call_target \\\n"
+    "(parameter);\n"
+    "  return statement_call_target \\\r\n"
+    "(parameter);\r\n"
+    "}\n"
+    "static int statement_case_call(int parameter) {\n"
+    "  switch (parameter) {\n"
+    "    case STATEMENT_CALL_MACRO(0): return parameter;\n"
+    "    case STATEMENT_CALL_MACRO /* operand gap */ (1): return parameter;\n"
+    "    case STATEMENT_CALL_MACRO \\\n"
+    "(2): return parameter;\n"
+    "    case STATEMENT_CALL_MACRO \\\r\n"
+    "(3): return parameter;\r\n"
+    "    default: return 0;\n"
+    "  }\n"
+    "}\n";
+
 static const char macro_definition_forms_source[] =
     "#define SIMPLE_MACRO 1\n"
     "# define PARENTHESIZED_MACRO (2 + 3)\r\n"
@@ -1953,6 +1978,19 @@ static int print_statement_keyword_operand_hover_parity_snapshot(
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
+static int print_statement_call_operand_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(statement_call_operand_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "statement-call-operand.c", statement_call_operand_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
 static int print_cast_operand_project_parity_snapshot(
     const char *revision_text) {
   char *end = NULL;
@@ -2651,6 +2689,120 @@ static int test_statement_keyword_operand_hover(ag_target_info_t target) {
                                  statement_keyword_operand_hover_source) +
                             strlen("/// statement operand macro documentation")),
                 "statement keyword macro fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
+static int test_statement_call_operand_hover(ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "statement call operand session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+  } cases[] = {
+      {"return statement_call_target(parameter)", "statement_call_target",
+       AG_LANGUAGE_SYMBOL_FUNCTION, "statement_call_target(int value)"},
+      {"return statement_call_target /* operand gap */ (parameter)",
+       "statement_call_target", AG_LANGUAGE_SYMBOL_FUNCTION,
+       "statement_call_target(int value)"},
+      {"return statement_call_target \\\n(parameter)", "statement_call_target",
+       AG_LANGUAGE_SYMBOL_FUNCTION, "statement_call_target(int value)"},
+      {"return statement_call_target \\\r\n(parameter)",
+       "statement_call_target", AG_LANGUAGE_SYMBOL_FUNCTION,
+       "statement_call_target(int value)"},
+      {"case STATEMENT_CALL_MACRO(0):", "STATEMENT_CALL_MACRO",
+       AG_LANGUAGE_SYMBOL_MACRO, "STATEMENT_CALL_MACRO(value)"},
+      {"case STATEMENT_CALL_MACRO /* operand gap */ (1):",
+       "STATEMENT_CALL_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "STATEMENT_CALL_MACRO(value)"},
+      {"case STATEMENT_CALL_MACRO \\\n(2):", "STATEMENT_CALL_MACRO",
+       AG_LANGUAGE_SYMBOL_MACRO, "STATEMENT_CALL_MACRO(value)"},
+      {"case STATEMENT_CALL_MACRO \\\r\n(3):", "STATEMENT_CALL_MACRO",
+       AG_LANGUAGE_SYMBOL_MACRO, "STATEMENT_CALL_MACRO(value)"},
+  };
+  const char *macro_comment = strstr(
+      statement_call_operand_hover_source,
+      "/// statement call macro documentation");
+  CHECK(macro_comment != NULL, "statement call macro comment anchor");
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          statement_call_operand_hover_source,
+          cases[case_index].fragment);
+      const char *use = fragment
+                            ? strstr(fragment, cases[case_index].name)
+                            : NULL;
+      const char *declaration = strstr(
+          statement_call_operand_hover_source,
+          cases[case_index].declaration_fragment);
+      CHECK(use && declaration, "statement call operand anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh statement call operand session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "statement-call-operand.c",
+                  statement_call_operand_hover_source,
+                  (size_t)(use - statement_call_operand_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "statement call operand analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(hover && completion && !snapshot.partial &&
+                  snapshot.diagnostic_count == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            statement_call_operand_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            statement_call_operand_hover_source +
+                            name_length) &&
+                  same_range(&hover->declaration, &completion->declaration),
+              "statement call operand fields");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_FUNCTION)
+          CHECK(strcmp(hover->return_type, "int") == 0 &&
+                    hover->has_function_prototype &&
+                    hover->parameter_count == 1 && hover->has_definition,
+                "statement ordinary call fields");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+          CHECK(hover->macro_is_function_like &&
+                    hover->macro_parameter_count == 1 &&
+                    strcmp(hover->macro_parameters[0], "value") == 0 &&
+                    hover->macro_replacement &&
+                    strcmp(hover->macro_replacement,
+                           "( 7 + ( value ) )") == 0 &&
+                    check_documentation_symbol(
+                        hover, "statement call macro documentation",
+                        "statement-call-operand.c",
+                        (size_t)(macro_comment -
+                                 statement_call_operand_hover_source),
+                        (size_t)(macro_comment -
+                                 statement_call_operand_hover_source) +
+                            strlen("/// statement call macro documentation")),
+                "statement macro call fields");
         ag_language_analysis_snapshot_dispose(&snapshot);
         if (fresh_session)
           ag_compilation_session_destroy(analysis_session);
@@ -3959,6 +4111,10 @@ int main(int argc, char **argv) {
              "--statement-keyword-operand-hover-parity-json") == 0)
     return print_statement_keyword_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1],
+             "--statement-call-operand-hover-parity-json") == 0)
+    return print_statement_call_operand_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-project-parity-json") == 0)
     return print_cast_operand_project_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -3997,6 +4153,8 @@ int main(int argc, char **argv) {
         "sizeof expression operand hover scenarios");
   CHECK(test_statement_keyword_operand_hover(target) == 0,
         "statement keyword operand hover scenarios");
+  CHECK(test_statement_call_operand_hover(target) == 0,
+        "statement call operand hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -7009,6 +7167,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (42 scenarios)");
+  puts("language analysis tests passed (43 scenarios)");
   return 0;
 }

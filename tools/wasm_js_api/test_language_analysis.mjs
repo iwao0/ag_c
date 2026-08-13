@@ -1656,6 +1656,141 @@ try {
   freshStatementKeywordCompiler.dispose();
 }
 
+const statementCallOperandHoverSource = {
+  name: "statement-call-operand.c",
+  source: "/// statement call macro documentation\n" +
+    "#define STATEMENT_CALL_MACRO(value) (7 + (value))\n" +
+    "static int statement_call_target(int value) { return value; }\n" +
+    "static int statement_return_call(int parameter) {\n" +
+    "  if (parameter == 0) return statement_call_target(parameter);\n" +
+    "  if (parameter == 1)\n" +
+    "    return statement_call_target /* operand gap */ (parameter);\n" +
+    "  if (parameter == 2) return statement_call_target \\\n" +
+    "(parameter);\n" +
+    "  return statement_call_target \\\r\n" +
+    "(parameter);\r\n" +
+    "}\n" +
+    "static int statement_case_call(int parameter) {\n" +
+    "  switch (parameter) {\n" +
+    "    case STATEMENT_CALL_MACRO(0): return parameter;\n" +
+    "    case STATEMENT_CALL_MACRO /* operand gap */ (1): return parameter;\n" +
+    "    case STATEMENT_CALL_MACRO \\\n" +
+    "(2): return parameter;\n" +
+    "    case STATEMENT_CALL_MACRO \\\r\n" +
+    "(3): return parameter;\r\n" +
+    "    default: return 0;\n" +
+    "  }\n" +
+    "}\n",
+};
+const statementCallOperandCases = [
+  ["return statement_call_target(parameter)", "statement_call_target", "function"],
+  ["return statement_call_target /* operand gap */ (parameter)",
+    "statement_call_target", "function"],
+  ["return statement_call_target \\\n(parameter)", "statement_call_target", "function"],
+  ["return statement_call_target \\\r\n(parameter)",
+    "statement_call_target", "function"],
+  ["case STATEMENT_CALL_MACRO(0):", "STATEMENT_CALL_MACRO", "macro"],
+  ["case STATEMENT_CALL_MACRO /* operand gap */ (1):",
+    "STATEMENT_CALL_MACRO", "macro"],
+  ["case STATEMENT_CALL_MACRO \\\n(2):", "STATEMENT_CALL_MACRO", "macro"],
+  ["case STATEMENT_CALL_MACRO \\\r\n(3):", "STATEMENT_CALL_MACRO", "macro"],
+];
+for (const [fragmentText, name, kind] of statementCallOperandCases) {
+  const fragmentIndex = statementCallOperandHoverSource.source.indexOf(
+    fragmentText,
+  );
+  const useIndex = statementCallOperandHoverSource.source.indexOf(
+    name, fragmentIndex,
+  );
+  assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+    `statement call operand anchor missing for ${name}`);
+  const useStart = byteOffsetForIndex(
+    statementCallOperandHoverSource.source, useIndex,
+  );
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(statementCallOperandHoverSource, {
+      cursor: {
+        sourceName: statementCallOperandHoverSource.name,
+        byteOffset,
+      },
+    });
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, false,
+      `${name} statement call operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} statement call operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `${name} statement call operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `${name} statement call operand kind`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} statement call operand declaration`);
+    if (kind === "function") {
+      assert.equal(result.hover?.function?.returnType, "int");
+      assert.equal(result.hover?.function?.hasPrototype, true);
+      assert.equal(result.hover?.function?.parameters.length, 1);
+      assert.notEqual(result.hover?.definition, null);
+    }
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.functionLike, true);
+      assert.deepStrictEqual(result.hover?.macro?.parameters, ["value"]);
+      assert.equal(result.hover?.macro?.replacement, "( 7 + ( value ) )");
+      assert.equal(result.hover?.documentation,
+        "statement call macro documentation");
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--statement-call-operand-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm statement call operand differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+const freshStatementCallCompiler = await createCompiler(wasmModule);
+try {
+  for (const [fragmentText, name, kind] of [
+    ["return statement_call_target \\\n(parameter)",
+      "statement_call_target", "function"],
+    ["case STATEMENT_CALL_MACRO \\\r\n(3):",
+      "STATEMENT_CALL_MACRO", "macro"],
+  ]) {
+    const fragmentIndex = statementCallOperandHoverSource.source.indexOf(
+      fragmentText,
+    );
+    const useIndex = statementCallOperandHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+    const result = freshStatementCallCompiler.analyzeSource(
+      statementCallOperandHoverSource,
+      {
+        cursor: {
+          sourceName: statementCallOperandHoverSource.name,
+          byteOffset: byteOffsetForIndex(
+            statementCallOperandHoverSource.source, useIndex,
+          ) + Math.floor(Buffer.byteLength(name) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, false,
+      `fresh ${name} statement call operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `fresh ${name} statement call operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `fresh ${name} statement call operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `fresh ${name} statement call operand kind`);
+  }
+} finally {
+  freshStatementCallCompiler.dispose();
+}
+
 const snakeCastFragment = "(unsigned int)MAX_SNAKE_LENGTH";
 const snakeCastFragmentIndex = macroDefinitionSnake.source.indexOf(
   snakeCastFragment,

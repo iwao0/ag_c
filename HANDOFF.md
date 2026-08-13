@@ -31959,3 +31959,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `git diff --check`問題なし。
 - 未実施:
   - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+
+### このセッション（続き1092）: statement keyword直後の完結call hoverを安定化した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 通常サイズの浅い`return` / `case` statementにある完結したcallだけを調査した。
+- 原因と修正:
+  - 続き1091では未完了function-like macro invocationのpartial診断を守るため、cursor識別子の後続tokenが
+    `(`なら一律でkeyword operand補完の対象外にしていた。
+  - そのため完結した`return ordinary_function(...)`と`case FUNCTION_MACRO(...):`にも、人工的な
+    diagnosticと`partial:true`が残っていた。
+  - quote/comment、括弧・角括弧・波括弧、LF/CRLF行継続を扱う既存の反復bounded scannerで
+    対応する`)`を確認し、完結callと未完了callを分けた。
+  - 完結した`return` callはsynthetic operandへ置換する。完結した`case` callは元identifierと
+    parenthesized suffixを復元し、元の定数macro値を保ったままlabelを閉じる。
+  - 閉じていない`return INCOMPLETE_CALL(`は補完せず、既存のpartial診断を維持する。
+- 回帰範囲:
+  - 通常関数の`return` callとfunction-like macroの`case` callを網羅した。
+  - identifierと`(`の間のblock comment、LF/CRLF行継続を網羅した。
+  - 各identifierの先頭・中央・末尾、正確なdeclaration range、function metadata、macro parameter・
+    replacement・documentation、同一session/fresh sessionをNativeで固定した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、fresh compilerを確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (43 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
