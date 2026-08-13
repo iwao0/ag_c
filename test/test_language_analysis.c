@@ -25,6 +25,9 @@ static char *enum_two_argument_paired_macro_source(
 static char *enum_two_argument_paired_rename_source(
     const char *source, int renamed_argument_index,
     int other_argument_missing);
+static char *enum_two_argument_paired_update_source(
+    const char *source, int updated_argument_index,
+    int other_argument_missing);
 
 static char *read_fixture_source(const char *path, size_t *length) {
   if (length) *length = 0;
@@ -2834,7 +2837,7 @@ static int print_enum_two_argument_call_parity_snapshot(
       !state_text[0] || !state_end || *state_end != '\0' ||
       parsed_state > 1 || !argument_mode_text[0] ||
       !argument_mode_end || *argument_mode_end != '\0' ||
-      parsed_argument_mode > 5 || !argument_revision_text[0] ||
+      parsed_argument_mode > 7 || !argument_revision_text[0] ||
       !argument_revision_end || *argument_revision_end != '\0' ||
       parsed_argument_revision > 3 ||
       (parsed_argument_mode == 0 && parsed_argument_revision != 0) ||
@@ -2845,7 +2848,13 @@ static int print_enum_two_argument_call_parity_snapshot(
   const char *source =
       enum_two_argument_call_sources[(size_t)parsed_variant];
   char *owned_source = NULL;
-  if (parsed_argument_mode >= 4) {
+  if (parsed_argument_mode >= 6) {
+    owned_source = enum_two_argument_paired_update_source(
+        source, (int)parsed_argument_mode - 5,
+        (int)parsed_argument_revision);
+    if (!owned_source) return 1;
+    source = owned_source;
+  } else if (parsed_argument_mode >= 4) {
     owned_source = enum_two_argument_paired_rename_source(
         source, (int)parsed_argument_mode - 3,
         (int)parsed_argument_revision);
@@ -3227,6 +3236,28 @@ static char *enum_two_argument_paired_rename_source(
                            : other_argument_missing ? 3 : 0;
   int second_revision = renamed_argument_index == 2
                             ? 2
+                            : other_argument_missing ? 3 : 0;
+  char *first = enum_two_argument_macro_source(
+      source, 1, first_revision);
+  if (!first) return NULL;
+  char *second = enum_two_argument_macro_source(
+      first, 2, second_revision);
+  free(first);
+  return second;
+}
+
+static char *enum_two_argument_paired_update_source(
+    const char *source, int updated_argument_index,
+    int other_argument_missing) {
+  if (!source || updated_argument_index < 1 ||
+      updated_argument_index > 2 || other_argument_missing < 0 ||
+      other_argument_missing > 1)
+    return NULL;
+  int first_revision = updated_argument_index == 1
+                           ? 1
+                           : other_argument_missing ? 3 : 0;
+  int second_revision = updated_argument_index == 2
+                            ? 1
                             : other_argument_missing ? 3 : 0;
   char *first = enum_two_argument_macro_source(
       source, 1, first_revision);
@@ -5885,6 +5916,10 @@ static int test_enum_two_argument_call_cursor(
       {1, 0, 4, 0}, {1, 0, 3, 0}, {1, 1, 4, 1},
       {3, 0, 3, 0}, {3, 0, 5, 0}, {3, 0, 5, 1},
       {3, 0, 5, 0}, {3, 0, 3, 0}, {3, 1, 5, 1},
+      {1, 0, 3, 0}, {1, 0, 6, 0}, {1, 0, 6, 1},
+      {1, 0, 6, 0}, {1, 0, 3, 0}, {1, 1, 6, 1},
+      {3, 0, 3, 0}, {3, 0, 7, 0}, {3, 0, 7, 1},
+      {3, 0, 7, 0}, {3, 0, 3, 0}, {3, 1, 7, 1},
       {0, 0, 0, 0}, {3, 1, 0, 0},
   };
   for (size_t pass_index = 0;
@@ -5895,7 +5930,13 @@ static int test_enum_two_argument_call_cursor(
     int argument_revision = passes[pass_index].argument_revision;
     const char *source = enum_two_argument_call_sources[variant];
     char *owned_source = NULL;
-    if (argument_mode >= 4) {
+    if (argument_mode >= 6) {
+      owned_source = enum_two_argument_paired_update_source(
+          source, argument_mode - 5, argument_revision);
+      CHECK(owned_source != NULL,
+            "enum two argument paired update source");
+      source = owned_source;
+    } else if (argument_mode >= 4) {
       owned_source = enum_two_argument_paired_rename_source(
           source, argument_mode - 3, argument_revision);
       CHECK(owned_source != NULL,
@@ -5918,14 +5959,16 @@ static int test_enum_two_argument_call_cursor(
         NULL,
         argument_mode == 1
             ? argument_macro_names[argument_revision][1]
-            : argument_mode == 3 || argument_mode == 5
+            : argument_mode == 3 || argument_mode == 5 ||
+                  argument_mode >= 6
                 ? argument_macro_names[0][1]
             : argument_mode == 4
                 ? argument_macro_names[2][1]
                 : NULL,
         argument_mode == 2
             ? argument_macro_names[argument_revision][2]
-            : argument_mode == 3 || argument_mode == 4
+            : argument_mode == 3 || argument_mode == 4 ||
+                  argument_mode >= 6
                 ? argument_macro_names[0][2]
             : argument_mode == 5
                 ? argument_macro_names[2][2]
@@ -5936,6 +5979,10 @@ static int test_enum_two_argument_call_cursor(
         : argument_mode == 4
             ? argument_revision ? 2 : 0
         : argument_mode == 5
+            ? argument_revision ? 1 : 0
+        : argument_mode == 6
+            ? argument_revision ? 2 : 0
+        : argument_mode == 7
             ? argument_revision ? 1 : 0
             : argument_revision == 3 ? argument_mode : 0;
     int argument_missing[] = {
@@ -5950,6 +5997,10 @@ static int test_enum_two_argument_call_cursor(
       argument_metadata_revisions[1] = 2;
     else if (argument_mode == 5)
       argument_metadata_revisions[2] = 2;
+    else if (argument_mode == 6)
+      argument_metadata_revisions[1] = 1;
+    else if (argument_mode == 7)
+      argument_metadata_revisions[2] = 1;
     const char *argument_names[] = {
         NULL,
         active_macro_names[1]
@@ -6209,12 +6260,14 @@ static int test_enum_two_argument_call_cursor(
       const ag_language_symbol_t *derived = find_symbol(
           &snapshot, "ENUM_TWO_ARGUMENT_DERIVED",
           AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+      int argument_updated =
+          argument_metadata_revisions[1] == 1 ||
+          argument_metadata_revisions[2] == 1;
       CHECK(((enum_only || first_missing_argument_index) && !derived) ||
                 (!enum_only && !first_missing_argument_index && derived &&
                  derived->constant_value &&
                  strcmp(derived->constant_value,
-                        argument_mode != 3 && argument_revision == 1
-                            ? "113" : "103") == 0),
+                        argument_updated ? "113" : "103") == 0),
             "enum two argument derived value");
       int expected_diagnostic_count =
           (!enum_only && first_missing_argument_index) ||
