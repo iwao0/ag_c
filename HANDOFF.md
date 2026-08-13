@@ -32254,3 +32254,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - virtual header由来のenum定数/object-like macroを未終端enum initializerのEOF operandに置いた場合も、
     primary source内のsymbolと同じ二段階契約になることを独立して確認する。
+
+### このセッション（続き1101）: virtual header由来の未終端enum operand契約を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1100に残した、通常サイズのvirtual header由来enum定数/object-like macroだけを独立して確認した。
+- 調査結果:
+  - 続き1100の二段階recoveryはvirtual headerのScopeGraph宣言とpreprocessor macroにも既に適用され、
+    production codeの追加修正は不要だった。
+  - 解決済みEOF operandはheader上の宣言・documentation range、enum値またはmacro replacement、
+    派生enumerator値17/19、dependencyを保持して`partial:true`・diagnostics空を返した。
+  - 書きかけprefixはheader候補のmetadataとdependencyを保持しつつ、hoverなし・primary source上の正確な
+    `AGC_PARTIAL_IDENTIFIER` range・`partial:true`を返した。
+- 回帰範囲:
+  - virtual header由来のenum定数とobject-like macro、その完全名と書きかけprefixを網羅した。
+  - 各identifierの先頭・中央・末尾、header上のdeclaration/documentation range、enum値、macro replacement、
+    派生enumerator値、dependency、同一session/fresh sessionをNativeで固定した。
+  - 専用シナリオを追加し、language analysisの表示を50 scenariosへ更新した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、fresh compilerを確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (50 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - 同一sessionでvirtual headerのenum値・macro replacement・documentationを差し替えた場合に、未終端EOF
+    operandの二段階recoveryが旧preprocessor/ScopeGraph状態を持ち越さないrevision境界を確認する。

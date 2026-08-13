@@ -2378,6 +2378,135 @@ const incompleteEnumReuseResult = compiler.analyzeSource(
 assert.equal(incompleteEnumReuseResult.partial, true);
 assert.equal(incompleteEnumReuseResult.hover?.name, "INCOMPLETE_ENUM_BASE");
 
+const incompleteEnumHeader =
+  "/// header enum documentation\n" +
+  "enum IncompleteHeaderEnum {\n" +
+  "  /// header enum value documentation\n" +
+  "  INCOMPLETE_HEADER_ENUM_VALUE = 17\n" +
+  "};\n" +
+  "/// header enum macro documentation\n" +
+  "#define INCOMPLETE_HEADER_ENUM_MACRO 19\n";
+const incompleteEnumHeaderSources = [
+  {
+    name: "incomplete-enum-header-main.c",
+    source: "#include <incomplete-enum.h>\n" +
+      "enum { INCOMPLETE_HEADER_DERIVED = INCOMPLETE_HEADER_ENUM_VALUE",
+  },
+  {
+    name: "incomplete-enum-header-main.c",
+    source: "#include <incomplete-enum.h>\n" +
+      "enum { INCOMPLETE_HEADER_DERIVED = INCOMPLETE_HEADER_ENUM_MACRO",
+  },
+  {
+    name: "incomplete-enum-header-main.c",
+    source: "#include <incomplete-enum.h>\n" +
+      "enum { INCOMPLETE_HEADER_DERIVED = INCOMPLETE_HEADER_ENUM_VA",
+  },
+  {
+    name: "incomplete-enum-header-main.c",
+    source: "#include <incomplete-enum.h>\n" +
+      "enum { INCOMPLETE_HEADER_DERIVED = INCOMPLETE_HEADER_ENUM_MA",
+  },
+];
+const incompleteEnumHeaderCases = [
+  [0, "INCOMPLETE_HEADER_ENUM_VALUE", "INCOMPLETE_HEADER_ENUM_VALUE",
+    "enumConstant", "17", "header enum value documentation", false],
+  [1, "INCOMPLETE_HEADER_ENUM_MACRO", "INCOMPLETE_HEADER_ENUM_MACRO",
+    "macro", "19", "header enum macro documentation", false],
+  [2, "INCOMPLETE_HEADER_ENUM_VA", "INCOMPLETE_HEADER_ENUM_VALUE",
+    "enumConstant", "17", "header enum value documentation", true],
+  [3, "INCOMPLETE_HEADER_ENUM_MA", "INCOMPLETE_HEADER_ENUM_MACRO",
+    "macro", "19", "header enum macro documentation", true],
+];
+for (const [sourceIndex, cursorName, candidateName, kind, value,
+  documentation, partialIdentifier] of incompleteEnumHeaderCases) {
+  const source = incompleteEnumHeaderSources[sourceIndex];
+  const cursorIndex = source.source.lastIndexOf(cursorName);
+  const declarationIndex = incompleteEnumHeader.indexOf(candidateName);
+  assert.ok(cursorIndex >= 0 && declarationIndex >= 0,
+    `${cursorName} incomplete enum header anchors`);
+  const cursorStart = byteOffsetForIndex(source.source, cursorIndex);
+  const declarationStart = byteOffsetForIndex(
+    incompleteEnumHeader, declarationIndex,
+  );
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(cursorName) / 2),
+    Buffer.byteLength(cursorName),
+  ]) {
+    const byteOffset = cursorStart + delta;
+    const result = compiler.analyzeSource(source, {
+      headers: { "incomplete-enum.h": incompleteEnumHeader },
+      cursor: { sourceName: source.name, byteOffset },
+    });
+    const candidate = symbol(result, candidateName, kind);
+    assert.equal(result.partial, true,
+      `${cursorName} incomplete enum header was marked complete`);
+    assert.equal(candidate?.declaration.sourceName, "incomplete-enum.h");
+    assert.equal(candidate?.declaration.start.offset, declarationStart);
+    assert.equal(candidate?.declaration.end.offset,
+      declarationStart + Buffer.byteLength(candidateName));
+    assert.equal(candidate?.documentation, documentation);
+    assert.equal(candidate?.documentationRange?.sourceName,
+      "incomplete-enum.h");
+    assert.deepStrictEqual(result.dependencies, ["incomplete-enum.h"]);
+    if (kind === "enumConstant")
+      assert.equal(candidate?.initializer.constantValue, value);
+    else
+      assert.equal(candidate?.macro?.replacement, value);
+    if (partialIdentifier) {
+      assert.equal(result.hover, null);
+      assert.equal(result.diagnostics.length, 1);
+      assert.equal(result.diagnostics[0].code, "AGC_PARTIAL_IDENTIFIER");
+      assert.equal(result.diagnostics[0].start.offset, cursorStart);
+      assert.equal(result.diagnostics[0].end.offset,
+        cursorStart + Buffer.byteLength(cursorName));
+    } else {
+      assert.deepStrictEqual(result.diagnostics, []);
+      assert.equal(result.hover?.name, candidateName);
+      assert.deepStrictEqual(result.hover?.declaration,
+        candidate?.declaration);
+      const derived = symbol(
+        result, "INCOMPLETE_HEADER_DERIVED", "enumConstant",
+      );
+      assert.equal(derived?.initializer.constantValue, value);
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--incomplete-enum-header-hover-parity-json",
+          String(sourceIndex), String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm incomplete enum header differ for ${cursorName} at ${delta}`,
+    );
+  }
+}
+
+const freshIncompleteEnumHeaderCompiler = await createCompiler(wasmModule);
+try {
+  for (const [sourceIndex, cursorName, candidateName, kind, , ,
+    partialIdentifier] of incompleteEnumHeaderCases) {
+    const source = incompleteEnumHeaderSources[sourceIndex];
+    const cursorIndex = source.source.lastIndexOf(cursorName);
+    const result = freshIncompleteEnumHeaderCompiler.analyzeSource(source, {
+      headers: { "incomplete-enum.h": incompleteEnumHeader },
+      cursor: {
+        sourceName: source.name,
+        byteOffset: byteOffsetForIndex(source.source, cursorIndex) +
+          Math.floor(Buffer.byteLength(cursorName) / 2),
+      },
+    });
+    assert.equal(result.partial, true);
+    assert.ok(symbol(result, candidateName, kind));
+    assert.equal(result.hover?.name ?? null,
+      partialIdentifier ? null : candidateName);
+    assert.equal(result.diagnostics.length, partialIdentifier ? 1 : 0);
+  }
+} finally {
+  freshIncompleteEnumHeaderCompiler.dispose();
+}
+
 const initializerDesignatorOperandHoverSource = {
   name: "initializer-designator-operand.c",
   source: "/// initializer designator macro documentation\n" +
