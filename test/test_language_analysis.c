@@ -682,6 +682,22 @@ static const char enum_initializer_operand_hover_source[] =
     "  return ENUM_INITIALIZER_BLOCK_DERIVED;\n"
     "}\n";
 
+static const char *const incomplete_enum_initializer_sources[] = {
+    "/// incomplete enum macro documentation\n"
+    "#define INCOMPLETE_ENUM_MACRO 5\n"
+    "enum IncompleteEnumBase {\n"
+    "  INCOMPLETE_ENUM_BASE = 3,\n"
+    "  INCOMPLETE_ENUM_OTHER = 4\n"
+    "};\n"
+    "enum IncompleteEnumPending {\n"
+    "  INCOMPLETE_ENUM_DERIVED = INCOMPLETE_ENUM_BASE /* gap */ + \\\n"
+    "INCOMPLETE_ENUM_MACRO",
+    "enum { INCOMPLETE_ENUM_BLOCK_BASE = 7 };\n"
+    "static int incomplete_enum_block(int parameter) {\n"
+    "  int before = parameter;\n"
+    "  enum { INCOMPLETE_ENUM_BLOCK_DERIVED = "
+    "(INCOMPLETE_ENUM_BLOCK_BASE)"};
+
 static const char initializer_designator_operand_hover_source[] =
     "/// initializer designator macro documentation\n"
     "#define INITIALIZER_DESIGNATOR_MACRO 5\n"
@@ -2236,6 +2252,28 @@ static int print_enum_initializer_operand_hover_parity_snapshot(
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
+static int print_incomplete_enum_initializer_hover_parity_snapshot(
+    const char *source_index_text, const char *cursor_text) {
+  char *source_end = NULL;
+  char *cursor_end = NULL;
+  unsigned long long parsed_source_index =
+      strtoull(source_index_text, &source_end, 10);
+  unsigned long long parsed_cursor = strtoull(cursor_text, &cursor_end, 10);
+  size_t source_count = sizeof(incomplete_enum_initializer_sources) /
+                        sizeof(incomplete_enum_initializer_sources[0]);
+  if (!source_index_text[0] || !source_end || *source_end != '\0' ||
+      parsed_source_index >= (unsigned long long)source_count ||
+      !cursor_text[0] || !cursor_end || *cursor_end != '\0')
+    return 1;
+  const char *source =
+      incomplete_enum_initializer_sources[(size_t)parsed_source_index];
+  size_t source_length = strlen(source);
+  if (parsed_cursor > (unsigned long long)source_length) return 1;
+  return print_macro_definition_source_snapshot(
+      "incomplete-enum-initializer.c", source, (size_t)parsed_cursor,
+      (header_bundle_t){0});
+}
+
 static int print_initializer_designator_operand_hover_parity_snapshot(
     const char *cursor_text) {
   char *end = NULL;
@@ -3381,6 +3419,122 @@ static int test_enum_initializer_operand_hover(ag_target_info_t target) {
       }
     }
   }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
+static int test_incomplete_enum_initializer_hover(
+    ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "incomplete enum initializer session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  struct {
+    size_t source_index;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+    const char *constant_value;
+  } cases[] = {
+      {0, "INCOMPLETE_ENUM_BASE", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INCOMPLETE_ENUM_BASE = 3", "3"},
+      {0, "INCOMPLETE_ENUM_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "INCOMPLETE_ENUM_MACRO 5", ""},
+      {1, "INCOMPLETE_ENUM_BLOCK_BASE", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INCOMPLETE_ENUM_BLOCK_BASE = 7", "7"},
+  };
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *source =
+          incomplete_enum_initializer_sources[cases[case_index].source_index];
+      const char *use = last_occurrence(source, cases[case_index].name);
+      const char *declaration = strstr(
+          source, cases[case_index].declaration_fragment);
+      CHECK(use && declaration, "incomplete enum initializer anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh incomplete enum initializer session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "incomplete-enum-initializer.c", source,
+                  (size_t)(use - source) + deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "incomplete enum initializer analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(hover && completion && snapshot.partial &&
+                  snapshot.diagnostic_count == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration - source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration - source + name_length) &&
+                  same_range(&hover->declaration, &completion->declaration),
+              "incomplete enum initializer fields");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(strcmp(hover->constant_value,
+                       cases[case_index].constant_value) == 0,
+                "incomplete enum initializer value");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO) {
+          const char *comment = strstr(
+              source, "/// incomplete enum macro documentation");
+          CHECK(hover->macro_replacement &&
+                    strcmp(hover->macro_replacement, "5") == 0 &&
+                    comment && check_documentation_symbol(
+                        hover, "incomplete enum macro documentation",
+                        "incomplete-enum-initializer.c",
+                        (size_t)(comment - source),
+                        (size_t)(comment - source) +
+                            strlen("/// incomplete enum macro documentation")),
+                "incomplete enum macro fields");
+        }
+        if (cases[case_index].source_index == 1)
+          CHECK(find_symbol(
+                    &snapshot, "parameter", AG_LANGUAGE_SYMBOL_PARAMETER) &&
+                    find_symbol(
+                        &snapshot, "before", AG_LANGUAGE_SYMBOL_OBJECT),
+                "incomplete enum block lookup point");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  const char *invalid_source =
+      "enum { INCOMPLETE_ENUM_INVALID_BASE = 3, "
+      "INCOMPLETE_ENUM_INVALID_DERIVED = INCOMPLETE_ENUM_INVALID_BASE +";
+  const char *invalid_use = last_occurrence(
+      invalid_source, "INCOMPLETE_ENUM_INVALID_BASE");
+  int invalid_ok = invalid_use && analyze_named(
+      session, "incomplete-enum-invalid.c", invalid_source,
+      (size_t)(invalid_use - invalid_source) + 4,
+      (header_bundle_t){0}, defaults, &snapshot, &error);
+  CHECK(invalid_ok && snapshot.partial,
+        "incomplete enum operator remains incomplete");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  const char *reuse_source = incomplete_enum_initializer_sources[0];
+  const char *reuse_use = last_occurrence(
+      reuse_source, "INCOMPLETE_ENUM_BASE");
+  CHECK(reuse_use && analyze_named(
+            session, "incomplete-enum-initializer.c", reuse_source,
+            (size_t)(reuse_use - reuse_source) + 4,
+            (header_bundle_t){0}, defaults, &snapshot, &error) &&
+            snapshot.partial && hover_symbol(&snapshot) &&
+            strcmp(hover_symbol(&snapshot)->name,
+                   "INCOMPLETE_ENUM_BASE") == 0,
+        "incomplete enum session reusable after invalid expression");
+  ag_language_analysis_snapshot_dispose(&snapshot);
   ag_compilation_session_destroy(session);
   return 0;
 }
@@ -5289,6 +5443,11 @@ int main(int argc, char **argv) {
       strcmp(argv[1],
              "--enum-initializer-operand-hover-parity-json") == 0)
     return print_enum_initializer_operand_hover_parity_snapshot(argv[2]);
+  if (argc == 4 &&
+      strcmp(argv[1],
+             "--incomplete-enum-initializer-hover-parity-json") == 0)
+    return print_incomplete_enum_initializer_hover_parity_snapshot(
+        argv[2], argv[3]);
   if (argc == 3 &&
       strcmp(argv[1],
              "--initializer-designator-operand-hover-parity-json") == 0)
@@ -5349,6 +5508,8 @@ int main(int argc, char **argv) {
         "case expression operand hover scenarios");
   CHECK(test_enum_initializer_operand_hover(target) == 0,
         "enum initializer operand hover scenarios");
+  CHECK(test_incomplete_enum_initializer_hover(target) == 0,
+        "incomplete enum initializer hover scenarios");
   CHECK(test_initializer_designator_operand_hover(target) == 0,
         "initializer designator operand hover scenarios");
   CHECK(test_compound_literal_designator_operand_hover(target) == 0,
@@ -8367,6 +8528,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (48 scenarios)");
+  puts("language analysis tests passed (49 scenarios)");
   return 0;
 }

@@ -849,6 +849,13 @@ static int analysis_identifier_is_complete_member_access(
   return 1;
 }
 
+typedef enum {
+  AG_LANGUAGE_RECOVERY_CHANGED = 1 << 0,
+  AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER = 1 << 1,
+  AG_LANGUAGE_RECOVERY_COMPLETE_IDENTIFIER_ELIDED = 1 << 2,
+  AG_LANGUAGE_RECOVERY_INCOMPLETE_SOURCE = 1 << 3,
+} ag_language_recovery_flags_t;
+
 static char *build_record_member_recovery_source(
     const char *source, size_t length, size_t cursor, int *changed,
     size_t *source_consumed) {
@@ -1006,7 +1013,7 @@ static int enum_enumerator_bounds(
 
 static int enum_initializer_operand_end(
     const char *source, size_t length, size_t enum_open,
-    size_t operand_start, size_t *item_end) {
+    size_t operand_start, size_t *item_end, int *unterminated) {
   size_t segment_start = enum_open + 1;
   int paren_depth = 0;
   int bracket_depth = 0;
@@ -1079,6 +1086,13 @@ static int enum_initializer_operand_end(
       brace_depth--;
     }
   }
+  if (operand_start >= segment_start && saw_initializer &&
+      paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 &&
+      !block_comment && !quote) {
+    *item_end = length;
+    if (unterminated) *unterminated = 1;
+    return 1;
+  }
   return 0;
 }
 
@@ -1094,6 +1108,7 @@ static char *build_enum_declaration_recovery_source(
   size_t enum_open = 0;
   size_t outer_brace_count = 0;
   size_t item_end = 0;
+  int unterminated_initializer = 0;
   if (!tag_body_open_at(
           source, name_start, "enum", &enum_open,
           &outer_brace_count))
@@ -1101,31 +1116,44 @@ static char *build_enum_declaration_recovery_source(
   if (!enum_enumerator_bounds(
           source, length, enum_open, name_start, name_end, &item_end) &&
       !enum_initializer_operand_end(
-          source, length, enum_open, name_start, &item_end))
+          source, length, enum_open, name_start, &item_end,
+          &unterminated_initializer))
     return NULL;
-  static const char suffix[] =
+  static const char complete_suffix[] =
       "} __agc_language_enum_holder;\n"
       "int " AG_LANGUAGE_CURSOR_MARKER ";\n";
-  if (outer_brace_count > SIZE_MAX / 2 ||
-      item_end > SIZE_MAX - sizeof(suffix) ||
-      item_end + sizeof(suffix) >
-          SIZE_MAX - outer_brace_count * 2)
+  static const char incomplete_suffix[] =
+      "\n} __agc_language_enum_holder;\n"
+      "int " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  const char *suffix = unterminated_initializer
+                           ? incomplete_suffix
+                           : complete_suffix;
+  size_t suffix_length = unterminated_initializer
+                             ? sizeof(incomplete_suffix) - 1
+                             : sizeof(complete_suffix) - 1;
+  if (outer_brace_count > (SIZE_MAX - 1) / 2) return NULL;
+  size_t outer_brace_bytes = outer_brace_count * 2;
+  if (suffix_length > SIZE_MAX - 1 - outer_brace_bytes ||
+      item_end > SIZE_MAX - 1 - outer_brace_bytes - suffix_length)
     return NULL;
   size_t result_length =
-      item_end + sizeof(suffix) - 1 +
-      outer_brace_count * 2;
+      item_end + suffix_length + outer_brace_bytes;
   char *result = malloc(result_length + 1);
   if (!result) return NULL;
   memcpy(result, source, item_end);
   size_t output = item_end;
-  memcpy(result + output, suffix, sizeof(suffix) - 1);
-  output += sizeof(suffix) - 1;
+  memcpy(result + output, suffix, suffix_length);
+  output += suffix_length;
   for (size_t i = 0; i < outer_brace_count; i++) {
     result[output++] = '}';
     result[output++] = '\n';
   }
   result[output] = '\0';
-  if (changed) *changed = 1;
+  if (changed)
+    *changed = AG_LANGUAGE_RECOVERY_CHANGED |
+               (unterminated_initializer
+                    ? AG_LANGUAGE_RECOVERY_INCOMPLETE_SOURCE
+                    : 0);
   if (source_consumed) *source_consumed = item_end;
   return result;
 }
@@ -1750,12 +1778,6 @@ static int function_declaration_recovery_end(
   }
   return 0;
 }
-
-typedef enum {
-  AG_LANGUAGE_RECOVERY_CHANGED = 1 << 0,
-  AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER = 1 << 1,
-  AG_LANGUAGE_RECOVERY_COMPLETE_IDENTIFIER_ELIDED = 1 << 2,
-} ag_language_recovery_flags_t;
 
 typedef struct {
   char open;
@@ -5865,6 +5887,7 @@ int ag_language_analyze_source(
       has_error ||
       (!marker && !final_parse->has_cursor_lookup_point) ||
       (recovery_changed & AG_LANGUAGE_RECOVERY_PARTIAL_IDENTIFIER) ||
+      (recovery_changed & AG_LANGUAGE_RECOVERY_INCOMPLETE_SOURCE) ||
       unresolved_elided_identifier || final_parse->fatal_recovered ||
       recovered_before_retry ||
       final_parse->semantic_diagnostic.code != NULL;

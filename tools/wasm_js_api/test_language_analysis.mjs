@@ -2116,6 +2116,148 @@ try {
   freshEnumInitializerCompiler.dispose();
 }
 
+const incompleteEnumInitializerSources = [
+  {
+    name: "incomplete-enum-initializer.c",
+    source: "/// incomplete enum macro documentation\n" +
+      "#define INCOMPLETE_ENUM_MACRO 5\n" +
+      "enum IncompleteEnumBase {\n" +
+      "  INCOMPLETE_ENUM_BASE = 3,\n" +
+      "  INCOMPLETE_ENUM_OTHER = 4\n" +
+      "};\n" +
+      "enum IncompleteEnumPending {\n" +
+      "  INCOMPLETE_ENUM_DERIVED = INCOMPLETE_ENUM_BASE /* gap */ + \\\n" +
+      "INCOMPLETE_ENUM_MACRO",
+  },
+  {
+    name: "incomplete-enum-initializer.c",
+    source: "enum { INCOMPLETE_ENUM_BLOCK_BASE = 7 };\n" +
+      "static int incomplete_enum_block(int parameter) {\n" +
+      "  int before = parameter;\n" +
+      "  enum { INCOMPLETE_ENUM_BLOCK_DERIVED = " +
+      "(INCOMPLETE_ENUM_BLOCK_BASE)",
+  },
+];
+const incompleteEnumInitializerCases = [
+  [0, "INCOMPLETE_ENUM_BASE", "enumConstant", "3"],
+  [0, "INCOMPLETE_ENUM_MACRO", "macro", ""],
+  [1, "INCOMPLETE_ENUM_BLOCK_BASE", "enumConstant", "7"],
+];
+for (const [sourceIndex, name, kind, constantValue] of
+  incompleteEnumInitializerCases) {
+  const source = incompleteEnumInitializerSources[sourceIndex];
+  const useIndex = source.source.lastIndexOf(name);
+  const declarationIndex = source.source.indexOf(name);
+  assert.ok(useIndex >= 0 && declarationIndex >= 0,
+    `${name} incomplete enum initializer anchors`);
+  const useStart = byteOffsetForIndex(source.source, useIndex);
+  const declarationStart = byteOffsetForIndex(source.source, declarationIndex);
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(source, {
+      cursor: { sourceName: source.name, byteOffset },
+    });
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, true,
+      `${name} incomplete enum initializer was marked complete`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} incomplete enum initializer diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `${name} incomplete enum initializer hover`);
+    assert.equal(result.hover?.kind, kind,
+      `${name} incomplete enum initializer kind`);
+    assert.equal(result.hover?.declaration.start.offset, declarationStart,
+      `${name} incomplete enum initializer declaration start`);
+    assert.equal(result.hover?.declaration.end.offset,
+      declarationStart + Buffer.byteLength(name),
+      `${name} incomplete enum initializer declaration end`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} incomplete enum initializer declaration`);
+    if (kind === "enumConstant")
+      assert.equal(result.hover?.initializer.constantValue, constantValue);
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.replacement, "5");
+      assert.equal(result.hover?.documentation,
+        "incomplete enum macro documentation");
+    }
+    if (sourceIndex === 1) {
+      assert.ok(symbol(result, "parameter", "parameter"));
+      assert.ok(symbol(result, "before", "object"));
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--incomplete-enum-initializer-hover-parity-json",
+          String(sourceIndex), String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm incomplete enum initializer differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+const freshIncompleteEnumInitializerCompiler = await createCompiler(wasmModule);
+try {
+  for (const [sourceIndex, name, kind] of incompleteEnumInitializerCases) {
+    const source = incompleteEnumInitializerSources[sourceIndex];
+    const useIndex = source.source.lastIndexOf(name);
+    const result = freshIncompleteEnumInitializerCompiler.analyzeSource(
+      source,
+      {
+        cursor: {
+          sourceName: source.name,
+          byteOffset: byteOffsetForIndex(source.source, useIndex) +
+            Math.floor(Buffer.byteLength(name) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, true,
+      `fresh ${name} incomplete enum initializer was marked complete`);
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.equal(result.hover?.name, name);
+    assert.equal(result.hover?.kind, kind);
+  }
+} finally {
+  freshIncompleteEnumInitializerCompiler.dispose();
+}
+
+const incompleteEnumInvalidSource = {
+  name: "incomplete-enum-invalid.c",
+  source: "enum { INCOMPLETE_ENUM_INVALID_BASE = 3, " +
+    "INCOMPLETE_ENUM_INVALID_DERIVED = INCOMPLETE_ENUM_INVALID_BASE +",
+};
+const incompleteEnumInvalidUse = incompleteEnumInvalidSource.source.lastIndexOf(
+  "INCOMPLETE_ENUM_INVALID_BASE",
+);
+try {
+  const result = compiler.analyzeSource(incompleteEnumInvalidSource, {
+    cursor: {
+      sourceName: incompleteEnumInvalidSource.name,
+      byteOffset: incompleteEnumInvalidUse + 4,
+    },
+  });
+  assert.equal(result.partial, true,
+    "incomplete enum operator was marked complete");
+} catch (error) {
+  assert.match(error.message, /language analysis failed/);
+}
+const incompleteEnumReuseResult = compiler.analyzeSource(
+  incompleteEnumInitializerSources[0],
+  {
+    cursor: {
+      sourceName: incompleteEnumInitializerSources[0].name,
+      byteOffset: incompleteEnumInitializerSources[0].source.lastIndexOf(
+        "INCOMPLETE_ENUM_BASE",
+      ) + 4,
+    },
+  },
+);
+assert.equal(incompleteEnumReuseResult.partial, true);
+assert.equal(incompleteEnumReuseResult.hover?.name, "INCOMPLETE_ENUM_BASE");
+
 const initializerDesignatorOperandHoverSource = {
   name: "initializer-designator-operand.c",
   source: "/// initializer designator macro documentation\n" +

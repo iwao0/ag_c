@@ -32194,3 +32194,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
 - 浅い次候補:
   - 末尾`,` / `}`のないenum initializerのpartial契約を、complete source回復とは分けて扱う。
+
+### このセッション（続き1099）: 未終端enum initializerのpartial hoverを安定化した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1098に残した、末尾`,` / `}`のない通常サイズのenum initializerだけを調査した。
+- 原因と修正:
+  - enum initializer専用recoveryは実在するtop-level`,` / `}`を必須としていたため、完成したoperandの
+    直後で入力が終わると汎用recoveryへ落ち、Native/Wasm APIとも構造化snapshotを返せなかった。
+  - 現在のenumerator区間でtop-level`=`がcursorより前にあり、quote/commentと内側delimiterが閉じている
+    場合だけEOFを未終端initializer境界として認識し、一時sourceではenumと外側blockを閉じる。
+  - 識別子欠落とは別のincomplete-source recovery flagを追加し、hoverが解決しても`partial:true`を維持する。
+  - 演算子で途切れた式を推測で補う処理、式の意味評価、再帰的な式走査、深度上限の拡張は追加していない。
+- 回帰範囲:
+  - file/block scope、式中1個目/2個目のenum定数、括弧、block comment、LF行継続、object-like macroを網羅した。
+  - 各identifierの先頭・中央・末尾、正確なdeclaration range・lookup point、enum値、macro replacementと
+    documentation、同一session/fresh session、演算子で途切れた式後のsession再利用をNativeで固定した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、fresh compilerと失敗後再利用を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (49 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - 同じ未終端enum initializer内で識別子自体が書きかけの`DERIVED = BA`は、完全operandのpartial経路へ
+    混ぜず、partial identifier診断を維持する独立候補として扱う。
