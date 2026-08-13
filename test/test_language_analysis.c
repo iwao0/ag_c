@@ -693,6 +693,47 @@ static const char initializer_designator_operand_hover_source[] =
     "  return designator_local[INITIALIZER_DESIGNATOR_LOCAL] + designator_after;\n"
     "}\n";
 
+static const char type_name_array_bound_operand_hover_source[] =
+    "/// type-name array bound macro documentation\n"
+    "#define TYPE_NAME_ARRAY_BOUND_MACRO 5\n"
+    "enum TypeNameArrayBoundValue {\n"
+    "  TYPE_NAME_ARRAY_BOUND_A = 2,\n"
+    "  TYPE_NAME_ARRAY_BOUND_B = 3,\n"
+    "  TYPE_NAME_ARRAY_BOUND_C = 4,\n"
+    "  TYPE_NAME_ARRAY_BOUND_CONDITION = 1\n"
+    "};\n"
+    "int type_name_array_bound_values[8];\n"
+    "int type_name_array_bound_file = sizeof(int[TYPE_NAME_ARRAY_BOUND_A]), type_name_array_bound_later;\n"
+    "static int type_name_array_bound_block(int bound_parameter) {\n"
+    "  enum { TYPE_NAME_ARRAY_BOUND_LOCAL = 6 };\n"
+    "  int bound_before = bound_parameter;\n"
+    "  int bound_sizeof_direct = sizeof(int[TYPE_NAME_ARRAY_BOUND_A]);\n"
+    "  int bound_sizeof_unary = sizeof(int[+TYPE_NAME_ARRAY_BOUND_A]);\n"
+    "  int bound_sizeof_binary = sizeof(int[TYPE_NAME_ARRAY_BOUND_A + TYPE_NAME_ARRAY_BOUND_B]);\n"
+    "  int bound_sizeof_grouped = sizeof(int[(TYPE_NAME_ARRAY_BOUND_C)]);\n"
+    "  int bound_sizeof_conditional = sizeof(int[TYPE_NAME_ARRAY_BOUND_CONDITION ? TYPE_NAME_ARRAY_BOUND_A : TYPE_NAME_ARRAY_BOUND_B]);\n"
+    "  int bound_sizeof_macro = sizeof(int[TYPE_NAME_ARRAY_BOUND_MACRO]);\n"
+    "  int bound_sizeof_comment = sizeof(int[/* expression gap */ TYPE_NAME_ARRAY_BOUND_A]);\n"
+    "  int bound_sizeof_splice_lf = sizeof(int[\\\n"
+    "TYPE_NAME_ARRAY_BOUND_B]);\n"
+    "  int bound_sizeof_splice_crlf = sizeof(int[\\\r\n"
+    "TYPE_NAME_ARRAY_BOUND_C]);\r\n"
+    "  int bound_alignof = _Alignof(int[TYPE_NAME_ARRAY_BOUND_A]);\n"
+    "  void *bound_cast = (int (*)[TYPE_NAME_ARRAY_BOUND_B])0;\n"
+    "  int *bound_compound = (int[TYPE_NAME_ARRAY_BOUND_C]){ 0 };\n"
+    "  int bound_cast_postfix = (*(int (*)[TYPE_NAME_ARRAY_BOUND_B])&type_name_array_bound_values)[0];\n"
+    "  int bound_compound_postfix = (int[TYPE_NAME_ARRAY_BOUND_C]){ 1 }[0];\n"
+    "  int bound_generic = _Generic(&type_name_array_bound_values, int (*)[TYPE_NAME_ARRAY_BOUND_A]: 1, default: 0);\n"
+    "  int bound_local = sizeof(int[TYPE_NAME_ARRAY_BOUND_LOCAL]);\n"
+    "  int bound_after = bound_before;\n"
+    "  return bound_sizeof_direct + bound_sizeof_unary + bound_sizeof_binary +\n"
+    "         bound_sizeof_grouped + bound_sizeof_conditional +\n"
+    "         bound_sizeof_macro + bound_sizeof_comment +\n"
+    "         bound_sizeof_splice_lf + bound_sizeof_splice_crlf +\n"
+    "         bound_alignof + bound_cast_postfix + bound_compound_postfix +\n"
+    "         bound_generic + bound_local + bound_after;\n"
+    "}\n";
+
 static const char macro_definition_forms_source[] =
     "#define SIMPLE_MACRO 1\n"
     "# define PARENTHESIZED_MACRO (2 + 3)\r\n"
@@ -2126,6 +2167,20 @@ static int print_initializer_designator_operand_hover_parity_snapshot(
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
+static int print_type_name_array_bound_operand_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(type_name_array_bound_operand_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "type-name-array-bound-operand.c",
+      type_name_array_bound_operand_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
 static int print_cast_operand_project_parity_snapshot(
     const char *revision_text) {
   char *end = NULL;
@@ -3333,6 +3388,205 @@ static int test_initializer_designator_operand_hover(
       }
     }
   }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
+static int test_type_name_array_bound_operand_hover(
+    ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "type-name array bound operand session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+    const char *constant_value;
+    int boundary_case;
+  } cases[] = {
+      {"type_name_array_bound_file = sizeof(int[TYPE_NAME_ARRAY_BOUND_A])",
+       "TYPE_NAME_ARRAY_BOUND_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_A = 2", "2", 1},
+      {"bound_sizeof_direct = sizeof(int[TYPE_NAME_ARRAY_BOUND_A])",
+       "TYPE_NAME_ARRAY_BOUND_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_A = 2", "2", 2},
+      {"sizeof(int[+TYPE_NAME_ARRAY_BOUND_A])",
+       "TYPE_NAME_ARRAY_BOUND_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_A = 2", "2", 0},
+      {"sizeof(int[TYPE_NAME_ARRAY_BOUND_A + TYPE_NAME_ARRAY_BOUND_B])",
+       "TYPE_NAME_ARRAY_BOUND_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_A = 2", "2", 0},
+      {"+ TYPE_NAME_ARRAY_BOUND_B])",
+       "TYPE_NAME_ARRAY_BOUND_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_B = 3", "3", 0},
+      {"sizeof(int[(TYPE_NAME_ARRAY_BOUND_C)])",
+       "TYPE_NAME_ARRAY_BOUND_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_C = 4", "4", 0},
+      {": TYPE_NAME_ARRAY_BOUND_B])",
+       "TYPE_NAME_ARRAY_BOUND_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_B = 3", "3", 0},
+      {"sizeof(int[TYPE_NAME_ARRAY_BOUND_MACRO])",
+       "TYPE_NAME_ARRAY_BOUND_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "TYPE_NAME_ARRAY_BOUND_MACRO 5", "", 0},
+      {"sizeof(int[/* expression gap */ TYPE_NAME_ARRAY_BOUND_A])",
+       "TYPE_NAME_ARRAY_BOUND_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_A = 2", "2", 0},
+      {"sizeof(int[\\\nTYPE_NAME_ARRAY_BOUND_B])",
+       "TYPE_NAME_ARRAY_BOUND_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_B = 3", "3", 0},
+      {"sizeof(int[\\\r\nTYPE_NAME_ARRAY_BOUND_C])",
+       "TYPE_NAME_ARRAY_BOUND_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_C = 4", "4", 0},
+      {"_Alignof(int[TYPE_NAME_ARRAY_BOUND_A])",
+       "TYPE_NAME_ARRAY_BOUND_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_A = 2", "2", 0},
+      {"(int (*)[TYPE_NAME_ARRAY_BOUND_B])0",
+       "TYPE_NAME_ARRAY_BOUND_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_B = 3", "3", 0},
+      {"(int[TYPE_NAME_ARRAY_BOUND_C]){ 0 }",
+       "TYPE_NAME_ARRAY_BOUND_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_C = 4", "4", 0},
+      {"bound_cast_postfix = (*(int (*)[TYPE_NAME_ARRAY_BOUND_B])",
+       "TYPE_NAME_ARRAY_BOUND_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_B = 3", "3", 0},
+      {"bound_compound_postfix = (int[TYPE_NAME_ARRAY_BOUND_C])",
+       "TYPE_NAME_ARRAY_BOUND_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_C = 4", "4", 0},
+      {"int (*)[TYPE_NAME_ARRAY_BOUND_A]: 1",
+       "TYPE_NAME_ARRAY_BOUND_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_A = 2", "2", 0},
+      {"bound_local = sizeof(int[TYPE_NAME_ARRAY_BOUND_LOCAL])",
+       "TYPE_NAME_ARRAY_BOUND_LOCAL", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "TYPE_NAME_ARRAY_BOUND_LOCAL = 6", "6", 2},
+  };
+  const char *macro_comment = strstr(
+      type_name_array_bound_operand_hover_source,
+      "/// type-name array bound macro documentation");
+  CHECK(macro_comment != NULL, "type-name array bound macro comment anchor");
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          type_name_array_bound_operand_hover_source,
+          cases[case_index].fragment);
+      const char *use = fragment ? strstr(fragment, cases[case_index].name)
+                                 : NULL;
+      const char *declaration = strstr(
+          type_name_array_bound_operand_hover_source,
+          cases[case_index].declaration_fragment);
+      CHECK(use && declaration, "type-name array bound operand anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh type-name array bound operand session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "type-name-array-bound-operand.c",
+                  type_name_array_bound_operand_hover_source,
+                  (size_t)(use - type_name_array_bound_operand_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "type-name array bound operand analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(hover && completion && !snapshot.partial &&
+                  snapshot.diagnostic_count == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            type_name_array_bound_operand_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            type_name_array_bound_operand_hover_source +
+                            name_length) &&
+                  same_range(&hover->declaration, &completion->declaration),
+              "type-name array bound operand fields");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(strcmp(hover->constant_value,
+                       cases[case_index].constant_value) == 0,
+                "type-name array bound enum value");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+          CHECK(hover->macro_replacement &&
+                    strcmp(hover->macro_replacement, "5") == 0 &&
+                    check_documentation_symbol(
+                        hover, "type-name array bound macro documentation",
+                        "type-name-array-bound-operand.c",
+                        (size_t)(macro_comment -
+                                 type_name_array_bound_operand_hover_source),
+                        (size_t)(macro_comment -
+                                 type_name_array_bound_operand_hover_source) +
+                            strlen("/// type-name array bound macro documentation")),
+                "type-name array bound macro fields");
+        if (cases[case_index].boundary_case == 1)
+          CHECK(!find_symbol(
+                    &snapshot, "type_name_array_bound_later",
+                    AG_LANGUAGE_SYMBOL_OBJECT),
+                "later type-name array bound declarator remains invisible");
+        if (cases[case_index].boundary_case == 2)
+          CHECK(find_symbol(
+                    &snapshot, "bound_parameter",
+                    AG_LANGUAGE_SYMBOL_PARAMETER) &&
+                    find_symbol(
+                        &snapshot, "bound_before",
+                        AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "bound_after",
+                        AG_LANGUAGE_SYMBOL_OBJECT),
+                "type-name array bound preserves cursor lookup point");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  const char *invalid_sources[] = {
+      "enum { ZERO_BOUND = 0 }; int f(void) { return sizeof(int[ZERO_BOUND]); }\n",
+      "enum { INCOMPLETE_BOUND = 2 }; int f(void) { return sizeof(int[INCOMPLETE_BOUND",
+  };
+  const char *invalid_names[] = {"ZERO_BOUND", "INCOMPLETE_BOUND"};
+  for (size_t i = 0;
+       i < sizeof(invalid_sources) / sizeof(invalid_sources[0]); i++) {
+    const char *use = last_occurrence(invalid_sources[i], invalid_names[i]);
+    CHECK(use != NULL, "invalid type-name array bound anchor");
+    int ok = analyze_named(
+        session, "invalid-type-name-array-bound.c", invalid_sources[i],
+        (size_t)(use - invalid_sources[i]) + strlen(invalid_names[i]) / 2,
+        (header_bundle_t){0}, defaults, &snapshot, &error);
+    CHECK((ok && snapshot.partial && snapshot.diagnostic_count > 0) ||
+              (!ok && error.status == AG_LANGUAGE_ANALYSIS_FAILED),
+          "invalid type-name array bound diagnostic preserved");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  const char *reused_fragment = strstr(
+      type_name_array_bound_operand_hover_source,
+      "bound_sizeof_direct = sizeof(int[TYPE_NAME_ARRAY_BOUND_A])");
+  const char *reused_use = reused_fragment
+                               ? strstr(reused_fragment,
+                                        "TYPE_NAME_ARRAY_BOUND_A")
+                               : NULL;
+  CHECK(reused_use && analyze_named(
+            session, "type-name-array-bound-operand.c",
+            type_name_array_bound_operand_hover_source,
+            (size_t)(reused_use -
+                     type_name_array_bound_operand_hover_source) + 3,
+            (header_bundle_t){0}, defaults, &snapshot, &error) &&
+            hover_symbol(&snapshot) && !snapshot.partial &&
+            snapshot.diagnostic_count == 0 &&
+            strcmp(hover_symbol(&snapshot)->name,
+                   "TYPE_NAME_ARRAY_BOUND_A") == 0,
+        "type-name array bound session reusable after invalid source");
+  ag_language_analysis_snapshot_dispose(&snapshot);
   ag_compilation_session_destroy(session);
   return 0;
 }
@@ -4652,6 +4906,11 @@ int main(int argc, char **argv) {
     return print_initializer_designator_operand_hover_parity_snapshot(
         argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1],
+             "--type-name-array-bound-operand-hover-parity-json") == 0)
+    return print_type_name_array_bound_operand_hover_parity_snapshot(
+        argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-project-parity-json") == 0)
     return print_cast_operand_project_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -4698,6 +4957,8 @@ int main(int argc, char **argv) {
         "enum initializer operand hover scenarios");
   CHECK(test_initializer_designator_operand_hover(target) == 0,
         "initializer designator operand hover scenarios");
+  CHECK(test_type_name_array_bound_operand_hover(target) == 0,
+        "type-name array bound operand hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -7710,6 +7971,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (46 scenarios)");
+  puts("language analysis tests passed (47 scenarios)");
   return 0;
 }

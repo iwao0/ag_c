@@ -1998,6 +1998,7 @@ static char *build_function_parameter_recovery_source(
   int escaped = 0;
   int at_line_start = 1;
   int preprocessor_line = 0;
+  int top_level_initializer = 0;
   for (size_t i = 0; i < selected_start; i++) {
     char c = source[i];
     char next = i + 1 < selected_start ? source[i + 1] : 0;
@@ -2054,7 +2055,8 @@ static char *build_function_parameter_recovery_source(
       while (candidate_end < selected_start &&
              is_identifier_byte((unsigned char)source[candidate_end]))
         candidate_end++;
-      if (paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
+      if (!top_level_initializer && paren_depth == 0 &&
+          bracket_depth == 0 && brace_depth == 0) {
         size_t after_candidate = skip_analysis_space_and_comments(
             source, length, candidate_end);
         if (after_candidate < length && source[after_candidate] == '(') {
@@ -2117,6 +2119,11 @@ static char *build_function_parameter_recovery_source(
     else if (c == ']' && bracket_depth > 0) bracket_depth--;
     else if (c == '{') brace_depth++;
     else if (c == '}' && brace_depth > 0) brace_depth--;
+    if (paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
+      if (c == '=') top_level_initializer = 1;
+      else if (c == ',' || c == ';' || c == '}')
+        top_level_initializer = 0;
+    }
   }
   return NULL;
 }
@@ -2187,7 +2194,8 @@ static char *build_object_declaration_recovery_source(
   int brace_depth = 0;
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
-          &bracket_depth, &brace_depth))
+          &bracket_depth, &brace_depth) ||
+      bracket_depth != 0)
     return NULL;
   size_t after_name = skip_analysis_space_and_comments(
       source, length, name_end);
@@ -2341,6 +2349,7 @@ typedef struct {
   size_t for_separator_count;
   int is_generic_selection;
   size_t generic_separator_count;
+  size_t generic_association_start;
   int generic_association_has_colon;
   int generic_has_default_association;
   int requires_type_name;
@@ -2476,6 +2485,204 @@ static int analysis_parenthesized_range_is_type_name_mode(
   }
   return saw_type_specifier && !expects_tag_name &&
          paren_depth == 0 && bracket_depth == 0;
+}
+
+typedef enum {
+  ANALYSIS_TYPE_NAME_ARRAY_BOUND_NONE = 0,
+  ANALYSIS_TYPE_NAME_ARRAY_BOUND_PARENTHESIZED,
+  ANALYSIS_TYPE_NAME_ARRAY_BOUND_GENERIC_ASSOCIATION,
+} analysis_type_name_array_bound_kind_t;
+
+typedef struct {
+  analysis_type_name_array_bound_kind_t kind;
+  size_t context_frame;
+  size_t tail_end;
+  int preserve_statement;
+  int append_cast_operand;
+  int append_compound_literal;
+} analysis_type_name_array_bound_tail_t;
+
+static int analysis_cast_operand_starts_at_mode(
+    const char *source, size_t source_length, size_t start,
+    int enable_trigraphs) {
+  size_t operand = skip_analysis_space_and_comments_mode(
+      source, source_length, start, enable_trigraphs);
+  if (operand >= source_length) return 0;
+  unsigned char c = (unsigned char)source[operand];
+  return is_identifier_byte(c) || isdigit(c) || c == '\'' || c == '"' ||
+         c == '(' || c == '+' || c == '-' || c == '!' || c == '~' ||
+         c == '*' || c == '&';
+}
+
+static int analysis_complete_expression_statement_tail_end_mode(
+    const char *source, size_t source_length,
+    const recovery_delimiter_t *stack, size_t context_frame,
+    size_t start, int allow_compound_brace, int enable_trigraphs,
+    size_t *statement_end) {
+  size_t paren_depth = 0;
+  size_t bracket_depth = 0;
+  size_t brace_depth = 0;
+  for (size_t i = 0; i < context_frame; i++) {
+    if (stack[i].open == '(') paren_depth++;
+    else if (stack[i].open == '[') bracket_depth++;
+  }
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  for (size_t cursor = start; cursor < source_length; cursor++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, source_length, cursor, enable_trigraphs);
+    if (splice_size > 0) {
+      cursor += splice_size - 1;
+      continue;
+    }
+    char c = source[cursor];
+    char next = cursor + 1 < source_length ? source[cursor + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') line_comment = 0;
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        cursor++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      cursor++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      cursor++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      continue;
+    }
+    if (c == '(') {
+      paren_depth++;
+    } else if (c == ')') {
+      if (paren_depth == 0) return 0;
+      paren_depth--;
+    } else if (c == '[') {
+      bracket_depth++;
+    } else if (c == ']') {
+      if (bracket_depth == 0) return 0;
+      bracket_depth--;
+    } else if (c == '{') {
+      if (paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
+        if (!allow_compound_brace) return 0;
+        allow_compound_brace = 0;
+      }
+      brace_depth++;
+    } else if (c == '}') {
+      if (brace_depth == 0) return 0;
+      brace_depth--;
+    } else if (c == ',' && paren_depth == 0 && bracket_depth == 0 &&
+               brace_depth == 0) {
+      return 0;
+    } else if (c == ';' && paren_depth == 0 && bracket_depth == 0 &&
+               brace_depth == 0) {
+      if (statement_end) *statement_end = cursor;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static analysis_type_name_array_bound_tail_t
+analysis_complete_type_name_array_bound_tail(
+    const char *source, size_t source_length,
+    const recovery_delimiter_t *stack, size_t stack_count,
+    const analysis_identifier_span_t *identifier, int enable_trigraphs) {
+  analysis_type_name_array_bound_tail_t tail = {0};
+  if (!source || !stack || !identifier || identifier->logical_length == 0)
+    return tail;
+  size_t array_frame = SIZE_MAX;
+  size_t array_end = 0;
+  for (size_t i = stack_count; i > 0; i--) {
+    if (stack[i - 1].open != '[') continue;
+    if (!analysis_delimited_tail_end_mode(
+            source, source_length, stack[i - 1].open_offset + 1, ']', 1,
+            enable_trigraphs, &array_end) ||
+        identifier->end > array_end)
+      continue;
+    array_frame = i - 1;
+    break;
+  }
+  if (array_frame == SIZE_MAX) return tail;
+  for (size_t i = array_frame; i > 0; i--) {
+    const recovery_delimiter_t *context = &stack[i - 1];
+    if (context->open != '(') continue;
+    if (context->is_generic_selection) {
+      if (context->generic_separator_count == 0 ||
+          context->generic_association_has_colon)
+        continue;
+      size_t association_end = 0;
+      if (!analysis_delimited_tail_end_mode(
+              source, source_length, context->generic_association_start,
+              ':', 0, enable_trigraphs, &association_end) ||
+          identifier->end > association_end ||
+          !analysis_parenthesized_range_is_type_name_mode(
+              source, source_length, context->generic_association_start,
+              association_end, enable_trigraphs))
+        continue;
+      tail.kind = ANALYSIS_TYPE_NAME_ARRAY_BOUND_GENERIC_ASSOCIATION;
+      tail.context_frame = i - 1;
+      tail.tail_end = association_end;
+      return tail;
+    }
+    if (context->is_for_control || context->is_postfix_parenthesized)
+      continue;
+    size_t type_name_end = 0;
+    if (!analysis_delimited_tail_end_mode(
+            source, source_length, context->open_offset + 1, ')', 1,
+            enable_trigraphs, &type_name_end) ||
+        identifier->end > type_name_end ||
+        !analysis_parenthesized_range_is_type_name_mode(
+            source, source_length, context->open_offset + 1,
+            type_name_end, enable_trigraphs))
+      continue;
+    int is_explicit_type_name_context =
+        context->requires_type_name || context->is_sizeof_context;
+    size_t after_type = skip_analysis_space_and_comments_mode(
+        source, source_length, type_name_end + 1, enable_trigraphs);
+    int append_compound_literal =
+        !is_explicit_type_name_context && after_type < source_length &&
+        source[after_type] == '{';
+    int append_cast_operand =
+        !is_explicit_type_name_context && !append_compound_literal &&
+        analysis_cast_operand_starts_at_mode(
+            source, source_length, type_name_end + 1, enable_trigraphs);
+    if (!is_explicit_type_name_context && !append_compound_literal &&
+        !append_cast_operand)
+      continue;
+    size_t statement_end = 0;
+    int preserve_statement =
+        !is_explicit_type_name_context &&
+        analysis_complete_expression_statement_tail_end_mode(
+            source, source_length, stack, i - 1, type_name_end + 1,
+            append_compound_literal, enable_trigraphs, &statement_end);
+    tail.kind = ANALYSIS_TYPE_NAME_ARRAY_BOUND_PARENTHESIZED;
+    tail.context_frame = i - 1;
+    tail.tail_end = preserve_statement ? statement_end : type_name_end;
+    tail.preserve_statement = preserve_statement;
+    tail.append_cast_operand = append_cast_operand;
+    tail.append_compound_literal = append_compound_literal;
+    return tail;
+  }
+  return tail;
 }
 
 static char *build_recovery_source(const char *source, size_t source_length,
@@ -2788,6 +2995,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
           .for_separator_count = 0,
           .is_generic_selection = opens_generic_selection,
           .generic_separator_count = 0,
+          .generic_association_start = i + 1,
           .generic_association_has_colon = 0,
           .generic_has_default_association = 0,
           .requires_type_name = opens_type_name_context,
@@ -2837,6 +3045,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
         generic->generic_has_default_association = 1;
       if (c == ',') {
         generic->generic_separator_count++;
+        generic->generic_association_start = i + 1;
         generic->generic_association_has_colon = 0;
       } else if (c == ':' && *pending_conditional_count == 0 &&
                  generic->generic_separator_count > 0) {
@@ -2884,6 +3093,12 @@ static char *build_recovery_source(const char *source, size_t source_length,
   }
   int cursor_in_required_type_name =
       stack_count > 0 && stack[stack_count - 1].requires_type_name;
+  analysis_type_name_array_bound_tail_t type_name_array_bound_tail = {0};
+  if (has_complete_identifier)
+    type_name_array_bound_tail =
+        analysis_complete_type_name_array_bound_tail(
+            source, source_length, stack, stack_count,
+            &cursor_identifier, enable_trigraphs);
   int cursor_after_complete_type_name_cast = 0;
   if (has_complete_identifier &&
       last_closed_parenthesized_is_type_name &&
@@ -2933,7 +3148,42 @@ static char *build_recovery_source(const char *source, size_t source_length,
       analysis_case_label_end_mode(
           source, source_length, case_expression_start,
           enable_trigraphs, &cursor_case_label_end);
-  if (cursor_on_complete_member_access) {
+  size_t recovery_tail_consumed = recovery_cursor;
+  if (type_name_array_bound_tail.kind !=
+      ANALYSIS_TYPE_NAME_ARRAY_BOUND_NONE) {
+    APPEND_BYTES(
+        source + cursor_identifier.start,
+        type_name_array_bound_tail.tail_end + 1 - cursor_identifier.start);
+    recovery_tail_consumed = type_name_array_bound_tail.tail_end + 1;
+    if (type_name_array_bound_tail.kind ==
+        ANALYSIS_TYPE_NAME_ARRAY_BOUND_GENERIC_ASSOCIATION) {
+      stack_count = type_name_array_bound_tail.context_frame + 1;
+      recovery_delimiter_t *generic =
+          &stack[type_name_array_bound_tail.context_frame];
+      generic->generic_association_has_colon = 1;
+      APPEND_LITERAL(" 0");
+      if (!generic->generic_has_default_association) {
+        APPEND_LITERAL(", default: 0");
+        generic->generic_has_default_association = 1;
+      }
+    } else {
+      if (type_name_array_bound_tail.preserve_statement) {
+        size_t outer_brace_count = 0;
+        for (size_t i = 0;
+             i < type_name_array_bound_tail.context_frame; i++)
+          if (stack[i].open == '{')
+            stack[outer_brace_count++] = stack[i];
+        stack_count = outer_brace_count;
+        last_significant = ';';
+      } else {
+        stack_count = type_name_array_bound_tail.context_frame;
+        if (type_name_array_bound_tail.append_compound_literal)
+          APPEND_LITERAL("{ 0 }");
+        else if (type_name_array_bound_tail.append_cast_operand)
+          APPEND_LITERAL("0");
+      }
+    }
+  } else if (cursor_on_complete_member_access) {
     if (recovery_cursor < cursor_name_end)
       APPEND_BYTES(source + recovery_cursor,
                    cursor_name_end - recovery_cursor);
@@ -3065,7 +3315,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     }
   }
   return append_conditional_validation_tail(
-      result, source, source_length, recovery_cursor);
+      result, source, source_length, recovery_tail_consumed);
 }
 
 static uint32_t read_u32_le(const unsigned char *bytes) {

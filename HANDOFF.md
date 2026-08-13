@@ -32086,3 +32086,46 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 続き1094で再現済みのtype-name配列境界operandを、designatorとは独立したrecovery経路として扱う。
   - compound literal内のdesignatorはobject宣言initializerとmarker位置が異なるため、今回の経路へ
     混ぜず独立したrecovery候補として扱う。
+
+### このセッション（続き1096）: type-name配列bound内のoperand hoverを安定化した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1094/1095で記録した通常サイズのtype-name配列boundだけを独立して調査した。
+- 原因と修正:
+  - cursorが配列boundの最初の識別子だと汎用recoveryは残りのtype-nameを捨てて`0`を補い、
+    `sizeof` / `_Alignof`ではzero-length arrayのE3096、cast/compound literalではE3064、
+    `_Generic` associationではE2006の解析失敗にしていた。2番目のoperandだけは偶然通っていた。
+  - file-scope initializer内の`sizeof(`をfunction-parameter回復が関数宣言開始と誤認し、
+    bracket内のenum名をobject回復がdeclarator名として扱うことで、同一宣言の後続名まで
+    cursor位置から可視にする別のpoint-of-declaration逸脱もあった。
+  - function-parameter scannerでtop-level `=`から次の`,` / `;`までをinitializer区間として除外し、
+    bracket内の識別子をobject declarator候補から外した。
+  - delimiter stackと既存のtype-name classifierを使い、cursorを含む完全な`]`と外側の完全な`)`、
+    または`_Generic` associationの完全な`:`がsource中に実在する場合だけ元のtype-name tailを復元する。
+  - cast/compound literalはtop-level `,`より先に完結する浅いstatementなら`;`まで反復走査して保持し、
+    後続`[0]`などに依存する元の型意味を維持する。statementを安全に限定できない場合は従来どおり
+    synthetic operand / initializerだけで閉じ、後続declaratorを取り込まない。
+  - type-nameの意味評価や再帰的な式走査、深度上限の拡張は追加していない。
+- 回帰範囲:
+  - file-scopeとblock-scope、`sizeof`、`_Alignof`、pointer-to-array cast、array compound literal、
+    `_Generic` association、cast/compound literal後のpostfix selectionを網羅した。
+  - 単項、二項、括弧、式中2個目のidentifier、浅い条件演算子、object-like macro、block comment、
+    LF/CRLF行継続を網羅した。
+  - 各identifierの先頭・中央・末尾、正確なdeclaration range・lookup point、enum値、macro replacementと
+    documentation、後続declarator/local非可視、同一session/fresh sessionをNativeで固定した。
+  - invalid zero-boundと未完了boundの診断を維持し、失敗後に同一sessionを再利用できることを固定した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、fresh compilerと失敗後再利用を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (47 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - 続き1095から残るcompound literal内designatorを、object declaration initializerとは別のmarker経路で扱う。
+  - 隣接cast chain `(void)(int[BOUND]){...}`は2個目の`(`をpostfix call候補にも解釈できるため、
+    今回のarray-bound tail復元とは分けてparenthesized-context分類として扱う。
+  - 末尾`,` / `}`のないenum initializerのpartial契約も独立候補のまま残す。

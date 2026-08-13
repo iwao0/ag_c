@@ -2242,6 +2242,247 @@ try {
   freshInitializerDesignatorCompiler.dispose();
 }
 
+const typeNameArrayBoundOperandHoverSource = {
+  name: "type-name-array-bound-operand.c",
+  source: "/// type-name array bound macro documentation\n" +
+    "#define TYPE_NAME_ARRAY_BOUND_MACRO 5\n" +
+    "enum TypeNameArrayBoundValue {\n" +
+    "  TYPE_NAME_ARRAY_BOUND_A = 2,\n" +
+    "  TYPE_NAME_ARRAY_BOUND_B = 3,\n" +
+    "  TYPE_NAME_ARRAY_BOUND_C = 4,\n" +
+    "  TYPE_NAME_ARRAY_BOUND_CONDITION = 1\n" +
+    "};\n" +
+    "int type_name_array_bound_values[8];\n" +
+    "int type_name_array_bound_file = sizeof(int[TYPE_NAME_ARRAY_BOUND_A]), type_name_array_bound_later;\n" +
+    "static int type_name_array_bound_block(int bound_parameter) {\n" +
+    "  enum { TYPE_NAME_ARRAY_BOUND_LOCAL = 6 };\n" +
+    "  int bound_before = bound_parameter;\n" +
+    "  int bound_sizeof_direct = sizeof(int[TYPE_NAME_ARRAY_BOUND_A]);\n" +
+    "  int bound_sizeof_unary = sizeof(int[+TYPE_NAME_ARRAY_BOUND_A]);\n" +
+    "  int bound_sizeof_binary = sizeof(int[TYPE_NAME_ARRAY_BOUND_A + TYPE_NAME_ARRAY_BOUND_B]);\n" +
+    "  int bound_sizeof_grouped = sizeof(int[(TYPE_NAME_ARRAY_BOUND_C)]);\n" +
+    "  int bound_sizeof_conditional = sizeof(int[TYPE_NAME_ARRAY_BOUND_CONDITION ? TYPE_NAME_ARRAY_BOUND_A : TYPE_NAME_ARRAY_BOUND_B]);\n" +
+    "  int bound_sizeof_macro = sizeof(int[TYPE_NAME_ARRAY_BOUND_MACRO]);\n" +
+    "  int bound_sizeof_comment = sizeof(int[/* expression gap */ TYPE_NAME_ARRAY_BOUND_A]);\n" +
+    "  int bound_sizeof_splice_lf = sizeof(int[\\\n" +
+    "TYPE_NAME_ARRAY_BOUND_B]);\n" +
+    "  int bound_sizeof_splice_crlf = sizeof(int[\\\r\n" +
+    "TYPE_NAME_ARRAY_BOUND_C]);\r\n" +
+    "  int bound_alignof = _Alignof(int[TYPE_NAME_ARRAY_BOUND_A]);\n" +
+    "  void *bound_cast = (int (*)[TYPE_NAME_ARRAY_BOUND_B])0;\n" +
+    "  int *bound_compound = (int[TYPE_NAME_ARRAY_BOUND_C]){ 0 };\n" +
+    "  int bound_cast_postfix = (*(int (*)[TYPE_NAME_ARRAY_BOUND_B])&type_name_array_bound_values)[0];\n" +
+    "  int bound_compound_postfix = (int[TYPE_NAME_ARRAY_BOUND_C]){ 1 }[0];\n" +
+    "  int bound_generic = _Generic(&type_name_array_bound_values, int (*)[TYPE_NAME_ARRAY_BOUND_A]: 1, default: 0);\n" +
+    "  int bound_local = sizeof(int[TYPE_NAME_ARRAY_BOUND_LOCAL]);\n" +
+    "  int bound_after = bound_before;\n" +
+    "  return bound_sizeof_direct + bound_sizeof_unary + bound_sizeof_binary +\n" +
+    "         bound_sizeof_grouped + bound_sizeof_conditional +\n" +
+    "         bound_sizeof_macro + bound_sizeof_comment +\n" +
+    "         bound_sizeof_splice_lf + bound_sizeof_splice_crlf +\n" +
+    "         bound_alignof + bound_cast_postfix + bound_compound_postfix +\n" +
+    "         bound_generic + bound_local + bound_after;\n" +
+    "}\n",
+};
+const typeNameArrayBoundOperandCases = [
+  ["type_name_array_bound_file = sizeof(int[TYPE_NAME_ARRAY_BOUND_A])",
+    "TYPE_NAME_ARRAY_BOUND_A", "enumConstant", 1],
+  ["bound_sizeof_direct = sizeof(int[TYPE_NAME_ARRAY_BOUND_A])",
+    "TYPE_NAME_ARRAY_BOUND_A", "enumConstant", 2],
+  ["sizeof(int[+TYPE_NAME_ARRAY_BOUND_A])",
+    "TYPE_NAME_ARRAY_BOUND_A", "enumConstant", 0],
+  ["sizeof(int[TYPE_NAME_ARRAY_BOUND_A + TYPE_NAME_ARRAY_BOUND_B])",
+    "TYPE_NAME_ARRAY_BOUND_A", "enumConstant", 0],
+  ["+ TYPE_NAME_ARRAY_BOUND_B])",
+    "TYPE_NAME_ARRAY_BOUND_B", "enumConstant", 0],
+  ["sizeof(int[(TYPE_NAME_ARRAY_BOUND_C)])",
+    "TYPE_NAME_ARRAY_BOUND_C", "enumConstant", 0],
+  [": TYPE_NAME_ARRAY_BOUND_B])",
+    "TYPE_NAME_ARRAY_BOUND_B", "enumConstant", 0],
+  ["sizeof(int[TYPE_NAME_ARRAY_BOUND_MACRO])",
+    "TYPE_NAME_ARRAY_BOUND_MACRO", "macro", 0],
+  ["sizeof(int[/* expression gap */ TYPE_NAME_ARRAY_BOUND_A])",
+    "TYPE_NAME_ARRAY_BOUND_A", "enumConstant", 0],
+  ["sizeof(int[\\\nTYPE_NAME_ARRAY_BOUND_B])",
+    "TYPE_NAME_ARRAY_BOUND_B", "enumConstant", 0],
+  ["sizeof(int[\\\r\nTYPE_NAME_ARRAY_BOUND_C])",
+    "TYPE_NAME_ARRAY_BOUND_C", "enumConstant", 0],
+  ["_Alignof(int[TYPE_NAME_ARRAY_BOUND_A])",
+    "TYPE_NAME_ARRAY_BOUND_A", "enumConstant", 0],
+  ["(int (*)[TYPE_NAME_ARRAY_BOUND_B])0",
+    "TYPE_NAME_ARRAY_BOUND_B", "enumConstant", 0],
+  ["(int[TYPE_NAME_ARRAY_BOUND_C]){ 0 }",
+    "TYPE_NAME_ARRAY_BOUND_C", "enumConstant", 0],
+  ["bound_cast_postfix = (*(int (*)[TYPE_NAME_ARRAY_BOUND_B])",
+    "TYPE_NAME_ARRAY_BOUND_B", "enumConstant", 0],
+  ["bound_compound_postfix = (int[TYPE_NAME_ARRAY_BOUND_C])",
+    "TYPE_NAME_ARRAY_BOUND_C", "enumConstant", 0],
+  ["int (*)[TYPE_NAME_ARRAY_BOUND_A]: 1",
+    "TYPE_NAME_ARRAY_BOUND_A", "enumConstant", 0],
+  ["bound_local = sizeof(int[TYPE_NAME_ARRAY_BOUND_LOCAL])",
+    "TYPE_NAME_ARRAY_BOUND_LOCAL", "enumConstant", 2],
+];
+for (const [fragmentText, name, kind, boundaryCase] of
+  typeNameArrayBoundOperandCases) {
+  const fragmentIndex = typeNameArrayBoundOperandHoverSource.source.indexOf(
+    fragmentText,
+  );
+  const useIndex = typeNameArrayBoundOperandHoverSource.source.indexOf(
+    name, fragmentIndex,
+  );
+  assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+    `type-name array bound operand anchor missing for ${name}`);
+  const useStart = byteOffsetForIndex(
+    typeNameArrayBoundOperandHoverSource.source, useIndex,
+  );
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(
+      typeNameArrayBoundOperandHoverSource,
+      {
+        cursor: {
+          sourceName: typeNameArrayBoundOperandHoverSource.name,
+          byteOffset,
+        },
+      },
+    );
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, false,
+      `${name} type-name array bound operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} type-name array bound operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `${name} type-name array bound operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `${name} type-name array bound operand kind`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} type-name array bound operand declaration`);
+    if (kind === "enumConstant")
+      assert.ok(["2", "3", "4", "6"].includes(
+        result.hover?.initializer.constantValue,
+      ));
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.replacement, "5");
+      assert.equal(result.hover?.documentation,
+        "type-name array bound macro documentation");
+    }
+    if (boundaryCase === 1)
+      assert.equal(symbol(result, "type_name_array_bound_later", "object"),
+        undefined, "later type-name array bound declarator remains invisible");
+    if (boundaryCase === 2) {
+      assert.ok(symbol(result, "bound_parameter", "parameter"));
+      assert.ok(symbol(result, "bound_before", "object"));
+      assert.equal(symbol(result, "bound_after", "object"), undefined,
+        "type-name array bound preserves cursor lookup point");
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--type-name-array-bound-operand-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm type-name array bound operand differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+const freshTypeNameArrayBoundCompiler = await createCompiler(wasmModule);
+try {
+  for (const [fragmentText, name, kind] of [
+    ["type_name_array_bound_file = sizeof(int[TYPE_NAME_ARRAY_BOUND_A])",
+      "TYPE_NAME_ARRAY_BOUND_A", "enumConstant"],
+    ["bound_local = sizeof(int[TYPE_NAME_ARRAY_BOUND_LOCAL])",
+      "TYPE_NAME_ARRAY_BOUND_LOCAL", "enumConstant"],
+  ]) {
+    const fragmentIndex = typeNameArrayBoundOperandHoverSource.source.indexOf(
+      fragmentText,
+    );
+    const useIndex = typeNameArrayBoundOperandHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+    const result = freshTypeNameArrayBoundCompiler.analyzeSource(
+      typeNameArrayBoundOperandHoverSource,
+      {
+        cursor: {
+          sourceName: typeNameArrayBoundOperandHoverSource.name,
+          byteOffset: byteOffsetForIndex(
+            typeNameArrayBoundOperandHoverSource.source, useIndex,
+          ) + Math.floor(Buffer.byteLength(name) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, false,
+      `fresh ${name} type-name array bound operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `fresh ${name} type-name array bound operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `fresh ${name} type-name array bound operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `fresh ${name} type-name array bound operand kind`);
+  }
+} finally {
+  freshTypeNameArrayBoundCompiler.dispose();
+}
+
+for (const [sourceText, name] of [
+  ["enum { ZERO_BOUND = 0 }; int f(void) { return sizeof(int[ZERO_BOUND]); }\n",
+    "ZERO_BOUND"],
+  ["enum { INCOMPLETE_BOUND = 2 }; int f(void) { return sizeof(int[INCOMPLETE_BOUND",
+    "INCOMPLETE_BOUND"],
+]) {
+  const useIndex = sourceText.lastIndexOf(name);
+  try {
+    const result = compiler.analyzeSource(
+      { name: "invalid-type-name-array-bound.c", source: sourceText },
+      {
+        cursor: {
+          sourceName: "invalid-type-name-array-bound.c",
+          byteOffset: useIndex + Math.floor(Buffer.byteLength(name) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, true,
+      `${name} invalid type-name array bound unexpectedly complete`);
+    assert.ok(result.diagnostics.length > 0,
+      `${name} invalid type-name array bound omitted diagnostics`);
+  } catch (error) {
+    assert.equal(error.code, "AGC_LANGUAGE_ANALYSIS_FAILED",
+      `${name} invalid type-name array bound failure code`);
+    assert.ok(error.diagnostics?.length > 0,
+      `${name} invalid type-name array bound failure diagnostics`);
+  }
+}
+const reusedTypeNameArrayBoundFragment =
+  typeNameArrayBoundOperandHoverSource.source.indexOf(
+    "bound_sizeof_direct = sizeof(int[TYPE_NAME_ARRAY_BOUND_A])",
+  );
+const reusedTypeNameArrayBoundUse =
+  typeNameArrayBoundOperandHoverSource.source.indexOf(
+    "TYPE_NAME_ARRAY_BOUND_A", reusedTypeNameArrayBoundFragment,
+  );
+const reusedTypeNameArrayBoundResult = compiler.analyzeSource(
+  typeNameArrayBoundOperandHoverSource,
+  {
+    cursor: {
+      sourceName: typeNameArrayBoundOperandHoverSource.name,
+      byteOffset: byteOffsetForIndex(
+        typeNameArrayBoundOperandHoverSource.source,
+        reusedTypeNameArrayBoundUse,
+      ) + 3,
+    },
+  },
+);
+assert.equal(reusedTypeNameArrayBoundResult.partial, false,
+  "type-name array bound compiler remained partial after invalid source");
+assert.deepStrictEqual(reusedTypeNameArrayBoundResult.diagnostics, [],
+  "type-name array bound compiler retained invalid diagnostics");
+assert.equal(reusedTypeNameArrayBoundResult.hover?.name,
+  "TYPE_NAME_ARRAY_BOUND_A",
+  "type-name array bound compiler was not reusable after invalid source");
+
 const snakeCastFragment = "(unsigned int)MAX_SNAKE_LENGTH";
 const snakeCastFragmentIndex = macroDefinitionSnake.source.indexOf(
   snakeCastFragment,
