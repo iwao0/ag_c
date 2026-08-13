@@ -2914,6 +2914,8 @@ function enumTwoArgumentMacroSource(input, argumentMode, argumentRevision) {
       "ENUM_TWO_ARGUMENT_SECOND_MACRO"],
     ["ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO",
       "ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO"],
+    ["ENUM_TWO_ARGUMENT_FIRST_MACRO",
+      "ENUM_TWO_ARGUMENT_SECOND_MACRO"],
   ];
   const declarations = [
     [
@@ -2923,6 +2925,7 @@ function enumTwoArgumentMacroSource(input, argumentMode, argumentRevision) {
         "#define ENUM_TWO_ARGUMENT_FIRST_MACRO 11\n",
       "/// enum two argument first renamed macro\n" +
         "#define ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO 1\n",
+      "",
     ],
     [
       "/// enum two argument second macro\n" +
@@ -2931,13 +2934,14 @@ function enumTwoArgumentMacroSource(input, argumentMode, argumentRevision) {
         "#define ENUM_TWO_ARGUMENT_SECOND_MACRO 12\n",
       "/// enum two argument second renamed macro\n" +
         "#define ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO 2\n",
+      "",
     ],
   ];
   const index = argumentMode - 1;
   const insertionIndex = input.source.indexOf("\n") + 1;
   const useIndex = input.source.lastIndexOf(enumNames[index]);
   assert.ok(argumentMode >= 1 && argumentMode <= 2 &&
-    argumentRevision >= 0 && argumentRevision <= 2 &&
+    argumentRevision >= 0 && argumentRevision <= 3 &&
     insertionIndex > 0 && useIndex > insertionIndex,
   "enum two argument macro source anchors");
   return {
@@ -4115,10 +4119,13 @@ const enumTwoArgumentMacroNames = [
     "ENUM_TWO_ARGUMENT_SECOND_MACRO"],
   [null, "ENUM_TWO_ARGUMENT_FIRST_RENAMED_MACRO",
     "ENUM_TWO_ARGUMENT_SECOND_RENAMED_MACRO"],
+  [null, "ENUM_TWO_ARGUMENT_FIRST_MACRO",
+    "ENUM_TWO_ARGUMENT_SECOND_MACRO"],
 ];
 const enumTwoArgumentMacroValues = [
   [null, "1", "2"], [null, "11", "12"],
   [null, "1", "2"],
+  [null, null, null],
 ];
 const enumTwoArgumentMacroDocumentation = [
   [null, "enum two argument first macro",
@@ -4127,6 +4134,7 @@ const enumTwoArgumentMacroDocumentation = [
     "enum two argument second macro updated"],
   [null, "enum two argument first renamed macro",
     "enum two argument second renamed macro"],
+  [null, null, null],
 ];
 const enumTwoArgumentMacroComments = [
   [null, "/// enum two argument first macro",
@@ -4135,6 +4143,7 @@ const enumTwoArgumentMacroComments = [
     "/// enum two argument second macro updated"],
   [null, "/// enum two argument first renamed macro",
     "/// enum two argument second renamed macro"],
+  [null, null, null],
 ];
 const enumTwoArgumentFirstResults = new Map();
 try {
@@ -4151,6 +4160,11 @@ try {
     [2, 0, 2, 2], [1, 0, 2, 0], [3, 0, 2, 2],
     [2, 0, 2, 0], [1, 0, 2, 2], [3, 0, 2, 0],
     [1, 1, 1, 2], [3, 1, 2, 2],
+    [1, 0, 1, 3], [2, 0, 1, 0],
+    [3, 0, 1, 3], [1, 0, 1, 0],
+    [2, 0, 2, 3], [1, 0, 2, 0],
+    [3, 0, 2, 3], [2, 0, 2, 0],
+    [1, 1, 1, 3], [3, 1, 2, 3],
     [0, 0, 0, 0], [3, 1, 0, 0],
   ]) {
     const source = argumentMode > 0
@@ -4326,9 +4340,10 @@ try {
       const argumentMacroName = argumentMode > 0
         ? enumTwoArgumentMacroNames[argumentRevision][argumentMode]
         : null;
+      const argumentDeleted = argumentRevision === 3;
       const argumentMacroCandidate = argumentMacroName
         ? symbol(result, argumentMacroName, "macro") : undefined;
-      if (argumentMode > 0) {
+      if (argumentMode > 0 && !argumentDeleted) {
         const declarationIndex = text.indexOf(argumentMacroName);
         const comment =
           enumTwoArgumentMacroComments[argumentRevision][argumentMode];
@@ -4352,9 +4367,11 @@ try {
           commentIndex);
         assert.equal(argumentMacroCandidate?.documentationRange?.end.offset,
           commentIndex + Buffer.byteLength(comment));
+      }
+      if (argumentMode > 0) {
         for (const revisionNames of enumTwoArgumentMacroNames) {
           for (const inactiveName of revisionNames.slice(1)) {
-            if (inactiveName !== argumentMacroName) {
+            if (argumentDeleted || inactiveName !== argumentMacroName) {
               assert.equal(symbol(result, inactiveName, "macro"), undefined);
             }
           }
@@ -4363,16 +4380,23 @@ try {
       const derived = symbol(
         result, "ENUM_TWO_ARGUMENT_DERIVED", "enumConstant",
       );
-      if (enumOnly) {
+      if (enumOnly || argumentDeleted) {
         assert.equal(derived, undefined);
       } else {
         assert.equal(derived?.initializer.constantValue,
           argumentRevision === 1 ? "113" : "103");
       }
-      const expectedDiagnosticCount = enumOnly &&
-        byteOffset >= callOpen ? 1 : 0;
+      const expectedDiagnosticCount = !enumOnly && argumentDeleted
+        ? 1
+        : enumOnly && byteOffset >= callOpen ? 1 : 0;
       assert.equal(result.diagnostics.length, expectedDiagnosticCount);
-      if (expectedDiagnosticCount) {
+      if (!enumOnly && argumentDeleted) {
+        assert.equal(result.diagnostics[0].code, "E3066");
+        assert.match(result.diagnostics[0].message,
+          new RegExp(argumentMacroName));
+        assert.equal(result.diagnostics[0].start.offset, calleeStart);
+        assert.equal(result.diagnostics[0].end.offset, callOpen);
+      } else if (expectedDiagnosticCount) {
         assert.equal(result.diagnostics[0].code, "E3102");
         assert.equal(result.diagnostics[0].start.offset,
           callOpen);

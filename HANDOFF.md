@@ -32828,3 +32828,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ片側object-like macro定義だけを通常サイズで削除・復元し、call上の識別子を残したまま、旧候補の消去、
     structured diagnostic、派生enumeratorの有無、復元後のhover/metadataがNative/Wasmで一致する境界を確認する。
+
+### このセッション（続き1120）: 片側object-like macro定義の削除時にWasm trapしないよう修正した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1119と同じ通常サイズの2引数callで、片側object-like macroの定義だけを削除し、call上の識別子は残して復元した。
+- 不具合と修正:
+  - 完結したenum direct callを一度安全にelideした後、callee function-like macroが存在するだけで元callを再解析していた。
+  - 削除済みobject-like macro名が単一識別子引数に残ると、NativeはE3066後のfatal recoveryでpartial snapshotを返したが、
+    self-host Wasmは同じE3066を記録した後に`unreachable`へ進んだ。
+  - 各引数が単一識別子であるbounded direct callだけを調べ、object-like macro表にもScopeGraph ordinary namespaceにもない
+    最初の引数を検出した場合は元callを再解析しないようにした。
+  - 欠落名をmessageに保持したE3066を、既存macro診断契約どおりcallee invocation rangeへ構造化する。数値literal、
+    宣言済みordinary識別子、複合引数は推測せず従来の再解析経路へ残す。
+- 回帰範囲:
+  - 第1・第2引数macroの定義削除・復元をcomment、LF、CRLF variantで往復し、代表variantはenum-only状態も確認した。
+  - 削除時は全argument macro候補と派生enumeratorを除去し、macro有効時はE3066、enum-only時は元`(`のE3102を固定した。
+  - 復元後は元macroのhover、replacement 1/2、declaration/documentation range、callee metadata、派生値103を回復した。
+  - callee、両引数、delimiter、comment、line splice上の全cursor位置について、同一Native/Wasm instance、各revisionのfresh Native
+    JSON snapshot、同一source復帰snapshotを完全一致させ、raw trapが再発しないことを確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis recoveryだけの変更のためnative/Wasm E2Eは未実施し、fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの2引数callで両引数をobject-like macroにし、片側ずつ定義を削除・復元しても、残存側macro metadata、
+    最初の未解決引数のE3066、派生enumerator、復元後snapshotがNative/Wasmで混線しない境界を確認する。

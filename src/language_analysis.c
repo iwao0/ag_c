@@ -171,6 +171,10 @@ static int is_identifier_byte(unsigned char byte) {
   return byte == '_' || byte >= 0x80 || isalnum(byte);
 }
 
+static int is_identifier_start_byte(unsigned char byte) {
+  return byte == '_' || byte >= 0x80 || isalpha(byte);
+}
+
 static void identifier_at(const char *source, size_t length, size_t cursor,
                           const char **name, size_t *name_length) {
   *name = NULL;
@@ -4834,6 +4838,122 @@ static int identifier_span_resolves_as_enum_constant(
   return 0;
 }
 
+static int identifier_span_resolves_in_ordinary_namespace(
+    const ag_language_analysis_request_t *request,
+    int enable_trigraphs, const psx_scope_graph_t *scope_graph,
+    const analysis_identifier_span_t *identifier) {
+  if (!request || !scope_graph || !identifier) return 0;
+  const psx_scope_declaration_t *marker = NULL;
+  size_t declaration_count =
+      psx_scope_graph_declaration_count(scope_graph);
+  for (size_t i = declaration_count; i > 0; i--) {
+    const psx_scope_declaration_t *candidate =
+        psx_scope_graph_declaration_at(scope_graph, i - 1);
+    if (candidate && candidate->name &&
+        strcmp(candidate->name, AG_LANGUAGE_CURSOR_MARKER) == 0) {
+      marker = candidate;
+      break;
+    }
+  }
+  if (!marker) return 0;
+  psx_scope_lookup_point_t point = {
+      marker->scope_id, marker->declaration_order};
+  for (size_t i = 0; i < declaration_count; i++) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(scope_graph, i);
+    if (!declaration ||
+        declaration->name_space != PSX_NAMESPACE_ORDINARY ||
+        !declaration->name || declaration->name_len <= 0 ||
+        !analysis_identifier_span_matches(
+            request->source, request->source_length, identifier,
+            enable_trigraphs, declaration->name,
+            (size_t)declaration->name_len))
+      continue;
+    if (psx_scope_graph_lookup(
+            scope_graph, PSX_NAMESPACE_ORDINARY,
+            declaration->name, declaration->name_len,
+            point) == declaration->id)
+      return 1;
+  }
+  return 0;
+}
+
+static int identifier_span_resolves_as_object_like_macro(
+    const ag_language_analysis_request_t *request,
+    const ag_preprocessor_context_t *preprocessor,
+    int enable_trigraphs,
+    const analysis_identifier_span_t *identifier) {
+  if (!request || !preprocessor || !identifier) return 0;
+  int macro_count = pp_macro_count_in(preprocessor);
+  for (int macro_index = 0; macro_index < macro_count; macro_index++) {
+    ag_pp_macro_view_t view = {0};
+    if (pp_macro_view_at_in(preprocessor, macro_index, &view) &&
+        !view.is_function_like && view.name && view.name_len > 0 &&
+        analysis_identifier_span_matches(
+            request->source, request->source_length, identifier,
+            enable_trigraphs, view.name, (size_t)view.name_len))
+      return 1;
+  }
+  return 0;
+}
+
+static int enum_direct_call_unresolved_identifier_argument(
+    const ag_language_analysis_request_t *request,
+    const psx_scope_graph_t *scope_graph,
+    const ag_preprocessor_context_t *preprocessor,
+    int enable_trigraphs,
+    analysis_identifier_span_t *callee,
+    analysis_identifier_span_t *unresolved) {
+  if (!request || !scope_graph || !preprocessor || !callee ||
+      !unresolved ||
+      !enum_direct_call_identifier_at_cursor(
+          request->source, request->source_length,
+          request->cursor_byte_offset, enable_trigraphs, callee))
+    return 0;
+  size_t call_open = skip_analysis_space_and_comments_mode(
+      request->source, request->source_length, callee->end,
+      enable_trigraphs);
+  size_t call_end = 0;
+  if (call_open >= request->source_length ||
+      request->source[call_open] != '(' ||
+      !analysis_delimited_tail_end_mode(
+          request->source, request->source_length, call_open + 1,
+          ')', 1, enable_trigraphs, &call_end))
+    return 0;
+  size_t argument_start = call_open + 1;
+  int has_unresolved = 0;
+  while (argument_start < call_end) {
+    argument_start = skip_analysis_space_and_comments_mode(
+        request->source, call_end, argument_start, enable_trigraphs);
+    if (argument_start >= call_end ||
+        !is_identifier_start_byte(
+            (unsigned char)request->source[argument_start]))
+      return 0;
+    analysis_identifier_span_t argument = {0};
+    if (!analysis_identifier_span_at_mode(
+            request->source, call_end, argument_start,
+            enable_trigraphs, &argument) ||
+        argument.start != argument_start)
+      return 0;
+    size_t after_argument = skip_analysis_space_and_comments_mode(
+        request->source, call_end, argument.end, enable_trigraphs);
+    if (after_argument < call_end &&
+        request->source[after_argument] != ',')
+      return 0;
+    if (!identifier_span_resolves_as_object_like_macro(
+            request, preprocessor, enable_trigraphs, &argument) &&
+        !identifier_span_resolves_in_ordinary_namespace(
+            request, enable_trigraphs, scope_graph, &argument) &&
+        !has_unresolved) {
+      *unresolved = argument;
+      has_unresolved = 1;
+    }
+    if (after_argument >= call_end) return has_unresolved;
+    argument_start = after_argument + 1;
+  }
+  return 0;
+}
+
 static int cursor_identifier_resolves_as_enum_constant(
     const ag_language_analysis_request_t *request,
     int enable_trigraphs, const psx_scope_graph_t *scope_graph) {
@@ -5401,6 +5521,46 @@ static int save_elided_call_not_callable_diagnostic(
   return 0;
 }
 
+static int save_elided_call_undefined_identifier_diagnostic(
+    const ag_language_analysis_request_t *request,
+    ag_diagnostic_context_t *diagnostics,
+    const analysis_identifier_span_t *callee,
+    const analysis_identifier_span_t *unresolved,
+    saved_analysis_diagnostic_t *saved) {
+  if (!request || !diagnostics || !callee || !unresolved || !saved ||
+      callee->end < callee->start ||
+      unresolved->end < unresolved->start ||
+      unresolved->end > request->source_length ||
+      unresolved->end - unresolved->start > (size_t)INT_MAX)
+    return 0;
+  const char *format = diag_message_for_in(
+      diagnostics, DIAG_ERR_PARSER_UNDEFINED_WITH_KIND);
+  int name_length = (int)(unresolved->end - unresolved->start);
+  int message_length = snprintf(
+      NULL, 0, format, "variable", name_length,
+      request->source + unresolved->start);
+  if (message_length < 0) return 0;
+  char *message = malloc((size_t)message_length + 1);
+  if (!message) return 0;
+  snprintf(message, (size_t)message_length + 1, format,
+           "variable", name_length,
+           request->source + unresolved->start);
+  *saved = (saved_analysis_diagnostic_t){
+      .severity = 1,
+      .code = analysis_strdup(
+          diag_error_code(DIAG_ERR_PARSER_UNDEFINED_WITH_KIND)),
+      .message = message,
+      .source_name = analysis_strdup(request->source_name),
+      .start = position_at(
+          request->source, request->source_length, callee->start),
+      .end = position_at(
+          request->source, request->source_length, callee->end),
+  };
+  if (saved->code && saved->message && saved->source_name) return 1;
+  dispose_saved_diagnostic(saved);
+  return 0;
+}
+
 static int append_saved_diagnostic(
     snapshot_builder_t *builder,
     const saved_analysis_diagnostic_t *saved) {
@@ -5944,9 +6104,25 @@ int ag_language_analyze_source(
           &enum_call_identifier);
   int elided_enum_call_not_callable =
       enum_call_resolves_as_enum && !enum_call_invokes_macro;
+  saved_analysis_diagnostic_t saved_fatal = {0};
+  ag_diagnostic_context_t *diagnostic_context =
+      ag_compilation_session_diagnostic_context(session);
+  analysis_identifier_span_t unresolved_call_callee = {0};
+  analysis_identifier_span_t unresolved_call_argument = {0};
+  int elided_enum_call_undefined_identifier =
+      enum_call_elided && enum_call_invokes_macro &&
+      enum_direct_call_unresolved_identifier_argument(
+          request, ag_compilation_session_scope_graph(session),
+          ag_compilation_session_preprocessor_context(session),
+          builder.enable_trigraphs, &unresolved_call_callee,
+          &unresolved_call_argument) &&
+      save_elided_call_undefined_identifier_diagnostic(
+          request, diagnostic_context, &unresolved_call_callee,
+          &unresolved_call_argument, &saved_fatal);
   int reparse_recoverable_enum_operand =
       ambiguous_eof_identifier_resolved ||
-      (enum_call_elided && !elided_enum_call_not_callable);
+      (enum_call_elided && !elided_enum_call_not_callable &&
+       !elided_enum_call_undefined_identifier);
   if (reparse_recoverable_enum_operand) {
     parse_state->documentation_index_owned = NULL;
     finish_analysis_parse_state(parse_state);
@@ -5995,13 +6171,10 @@ int ag_language_analyze_source(
       return 0;
     }
   }
-  saved_analysis_diagnostic_t saved_fatal = {0};
   analysis_parse_state_t *retry_state = NULL;
   analysis_parse_state_t *final_parse = parse_state;
   int recovered_before_retry = parse_state->fatal_recovered;
   int retry_attempted = 0;
-  ag_diagnostic_context_t *diagnostic_context =
-      ag_compilation_session_diagnostic_context(session);
   if (elided_enum_call_not_callable)
     (void)save_elided_call_not_callable_diagnostic(
         request, diagnostic_context, builder.enable_trigraphs,
@@ -6064,7 +6237,8 @@ int ag_language_analyze_source(
       return 0;
     }
   }
-  if (!retry_attempted && !elided_enum_call_not_callable)
+  if (!retry_attempted && !elided_enum_call_not_callable &&
+      !elided_enum_call_undefined_identifier)
     dispose_saved_diagnostic(&saved_fatal);
   if (recovered_before_retry && !saved_fatal.code &&
       cursor_on_complete_macro_definition)
