@@ -654,6 +654,7 @@ typedef struct {
   int bracket_depth;
   int brace_depth;
   int pending_conditional_count;
+  int case_expression_active;
   int line_comment;
   int block_comment;
   int quote;
@@ -728,6 +729,9 @@ static int analysis_source_prefix_state(
         i++;
       state->last_word_start = word_start;
       state->last_word_length = i + 1 - word_start;
+      if (state->last_word_length == strlen("case") &&
+          memcmp(source + word_start, "case", strlen("case")) == 0)
+        state->case_expression_active = 1;
       continue;
     }
     if (c == '(') {
@@ -749,8 +753,11 @@ static int analysis_source_prefix_state(
       state->pending_conditional_count++;
     } else if (c == ':' && state->pending_conditional_count > 0) {
       state->pending_conditional_count--;
+    } else if (c == ':') {
+      state->case_expression_active = 0;
     } else if (c == ';') {
       state->pending_conditional_count = 0;
+      state->case_expression_active = 0;
     }
   }
   return 1;
@@ -799,6 +806,7 @@ static char *build_jump_label_recovery_source(
   int is_label_name =
       after_name < length && source[after_name] == ':' &&
       prefix.pending_conditional_count == 0 &&
+      !prefix.case_expression_active &&
       !analysis_prefix_last_word_is(source, &prefix, "case") &&
       !(name_length == strlen("default") &&
         memcmp(name, "default", strlen("default")) == 0);
@@ -1164,6 +1172,95 @@ static int analysis_delimited_tail_end_mode(
       brace_depth--;
     } else if ((c == ';' || (c == ',' && !allow_top_level_comma)) &&
                paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
+      return 0;
+    }
+  }
+  return 0;
+}
+
+static int analysis_case_label_end_mode(
+    const char *source, size_t source_length, size_t start,
+    int enable_trigraphs, size_t *label_end) {
+  size_t paren_depth = 0;
+  size_t bracket_depth = 0;
+  size_t brace_depth = 0;
+  size_t pending_conditional_count = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  for (size_t cursor = start; cursor < source_length; cursor++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, source_length, cursor, enable_trigraphs);
+    if (splice_size > 0) {
+      cursor += splice_size - 1;
+      continue;
+    }
+    char c = source[cursor];
+    char next = cursor + 1 < source_length ? source[cursor + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') line_comment = 0;
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        cursor++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      cursor++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      cursor++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      continue;
+    }
+    if (c == '?') {
+      pending_conditional_count++;
+      continue;
+    }
+    if (c == ':') {
+      if (pending_conditional_count > 0) {
+        pending_conditional_count--;
+        continue;
+      }
+      if (paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
+        if (label_end) *label_end = cursor;
+        return 1;
+      }
+      continue;
+    }
+    if (c == '(') {
+      paren_depth++;
+    } else if (c == ')') {
+      if (paren_depth == 0) return 0;
+      paren_depth--;
+    } else if (c == '[') {
+      bracket_depth++;
+    } else if (c == ']') {
+      if (bracket_depth == 0) return 0;
+      bracket_depth--;
+    } else if (c == '{') {
+      brace_depth++;
+    } else if (c == '}') {
+      if (brace_depth == 0) return 0;
+      brace_depth--;
+    } else if ((c == ';' || c == ',') && paren_depth == 0 &&
+               bracket_depth == 0 && brace_depth == 0) {
       return 0;
     }
   }
@@ -2210,6 +2307,10 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int previous_token_is_tag_keyword = 0;
   int previous_token_ends_expression = 0;
   size_t root_pending_conditional_count = 0;
+  int case_expression_active = 0;
+  size_t case_expression_start = 0;
+  size_t case_expression_stack_count = 0;
+  size_t case_expression_parent_pending_conditional_count = 0;
   char last_significant = 0;
   size_t last_closed_parenthesized_end = 0;
   int last_closed_parenthesized_is_type_name = 0;
@@ -2311,6 +2412,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
         previous_token_is_case =
             identifier_end - i == strlen("case") &&
             memcmp(result + i, "case", strlen("case")) == 0;
+        if (previous_token_is_case) {
+          case_expression_active = 1;
+          case_expression_start = identifier_end;
+          case_expression_stack_count = stack_count;
+          case_expression_parent_pending_conditional_count =
+              stack_count > 0
+                  ? stack[stack_count - 1].pending_conditional_count
+                  : root_pending_conditional_count;
+        }
         previous_token_requires_expression =
             previous_token_is_sizeof ||
             (identifier_end - i == strlen("return") &&
@@ -2394,6 +2504,11 @@ static char *build_recovery_source(const char *source, size_t source_length,
         stack_count > 0
             ? &stack[stack_count - 1].pending_conditional_count
             : &root_pending_conditional_count;
+    int closes_case_expression =
+        case_expression_active && c == ':' &&
+        stack_count == case_expression_stack_count &&
+        *pending_conditional_count ==
+            case_expression_parent_pending_conditional_count;
     if (stack_count > 0 && stack[stack_count - 1].is_generic_selection) {
       recovery_delimiter_t *generic = &stack[stack_count - 1];
       if (current_identifier_is_default &&
@@ -2415,6 +2530,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     } else if (c == ';') {
       *pending_conditional_count = 0;
     }
+    if (closes_case_expression) case_expression_active = 0;
     if (!isspace((unsigned char)c)) last_significant = c;
   }
   size_t length = recovery_cursor;
@@ -2489,6 +2605,14 @@ static char *build_recovery_source(const char *source, size_t source_length,
       }
     }
   }
+  size_t cursor_case_label_end = 0;
+  int cursor_case_has_complete_label =
+      !cursor_in_generic_association_type && case_expression_active &&
+      has_complete_identifier &&
+      cursor_identifier.start >= case_expression_start &&
+      analysis_case_label_end_mode(
+          source, source_length, case_expression_start,
+          enable_trigraphs, &cursor_case_label_end);
   if (cursor_on_complete_member_access) {
     if (recovery_cursor < cursor_name_end)
       APPEND_BYTES(source + recovery_cursor,
@@ -2502,6 +2626,19 @@ static char *build_recovery_source(const char *source, size_t source_length,
                    cursor_tag_tail_end - cursor_name_end);
   } else if (cursor_in_required_type_name) {
     APPEND_LITERAL(" int");
+  } else if (cursor_case_has_complete_label) {
+    for (size_t i = case_expression_start; i < recovery_cursor; i++)
+      if (result[i] != '\n' && result[i] != '\r') result[i] = ' ';
+    APPEND_BYTES(source + case_expression_start,
+                 cursor_case_label_end + 1 - case_expression_start);
+    APPEND_LITERAL(" 0");
+    stack_count = case_expression_stack_count;
+    if (stack_count > 0)
+      stack[stack_count - 1].pending_conditional_count =
+          case_expression_parent_pending_conditional_count;
+    else
+      root_pending_conditional_count =
+          case_expression_parent_pending_conditional_count;
   } else if (!cursor_in_generic_association_type &&
              previous_token_is_case &&
              (!cursor_identifier_starts_parenthesized_suffix ||

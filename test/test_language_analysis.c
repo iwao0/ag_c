@@ -598,6 +598,42 @@ static const char statement_call_operand_hover_source[] =
     "  }\n"
     "}\n";
 
+static const char case_expression_operand_hover_source[] =
+    "/// case expression macro documentation\n"
+    "#define CASE_EXPRESSION_MACRO 5\n"
+    "enum CaseExpressionValue {\n"
+    "  CASE_EXPRESSION_A = 2,\n"
+    "  CASE_EXPRESSION_B = 3,\n"
+    "  CASE_EXPRESSION_C = 4,\n"
+    "  CASE_EXPRESSION_CONDITION = 0\n"
+    "};\n"
+    "static int case_expression_unary(int value) {\n"
+    "  switch (value) { case -CASE_EXPRESSION_A: return 1; default: return 0; }\n"
+    "}\n"
+    "static int case_expression_binary(int value) {\n"
+    "  switch (value) { case 1 + CASE_EXPRESSION_B: return 1; default: return 0; }\n"
+    "}\n"
+    "static int case_expression_grouped(int value) {\n"
+    "  switch (value) { case (CASE_EXPRESSION_C): return 1; default: return 0; }\n"
+    "}\n"
+    "static int case_expression_second(int value) {\n"
+    "  switch (value) { case CASE_EXPRESSION_A + CASE_EXPRESSION_B: return 1; default: return 0; }\n"
+    "}\n"
+    "static int case_expression_conditional(int value) {\n"
+    "  switch (value) { case CASE_EXPRESSION_CONDITION ? CASE_EXPRESSION_B : CASE_EXPRESSION_C: return 1; default: return 0; }\n"
+    "}\n"
+    "static int case_expression_comment(int value) {\n"
+    "  switch (value) { case CASE_EXPRESSION_A /* expression gap */ + CASE_EXPRESSION_MACRO: return 1; default: return 0; }\n"
+    "}\n"
+    "static int case_expression_splice_lf(int value) {\n"
+    "  switch (value) { case CASE_EXPRESSION_A + \\\n"
+    "CASE_EXPRESSION_B: return 1; default: return 0; }\n"
+    "}\n"
+    "static int case_expression_splice_crlf(int value) {\n"
+    "  switch (value) { case CASE_EXPRESSION_A + \\\r\n"
+    "CASE_EXPRESSION_C: return 1; default: return 0; }\r\n"
+    "}\n";
+
 static const char macro_definition_forms_source[] =
     "#define SIMPLE_MACRO 1\n"
     "# define PARENTHESIZED_MACRO (2 + 3)\r\n"
@@ -1991,6 +2027,19 @@ static int print_statement_call_operand_hover_parity_snapshot(
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
+static int print_case_expression_operand_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(case_expression_operand_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "case-expression-operand.c", case_expression_operand_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
 static int print_cast_operand_project_parity_snapshot(
     const char *revision_text) {
   char *end = NULL;
@@ -2803,6 +2852,117 @@ static int test_statement_call_operand_hover(ag_target_info_t target) {
                                  statement_call_operand_hover_source) +
                             strlen("/// statement call macro documentation")),
                 "statement macro call fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
+static int test_case_expression_operand_hover(ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "case expression operand session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+    const char *constant_value;
+  } cases[] = {
+      {"case -CASE_EXPRESSION_A:", "CASE_EXPRESSION_A",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "CASE_EXPRESSION_A = 2", "2"},
+      {"case 1 + CASE_EXPRESSION_B:", "CASE_EXPRESSION_B",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "CASE_EXPRESSION_B = 3", "3"},
+      {"case (CASE_EXPRESSION_C):", "CASE_EXPRESSION_C",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "CASE_EXPRESSION_C = 4", "4"},
+      {"case CASE_EXPRESSION_A + CASE_EXPRESSION_B:",
+       "CASE_EXPRESSION_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "CASE_EXPRESSION_B = 3", "3"},
+      {"? CASE_EXPRESSION_B : CASE_EXPRESSION_C:",
+       "CASE_EXPRESSION_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "CASE_EXPRESSION_C = 4", "4"},
+      {"case CASE_EXPRESSION_A /* expression gap */ + CASE_EXPRESSION_MACRO:",
+       "CASE_EXPRESSION_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "CASE_EXPRESSION_MACRO 5", ""},
+      {"case CASE_EXPRESSION_A + \\\nCASE_EXPRESSION_B:",
+       "CASE_EXPRESSION_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "CASE_EXPRESSION_B = 3", "3"},
+      {"case CASE_EXPRESSION_A + \\\r\nCASE_EXPRESSION_C:",
+       "CASE_EXPRESSION_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "CASE_EXPRESSION_C = 4", "4"},
+  };
+  const char *macro_comment = strstr(
+      case_expression_operand_hover_source,
+      "/// case expression macro documentation");
+  CHECK(macro_comment != NULL, "case expression macro comment anchor");
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          case_expression_operand_hover_source, cases[case_index].fragment);
+      const char *use = fragment
+                            ? strstr(fragment, cases[case_index].name)
+                            : NULL;
+      const char *declaration = strstr(
+          case_expression_operand_hover_source,
+          cases[case_index].declaration_fragment);
+      CHECK(use && declaration, "case expression operand anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh case expression operand session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "case-expression-operand.c",
+                  case_expression_operand_hover_source,
+                  (size_t)(use - case_expression_operand_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "case expression operand analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(hover && completion && !snapshot.partial &&
+                  snapshot.diagnostic_count == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            case_expression_operand_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            case_expression_operand_hover_source +
+                            name_length) &&
+                  same_range(&hover->declaration, &completion->declaration),
+              "case expression operand fields");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(strcmp(hover->constant_value,
+                       cases[case_index].constant_value) == 0,
+                "case expression enum value");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+          CHECK(hover->macro_replacement &&
+                    strcmp(hover->macro_replacement, "5") == 0 &&
+                    check_documentation_symbol(
+                        hover, "case expression macro documentation",
+                        "case-expression-operand.c",
+                        (size_t)(macro_comment -
+                                 case_expression_operand_hover_source),
+                        (size_t)(macro_comment -
+                                 case_expression_operand_hover_source) +
+                            strlen("/// case expression macro documentation")),
+                "case expression macro fields");
         ag_language_analysis_snapshot_dispose(&snapshot);
         if (fresh_session)
           ag_compilation_session_destroy(analysis_session);
@@ -4115,6 +4275,10 @@ int main(int argc, char **argv) {
              "--statement-call-operand-hover-parity-json") == 0)
     return print_statement_call_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1],
+             "--case-expression-operand-hover-parity-json") == 0)
+    return print_case_expression_operand_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-project-parity-json") == 0)
     return print_cast_operand_project_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -4155,6 +4319,8 @@ int main(int argc, char **argv) {
         "statement keyword operand hover scenarios");
   CHECK(test_statement_call_operand_hover(target) == 0,
         "statement call operand hover scenarios");
+  CHECK(test_case_expression_operand_hover(target) == 0,
+        "case expression operand hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -7167,6 +7333,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (43 scenarios)");
+  puts("language analysis tests passed (44 scenarios)");
   return 0;
 }

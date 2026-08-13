@@ -1791,6 +1791,148 @@ try {
   freshStatementCallCompiler.dispose();
 }
 
+const caseExpressionOperandHoverSource = {
+  name: "case-expression-operand.c",
+  source: "/// case expression macro documentation\n" +
+    "#define CASE_EXPRESSION_MACRO 5\n" +
+    "enum CaseExpressionValue {\n" +
+    "  CASE_EXPRESSION_A = 2,\n" +
+    "  CASE_EXPRESSION_B = 3,\n" +
+    "  CASE_EXPRESSION_C = 4,\n" +
+    "  CASE_EXPRESSION_CONDITION = 0\n" +
+    "};\n" +
+    "static int case_expression_unary(int value) {\n" +
+    "  switch (value) { case -CASE_EXPRESSION_A: return 1; default: return 0; }\n" +
+    "}\n" +
+    "static int case_expression_binary(int value) {\n" +
+    "  switch (value) { case 1 + CASE_EXPRESSION_B: return 1; default: return 0; }\n" +
+    "}\n" +
+    "static int case_expression_grouped(int value) {\n" +
+    "  switch (value) { case (CASE_EXPRESSION_C): return 1; default: return 0; }\n" +
+    "}\n" +
+    "static int case_expression_second(int value) {\n" +
+    "  switch (value) { case CASE_EXPRESSION_A + CASE_EXPRESSION_B: return 1; default: return 0; }\n" +
+    "}\n" +
+    "static int case_expression_conditional(int value) {\n" +
+    "  switch (value) { case CASE_EXPRESSION_CONDITION ? CASE_EXPRESSION_B : CASE_EXPRESSION_C: return 1; default: return 0; }\n" +
+    "}\n" +
+    "static int case_expression_comment(int value) {\n" +
+    "  switch (value) { case CASE_EXPRESSION_A /* expression gap */ + CASE_EXPRESSION_MACRO: return 1; default: return 0; }\n" +
+    "}\n" +
+    "static int case_expression_splice_lf(int value) {\n" +
+    "  switch (value) { case CASE_EXPRESSION_A + \\\n" +
+    "CASE_EXPRESSION_B: return 1; default: return 0; }\n" +
+    "}\n" +
+    "static int case_expression_splice_crlf(int value) {\n" +
+    "  switch (value) { case CASE_EXPRESSION_A + \\\r\n" +
+    "CASE_EXPRESSION_C: return 1; default: return 0; }\r\n" +
+    "}\n",
+};
+const caseExpressionOperandCases = [
+  ["case -CASE_EXPRESSION_A:", "CASE_EXPRESSION_A", "enumConstant"],
+  ["case 1 + CASE_EXPRESSION_B:", "CASE_EXPRESSION_B", "enumConstant"],
+  ["case (CASE_EXPRESSION_C):", "CASE_EXPRESSION_C", "enumConstant"],
+  ["case CASE_EXPRESSION_A + CASE_EXPRESSION_B:",
+    "CASE_EXPRESSION_B", "enumConstant"],
+  ["? CASE_EXPRESSION_B : CASE_EXPRESSION_C:",
+    "CASE_EXPRESSION_C", "enumConstant"],
+  ["case CASE_EXPRESSION_A /* expression gap */ + CASE_EXPRESSION_MACRO:",
+    "CASE_EXPRESSION_MACRO", "macro"],
+  ["case CASE_EXPRESSION_A + \\\nCASE_EXPRESSION_B:",
+    "CASE_EXPRESSION_B", "enumConstant"],
+  ["case CASE_EXPRESSION_A + \\\r\nCASE_EXPRESSION_C:",
+    "CASE_EXPRESSION_C", "enumConstant"],
+];
+for (const [fragmentText, name, kind] of caseExpressionOperandCases) {
+  const fragmentIndex = caseExpressionOperandHoverSource.source.indexOf(
+    fragmentText,
+  );
+  const useIndex = caseExpressionOperandHoverSource.source.indexOf(
+    name, fragmentIndex,
+  );
+  assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+    `case expression operand anchor missing for ${name}`);
+  const useStart = byteOffsetForIndex(
+    caseExpressionOperandHoverSource.source, useIndex,
+  );
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(caseExpressionOperandHoverSource, {
+      cursor: {
+        sourceName: caseExpressionOperandHoverSource.name,
+        byteOffset,
+      },
+    });
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, false,
+      `${name} case expression operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} case expression operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `${name} case expression operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `${name} case expression operand kind`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} case expression operand declaration`);
+    if (kind === "enumConstant")
+      assert.ok(["2", "3", "4"].includes(result.hover?.initializer.constantValue));
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.replacement, "5");
+      assert.equal(result.hover?.documentation,
+        "case expression macro documentation");
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--case-expression-operand-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm case expression operand differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+const freshCaseExpressionCompiler = await createCompiler(wasmModule);
+try {
+  for (const [fragmentText, name, kind] of [
+    ["? CASE_EXPRESSION_B : CASE_EXPRESSION_C:",
+      "CASE_EXPRESSION_C", "enumConstant"],
+    ["case CASE_EXPRESSION_A + \\\r\nCASE_EXPRESSION_C:",
+      "CASE_EXPRESSION_C", "enumConstant"],
+  ]) {
+    const fragmentIndex = caseExpressionOperandHoverSource.source.indexOf(
+      fragmentText,
+    );
+    const useIndex = caseExpressionOperandHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+    const result = freshCaseExpressionCompiler.analyzeSource(
+      caseExpressionOperandHoverSource,
+      {
+        cursor: {
+          sourceName: caseExpressionOperandHoverSource.name,
+          byteOffset: byteOffsetForIndex(
+            caseExpressionOperandHoverSource.source, useIndex,
+          ) + Math.floor(Buffer.byteLength(name) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, false,
+      `fresh ${name} case expression operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `fresh ${name} case expression operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `fresh ${name} case expression operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `fresh ${name} case expression operand kind`);
+  }
+} finally {
+  freshCaseExpressionCompiler.dispose();
+}
+
 const snakeCastFragment = "(unsigned int)MAX_SNAKE_LENGTH";
 const snakeCastFragmentIndex = macroDefinitionSnake.source.indexOf(
   snakeCastFragment,

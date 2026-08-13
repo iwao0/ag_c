@@ -31989,3 +31989,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `git diff --check`問題なし。
 - 未実施:
   - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+
+### このセッション（続き1093）: 浅い`case`定数式内のoperand hoverを安定化した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 通常サイズの単項・二項・括弧・条件演算子を含む浅い`case`定数式だけを調査した。
+- 原因と修正:
+  - cursor識別子が`case`直後でないと、recovery sourceはlabel終端を補えず、有効なsourceにも
+    diagnosticなしの`partial:true`を残していた。
+  - `case 1 + NAME:`のようにcursor識別子直後が`:`の形では、jump-label専用経路が式中の
+    enum定数を通常の`label:`と誤分類し、汎用recoveryへ到達していなかった。
+  - 共通の前方字句状態へ未完了case式を保持し、case-label colonまで通常label扱いしないようにした。
+  - quote/comment、括弧・角括弧・波括弧、条件演算子のcolon、LF/CRLF行継続を反復走査し、
+    source中に実在するcase-label colonを確認した場合だけcase式の原文を一時sourceへ復元する。
+  - 式の意味評価や再帰的な式走査、深度上限の拡張は追加していない。
+- 回帰範囲:
+  - 単項、二項、括弧、式中2個目のidentifier、浅い条件演算子を網羅した。
+  - enum constantとobject-like macro、block comment、LF/CRLF行継続を網羅した。
+  - 各identifierの先頭・中央・末尾、正確なdeclaration range、enum値、macro replacementと
+    documentation、同一session/fresh sessionをNativeで固定した。
+  - Wasm JS APIでも全cursor位置をNative JSON snapshotと完全一致させ、fresh compilerを確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (44 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `git diff --check`問題なし。
+- 未実施:
+  - compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
