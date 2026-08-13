@@ -32489,3 +32489,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じproject revision列で、source側enum定数のrenameとheader側macro parameter名/replacement更新を交互に行い、
     候補のidentityとdocumentation rangeが同名復元時にも旧revisionへ戻らない境界を確認する。
+
+### このセッション（続き1109）: project enum renameとmacro shape更新を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1108の同一project revision列を、通常サイズのsource enum renameとheader macro metadata更新だけで延長した。
+- 調査結果:
+  - source enumを`PROJECT_COLLIDING_SYMBOL`から`PROJECT_RENAMED_SYMBOL`へrenameし、旧名を二度復元しても、
+    ScopeGraphは現sourceの候補identity・値・documentation rangeへ正しく切り替わった。
+  - header macroのparameter/replacementを`value/+220`、`entry/+330`、`restored/+440`、`final_value/+550`へ
+    順次変更しても、preprocessor metadataとinvocation派生値は現revisionだけを反映した。
+  - Native/Wasm差や追加のproduction code不具合は見つからず、既存project revision回帰を拡張した。
+- 回帰範囲:
+  - 前回の9 revision後に、rename→macro shape更新→旧名復元→macro shape更新→再rename→再復元→最終shape更新を追加し、
+    合計16 revisionを同じNative sessionおよび同じWasm compiler instanceで連続実行した。
+  - rename中は旧名enum候補なし・rename先enum候補あり、復元中はその逆を固定し、値303/404/505、
+    source上のdeclaration/documentation range、macro parameter/replacement/documentation range、bare/invocation hover、
+    `AGC_PARTIAL_IDENTIFIER`、派生値221/331/441/551、dependencyを名前の先頭・中央・末尾で確認した。
+  - 全revision/cursor位置を、revision 1から新規Native sessionで再生したJSON snapshotとWasm結果で完全一致させた。
+  - 既存のproject enum/macro revision orderシナリオを拡張したため、表示は57 scenariosのままとした。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (57 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - production compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、fuzz・深度/資源stress系も対象外とした。
+- 浅い次候補:
+  - project revisionを進めながらcurrent editing sourceだけを同じrevision内でbare/invocation間に切り替え、index再構築なしでも
+    hover snapshotが前回のcursor source候補・diagnosticを保持しない境界を確認する。

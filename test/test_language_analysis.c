@@ -788,6 +788,12 @@ static const char *const project_enum_macro_headers[] = {
     "",
     "/// project header macro v2\n"
     "#define PROJECT_COLLIDING_SYMBOL(value) ((value) + 220)\n",
+    "/// project header macro v3\n"
+    "#define PROJECT_COLLIDING_SYMBOL(entry) ((entry) + 330)\n",
+    "/// project header macro v4\n"
+    "#define PROJECT_COLLIDING_SYMBOL(restored) ((restored) + 440)\n",
+    "/// project header macro v5\n"
+    "#define PROJECT_COLLIDING_SYMBOL(final_value) ((final_value) + 550)\n",
 };
 
 static const char *const project_enum_macro_index_sources[] = {
@@ -803,6 +809,26 @@ static const char *const project_enum_macro_index_sources[] = {
     "  /// project source enum v2\n"
     "  PROJECT_COLLIDING_SYMBOL = 202\n};\n"
     "int project_collision_anchor(void) { return 2; }\n",
+    "#include <project-collision.h>\n"
+    "enum ProjectSourceRenamedV1 {\n"
+    "  /// project source renamed enum v1\n"
+    "  PROJECT_RENAMED_SYMBOL = 303\n};\n"
+    "int project_collision_anchor(void) { return 3; }\n",
+    "#include <project-collision.h>\n"
+    "enum ProjectSourceCollisionV3 {\n"
+    "  /// project source restored enum v3\n"
+    "  PROJECT_COLLIDING_SYMBOL = 303\n};\n"
+    "int project_collision_anchor(void) { return 3; }\n",
+    "#include <project-collision.h>\n"
+    "enum ProjectSourceRenamedV2 {\n"
+    "  /// project source renamed enum v2\n"
+    "  PROJECT_RENAMED_SYMBOL = 404\n};\n"
+    "int project_collision_anchor(void) { return 4; }\n",
+    "#include <project-collision.h>\n"
+    "enum ProjectSourceCollisionV4 {\n"
+    "  /// project source restored enum v4\n"
+    "  PROJECT_COLLIDING_SYMBOL = 505\n};\n"
+    "int project_collision_anchor(void) { return 5; }\n",
 };
 
 static const char *const project_enum_macro_edit_sources[][2] = {
@@ -836,6 +862,54 @@ static const char *const project_enum_macro_edit_sources[][2] = {
         "  PROJECT_COLLIDING_SYMBOL = 202\n};\n"
         "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
     },
+    {
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceRenamedV1 {\n"
+        "  /// project source renamed enum v1\n"
+        "  PROJECT_RENAMED_SYMBOL = 303\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL",
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceRenamedV1 {\n"
+        "  /// project source renamed enum v1\n"
+        "  PROJECT_RENAMED_SYMBOL = 303\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
+    },
+    {
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceCollisionV3 {\n"
+        "  /// project source restored enum v3\n"
+        "  PROJECT_COLLIDING_SYMBOL = 303\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL",
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceCollisionV3 {\n"
+        "  /// project source restored enum v3\n"
+        "  PROJECT_COLLIDING_SYMBOL = 303\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
+    },
+    {
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceRenamedV2 {\n"
+        "  /// project source renamed enum v2\n"
+        "  PROJECT_RENAMED_SYMBOL = 404\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL",
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceRenamedV2 {\n"
+        "  /// project source renamed enum v2\n"
+        "  PROJECT_RENAMED_SYMBOL = 404\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
+    },
+    {
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceCollisionV4 {\n"
+        "  /// project source restored enum v4\n"
+        "  PROJECT_COLLIDING_SYMBOL = 505\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL",
+        "#include <project-collision.h>\n"
+        "enum ProjectSourceCollisionV4 {\n"
+        "  /// project source restored enum v4\n"
+        "  PROJECT_COLLIDING_SYMBOL = 505\n};\n"
+        "enum { PROJECT_COLLISION_DERIVED = PROJECT_COLLIDING_SYMBOL(1)",
+    },
 };
 
 typedef struct {
@@ -848,30 +922,65 @@ typedef struct {
   const char *macro_invocation_value;
   const char *macro_documentation;
   const char *macro_comment;
+  const char *macro_parameter;
+  const char *renamed_enum_value;
+  const char *renamed_enum_documentation;
+  const char *renamed_enum_comment;
 } project_enum_macro_revision_t;
 
 static const project_enum_macro_revision_t project_enum_macro_revisions[] = {
     {0, 0, "101", "project source enum v1", "/// project source enum v1",
      "( ( value ) + 110 )", "111", "project header macro v1",
-     "/// project header macro v1"},
+     "/// project header macro v1", NULL, NULL, NULL, NULL},
     {1, 0, NULL, NULL, NULL, "( ( value ) + 110 )", "111",
-     "project header macro v1", "/// project header macro v1"},
+     "project header macro v1", "/// project header macro v1",
+     NULL, NULL, NULL, NULL},
     {2, 0, "202", "project source enum v2", "/// project source enum v2",
      "( ( value ) + 110 )", "111", "project header macro v1",
-     "/// project header macro v1"},
+     "/// project header macro v1", NULL, NULL, NULL, NULL},
     {2, 1, "202", "project source enum v2", "/// project source enum v2",
-     NULL, NULL, NULL, NULL},
+     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
     {2, 2, "202", "project source enum v2", "/// project source enum v2",
      "( ( value ) + 220 )", "221", "project header macro v2",
-     "/// project header macro v2"},
+     "/// project header macro v2", NULL, NULL, NULL, NULL},
     {2, 1, "202", "project source enum v2", "/// project source enum v2",
+     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+    {1, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
      NULL, NULL, NULL, NULL},
-    {1, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
     {1, 2, NULL, NULL, NULL, "( ( value ) + 220 )", "221",
-     "project header macro v2", "/// project header macro v2"},
+     "project header macro v2", "/// project header macro v2",
+     NULL, NULL, NULL, NULL},
     {2, 2, "202", "project source enum v2", "/// project source enum v2",
      "( ( value ) + 220 )", "221", "project header macro v2",
-     "/// project header macro v2"},
+     "/// project header macro v2", NULL, NULL, NULL, NULL},
+    {3, 2, NULL, NULL, NULL, "( ( value ) + 220 )", "221",
+     "project header macro v2", "/// project header macro v2", "value",
+     "303", "project source renamed enum v1",
+     "/// project source renamed enum v1"},
+    {3, 3, NULL, NULL, NULL, "( ( entry ) + 330 )", "331",
+     "project header macro v3", "/// project header macro v3", "entry",
+     "303", "project source renamed enum v1",
+     "/// project source renamed enum v1"},
+    {4, 3, "303", "project source restored enum v3",
+     "/// project source restored enum v3", "( ( entry ) + 330 )", "331",
+     "project header macro v3", "/// project header macro v3", "entry",
+     NULL, NULL, NULL},
+    {4, 4, "303", "project source restored enum v3",
+     "/// project source restored enum v3", "( ( restored ) + 440 )", "441",
+     "project header macro v4", "/// project header macro v4", "restored",
+     NULL, NULL, NULL},
+    {5, 4, NULL, NULL, NULL, "( ( restored ) + 440 )", "441",
+     "project header macro v4", "/// project header macro v4", "restored",
+     "404", "project source renamed enum v2",
+     "/// project source renamed enum v2"},
+    {6, 4, "505", "project source restored enum v4",
+     "/// project source restored enum v4", "( ( restored ) + 440 )", "441",
+     "project header macro v4", "/// project header macro v4", "restored",
+     NULL, NULL, NULL},
+    {6, 5, "505", "project source restored enum v4",
+     "/// project source restored enum v4", "( ( final_value ) + 550 )",
+     "551", "project header macro v5", "/// project header macro v5",
+     "final_value", NULL, NULL, NULL},
 };
 
 static const char initializer_designator_operand_hover_source[] =
@@ -5018,9 +5127,14 @@ static int test_project_enum_macro_revision_order(
             &snapshot, name, AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
         const ag_language_symbol_t *macro_candidate = find_symbol(
             &snapshot, name, AG_LANGUAGE_SYMBOL_MACRO);
+        const char *renamed_name = "PROJECT_RENAMED_SYMBOL";
+        const ag_language_symbol_t *renamed_enum_candidate = find_symbol(
+            &snapshot, renamed_name, AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
         CHECK(snapshot.partial &&
                   (!!enum_candidate == !!expected->enum_value) &&
                   (!!macro_candidate == !!expected->macro_replacement) &&
+                  (!!renamed_enum_candidate ==
+                   !!expected->renamed_enum_value) &&
                   snapshot.dependency_count == 1 &&
                   strcmp(snapshot.dependencies[0],
                          "project-collision.h") == 0,
@@ -5045,18 +5159,44 @@ static int test_project_enum_macro_revision_order(
                             strlen(expected->enum_comment)),
                 "project enum macro revision enum fields");
         }
+        if (renamed_enum_candidate) {
+          const char *declaration = strstr(source, renamed_name);
+          const char *comment = strstr(
+              source, expected->renamed_enum_comment);
+          CHECK(declaration && comment &&
+                    renamed_enum_candidate->constant_value &&
+                    strcmp(renamed_enum_candidate->constant_value,
+                           expected->renamed_enum_value) == 0 &&
+                    renamed_enum_candidate->declaration.source_name &&
+                    strcmp(renamed_enum_candidate->declaration.source_name,
+                           "main.c") == 0 &&
+                    renamed_enum_candidate->declaration.start.offset ==
+                        (int)(declaration - source) &&
+                    renamed_enum_candidate->declaration.end.offset ==
+                        (int)(declaration - source + strlen(renamed_name)) &&
+                    check_documentation_symbol(
+                        renamed_enum_candidate,
+                        expected->renamed_enum_documentation, "main.c",
+                        (size_t)(comment - source),
+                        (size_t)(comment - source) +
+                            strlen(expected->renamed_enum_comment)),
+                "project enum macro revision renamed enum fields");
+        }
         if (macro_candidate) {
           const char *header =
               project_enum_macro_headers[expected->header_index];
           const char *declaration = strstr(header, name);
           const char *comment = strstr(header, expected->macro_comment);
+          const char *macro_parameter = expected->macro_parameter
+                                            ? expected->macro_parameter
+                                            : "value";
           CHECK(declaration && comment &&
                     macro_candidate->macro_is_function_like &&
                     !macro_candidate->macro_is_variadic &&
                     macro_candidate->macro_parameter_count == 1 &&
                     macro_candidate->macro_parameters &&
                     strcmp(macro_candidate->macro_parameters[0],
-                           "value") == 0 &&
+                           macro_parameter) == 0 &&
                     macro_candidate->macro_replacement &&
                     strcmp(macro_candidate->macro_replacement,
                            expected->macro_replacement) == 0 &&
