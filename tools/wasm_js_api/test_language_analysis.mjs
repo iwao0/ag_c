@@ -2450,6 +2450,14 @@ const incompleteEnumHeaderRevisions = [
     header: "/// function-like header macro documentation\n" +
       "#define INCOMPLETE_HEADER_ENUM_MACRO(left, right) 61\n",
   },
+  {
+    header: "/// colliding header macro documentation\n" +
+      "#define COLLIDING_HEADER_SYMBOL(value) ((value) + 70)\n" +
+      "enum CollidingHeaderEnum {\n" +
+      "  /// colliding header enum documentation\n" +
+      "  COLLIDING_HEADER_SYMBOL = 73\n" +
+      "};\n",
+  },
 ];
 const incompleteEnumHeaderSources = [
   {
@@ -2481,6 +2489,16 @@ const incompleteEnumHeaderSources = [
     name: "incomplete-enum-header-main.c",
     source: "#include <incomplete-enum.h>\n" +
       "enum { INCOMPLETE_HEADER_DERIVED = RENAMED_HEADER_ENUM_MACRO",
+  },
+  {
+    name: "incomplete-enum-header-main.c",
+    source: "#include <incomplete-enum.h>\n" +
+      "enum { INCOMPLETE_HEADER_DERIVED = COLLIDING_HEADER_SYMBOL",
+  },
+  {
+    name: "incomplete-enum-header-main.c",
+    source: "#include <incomplete-enum.h>\n" +
+      "enum { INCOMPLETE_HEADER_DERIVED = COLLIDING_HEADER_SYMBOL(1)",
   },
 ];
 const incompleteEnumHeaderCases = [
@@ -2980,6 +2998,128 @@ try {
   }
 } finally {
   incompleteEnumHeaderMacroShapeCompiler.dispose();
+}
+
+const incompleteEnumHeaderCollisionCases = [
+  [6, "enumConstant", "73"],
+  [7, "macro", "71"],
+];
+const incompleteEnumHeaderCollisionName = "COLLIDING_HEADER_SYMBOL";
+const incompleteEnumHeaderCollisionRevision =
+  incompleteEnumHeaderRevisions[6];
+const incompleteEnumHeaderCollisionMacroDeclaration =
+  incompleteEnumHeaderCollisionRevision.header.indexOf(
+    incompleteEnumHeaderCollisionName,
+  );
+const incompleteEnumHeaderCollisionEnumDeclaration =
+  incompleteEnumHeaderCollisionRevision.header.lastIndexOf(
+    incompleteEnumHeaderCollisionName,
+  );
+const incompleteEnumHeaderCollisionMacroComment =
+  incompleteEnumHeaderCollisionRevision.header.indexOf(
+    "/// colliding header macro documentation",
+  );
+const incompleteEnumHeaderCollisionEnumComment =
+  incompleteEnumHeaderCollisionRevision.header.indexOf(
+    "/// colliding header enum documentation",
+  );
+assert.ok(incompleteEnumHeaderCollisionMacroDeclaration >= 0 &&
+  incompleteEnumHeaderCollisionEnumDeclaration >= 0 &&
+  incompleteEnumHeaderCollisionMacroDeclaration !==
+    incompleteEnumHeaderCollisionEnumDeclaration &&
+  incompleteEnumHeaderCollisionMacroComment >= 0 &&
+  incompleteEnumHeaderCollisionEnumComment >= 0,
+"incomplete enum header namespace collision anchors");
+const freshIncompleteEnumHeaderCollisionCompiler = await createCompiler(
+  wasmModule,
+);
+try {
+  for (const collisionCompiler of [
+    compiler, freshIncompleteEnumHeaderCollisionCompiler,
+  ]) {
+    for (const [sourceIndex, hoverKind, derivedValue] of
+      incompleteEnumHeaderCollisionCases) {
+      const source = incompleteEnumHeaderSources[sourceIndex];
+      const useIndex = source.source.lastIndexOf(
+        incompleteEnumHeaderCollisionName,
+      );
+      const useStart = byteOffsetForIndex(source.source, useIndex);
+      const nameLength = Buffer.byteLength(incompleteEnumHeaderCollisionName);
+      for (const delta of [0, Math.floor(nameLength / 2), nameLength]) {
+        const byteOffset = useStart + delta;
+        const result = collisionCompiler.analyzeSource(source, {
+          headers: {
+            "incomplete-enum.h": incompleteEnumHeaderCollisionRevision.header,
+          },
+          cursor: { sourceName: source.name, byteOffset },
+        });
+        const enumCandidate = symbol(
+          result, incompleteEnumHeaderCollisionName, "enumConstant",
+        );
+        const macroCandidate = symbol(
+          result, incompleteEnumHeaderCollisionName, "macro",
+        );
+        assert.equal(result.partial, true);
+        assert.deepStrictEqual(result.diagnostics, []);
+        assert.equal(result.hover?.name, incompleteEnumHeaderCollisionName);
+        assert.equal(result.hover?.kind, hoverKind);
+        assert.ok(enumCandidate && macroCandidate);
+        assert.deepStrictEqual(
+          result.hover?.declaration,
+          hoverKind === "enumConstant"
+            ? enumCandidate?.declaration : macroCandidate?.declaration,
+        );
+        assert.equal(enumCandidate?.initializer.constantValue, "73");
+        assert.equal(enumCandidate?.declaration.start.offset,
+          incompleteEnumHeaderCollisionEnumDeclaration);
+        assert.equal(enumCandidate?.declaration.end.offset,
+          incompleteEnumHeaderCollisionEnumDeclaration + nameLength);
+        assert.equal(enumCandidate?.documentation,
+          "colliding header enum documentation");
+        assert.equal(enumCandidate?.documentationRange?.sourceName,
+          "incomplete-enum.h");
+        assert.equal(enumCandidate?.documentationRange?.start.offset,
+          incompleteEnumHeaderCollisionEnumComment);
+        assert.equal(enumCandidate?.documentationRange?.end.offset,
+          incompleteEnumHeaderCollisionEnumComment +
+            Buffer.byteLength("/// colliding header enum documentation"));
+        assert.equal(macroCandidate?.macro?.functionLike, true);
+        assert.equal(macroCandidate?.macro?.variadic, false);
+        assert.deepStrictEqual(macroCandidate?.macro?.parameters, ["value"]);
+        assert.equal(macroCandidate?.macro?.replacement,
+          "( ( value ) + 70 )");
+        assert.equal(macroCandidate?.declaration.start.offset,
+          incompleteEnumHeaderCollisionMacroDeclaration);
+        assert.equal(macroCandidate?.declaration.end.offset,
+          incompleteEnumHeaderCollisionMacroDeclaration + nameLength);
+        assert.equal(macroCandidate?.documentation,
+          "colliding header macro documentation");
+        assert.equal(macroCandidate?.documentationRange?.sourceName,
+          "incomplete-enum.h");
+        assert.equal(macroCandidate?.documentationRange?.start.offset,
+          incompleteEnumHeaderCollisionMacroComment);
+        assert.equal(macroCandidate?.documentationRange?.end.offset,
+          incompleteEnumHeaderCollisionMacroComment +
+            Buffer.byteLength("/// colliding header macro documentation"));
+        assert.equal(symbol(
+          result, "INCOMPLETE_HEADER_DERIVED", "enumConstant",
+        )?.initializer.constantValue, derivedValue);
+        assert.deepStrictEqual(result.dependencies, ["incomplete-enum.h"]);
+        assert.deepStrictEqual(
+          result,
+          JSON.parse(execFileSync(
+            nativeAnalysisPath,
+            ["--incomplete-enum-header-revision-parity-json", "7",
+              String(sourceIndex), String(byteOffset)],
+            { encoding: "utf8" },
+          )),
+          `native and Wasm incomplete enum header namespace collision differ for ${hoverKind} at ${delta}`,
+        );
+      }
+    }
+  }
+} finally {
+  freshIncompleteEnumHeaderCollisionCompiler.dispose();
 }
 
 const initializerDesignatorOperandHoverSource = {

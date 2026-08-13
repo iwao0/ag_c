@@ -32400,3 +32400,30 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - virtual headerで同じ綴りのfunction-like macroとenum定数が共存する場合に、bare EOF identifierはordinary namespaceの
     enum定数を、完結したmacro invocationはmacroを選び、二段階recoveryとhover kindが混線しない境界を確認する。
+
+### このセッション（続き1106）: 同名macro/enumのnamespace境界を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1105に残した、通常サイズの同名function-like macro/enum定数と未終端enum initializerだけを確認した。
+- 調査結果:
+  - macro namespaceとordinary namespaceに同じ綴りが共存しても、bare EOF identifierはenum定数、完結したinvocationは
+    macroを選び、既存の二段階recoveryとhover kind選択は正しく分離されていた。production codeの追加修正は不要だった。
+- 回帰範囲:
+  - virtual headerに同名の1引数function-like macroとenum定数を置き、bare `COLLIDING_HEADER_SYMBOL`と
+    `COLLIDING_HEADER_SYMBOL(1)`を、名前の先頭・中央・末尾で同じNative sessionとfresh sessionに通した。
+  - 両namespaceの同名候補、独立したdeclaration/documentation range、enum値73、macro parameter/replacement、
+    bare hover kind/派生値73、invocation hover kind/派生値71、dependency、diagnostics空を固定した。
+  - 専用シナリオを追加し、language analysisの表示を55 scenariosへ更新した。
+  - Wasm JS APIでも再利用済み/fresh compilerの全cursor位置をfresh Native JSON snapshotと完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (55 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - production compiler pipelineを変更していないため、native/Wasm E2Eおよびfuzz・深度/資源stress系は未実施。
+- 浅い次候補:
+  - 同名function-like macroとenum定数をvirtual header revisionで片方ずつ削除・復元し、bare/invocationのhover kindと
+    partial診断が残存namespaceだけへ正しく遷移し、削除済み候補を持ち越さない境界を確認する。

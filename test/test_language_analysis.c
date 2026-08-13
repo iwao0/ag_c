@@ -749,6 +749,12 @@ static const char *const incomplete_enum_header_revisions[] = {
     "};\n",
     "/// function-like header macro documentation\n"
     "#define INCOMPLETE_HEADER_ENUM_MACRO(left, right) 61\n",
+    "/// colliding header macro documentation\n"
+    "#define COLLIDING_HEADER_SYMBOL(value) ((value) + 70)\n"
+    "enum CollidingHeaderEnum {\n"
+    "  /// colliding header enum documentation\n"
+    "  COLLIDING_HEADER_SYMBOL = 73\n"
+    "};\n",
 };
 
 static const char *const incomplete_enum_header_main_sources[] = {
@@ -764,6 +770,10 @@ static const char *const incomplete_enum_header_main_sources[] = {
     "enum { INCOMPLETE_HEADER_DERIVED = RENAMED_HEADER_ENUM_VALUE",
     "#include <incomplete-enum.h>\n"
     "enum { INCOMPLETE_HEADER_DERIVED = RENAMED_HEADER_ENUM_MACRO",
+    "#include <incomplete-enum.h>\n"
+    "enum { INCOMPLETE_HEADER_DERIVED = COLLIDING_HEADER_SYMBOL",
+    "#include <incomplete-enum.h>\n"
+    "enum { INCOMPLETE_HEADER_DERIVED = COLLIDING_HEADER_SYMBOL(1)",
 };
 
 static const char initializer_designator_operand_hover_source[] =
@@ -4461,6 +4471,129 @@ static int test_incomplete_enum_header_macro_shape_transitions(
   return 0;
 }
 
+static int test_incomplete_enum_header_namespace_collision(
+    ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "incomplete enum header namespace session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  const char *header_paths[] = {"incomplete-enum.h"};
+  const char *header_sources[] = {incomplete_enum_header_revisions[6]};
+  const char *header = header_sources[0];
+  header_bundle_t bundle = make_bundle(header_paths, header_sources, 1);
+  CHECK(bundle.bytes != NULL, "incomplete enum header namespace bundle");
+  const char *name = "COLLIDING_HEADER_SYMBOL";
+  const char *macro_declaration = strstr(header, name);
+  const char *enum_declaration = last_occurrence(header, name);
+  const char *macro_comment = strstr(
+      header, "/// colliding header macro documentation");
+  const char *enum_comment = strstr(
+      header, "/// colliding header enum documentation");
+  CHECK(macro_declaration && enum_declaration &&
+            macro_declaration != enum_declaration &&
+            macro_comment && enum_comment,
+        "incomplete enum header namespace header anchors");
+  struct {
+    size_t source_index;
+    ag_language_symbol_kind_t hover_kind;
+    const char *derived_value;
+  } cases[] = {
+      {6, AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "73"},
+      {7, AG_LANGUAGE_SYMBOL_MACRO, "71"},
+  };
+  size_t name_length = strlen(name);
+  size_t deltas[] = {0, name_length / 2, name_length};
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *source =
+          incomplete_enum_header_main_sources[cases[case_index].source_index];
+      const char *use = last_occurrence(source, name);
+      CHECK(use != NULL, "incomplete enum header namespace source anchor");
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh incomplete enum header namespace session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "incomplete-enum-header-main.c", source,
+                  (size_t)(use - source) + deltas[delta_index],
+                  bundle, defaults, &snapshot, &error),
+              "incomplete enum header namespace analysis");
+        const ag_language_symbol_t *enum_candidate = find_symbol(
+            &snapshot, name, AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+        const ag_language_symbol_t *macro_candidate = find_symbol(
+            &snapshot, name, AG_LANGUAGE_SYMBOL_MACRO);
+        const ag_language_symbol_t *derived = find_symbol(
+            &snapshot, "INCOMPLETE_HEADER_DERIVED",
+            AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        CHECK(snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  enum_candidate && macro_candidate && derived && hover &&
+                  hover->kind == cases[case_index].hover_kind &&
+                  strcmp(hover->name, name) == 0 &&
+                  derived->constant_value &&
+                  strcmp(derived->constant_value,
+                         cases[case_index].derived_value) == 0 &&
+                  snapshot.dependency_count == 1 &&
+                  strcmp(snapshot.dependencies[0],
+                         "incomplete-enum.h") == 0,
+              "incomplete enum header namespace common fields");
+        CHECK(enum_candidate->constant_value &&
+                  strcmp(enum_candidate->constant_value, "73") == 0 &&
+                  enum_candidate->declaration.start.offset ==
+                      (int)(enum_declaration - header) &&
+                  enum_candidate->declaration.end.offset ==
+                      (int)(enum_declaration - header + name_length) &&
+                  check_documentation_symbol(
+                      enum_candidate, "colliding header enum documentation",
+                      "incomplete-enum.h",
+                      (size_t)(enum_comment - header),
+                      (size_t)(enum_comment - header) +
+                          strlen("/// colliding header enum documentation")),
+              "incomplete enum header namespace enum fields");
+        CHECK(macro_candidate->macro_is_function_like &&
+                  !macro_candidate->macro_is_variadic &&
+                  macro_candidate->macro_parameter_count == 1 &&
+                  macro_candidate->macro_parameters &&
+                  strcmp(macro_candidate->macro_parameters[0], "value") == 0 &&
+                  macro_candidate->macro_replacement &&
+                  strcmp(macro_candidate->macro_replacement,
+                         "( ( value ) + 70 )") == 0 &&
+                  macro_candidate->declaration.start.offset ==
+                      (int)(macro_declaration - header) &&
+                  macro_candidate->declaration.end.offset ==
+                      (int)(macro_declaration - header + name_length) &&
+                  check_documentation_symbol(
+                      macro_candidate, "colliding header macro documentation",
+                      "incomplete-enum.h",
+                      (size_t)(macro_comment - header),
+                      (size_t)(macro_comment - header) +
+                          strlen("/// colliding header macro documentation")),
+              "incomplete enum header namespace macro fields");
+        const ag_language_symbol_t *expected_hover =
+            cases[case_index].hover_kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT
+                ? enum_candidate
+                : macro_candidate;
+        CHECK(same_range(&hover->declaration,
+                         &expected_hover->declaration),
+              "incomplete enum header namespace hover range");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  free(bundle.bytes);
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_initializer_designator_operand_hover(
     ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
@@ -6452,6 +6585,8 @@ int main(int argc, char **argv) {
         "incomplete enum header kind transition scenarios");
   CHECK(test_incomplete_enum_header_macro_shape_transitions(target) == 0,
         "incomplete enum header macro shape transition scenarios");
+  CHECK(test_incomplete_enum_header_namespace_collision(target) == 0,
+        "incomplete enum header namespace collision scenarios");
   CHECK(test_initializer_designator_operand_hover(target) == 0,
         "initializer designator operand hover scenarios");
   CHECK(test_compound_literal_designator_operand_hover(target) == 0,
@@ -9470,6 +9605,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (54 scenarios)");
+  puts("language analysis tests passed (55 scenarios)");
   return 0;
 }
