@@ -32427,3 +32427,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同名function-like macroとenum定数をvirtual header revisionで片方ずつ削除・復元し、bare/invocationのhover kindと
     partial診断が残存namespaceだけへ正しく遷移し、削除済み候補を持ち越さない境界を確認する。
+
+### このセッション（続き1107）: 同名macro/enumの片側削除とWasm回復を修正した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1106に残した、通常サイズのvirtual header revisionと浅い1引数呼び出しだけを確認した。
+- 不具合と修正:
+  - 同名function-like macroとenum定数を両方→enum-onlyへ差し替えた後、未終端enum initializerの
+    `COLLIDING_HEADER_SYMBOL(1)`を名前上で解析すると、NativeはE3102を捕捉してsnapshotを返す一方、
+    self-host Wasmは同じ診断を記録した後に`unreachable`へ進んでいた。
+  - 完結した浅い呼び出し形を初回のenum recovery sourceでは内部列挙子へ置換し、headerとScopeGraphを安全に構築する。
+    function-like macroが残る場合、またはenum定数へ解決しない通常の呼び出し候補では元式を再解析する。
+    残存enum定数へ解決した場合だけinvalid derived enumeratorを公開せず、カーソルが`(`まで到達した位置では
+    元sourceの正確なrangeを持つE3102を構造化snapshotへ復元する。
+- 回帰範囲:
+  - 両namespace→enum-only→macro-only→両namespace復元を、同じNative sessionおよび同じWasm compiler instanceで往復した。
+  - bare/invocationそれぞれの名前の先頭・中央・末尾で、候補の有無、enum値、macro parameter/replacement、
+    declaration/documentation range、hover kind、派生enumeratorの有無と値、dependency、partial診断rangeを固定した。
+  - Wasm JS APIの全revision/cursor位置をfresh Native JSON snapshotと完全一致させた。
+  - 専用シナリオを追加し、language analysisの表示を56 scenariosへ更新した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (56 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis API内だけの修正のためnative/Wasm E2Eは未実施し、fuzz・深度/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じrevision遷移をproject source側の同名enum定数とvirtual header macroの組合せへ広げ、source/headerの更新順で
+    hover kind・候補range・partial診断が旧revisionを保持しない境界を確認する。
