@@ -32674,3 +32674,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じbounded direct callを通常サイズの2引数function-like macroへ広げ、top-level commaの前後と第2引数上で、
     callee回復、各引数hover、enum-only E3102 rangeが競合しない境界を確認する。
+
+### このセッション（続き1115）: 2引数direct callのcomma境界hoverを固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1114のbounded direct callを、通常サイズの単一の完結した2引数function-like macroへだけ広げた。
+- 調査結果:
+  - calleeのbounded elision/reparseはtop-level commaで途切れず、第1・第2引数上の元source hover lookupとも競合しなかった。
+  - macro+enumでは2 parameter、replacement、header上のdeclaration/documentation range、派生enumerator値103を維持した。
+  - enum-onlyではcall全体を安全にelideし、各引数候補を維持したまま実際の`(`にE3102を付け、invalid derived enumeratorを
+    公開しなかった。Native/Wasm差や追加のproduction code不具合は見つからなかった。
+- 回帰範囲:
+  - 同名enum定数と2引数macroが共存する状態、およびenum-only状態を、同一Native/Wasm instanceで
+    macro+enum→enum-only→macro+enum→enum-onlyと往復した。
+  - callee中央・末尾、`(`直後、第1引数の先頭→中央→末尾→直後、comma位置・直後、第2引数の先頭→中央→末尾→直後、
+    `)`直後について、各引数上の正確なhover、delimiter上のnull hover、候補metadata、documentation/range、dependency、
+    派生値またはE3102を固定した。
+  - 各位置のfresh Native JSON snapshot完全一致と、各状態へ戻ったWasm snapshotの完全一致を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - regression追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ2引数callのtop-level comma前後へ通常サイズのblock comment、LF/CRLF line spliceを置き、
+    callee分類、各引数hover、診断rangeが論理的なtoken間隔に追従する境界を確認する。

@@ -988,6 +988,25 @@ static const project_enum_macro_revision_t project_enum_macro_revisions[] = {
      "final_value", NULL, NULL, NULL},
 };
 
+static const char enum_two_argument_call_header[] =
+    "/// enum two argument function-like macro\n"
+    "#define ENUM_TWO_ARGUMENT_CALL(left, right) "
+    "((left) + (right) + 100)\n";
+
+static const char enum_two_argument_call_source[] =
+    "#include <enum-two-argument-call.h>\n"
+    "enum EnumTwoArgumentValues {\n"
+    "  /// enum two argument callee\n"
+    "  ENUM_TWO_ARGUMENT_CALL = 7,\n"
+    "  /// enum two argument first\n"
+    "  ENUM_TWO_ARGUMENT_FIRST = 1,\n"
+    "  /// enum two argument second\n"
+    "  ENUM_TWO_ARGUMENT_SECOND = 2\n"
+    "};\n"
+    "enum { ENUM_TWO_ARGUMENT_DERIVED = "
+    "ENUM_TWO_ARGUMENT_CALL(  ENUM_TWO_ARGUMENT_FIRST  ,  "
+    "ENUM_TWO_ARGUMENT_SECOND  )";
+
 static const char initializer_designator_operand_hover_source[] =
     "/// initializer designator macro documentation\n"
     "#define INITIALIZER_DESIGNATOR_MACRO 5\n"
@@ -2738,6 +2757,34 @@ cleanup:
   free(owned_source);
   ag_language_project_index_destroy(project);
   ag_compilation_session_destroy(session);
+  return result;
+}
+
+static int print_enum_two_argument_call_parity_snapshot(
+    const char *state_text, const char *cursor_text) {
+  char *state_end = NULL;
+  char *cursor_end = NULL;
+  unsigned long long parsed_state =
+      strtoull(state_text, &state_end, 10);
+  unsigned long long parsed_cursor =
+      strtoull(cursor_text, &cursor_end, 10);
+  size_t source_length = strlen(enum_two_argument_call_source);
+  if (!state_text[0] || !state_end || *state_end != '\0' ||
+      parsed_state > 1 || !cursor_text[0] || !cursor_end ||
+      *cursor_end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  const char *paths[] = {"enum-two-argument-call.h"};
+  const char *headers[] = {
+      parsed_state == 0 ? enum_two_argument_call_header : ""};
+  header_bundle_t bundle = make_bundle(paths, headers, 1);
+  int result = bundle.bytes
+                   ? print_macro_definition_source_snapshot(
+                         "enum-two-argument-call.c",
+                         enum_two_argument_call_source,
+                         (size_t)parsed_cursor, bundle)
+                   : 1;
+  free(bundle.bytes);
   return result;
 }
 
@@ -5551,6 +5598,202 @@ static int test_project_enum_macro_revision_order(
   return 0;
 }
 
+static int test_enum_two_argument_call_cursor(
+    ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "enum two argument call session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  const char *header_paths[] = {"enum-two-argument-call.h"};
+  const char *callee_name = "ENUM_TWO_ARGUMENT_CALL";
+  const char *enum_names[] = {
+      callee_name, "ENUM_TWO_ARGUMENT_FIRST", "ENUM_TWO_ARGUMENT_SECOND"};
+  const char *enum_values[] = {"7", "1", "2"};
+  const char *enum_documentation[] = {
+      "enum two argument callee", "enum two argument first",
+      "enum two argument second"};
+  const char *enum_comments[] = {
+      "/// enum two argument callee",
+      "/// enum two argument first",
+      "/// enum two argument second"};
+  const char *callee_use = last_occurrence(
+      enum_two_argument_call_source, callee_name);
+  size_t callee_length = strlen(callee_name);
+  const char *call_open = callee_use
+                              ? strchr(callee_use + callee_length, '(')
+                              : NULL;
+  const char *first_use = call_open
+                              ? strstr(call_open + 1, enum_names[1])
+                              : NULL;
+  const char *comma = first_use
+                          ? strchr(first_use + strlen(enum_names[1]), ',')
+                          : NULL;
+  const char *second_use = comma ? strstr(comma + 1, enum_names[2]) : NULL;
+  const char *call_close = second_use
+                               ? strchr(second_use + strlen(enum_names[2]), ')')
+                               : NULL;
+  CHECK(callee_use && call_open && first_use && comma && second_use &&
+            call_close,
+        "enum two argument call anchors");
+  size_t callee_start = (size_t)(callee_use - enum_two_argument_call_source);
+  size_t first_start = (size_t)(first_use - enum_two_argument_call_source);
+  size_t first_length = strlen(enum_names[1]);
+  size_t second_start = (size_t)(second_use - enum_two_argument_call_source);
+  size_t second_length = strlen(enum_names[2]);
+  struct {
+    size_t cursor;
+    int hover_enum_index;
+  } cursor_steps[] = {
+      {callee_start + callee_length / 2, 0},
+      {callee_start + callee_length, 0},
+      {(size_t)(call_open - enum_two_argument_call_source) + 1, -1},
+      {first_start, 1},
+      {first_start + first_length / 2, 1},
+      {first_start + first_length, 1},
+      {first_start + first_length + 1, -1},
+      {(size_t)(comma - enum_two_argument_call_source), -1},
+      {(size_t)(comma - enum_two_argument_call_source) + 1, -1},
+      {second_start, 2},
+      {second_start + second_length / 2, 2},
+      {second_start + second_length, 2},
+      {second_start + second_length + 1, -1},
+      {(size_t)(call_close - enum_two_argument_call_source) + 1, -1},
+      {callee_start + callee_length / 2, 0},
+  };
+  const int states[] = {0, 1, 0, 1};
+  for (size_t state_index = 0;
+       state_index < sizeof(states) / sizeof(states[0]); state_index++) {
+    int enum_only = states[state_index];
+    const char *header_sources[] = {
+        enum_only ? "" : enum_two_argument_call_header};
+    header_bundle_t bundle = make_bundle(header_paths, header_sources, 1);
+    CHECK(bundle.bytes != NULL, "enum two argument call bundle");
+    for (size_t cursor_index = 0;
+         cursor_index < sizeof(cursor_steps) / sizeof(cursor_steps[0]);
+         cursor_index++) {
+      size_t cursor = cursor_steps[cursor_index].cursor;
+      CHECK(analyze_named(
+                session, "enum-two-argument-call.c",
+                enum_two_argument_call_source, cursor, bundle, defaults,
+                &snapshot, &error),
+            "enum two argument call analysis");
+      CHECK(snapshot.partial && snapshot.dependency_count == 1 &&
+                strcmp(snapshot.dependencies[0],
+                       "enum-two-argument-call.h") == 0,
+            "enum two argument call common fields");
+      const ag_language_symbol_t *enum_candidates[3] = {0};
+      for (size_t enum_index = 0; enum_index < 3; enum_index++) {
+        enum_candidates[enum_index] = find_symbol(
+            &snapshot, enum_names[enum_index],
+            AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+        const char *declaration = strstr(
+            enum_two_argument_call_source, enum_names[enum_index]);
+        const char *comment = strstr(
+            enum_two_argument_call_source, enum_comments[enum_index]);
+        CHECK(declaration && comment && enum_candidates[enum_index] &&
+                  enum_candidates[enum_index]->constant_value &&
+                  strcmp(enum_candidates[enum_index]->constant_value,
+                         enum_values[enum_index]) == 0 &&
+                  enum_candidates[enum_index]->declaration.source_name &&
+                  strcmp(enum_candidates[enum_index]->declaration.source_name,
+                         "enum-two-argument-call.c") == 0 &&
+                  enum_candidates[enum_index]->declaration.start.offset ==
+                      (int)(declaration - enum_two_argument_call_source) &&
+                  enum_candidates[enum_index]->declaration.end.offset ==
+                      (int)(declaration - enum_two_argument_call_source +
+                            strlen(enum_names[enum_index])) &&
+                  check_documentation_symbol(
+                      enum_candidates[enum_index],
+                      enum_documentation[enum_index],
+                      "enum-two-argument-call.c",
+                      (size_t)(comment - enum_two_argument_call_source),
+                      (size_t)(comment - enum_two_argument_call_source) +
+                          strlen(enum_comments[enum_index])),
+              "enum two argument enum fields");
+      }
+      const ag_language_symbol_t *macro_candidate = find_symbol(
+          &snapshot, callee_name, AG_LANGUAGE_SYMBOL_MACRO);
+      if (enum_only) {
+        CHECK(!macro_candidate, "enum two argument macro removed");
+      } else {
+        const char *declaration = strstr(
+            enum_two_argument_call_header, callee_name);
+        const char *comment = strstr(
+            enum_two_argument_call_header,
+            "/// enum two argument function-like macro");
+        CHECK(declaration && comment && macro_candidate &&
+                  macro_candidate->macro_is_function_like &&
+                  !macro_candidate->macro_is_variadic &&
+                  macro_candidate->macro_parameter_count == 2 &&
+                  macro_candidate->macro_parameters &&
+                  strcmp(macro_candidate->macro_parameters[0], "left") == 0 &&
+                  strcmp(macro_candidate->macro_parameters[1], "right") == 0 &&
+                  macro_candidate->macro_replacement &&
+                  strcmp(macro_candidate->macro_replacement,
+                         "( ( left ) + ( right ) + 100 )") == 0 &&
+                  macro_candidate->declaration.source_name &&
+                  strcmp(macro_candidate->declaration.source_name,
+                         "enum-two-argument-call.h") == 0 &&
+                  macro_candidate->declaration.start.offset ==
+                      (int)(declaration - enum_two_argument_call_header) &&
+                  macro_candidate->declaration.end.offset ==
+                      (int)(declaration - enum_two_argument_call_header +
+                            callee_length) &&
+                  check_documentation_symbol(
+                      macro_candidate,
+                      "enum two argument function-like macro",
+                      "enum-two-argument-call.h",
+                      (size_t)(comment - enum_two_argument_call_header),
+                      (size_t)(comment - enum_two_argument_call_header) +
+                          strlen("/// enum two argument function-like macro")),
+              "enum two argument macro fields");
+      }
+      const ag_language_symbol_t *derived = find_symbol(
+          &snapshot, "ENUM_TWO_ARGUMENT_DERIVED",
+          AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+      CHECK((enum_only && !derived) ||
+                (!enum_only && derived && derived->constant_value &&
+                 strcmp(derived->constant_value, "103") == 0),
+            "enum two argument derived value");
+      int expected_diagnostic_count =
+          enum_only &&
+          cursor >= (size_t)(call_open - enum_two_argument_call_source);
+      CHECK(snapshot.diagnostic_count == expected_diagnostic_count,
+            "enum two argument diagnostics count");
+      if (expected_diagnostic_count) {
+        const ag_language_diagnostic_t *invalid_call =
+            find_diagnostic(&snapshot, "E3102");
+        CHECK(invalid_call &&
+                  invalid_call->range.start.offset ==
+                      (int)(call_open - enum_two_argument_call_source) &&
+                  invalid_call->range.end.offset ==
+                      (int)(call_open - enum_two_argument_call_source + 1),
+              "enum two argument invalid call range");
+      }
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      int hover_enum_index = cursor_steps[cursor_index].hover_enum_index;
+      const ag_language_symbol_t *expected_hover =
+          hover_enum_index < 0
+              ? NULL
+          : hover_enum_index == 0 && !enum_only
+              ? macro_candidate
+              : enum_candidates[hover_enum_index];
+      CHECK((!expected_hover && !hover) ||
+                (expected_hover && hover &&
+                 hover->kind == expected_hover->kind &&
+                 same_range(&hover->declaration,
+                            &expected_hover->declaration)),
+            "enum two argument hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+    free(bundle.bytes);
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_initializer_designator_operand_hover(
     ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
@@ -7475,6 +7718,11 @@ int main(int argc, char **argv) {
              "--project-enum-macro-revision-parity-json") == 0)
     return print_project_enum_macro_revision_parity_snapshot(
         argv[2], argv[3], argv[4]);
+  if (argc == 4 &&
+      strcmp(argv[1],
+             "--enum-two-argument-call-parity-json") == 0)
+    return print_enum_two_argument_call_parity_snapshot(
+        argv[2], argv[3]);
   if (argc == 3 &&
       strcmp(argv[1],
              "--initializer-designator-operand-hover-parity-json") == 0)
@@ -7553,6 +7801,8 @@ int main(int argc, char **argv) {
         "incomplete enum header namespace revision scenarios");
   CHECK(test_project_enum_macro_revision_order(target) == 0,
         "project enum macro revision order scenarios");
+  CHECK(test_enum_two_argument_call_cursor(target) == 0,
+        "enum two argument call cursor scenarios");
   CHECK(test_initializer_designator_operand_hover(target) == 0,
         "initializer designator operand hover scenarios");
   CHECK(test_compound_literal_designator_operand_hover(target) == 0,
@@ -10571,6 +10821,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (57 scenarios)");
+  puts("language analysis tests passed (58 scenarios)");
   return 0;
 }
