@@ -32704,3 +32704,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ2引数callのtop-level comma前後へ通常サイズのblock comment、LF/CRLF line spliceを置き、
     callee分類、各引数hover、診断rangeが論理的なtoken間隔に追従する境界を確認する。
+
+### このセッション（続き1116）: 2引数callのcomment・line splice境界を固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1115と同じ通常サイズの単一の完結した2引数callで、top-level comma前後のtoken間隔だけを変更した。
+- 調査結果:
+  - 通常空白、block comment、LF line splice、CRLF line spliceの全variantで、calleeのbounded elision/reparseは
+    logical token列を維持し、第1・第2引数のhover lookupとも競合しなかった。
+  - comment内部、spliceのbackslash位置と改行側ではhoverをnullにしながら、macro有効時の派生enumerator値103を維持した。
+  - enum-onlyでも各引数候補を維持し、variantごとの実際の`(`にE3102を付けてinvalid derived enumeratorを公開しなかった。
+    Native/Wasm差や追加のproduction code不具合は見つからなかった。
+- 回帰範囲:
+  - 4 variantそれぞれでcallee中央・末尾、`(`直後、第1引数の先頭・中央・末尾・直後、comma位置・直後、
+    第2引数直前・先頭・中央・末尾・直後、`)`直後を確認した。comment variantは両comment内部、LF/CRLF variantは
+    comma前後にある両spliceのbackslash位置と改行側も確認した。
+  - 同一Native/Wasm instanceで全variantをmacro有効→enum-onlyと解析し、通常variantのmacro有効状態とCRLF variantの
+    enum-only状態へ戻してsnapshot完全一致を確認した。全位置をvariant別のfresh Native JSON snapshotとも完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - regression追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ2引数callで第1・第2引数のどちらか一方だけをobject-like macroへ切り替え、comment/splice variant間を往復しても
+    各引数のhover kindとmacro metadataがcallee macroのmetadataへ混線しない境界を確認する。
