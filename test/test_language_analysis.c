@@ -5091,8 +5091,12 @@ static int test_project_enum_macro_revision_order(
   const char *name = "PROJECT_COLLIDING_SYMBOL";
   size_t name_length = strlen(name);
   const size_t cursor_deltas[] = {
-      0, 0, name_length / 2, name_length, 0};
-  const int cursor_outside[] = {1, 0, 0, 0, 1};
+      0, 0, name_length / 2, name_length, 0,
+      name_length, name_length + 1, name_length + 2,
+      name_length + 3, name_length};
+  const int cursor_outside[] = {
+      1, 0, 0, 0, 1, 0, 0, 0, 0, 0};
+  const size_t base_cursor_step_count = 5;
   const size_t source_modes[] = {0, 1, 0, 1};
   for (size_t revision = 0;
        revision < sizeof(project_enum_macro_revisions) /
@@ -5122,8 +5126,12 @@ static int test_project_enum_macro_revision_order(
       const char *use = last_occurrence(source, name);
       CHECK(use && use > source, "project enum macro revision use anchor");
       size_t use_offset = (size_t)(use - source);
+      size_t cursor_step_count = invocation
+                                     ? sizeof(cursor_deltas) /
+                                           sizeof(cursor_deltas[0])
+                                     : base_cursor_step_count;
       for (size_t cursor_index = 0;
-           cursor_index < sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+           cursor_index < cursor_step_count;
            cursor_index++) {
         size_t cursor_offset = cursor_outside[cursor_index]
                                    ? use_offset - 1
@@ -5252,16 +5260,19 @@ static int test_project_enum_macro_revision_order(
                   : enum_candidate;
           int invalid_enum_invocation =
               invocation && !expected->macro_replacement;
+          int cursor_after_name =
+              invocation && cursor_deltas[cursor_index] > name_length;
           int expected_diagnostic_count =
               invalid_enum_invocation &&
-                      cursor_deltas[cursor_index] == name_length
+                      cursor_deltas[cursor_index] >= name_length
                   ? 1
                   : 0;
           CHECK(snapshot.diagnostic_count == expected_diagnostic_count &&
-                    hover && expected_symbol &&
-                    hover->kind == expected_kind &&
-                    same_range(&hover->declaration,
-                               &expected_symbol->declaration),
+                    ((cursor_after_name && !hover) ||
+                     (!cursor_after_name && hover && expected_symbol &&
+                      hover->kind == expected_kind &&
+                      same_range(&hover->declaration,
+                                 &expected_symbol->declaration))),
                 "project enum macro revision hover fields");
           if (invalid_enum_invocation) {
             CHECK(!derived,

@@ -32582,3 +32582,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ完結した1引数invocationでcursorを名前末尾→`(`直後→引数末尾→`)`直後へ動かし、macro hover、
     enum-only時のE3102、呼び出し後の構文診断がNative/Wasmで構造化され、前位置のrangeを保持しない境界を確認する。
+
+### このセッション（続き1112）: direct call右側のcursor recoveryを固定した
+- 対象選定:
+  - 引き続き深い式、巨大入力、資源枯渇などセキュリティ監査で止まりやすい探索は対象外とした。
+  - 続き1111と同じ通常サイズの完結した1引数callで、名前より右側のcursor位置だけを確認した。
+- 不具合と修正:
+  - direct callの安全なelision/reparseはcursor識別子をcalleeと仮定していたため、cursorが引数内や`)`直後へ移ると
+    calleeのmacro/enum identityを再判定できなかった。
+  - 特に`)`直後はenum専用recoveryから汎用recoveryへ落ち、Nativeでもmacro派生値を失ってcursor位置にE2006を返した。
+  - 現在のenumerator区間でinitializer全体が単一の完結したidentifier callである場合だけ、top-level `=`の直後から
+    callee spanと対応する`)`をboundedに分類し、cursor位置とは独立してmacro/enum判定へ渡すようにした。
+  - function-like macroが残る場合は元callを再解析して`)`直後まで現派生値を維持し、enum-onlyでは元の`(`に対する
+    E3102を維持してinvalid derived enumeratorを公開しない。名前外ではhoverをnullにする。
+- 回帰範囲:
+  - 有効なinvocationについて、名前末尾→`(`直後→引数末尾→`)`直後→名前末尾を16 revisionすべてで往復した。
+  - enum+macro、macro-onlyでは現revisionのparameter/replacementと派生値、enum-onlyでは同じE3102 range、
+    全右側位置ではnull hover、全位置では候補metadata、documentation/range、dependencyを固定した。
+  - project index revision不変、同一Native/Wasm instanceのcursor/source往復、各位置のfresh Native JSON snapshot完全一致、
+    名前末尾へ戻ったWasm snapshotと初回snapshotの完全一致を確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (57 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis recoveryだけの変更のためnative/Wasm E2Eは未実施し、fuzz・深度/資源stress系も対象外とした。
+- 浅い次候補:
+  - direct callのcalleeと`(`の間、および引数の前後へ空白/commentを置き、同じ右側cursor往復でcallee span、
+    macro派生値、enum-only E3102 range、documentation/dependencyがずれない境界を確認する。

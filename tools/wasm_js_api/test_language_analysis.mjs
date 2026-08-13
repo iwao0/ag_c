@@ -3660,6 +3660,15 @@ try {
         { delta: nameLength, outside: false },
         { delta: 0, outside: true },
       ];
+      if (invocation) {
+        cursorSteps.push(
+          { delta: nameLength, outside: false },
+          { delta: nameLength + 1, outside: false },
+          { delta: nameLength + 2, outside: false },
+          { delta: nameLength + 3, outside: false },
+          { delta: nameLength, outside: false },
+        );
+      }
       for (const { delta, outside } of cursorSteps) {
         const byteOffset = useStart + (outside ? -1 : delta);
         const result = projectEnumMacroRevisionCompiler.analyzeProjectSource(
@@ -3772,8 +3781,9 @@ try {
           const expected = invocation && macroCandidate
             ? macroCandidate : enumCandidate;
           const invalidEnumInvocation = invocation && !macroCandidate;
+          const cursorAfterName = invocation && delta > nameLength;
           const expectedDiagnosticCount = invalidEnumInvocation &&
-              delta === nameLength ? 1 : 0;
+              delta >= nameLength ? 1 : 0;
           assert.equal(result.diagnostics.length, expectedDiagnosticCount);
           if (expectedDiagnosticCount) {
             assert.equal(result.diagnostics[0].code, "E3102");
@@ -3782,9 +3792,13 @@ try {
             assert.equal(result.diagnostics[0].end.offset,
               useStart + nameLength + 1);
           }
-          assert.equal(result.hover?.kind, expected?.kind);
-          assert.deepStrictEqual(result.hover?.declaration,
-            expected?.declaration);
+          if (cursorAfterName) {
+            assert.equal(result.hover, null);
+          } else {
+            assert.equal(result.hover?.kind, expected?.kind);
+            assert.deepStrictEqual(result.hover?.declaration,
+              expected?.declaration);
+          }
           if (invalidEnumInvocation) {
             assert.equal(derived, undefined);
           } else {

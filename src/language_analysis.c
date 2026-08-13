@@ -1015,8 +1015,8 @@ static int enum_enumerator_bounds(
 
 static int enum_initializer_operand_end(
     const char *source, size_t length, size_t enum_open,
-    size_t operand_start, size_t *item_start, size_t *item_end,
-    int *unterminated) {
+    size_t operand_start, size_t *item_start, size_t *initializer_start,
+    size_t *item_end, int *unterminated) {
   size_t segment_start = enum_open + 1;
   int paren_depth = 0;
   int bracket_depth = 0;
@@ -1071,11 +1071,15 @@ static int enum_initializer_operand_end(
       if (c == '}') return 0;
       segment_start = i + 1;
       saw_initializer = 0;
+      if (initializer_start) *initializer_start = 0;
       continue;
     }
-    if (i < operand_start && c == '=' && paren_depth == 0 &&
-        bracket_depth == 0 && brace_depth == 0)
+    if (!saw_initializer && i < operand_start && c == '=' &&
+        paren_depth == 0 &&
+        bracket_depth == 0 && brace_depth == 0) {
       saw_initializer = 1;
+      if (initializer_start) *initializer_start = i + 1;
+    }
     if (c == '(') paren_depth++;
     else if (c == ')') {
       if (paren_depth == 0) return 0;
@@ -1106,33 +1110,87 @@ static int analysis_delimited_tail_end_mode(
     char terminator, int allow_top_level_comma, int enable_trigraphs,
     size_t *tail_end);
 
+static int enum_direct_call_identifier_at_cursor(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs, analysis_identifier_span_t *identifier) {
+  if (!source || !identifier || cursor > length) return 0;
+  size_t enum_open = 0;
+  size_t outer_brace_count = 0;
+  if (!tag_body_open_at(
+          source, cursor, "enum", &enum_open, &outer_brace_count))
+    return 0;
+  (void)outer_brace_count;
+  size_t item_start = 0;
+  size_t initializer_start = 0;
+  size_t item_end = 0;
+  int unterminated = 0;
+  if (!enum_initializer_operand_end(
+          source, length, enum_open, cursor, &item_start,
+          &initializer_start, &item_end, &unterminated))
+    return 0;
+  (void)item_start;
+  (void)unterminated;
+  size_t operand_start = skip_analysis_space_and_comments_mode(
+      source, item_end, initializer_start, enable_trigraphs);
+  analysis_identifier_span_t callee = {0};
+  if (operand_start >= item_end || cursor < operand_start ||
+      !analysis_identifier_span_at_mode(
+          source, item_end, operand_start, enable_trigraphs, &callee) ||
+      callee.start != operand_start)
+    return 0;
+  size_t call_open = skip_analysis_space_and_comments_mode(
+      source, item_end, callee.end, enable_trigraphs);
+  size_t call_end = 0;
+  if (call_open >= item_end || source[call_open] != '(' ||
+      !analysis_delimited_tail_end_mode(
+          source, item_end, call_open + 1, ')', 1,
+          enable_trigraphs, &call_end) ||
+      skip_analysis_space_and_comments_mode(
+          source, item_end, call_end + 1, enable_trigraphs) != item_end ||
+      cursor > item_end)
+    return 0;
+  *identifier = callee;
+  return 1;
+}
+
 static char *build_enum_declaration_recovery_source(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs, int preserve_recoverable_operand, int *changed,
     size_t *source_consumed) {
   const char *name = NULL;
   size_t name_length = 0;
+  analysis_identifier_span_t direct_call_identifier = {0};
+  int cursor_in_direct_call = enum_direct_call_identifier_at_cursor(
+      source, length, cursor, enable_trigraphs,
+      &direct_call_identifier);
   identifier_at(source, length, cursor, &name, &name_length);
   int cursor_before_operand = 0;
   if (!name || name_length == 0) {
     size_t next_identifier = skip_analysis_space_and_comments_mode(
         source, length, cursor, enable_trigraphs);
-    if (next_identifier <= cursor || next_identifier >= length ||
-        !is_identifier_byte((unsigned char)source[next_identifier]))
+    if (next_identifier > cursor && next_identifier < length &&
+        is_identifier_byte((unsigned char)source[next_identifier])) {
+      size_t next_identifier_end = next_identifier + 1;
+      while (next_identifier_end < length &&
+             is_identifier_byte((unsigned char)source[next_identifier_end]))
+        next_identifier_end++;
+      name = source + next_identifier;
+      name_length = next_identifier_end - next_identifier;
+      cursor_before_operand = 1;
+    } else if (cursor_in_direct_call) {
+      name = source + direct_call_identifier.start;
+      name_length = direct_call_identifier.end -
+                    direct_call_identifier.start;
+    } else {
       return NULL;
-    size_t next_identifier_end = next_identifier + 1;
-    while (next_identifier_end < length &&
-           is_identifier_byte((unsigned char)source[next_identifier_end]))
-      next_identifier_end++;
-    name = source + next_identifier;
-    name_length = next_identifier_end - next_identifier;
-    cursor_before_operand = 1;
+    }
   }
   size_t name_start = (size_t)(name - source);
   size_t name_end = name_start + name_length;
   size_t enum_open = 0;
   size_t outer_brace_count = 0;
   size_t item_start = 0;
+  size_t initializer_start = 0;
   size_t item_end = 0;
   int unterminated_initializer = 0;
   int initializer_operand = 0;
@@ -1143,8 +1201,9 @@ static char *build_enum_declaration_recovery_source(
   if (!enum_enumerator_bounds(
           source, length, enum_open, name_start, name_end, &item_end))
     initializer_operand = enum_initializer_operand_end(
-        source, length, enum_open, name_start, &item_start, &item_end,
-        &unterminated_initializer);
+        source, length, enum_open, name_start, &item_start,
+        &initializer_start, &item_end, &unterminated_initializer);
+  (void)initializer_start;
   if (!item_end || (cursor_before_operand && !initializer_operand))
     return NULL;
   static const char complete_suffix[] =
@@ -1164,18 +1223,9 @@ static char *build_enum_declaration_recovery_source(
       name_end == length;
   int elide_eof_identifier =
       ambiguous_eof_identifier && !preserve_recoverable_operand;
-  size_t after_name = skip_analysis_space_and_comments_mode(
-      source, length, name_end, enable_trigraphs);
-  size_t call_end = 0;
   int elide_complete_call =
       unterminated_initializer && !preserve_recoverable_operand &&
-      cursor >= name_start && cursor <= name_end &&
-      after_name < item_end && source[after_name] == '(' &&
-      analysis_delimited_tail_end_mode(
-          source, item_end, after_name + 1, ')', 1,
-          enable_trigraphs, &call_end) &&
-      skip_analysis_space_and_comments_mode(
-          source, item_end, call_end + 1, enable_trigraphs) == item_end;
+      cursor_in_direct_call;
   static const char cursor_gap_replacement[] =
       "__agc_language_cursor_enum_gap = 0";
   static const char invalid_call_replacement[] =
@@ -4700,19 +4750,14 @@ static int add_macro_symbols(snapshot_builder_t *builder,
   return 1;
 }
 
-static int cursor_invokes_function_like_macro(
+static int identifier_span_invokes_function_like_macro(
     const ag_language_analysis_request_t *request,
     const ag_preprocessor_context_t *preprocessor,
-    int enable_trigraphs) {
-  if (!request || !preprocessor) return 0;
-  analysis_identifier_span_t identifier = {0};
-  if (!analysis_identifier_span_at_mode(
-          request->source, request->source_length,
-          request->cursor_byte_offset, enable_trigraphs,
-          &identifier))
-    return 0;
+    int enable_trigraphs,
+    const analysis_identifier_span_t *identifier) {
+  if (!request || !preprocessor || !identifier) return 0;
   size_t after_name = skip_analysis_space_and_comments_mode(
-      request->source, request->source_length, identifier.end,
+      request->source, request->source_length, identifier->end,
       enable_trigraphs);
   if (after_name >= request->source_length ||
       request->source[after_name] != '(')
@@ -4727,22 +4772,33 @@ static int cursor_invokes_function_like_macro(
     if (pp_macro_view_at_in(preprocessor, macro_index, &view) &&
         view.is_function_like && view.name && view.name_len > 0 &&
         analysis_identifier_span_matches(
-            request->source, request->source_length, &identifier,
+            request->source, request->source_length, identifier,
             enable_trigraphs, view.name, (size_t)view.name_len))
       return 1;
   }
   return 0;
 }
 
-static int cursor_identifier_resolves_as_enum_constant(
+static int cursor_invokes_function_like_macro(
     const ag_language_analysis_request_t *request,
-    int enable_trigraphs, const psx_scope_graph_t *scope_graph) {
-  if (!request || !scope_graph) return 0;
+    const ag_preprocessor_context_t *preprocessor,
+    int enable_trigraphs) {
+  if (!request || !preprocessor) return 0;
   analysis_identifier_span_t identifier = {0};
   if (!analysis_identifier_span_at_mode(
           request->source, request->source_length,
-          request->cursor_byte_offset, enable_trigraphs, &identifier))
+          request->cursor_byte_offset, enable_trigraphs,
+          &identifier))
     return 0;
+  return identifier_span_invokes_function_like_macro(
+      request, preprocessor, enable_trigraphs, &identifier);
+}
+
+static int identifier_span_resolves_as_enum_constant(
+    const ag_language_analysis_request_t *request,
+    int enable_trigraphs, const psx_scope_graph_t *scope_graph,
+    const analysis_identifier_span_t *identifier) {
+  if (!request || !scope_graph || !identifier) return 0;
   const psx_scope_declaration_t *marker = NULL;
   size_t declaration_count =
       psx_scope_graph_declaration_count(scope_graph);
@@ -4765,7 +4821,7 @@ static int cursor_identifier_resolves_as_enum_constant(
         declaration->name_space != PSX_NAMESPACE_ORDINARY ||
         !declaration->name || declaration->name_len <= 0 ||
         !analysis_identifier_span_matches(
-            request->source, request->source_length, &identifier,
+            request->source, request->source_length, identifier,
             enable_trigraphs, declaration->name,
             (size_t)declaration->name_len))
       continue;
@@ -4776,6 +4832,19 @@ static int cursor_identifier_resolves_as_enum_constant(
       return 1;
   }
   return 0;
+}
+
+static int cursor_identifier_resolves_as_enum_constant(
+    const ag_language_analysis_request_t *request,
+    int enable_trigraphs, const psx_scope_graph_t *scope_graph) {
+  if (!request || !scope_graph) return 0;
+  analysis_identifier_span_t identifier = {0};
+  if (!analysis_identifier_span_at_mode(
+          request->source, request->source_length,
+          request->cursor_byte_offset, enable_trigraphs, &identifier))
+    return 0;
+  return identifier_span_resolves_as_enum_constant(
+      request, enable_trigraphs, scope_graph, &identifier);
 }
 
 static int ambiguous_eof_identifier_resolves_as_enum_operand(
@@ -5301,7 +5370,10 @@ static int save_elided_call_not_callable_diagnostic(
     saved_analysis_diagnostic_t *saved) {
   if (!request || !diagnostics || !saved) return 0;
   analysis_identifier_span_t identifier = {0};
-  if (!analysis_identifier_span_at_mode(
+  if (!enum_direct_call_identifier_at_cursor(
+          request->source, request->source_length,
+          request->cursor_byte_offset, enable_trigraphs, &identifier) &&
+      !analysis_identifier_span_at_mode(
           request->source, request->source_length,
           request->cursor_byte_offset, enable_trigraphs, &identifier))
     return 0;
@@ -5853,14 +5925,23 @@ int ag_language_analyze_source(
           ag_compilation_session_preprocessor_context(session));
   int enum_call_elided =
       (recovery_changed & AG_LANGUAGE_RECOVERY_ENUM_CALL_ELIDED) != 0;
+  analysis_identifier_span_t enum_call_identifier = {0};
+  int has_enum_call_identifier =
+      enum_call_elided && enum_direct_call_identifier_at_cursor(
+          request->source, request->source_length,
+          request->cursor_byte_offset, builder.enable_trigraphs,
+          &enum_call_identifier);
   int enum_call_invokes_macro =
-      enum_call_elided && cursor_invokes_function_like_macro(
+      has_enum_call_identifier &&
+      identifier_span_invokes_function_like_macro(
           request, ag_compilation_session_preprocessor_context(session),
-          builder.enable_trigraphs);
+          builder.enable_trigraphs, &enum_call_identifier);
   int enum_call_resolves_as_enum =
-      enum_call_elided && cursor_identifier_resolves_as_enum_constant(
+      has_enum_call_identifier &&
+      identifier_span_resolves_as_enum_constant(
           request, builder.enable_trigraphs,
-          ag_compilation_session_scope_graph(session));
+          ag_compilation_session_scope_graph(session),
+          &enum_call_identifier);
   int elided_enum_call_not_callable =
       enum_call_resolves_as_enum && !enum_call_invokes_macro;
   int reparse_recoverable_enum_operand =
