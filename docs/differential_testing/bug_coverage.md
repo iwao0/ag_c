@@ -767,6 +767,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 
 | **両側rename済みmacro引数の段階復元** both renamed definitions missing → one restored → both restored | 🧪 | test_language_analysis (native/Wasm JS API) | 両rename定義欠落から第1だけを復元した場合はE3066対象が残る第2rename名へ進み、第2だけを復元した場合はsource順の第1rename名を維持する診断遷移を固定する。各中間状態では復元済みrename名だけを候補・hoverとして公開し、replacement 1/2、新しいdeclaration/documentation rangeを維持しながら、未復元rename候補と派生enumeratorを除去する。最終的な両定義復元では診断なし、両rename metadata、派生値103へ戻る。comment variantの`3→2→0`とCRLF variantの`3→1→0`を共有Native/Wasm instanceへ連続投入し、名前長変更後のcursor byte offset、各revisionのfresh Native snapshot、同一source復帰snapshotを完全一致させる。深い式・巨大入力・fuzz・資源stressは追加しない |
 
+| **両側rename済みmacro引数の双方向削除・復元** both present → one missing → both missing → other missing → both present | 🧪 | test_language_analysis (native/Wasm JS API) | 両rename定義がある状態から片側削除、両側削除、反対側だけ復元、両側復元までを連続解析し、過去の欠落順序ではなく現在sourceだけから未解決引数と候補集合を決める境界を固定する。comment variantの`0→1→3→2→0`ではE3066対象が第1rename名→第1rename名→第2rename名→なし、CRLF variantの`0→2→3→1→0`では第2rename名→第1rename名→第1rename名→なしと遷移する。各状態で定義済みrename名だけの候補・hover・replacement 1/2・declaration/documentation rangeを維持し、欠落候補と派生enumeratorを除去する。最終状態は両rename metadata、派生値103、初回snapshotへ完全復帰する。同一Native/Wasm instance、fresh Native snapshot、復帰snapshotを完全一致させ、深い式・巨大入力・fuzz・資源stressは追加しない |
+
 ### リンケージ / 複数 TU（extern / static）
 複数ファイルをリンクする差分ハーネス（各 .c を ag_c で .s 化→clang で個別アセンブル→
 まとめてリンク、clang -I include 直ビルドと exit code 比較）で確認。
