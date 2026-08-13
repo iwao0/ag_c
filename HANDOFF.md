@@ -33035,3 +33035,36 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズの両側macro callで片側をrenameし、反対側をreplacement更新してから削除・復元しても、両側metadata、
     E3066対象、派生値、最終base snapshotがNative/Wasmで混線しない境界を確認する。
+
+### このセッション（続き1127）: 片側macro renameと反対側更新・削除・復元を組み合わせた
+- 対象選定:
+  - 続き1126と同じ通常サイズの2引数enum direct callだけで、片側renameと反対側replacement更新を同時に行い、
+    updated側だけを削除・復元した。
+  - 深い式、巨大入力、fuzz、資源枯渇などセキュリティ監査で止まりやすい探索には広げなかった。
+- 調査結果:
+  - paired test modeへ`8 = 第1rename + 第2更新/欠落`、`9 = 第2rename + 第1更新/欠落`を追加した。
+  - comment variantでbase→第1rename+第2を12へ更新→第2削除→復元→base、CRLF variantでbase→第2rename+第1を11へ
+    更新→第1削除→復元→baseを共有instanceへ連続投入した。
+  - rename側は旧名を除去して新名、rename documentation/range、hoverを公開し、updated側は元identityのままreplacement 11/12、
+    updated documentation/range、hoverを保持した。
+  - updated側削除時はrename側metadataを維持しながら欠落元名のE3066をcallee invocation rangeへ返し、派生enumeratorを除去した。
+    復元時は両側metadataと派生値113、最終base復帰時は元名2件、replacement 1/2、派生値103、初回snapshotへ戻った。
+  - 代表enum-only状態ではrename側候補と元`(`のE3102を維持した。Native/Wasm差、旧名・rename名・updated metadataの残留、
+    追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、両引数の先頭・中央・末尾、delimiter前後、comment内部または両CRLF line splice位置で両組み合わせ方向を確認した。
+  - 名前長変更後のcursor byte offset、同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、同一source復帰snapshotを
+    完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの両側macro callで両側を同時にrenameした状態から片側を削除・復元し、両rename名候補、E3066対象、
+    派生値、最終base snapshotがNative/Wasmで混線しない境界を確認する。

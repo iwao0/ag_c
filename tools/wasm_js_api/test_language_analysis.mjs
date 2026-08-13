@@ -2990,6 +2990,19 @@ function enumTwoArgumentPairedUpdateSource(
   const first = enumTwoArgumentMacroSource(input, 1, firstRevision);
   return enumTwoArgumentMacroSource(first, 2, secondRevision);
 }
+function enumTwoArgumentPairedRenameUpdateSource(
+  input, renamedArgumentIndex, updatedArgumentMissing,
+) {
+  assert.ok(renamedArgumentIndex >= 1 && renamedArgumentIndex <= 2 &&
+    (updatedArgumentMissing === 0 || updatedArgumentMissing === 1),
+  "enum two argument paired rename update source revision");
+  const firstRevision = renamedArgumentIndex === 1
+    ? 2 : updatedArgumentMissing ? 3 : 1;
+  const secondRevision = renamedArgumentIndex === 2
+    ? 2 : updatedArgumentMissing ? 3 : 1;
+  const first = enumTwoArgumentMacroSource(input, 1, firstRevision);
+  return enumTwoArgumentMacroSource(first, 2, secondRevision);
+}
 const incompleteEnumHeaderCases = [
   [0, "INCOMPLETE_HEADER_ENUM_VALUE", "INCOMPLETE_HEADER_ENUM_VALUE",
     "enumConstant", "17", "header enum value documentation", false],
@@ -4223,9 +4236,18 @@ try {
     [1, 0, 6, 0], [1, 0, 3, 0], [1, 1, 6, 1],
     [3, 0, 3, 0], [3, 0, 7, 0], [3, 0, 7, 1],
     [3, 0, 7, 0], [3, 0, 3, 0], [3, 1, 7, 1],
+    [1, 0, 3, 0], [1, 0, 8, 0], [1, 0, 8, 1],
+    [1, 0, 8, 0], [1, 0, 3, 0], [1, 1, 8, 1],
+    [3, 0, 3, 0], [3, 0, 9, 0], [3, 0, 9, 1],
+    [3, 0, 9, 0], [3, 0, 3, 0], [3, 1, 9, 1],
     [0, 0, 0, 0], [3, 1, 0, 0],
   ]) {
-    const source = argumentMode >= 6
+    const source = argumentMode >= 8
+      ? enumTwoArgumentPairedRenameUpdateSource(
+        enumTwoArgumentCallSources[variant], argumentMode - 7,
+        argumentRevision,
+      )
+      : argumentMode >= 6
       ? enumTwoArgumentPairedUpdateSource(
         enumTwoArgumentCallSources[variant], argumentMode - 5,
         argumentRevision,
@@ -4250,14 +4272,18 @@ try {
       null,
       argumentMode === 1
         ? enumTwoArgumentMacroNames[argumentRevision][1]
-        : argumentMode === 3 || argumentMode === 5 || argumentMode >= 6
+        : argumentMode === 3 || argumentMode === 5 ||
+            argumentMode === 6 || argumentMode === 7 || argumentMode === 9
           ? enumTwoArgumentMacroNames[0][1]
-          : argumentMode === 4 ? enumTwoArgumentMacroNames[2][1] : null,
+          : argumentMode === 4 || argumentMode === 8
+            ? enumTwoArgumentMacroNames[2][1] : null,
       argumentMode === 2
         ? enumTwoArgumentMacroNames[argumentRevision][2]
-        : argumentMode === 3 || argumentMode === 4 || argumentMode >= 6
+        : argumentMode === 3 || argumentMode === 4 ||
+            argumentMode === 6 || argumentMode === 7 || argumentMode === 8
           ? enumTwoArgumentMacroNames[0][2]
-          : argumentMode === 5 ? enumTwoArgumentMacroNames[2][2] : null,
+          : argumentMode === 5 || argumentMode === 9
+            ? enumTwoArgumentMacroNames[2][2] : null,
     ];
     const missingArgumentMode = argumentMode === 3
       ? argumentRevision
@@ -4268,6 +4294,10 @@ try {
       : argumentMode === 6
         ? argumentRevision ? 2 : 0
       : argumentMode === 7
+        ? argumentRevision ? 1 : 0
+      : argumentMode === 8
+        ? argumentRevision ? 2 : 0
+      : argumentMode === 9
         ? argumentRevision ? 1 : 0
       : argumentRevision === 3 ? argumentMode : 0;
     const argumentMissing = [
@@ -4288,6 +4318,12 @@ try {
       argumentMetadataRevisions[1] = 1;
     } else if (argumentMode === 7) {
       argumentMetadataRevisions[2] = 1;
+    } else if (argumentMode === 8) {
+      argumentMetadataRevisions[1] = 2;
+      argumentMetadataRevisions[2] = 1;
+    } else if (argumentMode === 9) {
+      argumentMetadataRevisions[1] = 1;
+      argumentMetadataRevisions[2] = 2;
     }
     const argumentNames = [
       null,
