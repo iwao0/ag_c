@@ -32945,3 +32945,31 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズの段階復元列を逆向きにもたどり、両復元→片側削除→両欠落→片側復元→両復元で、E3066対象、候補集合、
     派生enumerator、最終snapshotがNative/Wasmの再利用instanceで履歴依存しない境界を確認する。
+
+### このセッション（続き1124）: 両側object-like macroの削除・復元を双方向で固定した
+- 対象選定:
+  - 続き1123と同じ通常サイズの2引数enum direct callとpaired revisionだけを利用した。
+  - 深い式、巨大入力、fuzz、資源枯渇などセキュリティ監査で止まりやすい探索には広げなかった。
+- 調査結果:
+  - comment variantで両復元`0`→第1欠落`1`→両欠落`3`→第2欠落`2`→両復元`0`、LF variantで
+    `0`→第2欠落`2`→両欠落`3`→第1欠落`1`→`0`を共有instanceへ連続投入した。
+  - 前者のE3066対象は第1→第1→第2→なし、後者は第2→第1→第1→なしと、各revisionの現在sourceだけに従った。
+  - 各状態で定義済みmacroだけを候補・hoverとして公開し、replacement 1/2、declaration/documentation rangeを保持した。
+    欠落側候補と派生enumeratorは残らず、最終復元時は診断なし、両macro metadata、派生値103、初回snapshotへ戻った。
+  - Native/Wasm差、stale診断・候補・hover・dependency・partial状態、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、両引数の先頭・中央・末尾、delimiter前後、comment内部または両LF line splice位置で両順序を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、同一source復帰snapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの両側macro callで片側の定義だけをrenameし、もう片側を削除・復元しても、E3066対象、旧名候補の除去、
+    rename側metadata、派生enumerator、最終snapshotがNative/Wasmで混線しない境界を確認する。
