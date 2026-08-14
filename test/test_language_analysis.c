@@ -6841,6 +6841,9 @@ static int test_enum_three_argument_call_cursor(
       {4, 0}, {10, 0},
       {4, 4}, {11, 2}, {4, 1}, {11, 4}, {4, 2}, {11, 1}, {4, 4},
       {5, 4}, {10, 2}, {5, 1}, {10, 4}, {5, 2}, {10, 1}, {5, 4},
+      {4, 0}, {10, 0},
+      {4, 3}, {11, 6}, {4, 5}, {11, 3}, {4, 6}, {11, 5}, {4, 3},
+      {5, 3}, {10, 6}, {5, 5}, {10, 3}, {5, 6}, {10, 5}, {5, 3},
       {4, 0}, {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
@@ -7128,6 +7131,10 @@ static int test_enum_three_argument_call_cursor(
           CHECK(!strstr(undefined_argument->message,
                         argument_names[2]),
                 "enum three argument surviving last diagnostic omitted");
+        if (missing_argument_mode == 6)
+          CHECK(!strstr(undefined_argument->message,
+                        argument_names[0]),
+                "enum three argument surviving first diagnostic omitted");
         if (missing_argument_mode == 4)
           CHECK(!strstr(undefined_argument->message,
                         argument_names[0]) &&
