@@ -4917,7 +4917,7 @@ try {
 const enumThreeArgumentCompiler = await createCompiler(wasmModule);
 const enumThreeArgumentFirstResults = new Map();
 const enumThreeArgumentAllMissingRevisionResults = new Map();
-for (const oldVariant of [8, 9]) {
+for (const oldVariant of [6, 7, 8, 9]) {
   assert.deepStrictEqual(
     enumThreeArgumentMacroSource(enumThreeArgumentCallSources[oldVariant], 7),
     enumThreeArgumentMacroSource(
@@ -4951,6 +4951,8 @@ try {
     [11, 0], [11, 4], [11, 6], [11, 7], [11, 3], [11, 1], [11, 0],
     [8, 0], [8, 7], [10, 7], [10, 6], [10, 4], [10, 0], [8, 0],
     [9, 0], [9, 7], [11, 7], [11, 3], [11, 1], [11, 0], [9, 0],
+    [6, 0], [6, 7], [8, 7], [8, 6], [8, 4], [8, 0], [6, 0],
+    [7, 0], [7, 7], [9, 7], [9, 3], [9, 1], [9, 0], [7, 0], [6, 0],
     [10, 0],
   ]) {
     const source = enumThreeArgumentMacroSource(
@@ -5195,7 +5197,7 @@ try {
         )),
         `native and Wasm enum three argument call differ for ${variant}, ${missingArgumentMode}, ${label}`);
       }
-      if (variant >= 8 && missingArgumentMode === 7) {
+      if (variant >= 6 && missingArgumentMode === 7) {
         const revisionKey = `${variant & 1}:${byteOffset}`;
         const allMissingRevisionResult =
           enumThreeArgumentAllMissingRevisionResults.get(revisionKey);

@@ -33522,3 +33522,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズで全引数欠落mask `7`中に中央ordinary enum metadataを値6・旧documentationから値9・更新documentationへ
     切り替え、同一source snapshotを維持したまま、復元後だけ更新enum metadataと派生値113へ移る境界をNative/Wasmで確認する。
+
+### このセッション（続き1142）: 3引数callの全欠落中enum metadata revision切替を固定した
+- 対象選定:
+  - 続き1141と同じ通常サイズだけを使い、全引数欠落mask `7`中に中央ordinary enumのmetadata revisionを
+    値6・旧documentationから値9・更新documentationへ切り替えた。深い式、巨大入力、fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - variant 6/8のcomment sourceと7/9のCRLF sourceも、3引数宣言をすべて除くとそれぞれ完全に同一になることを
+    Native/Wasm両テストで明示assertし、既存のsource identity範囲をvariant 6〜11へ拡張した。
+  - comment側は旧全定義→旧全欠落→更新全欠落→第1・中央・第3の段階復元→旧全定義、CRLF側は旧全定義→旧全欠落→
+    更新全欠落→第3・中央・第1の段階復元→旧全定義と遷移させた。production compiler sourceは変更していない。
+  - Wasmの全欠落revision snapshot比較もvariant 6から適用し、enum metadata revisionを跨いで完全一致させた。
+- 調査結果:
+  - 全欠落中は旧/更新revisionのsourceと、候補・診断・hover・dependency・rangeを含む完全snapshotが一致した。
+    第1macro名だけの1件のE3066をcallee invocation rangeへ返し、欠落候補・派生enumeratorは残らなかった。
+  - 中央enum復元後だけ値9、更新documentationとそのrangeが現れ、更新全復元時は両端replacement 1/3と派生値113へ移った。
+    旧revisionへ戻すと値6・旧documentation・派生値110へ復帰し、更新enum metadataは残らなかった。
+  - Native/Wasm差、revision横断のstale状態、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、全欠落revision横断snapshot、旧source復帰snapshotを
+    完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで全引数欠落mask `7`中に中央enum metadataと両端macro replacementを旧revisionから更新revisionへ同時に
+    切り替え、同一source snapshotを維持したまま、段階復元後だけ値9・replacement 7/11・派生値127へ移る境界を確認する。
