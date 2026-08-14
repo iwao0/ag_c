@@ -34120,3 +34120,39 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同じ通常サイズで単独欠落maskを逆向きに回転し、旧comment variant 4/mask 4→更新CRLF variant 11/mask 2→4/mask 1→
     11/mask 4→4/mask 2→11/mask 1→4/mask 4と、旧CRLF variant 5・更新comment variant 10でも対称に、診断対象が
     末尾macro→中央enum→第1macroへ切り替わる間の存続metadata・hover・E3066 message/rangeのsnapshot復帰を確認する。
+
+### このセッション（続き1160）: 3引数callのcross-layout単独欠落mask逆回転を固定した
+- 対象選定:
+  - 続き1159と同じ通常サイズで、revision・layout・単独欠落位置を逆順で毎回同時に変更した。深い式、巨大入力、fuzz、資源枯渇には
+    広げなかった。
+- 実装確認:
+  - 旧comment variant 4/mask 4→更新CRLF variant 11/mask 2→4/mask 1→11/mask 4→4/mask 2→11/mask 1→4/mask 4と、
+    旧CRLF variant 5・更新comment variant 10でも対称な逆回転を実行した。production compiler sourceは変更していない。
+  - 各variant/mask/cursor keyは既存履歴でfresh Native JSON snapshotおよびWasm完全snapshotと一致済みで、今回の逆順再訪を同じsnapshotと
+    比較した。Native共有sessionでも候補・診断・hover・dependency・declaration/documentation rangeを検査した。
+- 調査結果:
+  - E3066は末尾macro→現在revisionの旧／rename済み中央enum→第1macroへ、現在layoutのcallee invocation range付きで切り替わった。
+    messageは診断対象だけを含み、存続中または非アクティブな名前を混入させなかった。
+  - 各状態で存続するmacro replacement、中央enum名・値・documentation、declaration/documentation rangeとhoverを現在revisionから再構築し、
+    欠落候補・hoverと派生enumeratorを除去した。
+  - Native/Wasm差、stale name・値・replacement・documentation・診断・hover・range、追加のproduction code不具合は再現しなかった。
+  - 続き1158の同mask直接往復、続き1159の順回転と合わせ、旧／更新revision・comment／CRLF layout間で単独欠落mask `1`・`2`・`4`の
+    全9遷移を両方向に固定した。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、mask `1`・`2`・`4`の既存Wasm snapshotへの逆順再訪を完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで二重欠落maskをcross-layout revision切替と同時に回転し、旧comment variant 4/mask 3→更新CRLF variant 11/mask 6→
+    4/mask 5→11/mask 3→4/mask 6→11/mask 5→4/mask 3と、旧CRLF variant 5・更新comment variant 10でも対称に、診断対象が
+    第1macro→中央enum→第1macro、唯一の存続operandが末尾macro→第1macro→中央enumへ切り替わる間のmetadata・hover・E3066
+    message/rangeのsnapshot復帰を確認する。
