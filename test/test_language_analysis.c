@@ -33,6 +33,8 @@ static char *enum_two_argument_paired_rename_update_source(
     int updated_argument_missing);
 static char *enum_two_argument_both_renamed_source(
     const char *source, int missing_argument_mode);
+static char *enum_three_argument_macro_source(
+    const char *source, int missing_argument_mode);
 
 static char *read_fixture_source(const char *path, size_t *length) {
   if (length) *length = 0;
@@ -1060,6 +1062,36 @@ static const char *const enum_two_argument_call_sources[] = {
     "ENUM_TWO_ARGUMENT_CALL(  ENUM_TWO_ARGUMENT_FIRST  \\\r\n"
     "  ,  \\\r\n"
     "  ENUM_TWO_ARGUMENT_SECOND  )",
+};
+
+static const char enum_three_argument_call_header[] =
+    "/// enum three argument function-like macro\n"
+    "#define ENUM_THREE_ARGUMENT_CALL(first, middle, last) "
+    "((first) + (middle) + (last) + 100)\n";
+
+static const char *const enum_three_argument_call_sources[] = {
+    "#include <enum-three-argument-call.h>\n"
+    "/// enum three argument first macro\n"
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n"
+    "/// enum three argument middle macro\n"
+    "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n"
+    "/// enum three argument last macro\n"
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n"
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = "
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO "
+    "/* first comma */ , ENUM_THREE_ARGUMENT_MIDDLE_MACRO "
+    "/* second comma */ , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+    "#include <enum-three-argument-call.h>\n"
+    "/// enum three argument first macro\n"
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n"
+    "/// enum three argument middle macro\n"
+    "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n"
+    "/// enum three argument last macro\n"
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n"
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = "
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n"
+    "  , ENUM_THREE_ARGUMENT_MIDDLE_MACRO \\\r\n"
+    "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
 };
 
 static const char initializer_designator_operand_hover_source[] =
@@ -2908,6 +2940,49 @@ static int print_enum_two_argument_call_parity_snapshot(
   return result;
 }
 
+static int print_enum_three_argument_call_parity_snapshot(
+    const char *variant_text, const char *missing_argument_mode_text,
+    const char *cursor_text) {
+  char *variant_end = NULL;
+  char *missing_argument_mode_end = NULL;
+  char *cursor_end = NULL;
+  unsigned long long parsed_variant =
+      strtoull(variant_text, &variant_end, 10);
+  unsigned long long parsed_missing_argument_mode =
+      strtoull(missing_argument_mode_text,
+              &missing_argument_mode_end, 10);
+  unsigned long long parsed_cursor =
+      strtoull(cursor_text, &cursor_end, 10);
+  size_t source_count = sizeof(enum_three_argument_call_sources) /
+                        sizeof(enum_three_argument_call_sources[0]);
+  if (!variant_text[0] || !variant_end || *variant_end != '\0' ||
+      parsed_variant >= (unsigned long long)source_count ||
+      !missing_argument_mode_text[0] ||
+      !missing_argument_mode_end || *missing_argument_mode_end != '\0' ||
+      parsed_missing_argument_mode > 7 || !cursor_text[0] ||
+      !cursor_end || *cursor_end != '\0')
+    return 1;
+  char *source = enum_three_argument_macro_source(
+      enum_three_argument_call_sources[(size_t)parsed_variant],
+      (int)parsed_missing_argument_mode);
+  if (!source) return 1;
+  if (parsed_cursor > (unsigned long long)strlen(source)) {
+    free(source);
+    return 1;
+  }
+  const char *paths[] = {"enum-three-argument-call.h"};
+  const char *headers[] = {enum_three_argument_call_header};
+  header_bundle_t bundle = make_bundle(paths, headers, 1);
+  int result = bundle.bytes
+                   ? print_macro_definition_source_snapshot(
+                         "enum-three-argument-call.c", source,
+                         (size_t)parsed_cursor, bundle)
+                   : 1;
+  free(bundle.bytes);
+  free(source);
+  return result;
+}
+
 static int print_initializer_designator_operand_hover_parity_snapshot(
     const char *cursor_text) {
   char *end = NULL;
@@ -3336,6 +3411,37 @@ static char *enum_two_argument_both_renamed_source(
             strlen(position + declaration_length) + 1);
   }
   return renamed;
+}
+
+static char *enum_three_argument_macro_source(
+    const char *source, int missing_argument_mode) {
+  static const char *const declarations[] = {
+      "/// enum three argument first macro\n"
+      "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n",
+      "/// enum three argument middle macro\n"
+      "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n",
+      "/// enum three argument last macro\n"
+      "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n"};
+  if (!source || missing_argument_mode < 0 ||
+      missing_argument_mode > 7)
+    return NULL;
+  size_t source_length = strlen(source);
+  char *result = malloc(source_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, source_length + 1);
+  for (int argument_index = 0; argument_index < 3; argument_index++) {
+    if (!(missing_argument_mode & (1 << argument_index))) continue;
+    const char *declaration = declarations[argument_index];
+    char *position = strstr(result, declaration);
+    if (!position) {
+      free(result);
+      return NULL;
+    }
+    size_t declaration_length = strlen(declaration);
+    memmove(position, position + declaration_length,
+            strlen(position + declaration_length) + 1);
+  }
+  return result;
 }
 
 static int check_documentation_symbol(
@@ -6447,6 +6553,249 @@ static int test_enum_two_argument_call_cursor(
   return 0;
 }
 
+static int test_enum_three_argument_call_cursor(
+    ag_target_info_t target) {
+  static const char *const argument_names[] = {
+      "ENUM_THREE_ARGUMENT_FIRST_MACRO",
+      "ENUM_THREE_ARGUMENT_MIDDLE_MACRO",
+      "ENUM_THREE_ARGUMENT_LAST_MACRO"};
+  static const char *const argument_values[] = {"1", "2", "3"};
+  static const char *const argument_documentation[] = {
+      "enum three argument first macro",
+      "enum three argument middle macro",
+      "enum three argument last macro"};
+  static const char *const argument_comments[] = {
+      "/// enum three argument first macro",
+      "/// enum three argument middle macro",
+      "/// enum three argument last macro"};
+  static const struct {
+    size_t variant;
+    int missing_argument_mode;
+  } passes[] = {
+      {0, 0}, {0, 2}, {0, 0}, {0, 4}, {0, 0},
+      {1, 0}, {1, 4}, {1, 6}, {1, 2}, {1, 0}, {0, 0}};
+  const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
+  size_t callee_length = strlen(callee_name);
+  const char *header_paths[] = {"enum-three-argument-call.h"};
+  const char *header_sources[] = {enum_three_argument_call_header};
+  header_bundle_t bundle = make_bundle(
+      header_paths, header_sources, 1);
+  CHECK(bundle.bytes != NULL, "enum three argument call bundle");
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "enum three argument call session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  for (size_t pass_index = 0;
+       pass_index < sizeof(passes) / sizeof(passes[0]); pass_index++) {
+    size_t variant = passes[pass_index].variant;
+    int missing_argument_mode = passes[pass_index].missing_argument_mode;
+    char *source = enum_three_argument_macro_source(
+        enum_three_argument_call_sources[variant], missing_argument_mode);
+    CHECK(source != NULL, "enum three argument source");
+    const char *callee_use = last_occurrence(source, callee_name);
+    const char *call_open = callee_use
+                                ? strchr(callee_use + callee_length, '(')
+                                : NULL;
+    const char *argument_uses[3] = {0};
+    const char *commas[2] = {0};
+    argument_uses[0] = call_open
+                           ? strstr(call_open + 1, argument_names[0])
+                           : NULL;
+    commas[0] = argument_uses[0]
+                    ? strchr(argument_uses[0] + strlen(argument_names[0]), ',')
+                    : NULL;
+    argument_uses[1] = commas[0]
+                           ? strstr(commas[0] + 1, argument_names[1])
+                           : NULL;
+    commas[1] = argument_uses[1]
+                    ? strchr(argument_uses[1] + strlen(argument_names[1]), ',')
+                    : NULL;
+    argument_uses[2] = commas[1]
+                           ? strstr(commas[1] + 1, argument_names[2])
+                           : NULL;
+    const char *call_close = argument_uses[2]
+                                 ? strchr(argument_uses[2] +
+                                              strlen(argument_names[2]), ')')
+                                 : NULL;
+    CHECK(callee_use && call_open && argument_uses[0] && commas[0] &&
+              argument_uses[1] && commas[1] && argument_uses[2] &&
+              call_close,
+          "enum three argument call anchors");
+    typedef struct {
+      size_t cursor;
+      int hover_index;
+    } enum_three_argument_cursor_step_t;
+    enum_three_argument_cursor_step_t cursor_steps[24] = {
+        {(size_t)(callee_use - source) + callee_length / 2, -2},
+        {(size_t)(call_open - source) + 1, 0},
+        {(size_t)(argument_uses[0] - source), 0},
+        {(size_t)(argument_uses[0] - source) + strlen(argument_names[0]) / 2,
+         0},
+        {(size_t)(argument_uses[0] - source) + strlen(argument_names[0]), 0},
+        {(size_t)(commas[0] - source), -1},
+        {(size_t)(argument_uses[1] - source), 1},
+        {(size_t)(argument_uses[1] - source) + strlen(argument_names[1]) / 2,
+         1},
+        {(size_t)(argument_uses[1] - source) + strlen(argument_names[1]), 1},
+        {(size_t)(commas[1] - source), -1},
+        {(size_t)(argument_uses[2] - source), 2},
+        {(size_t)(argument_uses[2] - source) + strlen(argument_names[2]) / 2,
+         2},
+        {(size_t)(argument_uses[2] - source) + strlen(argument_names[2]), 2},
+        {(size_t)(call_close - source) + 1, -1}};
+    size_t cursor_step_count = 14;
+    if (variant == 0) {
+      const char *first_comment = strstr(
+          argument_uses[0] + strlen(argument_names[0]),
+          "/* first comma */");
+      const char *second_comment = strstr(
+          argument_uses[1] + strlen(argument_names[1]),
+          "/* second comma */");
+      CHECK(first_comment && second_comment,
+            "enum three argument comment anchors");
+      cursor_steps[cursor_step_count++] =
+          (enum_three_argument_cursor_step_t){
+              (size_t)(first_comment - source) + 4, -1};
+      cursor_steps[cursor_step_count++] =
+          (enum_three_argument_cursor_step_t){
+              (size_t)(second_comment - source) + 4, -1};
+    } else {
+      const char *first_splice = strchr(
+          argument_uses[0] + strlen(argument_names[0]), '\\');
+      const char *second_splice = strchr(
+          argument_uses[1] + strlen(argument_names[1]), '\\');
+      CHECK(first_splice && first_splice < commas[0] &&
+                second_splice && second_splice < commas[1],
+            "enum three argument splice anchors");
+      cursor_steps[cursor_step_count++] =
+          (enum_three_argument_cursor_step_t){
+              (size_t)(first_splice - source), -1};
+      cursor_steps[cursor_step_count++] =
+          (enum_three_argument_cursor_step_t){
+              (size_t)(first_splice - source) + 1, -1};
+      cursor_steps[cursor_step_count++] =
+          (enum_three_argument_cursor_step_t){
+              (size_t)(second_splice - source), -1};
+      cursor_steps[cursor_step_count++] =
+          (enum_three_argument_cursor_step_t){
+              (size_t)(second_splice - source) + 1, -1};
+    }
+    for (size_t cursor_index = 0;
+         cursor_index < cursor_step_count; cursor_index++) {
+      CHECK(analyze_named(
+                session, "enum-three-argument-call.c", source,
+                cursor_steps[cursor_index].cursor, bundle, defaults,
+                &snapshot, &error),
+            "enum three argument call analysis");
+      CHECK(snapshot.partial && snapshot.dependency_count == 1 &&
+                strcmp(snapshot.dependencies[0],
+                       "enum-three-argument-call.h") == 0,
+            "enum three argument common fields");
+      const ag_language_symbol_t *callee_candidate = find_symbol(
+          &snapshot, callee_name, AG_LANGUAGE_SYMBOL_MACRO);
+      CHECK(callee_candidate && callee_candidate->macro_is_function_like &&
+                !callee_candidate->macro_is_variadic &&
+                callee_candidate->macro_parameter_count == 3 &&
+                callee_candidate->macro_parameters &&
+                strcmp(callee_candidate->macro_parameters[0], "first") == 0 &&
+                strcmp(callee_candidate->macro_parameters[1], "middle") == 0 &&
+                strcmp(callee_candidate->macro_parameters[2], "last") == 0 &&
+                callee_candidate->macro_replacement &&
+                strcmp(callee_candidate->macro_replacement,
+                       "( ( first ) + ( middle ) + ( last ) + 100 )") == 0,
+            "enum three argument callee macro fields");
+      const ag_language_symbol_t *argument_candidates[3] = {0};
+      for (int argument_index = 0; argument_index < 3; argument_index++) {
+        argument_candidates[argument_index] = find_symbol(
+            &snapshot, argument_names[argument_index],
+            AG_LANGUAGE_SYMBOL_MACRO);
+        if (missing_argument_mode & (1 << argument_index)) {
+          CHECK(!argument_candidates[argument_index],
+                "enum three argument missing macro removed");
+          continue;
+        }
+        const char *declaration = strstr(source, argument_names[argument_index]);
+        const char *comment = strstr(source, argument_comments[argument_index]);
+        CHECK(declaration && comment && argument_candidates[argument_index] &&
+                  !argument_candidates[argument_index]->macro_is_function_like &&
+                  !argument_candidates[argument_index]->macro_is_variadic &&
+                  argument_candidates[argument_index]->macro_parameter_count == 0 &&
+                  argument_candidates[argument_index]->macro_replacement &&
+                  strcmp(argument_candidates[argument_index]->macro_replacement,
+                         argument_values[argument_index]) == 0 &&
+                  argument_candidates[argument_index]->declaration.start.offset ==
+                      (int)(declaration - source) &&
+                  argument_candidates[argument_index]->declaration.end.offset ==
+                      (int)(declaration - source +
+                            strlen(argument_names[argument_index])) &&
+                  check_documentation_symbol(
+                      argument_candidates[argument_index],
+                      argument_documentation[argument_index],
+                      "enum-three-argument-call.c",
+                      (size_t)(comment - source),
+                      (size_t)(comment - source) +
+                          strlen(argument_comments[argument_index])),
+              "enum three argument object macro fields");
+      }
+      const ag_language_symbol_t *derived = find_symbol(
+          &snapshot, "ENUM_THREE_ARGUMENT_DERIVED",
+          AG_LANGUAGE_SYMBOL_ENUM_CONSTANT);
+      CHECK((missing_argument_mode && !derived) ||
+                (!missing_argument_mode && derived &&
+                 derived->constant_value &&
+                 strcmp(derived->constant_value, "106") == 0),
+            "enum three argument derived value");
+      int first_missing_argument_index = 0;
+      while (first_missing_argument_index < 3 &&
+             !(missing_argument_mode &
+               (1 << first_missing_argument_index)))
+        first_missing_argument_index++;
+      CHECK(snapshot.diagnostic_count ==
+                (missing_argument_mode ? 1u : 0u),
+            "enum three argument diagnostic count");
+      if (missing_argument_mode) {
+        const ag_language_diagnostic_t *undefined_argument =
+            find_diagnostic(&snapshot, "E3066");
+        CHECK(undefined_argument && undefined_argument->message &&
+                  strstr(undefined_argument->message,
+                         argument_names[first_missing_argument_index]) &&
+                  undefined_argument->range.start.offset ==
+                      (int)(callee_use - source) &&
+                  undefined_argument->range.end.offset ==
+                      (int)(call_open - source),
+              "enum three argument undefined macro range");
+        for (int argument_index = first_missing_argument_index + 1;
+             argument_index < 3; argument_index++)
+          if (missing_argument_mode & (1 << argument_index))
+            CHECK(!strstr(undefined_argument->message,
+                          argument_names[argument_index]),
+                  "enum three argument later missing macro omitted");
+      }
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      int hover_index = cursor_steps[cursor_index].hover_index;
+      const ag_language_symbol_t *expected_hover =
+          hover_index == -2
+              ? callee_candidate
+          : hover_index >= 0
+              ? argument_candidates[hover_index]
+              : NULL;
+      CHECK((!expected_hover && !hover) ||
+                (expected_hover && hover &&
+                 hover->kind == expected_hover->kind &&
+                 same_range(&hover->declaration,
+                            &expected_hover->declaration)),
+            "enum three argument hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+    free(source);
+  }
+  ag_compilation_session_destroy(session);
+  free(bundle.bytes);
+  return 0;
+}
+
 static int test_initializer_designator_operand_hover(
     ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
@@ -8376,6 +8725,11 @@ int main(int argc, char **argv) {
              "--enum-two-argument-call-parity-json") == 0)
     return print_enum_two_argument_call_parity_snapshot(
         argv[2], argv[3], argv[4], argv[5], argv[6]);
+  if (argc == 5 &&
+      strcmp(argv[1],
+             "--enum-three-argument-call-parity-json") == 0)
+    return print_enum_three_argument_call_parity_snapshot(
+        argv[2], argv[3], argv[4]);
   if (argc == 3 &&
       strcmp(argv[1],
              "--initializer-designator-operand-hover-parity-json") == 0)
@@ -8456,6 +8810,8 @@ int main(int argc, char **argv) {
         "project enum macro revision order scenarios");
   CHECK(test_enum_two_argument_call_cursor(target) == 0,
         "enum two argument call cursor scenarios");
+  CHECK(test_enum_three_argument_call_cursor(target) == 0,
+        "enum three argument call cursor scenarios");
   CHECK(test_initializer_designator_operand_hover(target) == 0,
         "initializer designator operand hover scenarios");
   CHECK(test_compound_literal_designator_operand_hover(target) == 0,

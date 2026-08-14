@@ -33188,3 +33188,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 通常サイズの3引数enum direct macro callへ進み、3個の単一識別子object-like macro引数で中央または末尾定義を削除・復元しても、
     source順のE3066対象、残存候補、派生enumerator、Native/Wasm snapshotが一致する境界を確認する。
+
+### このセッション（続き1132）: 3引数enum direct macro callの中央・末尾欠落回復を固定した
+- 対象選定:
+  - 通常サイズの3引数enum direct callへ移り、3個の単一識別子object-like macro引数の中央・末尾定義だけを削除・復元した。
+  - 深い式、巨大入力、fuzz、資源枯渇などセキュリティ監査で止まりやすい探索には広げなかった。
+- 実装確認:
+  - `enum_direct_call_unresolved_identifier_argument()`はcall末尾までcommaを反復し、任意個の単一識別子引数をsource順に調べる
+    bounded構造であり、2引数に固定されたproduction codeではなかった。
+  - 3引数専用のcomment/CRLF source、欠落bit mask生成器、Native parity CLI、Native/Wasm共有instance回帰を追加した。
+  - 初回Native実行のhover差は、空白のない`(`直後が第1引数先頭と同じbyte offsetになる新sourceに対してnullを期待したテスト側の
+    問題だった。第1macro hoverを期待するよう訂正し、既存2引数期待は変更していない。
+- 調査結果:
+  - comment variantで全定義→中央欠落→全復元→末尾欠落→全復元、CRLF variantで全定義→末尾欠落→中央＋末尾欠落→
+    中央欠落→全復元を共有instanceへ連続投入した。
+  - 中央＋末尾欠落時はsource順の中央名だけをmessageに含む1件のE3066をcallee invocation rangeへ返し、末尾名を混入させなかった。
+  - 各欠落状態で定義済みmacroだけを候補・hoverとして公開し、replacement 1/2/3、declaration/documentation rangeを保持した。
+    欠落候補と派生enumeratorは残らず、全復元時は診断なし、3 macro metadata、派生値106へ戻った。
+  - Native/Wasm差、stale候補・診断・hover・dependency、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、同一source復帰snapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの3引数callで第1・第3引数をordinary enum定数、第2だけをobject-like macroにした混在状態から第2定義を
+    削除・復元し、ordinary namespace解決、E3066対象、残存enum hover、派生値、Native/Wasm snapshotが一致する境界を確認する。

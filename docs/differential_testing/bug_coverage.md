@@ -769,6 +769,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 
 | **両側rename済みmacro引数の双方向削除・復元** both present → one missing → both missing → other missing → both present | 🧪 | test_language_analysis (native/Wasm JS API) | 両rename定義がある状態から片側削除、両側削除、反対側だけ復元、両側復元までを連続解析し、過去の欠落順序ではなく現在sourceだけから未解決引数と候補集合を決める境界を固定する。comment variantの`0→1→3→2→0`ではE3066対象が第1rename名→第1rename名→第2rename名→なし、CRLF variantの`0→2→3→1→0`では第2rename名→第1rename名→第1rename名→なしと遷移する。各状態で定義済みrename名だけの候補・hover・replacement 1/2・declaration/documentation rangeを維持し、欠落候補と派生enumeratorを除去する。最終状態は両rename metadata、派生値103、初回snapshotへ完全復帰する。同一Native/Wasm instance、fresh Native snapshot、復帰snapshotを完全一致させ、深い式・巨大入力・fuzz・資源stressは追加しない |
 
+| **3引数enum direct macro callの中央・末尾object-like macro欠落回復** `CALL(FIRST, MIDDLE, LAST)` | 🧪 | test_language_analysis (native/Wasm JS API) | bounded enum call recoveryの単一識別子引数走査が2引数に依存せず、通常サイズの3引数callでもsource順に未解決引数を選ぶ境界を固定する。3個のobject-like macroを引数に置き、中央定義だけまたは末尾定義だけを削除・復元するほか、CRLF line splice variantで末尾欠落→中央＋末尾欠落→中央欠落→全復元を共有instanceへ連続投入する。欠落時は定義済みmacroだけの候補・hover・replacement 1/2/3・declaration/documentation rangeを維持し、欠落候補と派生enumeratorを除去する。中央＋末尾欠落では中央名だけをmessageに保持した1件のE3066をcallee invocation rangeへ返し、末尾名を混入させない。全復元時は診断なし、3 macro metadata、派生値106へ戻る。callee、3引数の先頭・中央・末尾、2個のcomma、comment内部またはCRLF splice位置について、同一Native/Wasm instance、fresh Native snapshot、復帰snapshotを完全一致させる。深い式・巨大入力・fuzz・資源stressは追加しない |
+
 ### リンケージ / 複数 TU（extern / static）
 複数ファイルをリンクする差分ハーネス（各 .c を ag_c で .s 化→clang で個別アセンブル→
 まとめてリンク、clang -I include 直ビルドと exit code 比較）で確認。
