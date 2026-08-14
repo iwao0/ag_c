@@ -33686,3 +33686,36 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズで旧variant 4/5全定義→旧全欠落→更新variant 10/11全欠落→更新全定義のatomic復元→更新全欠落のatomic再削除→
     旧全欠落→旧全定義と往復し、全復元snapshotと全欠落snapshotがrename・全metadata revisionを跨いでも完全復帰することを確認する。
+
+### このセッション（続き1147）: 3引数callの全欠落・全定義atomic往復を固定した
+- 対象選定:
+  - 続き1146と同じ通常サイズだけを使い、中央enumのrename・値・documentationと両端macro replacementを同時更新した全欠落sourceから、
+    3定義を一度に復元・再削除した。深い式、巨大入力、fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - comment側は旧variant 4全定義→旧全欠落→更新variant 10全欠落→更新全定義のatomic復元→更新全欠落のatomic再削除→
+    旧全欠落→旧全定義、CRLF側はvariant 5/11で同じ往復を行った。production compiler sourceは変更していない。
+  - 同じvariant/mask/cursorの再訪を初回Wasm完全snapshotと比較し、全欠落状態はrevision横断snapshotとも比較した。
+    各keyの初回結果はfresh Native JSON snapshotと完全一致させ、Native共有sessionでも同じ候補・診断・hover・rangeを検査した。
+- 調査結果:
+  - atomic復元後はrename済み中央enumだけが値9・更新documentationと現在offsetのrangeを持ち、両端macroはreplacement 7/11、
+    派生enumeratorは値127となった。E3066は残らなかった。
+  - atomic再削除後は3候補・hover・派生enumeratorを除去し、第1macro名だけの1件のE3066をcallee invocation rangeへ返して、
+    復元直前の更新全欠落snapshotへ完全復帰した。
+  - 旧revision全欠落を経て旧全定義へ戻すと、旧中央名・値6・旧documentation/range・replacement 1/3・派生値110へ復帰した。
+    Native/Wasm差、stale name・値・replacement・documentation・診断・hover・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、全定義／全欠落の再訪snapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで欠落状態を挟まず、旧variant 4/5全定義→更新variant 10/11全定義→旧全定義→更新全定義と直接往復し、
+    名前・全metadata・declaration/documentation range・派生値がfull-source revision切替だけでも現在sourceへ完全追随することを確認する。
