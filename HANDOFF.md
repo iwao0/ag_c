@@ -33750,3 +33750,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズで旧comment variant 4→更新CRLF variant 11→旧commentへ往復し、旧CRLF variant 5→更新comment variant 10→
     旧CRLFへも対称に往復して、layout・名前・全metadata revisionを同時に直接切り替えても現在offsetのrangeへ完全追随することを確認する。
+
+### このセッション（続き1149）: 3引数callのcross-layout full revision往復を固定した
+- 対象選定:
+  - 続き1148と同じ通常サイズだけを使い、欠落状態を挟まず、comment配置の旧全定義sourceとCRLF line splice配置の更新全定義source、
+    およびCRLF配置の旧sourceとcomment配置の更新sourceを対称に直接往復した。深い式、巨大入力、fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - 旧comment variant 4→更新CRLF variant 11→旧comment→更新CRLF、旧CRLF variant 5→更新comment variant 10→
+    旧CRLF→更新commentと切り替えた。production compiler sourceは変更していない。
+  - 同じvariant/mask `0`/cursorの再訪を初回Wasm完全snapshotと比較した。各keyの初回結果はfresh Native JSON snapshotと完全一致させ、
+    Native共有sessionでもcallee、3引数、comma、commentまたはCRLF splice位置の候補・hover・rangeを検査した。
+- 調査結果:
+  - 旧revisionは旧中央名だけを値6・旧documentationと現在offsetのrangeで公開し、両端macroはreplacement 1/3、派生値は110となった。
+  - 更新revisionは新中央名だけを値9・更新documentationと現在offsetのrangeで公開し、両端macroはreplacement 7/11、派生値は127となった。
+  - layout・名前・全metadataの同時直接切替でも診断0件を維持し、非アクティブな中央名とmetadataを除去した。Native/Wasm差、
+    stale name・値・replacement・documentation・hover・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、cross-layout全定義sourceの再訪snapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで旧comment variant 4全定義→更新CRLF variant 11全欠落→更新CRLF全定義→旧comment全定義と往復し、
+    旧CRLF variant 5と更新comment variant 10でも対称に、layout・全metadata revisionと全定義atomic削除／復元を同時に跨ぐ境界を確認する。
