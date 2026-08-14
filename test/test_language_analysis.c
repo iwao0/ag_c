@@ -6804,6 +6804,8 @@ static int test_enum_three_argument_call_cursor(
       {9, 0}, {9, 7}, {11, 7}, {11, 3}, {11, 1}, {11, 0}, {9, 0},
       {6, 0}, {6, 7}, {8, 7}, {8, 6}, {8, 4}, {8, 0}, {6, 0},
       {7, 0}, {7, 7}, {9, 7}, {9, 3}, {9, 1}, {9, 0}, {7, 0}, {6, 0},
+      {6, 0}, {6, 7}, {10, 7}, {10, 6}, {10, 4}, {10, 0}, {6, 0},
+      {7, 0}, {7, 7}, {11, 7}, {11, 3}, {11, 1}, {11, 0}, {7, 0}, {6, 0},
       {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
@@ -6812,11 +6814,18 @@ static int test_enum_three_argument_call_cursor(
   header_bundle_t bundle = make_bundle(
       header_paths, header_sources, 1);
   CHECK(bundle.bytes != NULL, "enum three argument call bundle");
-  for (size_t old_variant = 6; old_variant < 10; old_variant++) {
+  static const size_t all_missing_revision_pairs[][2] = {
+      {6, 8}, {7, 9}, {8, 10}, {9, 11}, {6, 10}, {7, 11}};
+  for (size_t pair_index = 0;
+       pair_index < sizeof(all_missing_revision_pairs) /
+                        sizeof(all_missing_revision_pairs[0]);
+       pair_index++) {
+    size_t old_variant = all_missing_revision_pairs[pair_index][0];
+    size_t updated_variant = all_missing_revision_pairs[pair_index][1];
     char *old_all_missing = enum_three_argument_macro_source(
         enum_three_argument_call_sources[old_variant], 7);
     char *updated_all_missing = enum_three_argument_macro_source(
-        enum_three_argument_call_sources[old_variant + 2], 7);
+        enum_three_argument_call_sources[updated_variant], 7);
     int same_all_missing_source =
         old_all_missing && updated_all_missing &&
         strcmp(old_all_missing, updated_all_missing) == 0;

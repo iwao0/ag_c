@@ -4917,11 +4917,13 @@ try {
 const enumThreeArgumentCompiler = await createCompiler(wasmModule);
 const enumThreeArgumentFirstResults = new Map();
 const enumThreeArgumentAllMissingRevisionResults = new Map();
-for (const oldVariant of [6, 7, 8, 9]) {
+for (const [oldVariant, updatedVariant] of [
+  [6, 8], [7, 9], [8, 10], [9, 11], [6, 10], [7, 11],
+]) {
   assert.deepStrictEqual(
     enumThreeArgumentMacroSource(enumThreeArgumentCallSources[oldVariant], 7),
     enumThreeArgumentMacroSource(
-      enumThreeArgumentCallSources[oldVariant + 2], 7,
+      enumThreeArgumentCallSources[updatedVariant], 7,
     ),
     "enum three argument all missing revision source identity",
   );
@@ -4953,6 +4955,8 @@ try {
     [9, 0], [9, 7], [11, 7], [11, 3], [11, 1], [11, 0], [9, 0],
     [6, 0], [6, 7], [8, 7], [8, 6], [8, 4], [8, 0], [6, 0],
     [7, 0], [7, 7], [9, 7], [9, 3], [9, 1], [9, 0], [7, 0], [6, 0],
+    [6, 0], [6, 7], [10, 7], [10, 6], [10, 4], [10, 0], [6, 0],
+    [7, 0], [7, 7], [11, 7], [11, 3], [11, 1], [11, 0], [7, 0], [6, 0],
     [10, 0],
   ]) {
     const source = enumThreeArgumentMacroSource(
