@@ -1118,6 +1118,32 @@ static const char *const enum_three_argument_call_sources[] = {
     "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_ENUM \\\r\n"
     "  , ENUM_THREE_ARGUMENT_MIDDLE_MACRO \\\r\n"
     "  , ENUM_THREE_ARGUMENT_LAST_ENUM)",
+    "#include <enum-three-argument-call.h>\n"
+    "/// enum three argument first macro\n"
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n"
+    "enum EnumThreeArgumentMiddleValue {\n"
+    "  /// enum three argument middle enum\n"
+    "  ENUM_THREE_ARGUMENT_MIDDLE_ENUM = 6\n"
+    "};\n"
+    "/// enum three argument last macro\n"
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n"
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = "
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO "
+    "/* first comma */ , ENUM_THREE_ARGUMENT_MIDDLE_ENUM "
+    "/* second comma */ , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+    "#include <enum-three-argument-call.h>\n"
+    "/// enum three argument first macro\n"
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n"
+    "enum EnumThreeArgumentMiddleValue {\n"
+    "  /// enum three argument middle enum\n"
+    "  ENUM_THREE_ARGUMENT_MIDDLE_ENUM = 6\n"
+    "};\n"
+    "/// enum three argument last macro\n"
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n"
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = "
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n"
+    "  , ENUM_THREE_ARGUMENT_MIDDLE_ENUM \\\r\n"
+    "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
 };
 
 static const char initializer_designator_operand_hover_source[] =
@@ -2986,8 +3012,13 @@ static int print_enum_three_argument_call_parity_snapshot(
       !missing_argument_mode_text[0] ||
       !missing_argument_mode_end || *missing_argument_mode_end != '\0' ||
       parsed_missing_argument_mode > 7 ||
-      (parsed_variant >= 2 && parsed_missing_argument_mode != 0 &&
-       parsed_missing_argument_mode != 2) || !cursor_text[0] ||
+      (parsed_variant >= 2 && parsed_variant < 4 &&
+       parsed_missing_argument_mode != 0 &&
+       parsed_missing_argument_mode != 2) ||
+      (parsed_variant >= 4 && parsed_missing_argument_mode != 0 &&
+       parsed_missing_argument_mode != 1 &&
+       parsed_missing_argument_mode != 4 &&
+       parsed_missing_argument_mode != 5) || !cursor_text[0] ||
       !cursor_end || *cursor_end != '\0')
     return 1;
   char *source = enum_three_argument_macro_source(
@@ -6591,8 +6622,13 @@ static int test_enum_three_argument_call_cursor(
       "ENUM_THREE_ARGUMENT_FIRST_ENUM",
       "ENUM_THREE_ARGUMENT_MIDDLE_MACRO",
       "ENUM_THREE_ARGUMENT_LAST_ENUM"};
+  static const char *const middle_enum_argument_names[] = {
+      "ENUM_THREE_ARGUMENT_FIRST_MACRO",
+      "ENUM_THREE_ARGUMENT_MIDDLE_ENUM",
+      "ENUM_THREE_ARGUMENT_LAST_MACRO"};
   static const char *const macro_argument_values[] = {"1", "2", "3"};
   static const char *const mixed_argument_values[] = {"4", "2", "5"};
+  static const char *const middle_enum_argument_values[] = {"1", "6", "3"};
   static const char *const macro_argument_documentation[] = {
       "enum three argument first macro",
       "enum three argument middle macro",
@@ -6601,6 +6637,10 @@ static int test_enum_three_argument_call_cursor(
       "enum three argument first enum",
       "enum three argument middle macro",
       "enum three argument last enum"};
+  static const char *const middle_enum_argument_documentation[] = {
+      "enum three argument first macro",
+      "enum three argument middle enum",
+      "enum three argument last macro"};
   static const char *const macro_argument_comments[] = {
       "/// enum three argument first macro",
       "/// enum three argument middle macro",
@@ -6609,6 +6649,10 @@ static int test_enum_three_argument_call_cursor(
       "/// enum three argument first enum",
       "/// enum three argument middle macro",
       "/// enum three argument last enum"};
+  static const char *const middle_enum_argument_comments[] = {
+      "/// enum three argument first macro",
+      "/// enum three argument middle enum",
+      "/// enum three argument last macro"};
   static const struct {
     size_t variant;
     int missing_argument_mode;
@@ -6616,7 +6660,9 @@ static int test_enum_three_argument_call_cursor(
       {0, 0}, {0, 2}, {0, 0}, {0, 4}, {0, 0},
       {1, 0}, {1, 4}, {1, 6}, {1, 2}, {1, 0}, {0, 0},
       {2, 0}, {2, 2}, {2, 0},
-      {3, 0}, {3, 2}, {3, 0}, {2, 0}};
+      {3, 0}, {3, 2}, {3, 0}, {2, 0},
+      {4, 0}, {4, 1}, {4, 5}, {4, 4}, {4, 0},
+      {5, 0}, {5, 4}, {5, 5}, {5, 1}, {5, 0}, {4, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
   const char *header_paths[] = {"enum-three-argument-call.h"};
@@ -6634,19 +6680,24 @@ static int test_enum_three_argument_call_cursor(
        pass_index < sizeof(passes) / sizeof(passes[0]); pass_index++) {
     size_t variant = passes[pass_index].variant;
     int missing_argument_mode = passes[pass_index].missing_argument_mode;
-    int mixed_arguments = variant >= 2;
-    const char *const *argument_names = mixed_arguments
-                                            ? mixed_argument_names
-                                            : macro_argument_names;
-    const char *const *argument_values = mixed_arguments
-                                             ? mixed_argument_values
-                                             : macro_argument_values;
-    const char *const *argument_documentation = mixed_arguments
-                                                    ? mixed_argument_documentation
-                                                    : macro_argument_documentation;
-    const char *const *argument_comments = mixed_arguments
-                                               ? mixed_argument_comments
-                                               : macro_argument_comments;
+    int outer_enum_arguments = variant >= 2 && variant < 4;
+    int middle_enum_argument = variant >= 4;
+    const char *const *argument_names =
+        middle_enum_argument ? middle_enum_argument_names
+        : outer_enum_arguments ? mixed_argument_names
+                               : macro_argument_names;
+    const char *const *argument_values =
+        middle_enum_argument ? middle_enum_argument_values
+        : outer_enum_arguments ? mixed_argument_values
+                               : macro_argument_values;
+    const char *const *argument_documentation =
+        middle_enum_argument ? middle_enum_argument_documentation
+        : outer_enum_arguments ? mixed_argument_documentation
+                               : macro_argument_documentation;
+    const char *const *argument_comments =
+        middle_enum_argument ? middle_enum_argument_comments
+        : outer_enum_arguments ? mixed_argument_comments
+                               : macro_argument_comments;
     char *source = enum_three_argument_macro_source(
         enum_three_argument_call_sources[variant], missing_argument_mode);
     CHECK(source != NULL, "enum three argument source");
@@ -6764,7 +6815,9 @@ static int test_enum_three_argument_call_cursor(
             "enum three argument callee macro fields");
       const ag_language_symbol_t *argument_candidates[3] = {0};
       for (int argument_index = 0; argument_index < 3; argument_index++) {
-        int enum_argument = mixed_arguments && argument_index != 1;
+        int enum_argument =
+            (outer_enum_arguments && argument_index != 1) ||
+            (middle_enum_argument && argument_index == 1);
         argument_candidates[argument_index] = find_symbol(
             &snapshot, argument_names[argument_index],
             enum_argument ? AG_LANGUAGE_SYMBOL_ENUM_CONSTANT
@@ -6819,7 +6872,9 @@ static int test_enum_three_argument_call_cursor(
                 (!missing_argument_mode && derived &&
                  derived->constant_value &&
                  strcmp(derived->constant_value,
-                        mixed_arguments ? "111" : "106") == 0),
+                        middle_enum_argument ? "110"
+                        : outer_enum_arguments ? "111"
+                                               : "106") == 0),
             "enum three argument derived value");
       int first_missing_argument_index = 0;
       while (first_missing_argument_index < 3 &&

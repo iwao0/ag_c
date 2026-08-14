@@ -773,6 +773,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 
 | **3引数enum direct callのordinary enum＋object-like macro混在回復** `CALL(FIRST_ENUM, MIDDLE_MACRO, LAST_ENUM)` | 🧪 | test_language_analysis (native/Wasm JS API) | 3引数bounded recoveryが全引数をmacroと仮定せず、ScopeGraph ordinary namespaceで解決する両端enum定数を有効な単一識別子引数として扱う境界を固定する。第1・第3引数を値4/5のenum定数、第2だけをreplacement 2のobject-like macroにし、comment・CRLF line splice variantで中央macro定義を削除・復元する。削除時は中央macro候補と派生enumeratorだけを除去し、中央名をmessageに保持した1件のE3066をcallee invocation rangeへ返す一方、両端enumの候補・hover・値・declaration/documentation rangeを維持する。復元時は中央macro metadataと派生値111へ戻る。callee、3引数、2個のcomma、comment/splice位置について、共有Native/Wasm instance、fresh Native snapshot、復帰snapshotを完全一致させる。深い式・巨大入力・fuzz・資源stressは追加しない |
 
+| **3引数enum direct callの両端macro＋中央ordinary enum混在回復** `CALL(FIRST_MACRO, MIDDLE_ENUM, LAST_MACRO)` | 🧪 | test_language_analysis (native/Wasm JS API) | ordinary enumを挟む2個のobject-like macroについて、現在sourceだけからsource順の未解決引数を選び直す境界を固定する。値6の中央enumを維持したまま、comment variantは両macroあり→第1欠落→両欠落→第3欠落→両復元、CRLF line splice variantは逆方向に遷移させる。両欠落時は第1macro名だけをmessageに含む1件のE3066をcallee invocation rangeへ返し、第1だけ復元すると第3macro名へ切り替える。各状態で中央enumと定義済みmacroの候補・hover・値/replacement・declaration/documentation rangeを維持し、欠落候補と派生enumeratorを除去する。全復元時は派生値110と初回snapshotへ戻る。共有Native/Wasm instance、各revisionのfresh Native snapshot、復帰snapshotを完全一致させ、深い式・巨大入力・fuzz・資源stressは追加しない |
+
 ### リンケージ / 複数 TU（extern / static）
 複数ファイルをリンクする差分ハーネス（各 .c を ag_c で .s 化→clang で個別アセンブル→
 まとめてリンク、clang -I include 直ビルドと exit code 比較）で確認。

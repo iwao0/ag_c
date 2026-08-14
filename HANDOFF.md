@@ -33253,3 +33253,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズの3引数callで第2をordinary enum定数、第1・第3をobject-like macroにし、両macro定義を片側ずつ／同時に
     削除・復元しても、ordinary enumを跨ぐsource順E3066、残存候補、派生値、Native/Wasm snapshotが一致する境界を確認する。
+
+### このセッション（続き1134）: 3引数callの両端macro＋中央ordinary enum混在回復を固定した
+- 対象選定:
+  - 続き1133と同じ通常サイズの3引数enum direct callで、第1・第3引数をobject-like macro、第2だけをordinary enum定数にした。
+  - 深い式、巨大入力、fuzz、資源枯渇などセキュリティ監査で止まりやすい探索には広げなかった。
+- 実装確認:
+  - 既存の`enum_direct_call_unresolved_identifier_argument()`は各単一識別子引数についてobject-like macro表とScopeGraph ordinary
+    namespaceの両方を調べるため、中央enumを有効と判断した後も末尾macroまでsource順に走査できる構造だった。
+  - 3引数sourceへcomment/CRLFの反対向き混在variantを追加し、parity CLIでは新variantの欠落maskを両端macroの`1/4/5`だけに
+    制限した。production compiler sourceは変更していない。
+- 調査結果:
+  - comment variantは両macroあり`0`→第1欠落`1`→両欠落`5`→第3欠落`4`→両復元`0`、CRLF variantは
+    `0`→`4`→`5`→`1`→`0`を共有instanceへ連続投入した。
+  - 両欠落時はsource順の第1macro名だけをmessageに含む1件のE3066をcallee invocation rangeへ返し、第1だけ復元した状態では
+    第3macro名へ切り替わった。過去revisionの欠落順には依存しなかった。
+  - 中央enumは候補・hover、値6、declaration/documentation rangeを全欠落状態で維持した。定義済みmacroだけが候補・hoverと
+    replacement 1/3を保持し、欠落候補と派生enumeratorは残らず、全復元時は派生値110と初回snapshotへ戻った。
+  - Native/Wasm差、stale候補・診断・hover・dependency、ordinary enumの誤欠落、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、同一source復帰snapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの3引数callで中央ordinary enumを別名へrenameし、両端macroの片側／同時欠落列をrename前後で往復しても、
+    ordinary候補・source順E3066・復帰snapshotがNative/Wasmで混線しない境界を確認する。
