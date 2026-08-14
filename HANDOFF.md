@@ -33621,3 +33621,35 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズで全引数欠落mask `7`中に中央ordinary enumをrenameしながら値6・旧documentationから値9・更新documentationへ
     同時更新し、第1macro復元後のE3066と中央enum復元後の候補metadataが現在sourceだけへ追随する境界を確認する。
+
+### このセッション（続き1145）: 3引数callの全欠落中中央enum rename＋metadata更新を固定した
+- 対象選定:
+  - 続き1144と同じ通常サイズだけを使い、全引数欠落mask `7`中に中央ordinary enumを長さの異なる名前へrenameしながら、
+    値6・旧documentationから値9・更新documentationへ同時更新した。深い式、巨大入力、fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - comment側は旧名全定義→旧名全欠落→rename＋metadata更新済み全欠落→第1・中央・第3の段階復元→旧名全定義、
+    CRLF側は旧名全定義→旧名全欠落→更新済み全欠落→第3・中央・第1の段階復元→旧名全定義と遷移させた。
+  - 現在名のcall anchor、非アクティブな新旧名、source順E3066、候補の値・documentation/range、hover検査を共有した。
+    production compiler sourceは変更していない。
+- 調査結果:
+  - 全欠落中は中央名・metadataを同時更新しても第1macro名だけの1件のE3066をcallee invocation rangeへ返し、中央の新旧名を
+    messageへ混入させなかった。第1macro復元後はE3066対象がrename済み中央名へ切り替わった。
+  - 中央enum復元後はrename済み候補だけが値9、更新documentationと現在offsetのrangeを持ち、旧名・旧metadataは残らなかった。
+    更新全復元時は両端replacement 1/3と派生値113、旧sourceへ戻すと旧名・値6・旧documentation・派生値110へ復帰した。
+  - Native/Wasm差、stale name・値・documentation・診断・hover・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、更新後／旧source復帰後のsnapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで全引数欠落mask `7`中に中央enumのrename・metadata更新と両端macro replacement更新を同時に行い、
+    第1macro復元後の診断、各候補の現在metadata、全復元時の派生値127が現在sourceだけへ追随する境界を確認する。
