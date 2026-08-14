@@ -6825,7 +6825,9 @@ static int test_enum_three_argument_call_cursor(
       {4, 7}, {11, 7}, {4, 7}, {11, 7},
       {5, 7}, {10, 7}, {5, 7}, {10, 7}, {4, 0}, {10, 0},
       {4, 6}, {11, 6}, {4, 6}, {11, 6},
-      {5, 6}, {10, 6}, {5, 6}, {10, 6}, {4, 0}, {10, 0}};
+      {5, 6}, {10, 6}, {5, 6}, {10, 6}, {4, 0}, {10, 0},
+      {4, 5}, {11, 5}, {4, 5}, {11, 5},
+      {5, 5}, {10, 5}, {5, 5}, {10, 5}, {4, 0}, {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
   const char *header_paths[] = {"enum-three-argument-call.h"};
@@ -7104,6 +7106,10 @@ static int test_enum_three_argument_call_cursor(
             CHECK(!strstr(undefined_argument->message,
                           argument_names[argument_index]),
                   "enum three argument later missing argument omitted");
+        if (missing_argument_mode == 5)
+          CHECK(!strstr(undefined_argument->message,
+                        argument_names[1]),
+                "enum three argument surviving middle diagnostic omitted");
         if (middle_enum_argument) {
           const char *inactive_middle_enum_name =
               renamed_middle_enum_argument
