@@ -3095,6 +3095,7 @@ static int print_enum_three_argument_call_parity_snapshot(
        parsed_missing_argument_mode != 2) ||
       (parsed_variant >= 4 && parsed_missing_argument_mode != 0 &&
        parsed_missing_argument_mode != 1 &&
+       parsed_missing_argument_mode != 2 &&
        parsed_missing_argument_mode != 4 &&
        parsed_missing_argument_mode != 5) || !cursor_text[0] ||
       !cursor_end || *cursor_end != '\0')
@@ -3552,18 +3553,33 @@ static char *enum_two_argument_both_renamed_source(
 
 static char *enum_three_argument_macro_source(
     const char *source, int missing_argument_mode) {
-  static const char *const declarations[][2] = {
+  static const char *const declarations[][4] = {
       {"/// enum three argument first macro\n"
        "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n",
        "/// enum three argument first macro\n"
-       "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 7\n"},
+       "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 7\n",
+       NULL,
+       NULL},
       {"/// enum three argument middle macro\n"
        "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n",
-       NULL},
+       "enum EnumThreeArgumentMiddleValue {\n"
+       "  /// enum three argument middle enum\n"
+       "  ENUM_THREE_ARGUMENT_MIDDLE_ENUM = 6\n"
+       "};\n",
+       "enum EnumThreeArgumentMiddleValue {\n"
+       "  /// enum three argument middle enum\n"
+       "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 6\n"
+       "};\n",
+       "enum EnumThreeArgumentMiddleValue {\n"
+       "  /// enum three argument updated middle enum\n"
+       "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 9\n"
+       "};\n"},
       {"/// enum three argument last macro\n"
        "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n",
        "/// enum three argument last macro\n"
-       "#define ENUM_THREE_ARGUMENT_LAST_MACRO 11\n"}};
+       "#define ENUM_THREE_ARGUMENT_LAST_MACRO 11\n",
+       NULL,
+       NULL}};
   if (!source || missing_argument_mode < 0 ||
       missing_argument_mode > 7)
     return NULL;
@@ -3575,7 +3591,7 @@ static char *enum_three_argument_macro_source(
     if (!(missing_argument_mode & (1 << argument_index))) continue;
     const char *declaration = NULL;
     char *position = NULL;
-    for (int revision = 0; revision < 2 && !position; revision++) {
+    for (int revision = 0; revision < 4 && !position; revision++) {
       declaration = declarations[argument_index][revision];
       if (declaration) position = strstr(result, declaration);
     }
@@ -6774,7 +6790,9 @@ static int test_enum_three_argument_call_cursor(
       {8, 0}, {8, 1}, {10, 1}, {10, 5}, {10, 4}, {10, 1}, {10, 0},
       {8, 0},
       {9, 0}, {9, 4}, {11, 4}, {11, 5}, {11, 1}, {11, 4}, {11, 0},
-      {9, 0}, {8, 0}};
+      {9, 0}, {8, 0},
+      {10, 0}, {10, 2}, {10, 0},
+      {11, 0}, {11, 2}, {11, 0}, {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
   const char *header_paths[] = {"enum-three-argument-call.h"};
@@ -6945,7 +6963,7 @@ static int test_enum_three_argument_call_cursor(
                           : AG_LANGUAGE_SYMBOL_MACRO);
         if (missing_argument_mode & (1 << argument_index)) {
           CHECK(!argument_candidates[argument_index],
-                "enum three argument missing macro removed");
+                "enum three argument missing operand removed");
           continue;
         }
         const char *declaration = strstr(source, argument_names[argument_index]);
@@ -7026,13 +7044,13 @@ static int test_enum_three_argument_call_cursor(
                       (int)(callee_use - source) &&
                   undefined_argument->range.end.offset ==
                       (int)(call_open - source),
-              "enum three argument undefined macro range");
+              "enum three argument undefined argument range");
         for (int argument_index = first_missing_argument_index + 1;
              argument_index < 3; argument_index++)
           if (missing_argument_mode & (1 << argument_index))
             CHECK(!strstr(undefined_argument->message,
                           argument_names[argument_index]),
-                  "enum three argument later missing macro omitted");
+                  "enum three argument later missing argument omitted");
       }
       const ag_language_symbol_t *hover = hover_symbol(&snapshot);
       int hover_index = cursor_steps[cursor_index].hover_index;

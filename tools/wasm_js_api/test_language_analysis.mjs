@@ -3254,7 +3254,19 @@ function enumThreeArgumentMacroSource(input, missingArgumentMode) {
      "/// enum three argument first macro\n" +
        "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 7\n"],
     ["/// enum three argument middle macro\n" +
-       "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n"],
+       "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n",
+     "enum EnumThreeArgumentMiddleValue {\n" +
+       "  /// enum three argument middle enum\n" +
+       "  ENUM_THREE_ARGUMENT_MIDDLE_ENUM = 6\n" +
+       "};\n",
+     "enum EnumThreeArgumentMiddleValue {\n" +
+       "  /// enum three argument middle enum\n" +
+       "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 6\n" +
+       "};\n",
+     "enum EnumThreeArgumentMiddleValue {\n" +
+       "  /// enum three argument updated middle enum\n" +
+       "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 9\n" +
+       "};\n"],
     ["/// enum three argument last macro\n" +
        "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n",
      "/// enum three argument last macro\n" +
@@ -4921,6 +4933,8 @@ try {
     [8, 0],
     [9, 0], [9, 4], [11, 4], [11, 5], [11, 1], [11, 4], [11, 0],
     [9, 0], [8, 0],
+    [10, 0], [10, 2], [10, 0],
+    [11, 0], [11, 2], [11, 0], [10, 0],
   ]) {
     const source = enumThreeArgumentMacroSource(
       enumThreeArgumentCallSources[variant], missingArgumentMode,
