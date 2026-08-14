@@ -33653,3 +33653,36 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズで全引数欠落mask `7`中に中央enumのrename・metadata更新と両端macro replacement更新を同時に行い、
     第1macro復元後の診断、各候補の現在metadata、全復元時の派生値127が現在sourceだけへ追随する境界を確認する。
+
+### このセッション（続き1146）: 3引数callの全欠落中rename＋全metadata更新を固定した
+- 対象選定:
+  - 続き1145と同じ通常サイズだけを使い、全引数欠落mask `7`中に中央ordinary enumのrename・値・documentation更新と、
+    両端object-like macroのreplacement更新を同時に行った。深い式、巨大入力、fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - comment側は旧名・旧metadata全定義→旧全欠落→rename＋全metadata更新済み全欠落→第1・中央・第3の段階復元→
+    旧source全定義、CRLF側は旧全定義→旧全欠落→更新済み全欠落→第3・中央・第1の段階復元→旧source全定義と遷移させた。
+  - 現在名のcall anchor、非アクティブな新旧中央名、source順E3066、候補の値・replacement・documentation/range、hover検査を
+    既存の共通assertでNative/Wasm両方へ適用した。production compiler sourceは変更していない。
+- 調査結果:
+  - 全欠落中は名前と全metadataを同時更新しても第1macro名だけの1件のE3066をcallee invocation rangeへ返し、中央の新旧名や
+    後続macro名をmessageへ混入させなかった。第1macro復元後はE3066対象がrename済み中央名へ切り替わった。
+  - 復元済み候補だけが現在sourceのmetadataを持ち、中央enumは新名・値9・更新documentationと現在offsetのrange、両端macroは
+    replacement 7/11へ追随した。更新全復元時は派生値127、旧sourceへ戻すと旧名・値6・旧documentation・replacement 1/3・
+    派生値110へ復帰し、更新名・metadataは残らなかった。
+  - Native/Wasm差、stale name・値・replacement・documentation・診断・hover・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、更新後／旧source復帰後のsnapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで旧variant 4/5全定義→旧全欠落→更新variant 10/11全欠落→更新全定義のatomic復元→更新全欠落のatomic再削除→
+    旧全欠落→旧全定義と往復し、全復元snapshotと全欠落snapshotがrename・全metadata revisionを跨いでも完全復帰することを確認する。
