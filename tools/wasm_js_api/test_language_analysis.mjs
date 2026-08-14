@@ -4969,6 +4969,8 @@ try {
     [5, 0], [11, 0], [5, 0], [11, 0], [4, 0], [10, 0],
     [4, 0], [11, 0], [4, 0], [11, 0],
     [5, 0], [10, 0], [5, 0], [10, 0], [4, 0], [10, 0],
+    [4, 0], [11, 7], [11, 0], [4, 0],
+    [5, 0], [10, 7], [10, 0], [5, 0], [4, 0], [10, 0],
   ]) {
     const source = enumThreeArgumentMacroSource(
       enumThreeArgumentCallSources[variant], missingArgumentMode,

@@ -33781,3 +33781,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズで旧comment variant 4全定義→更新CRLF variant 11全欠落→更新CRLF全定義→旧comment全定義と往復し、
     旧CRLF variant 5と更新comment variant 10でも対称に、layout・全metadata revisionと全定義atomic削除／復元を同時に跨ぐ境界を確認する。
+
+### このセッション（続き1150）: 3引数callのcross-layout全欠落・atomic復元を固定した
+- 対象選定:
+  - 続き1149と同じ通常サイズだけを使い、旧全定義sourceからlayoutと全metadata revisionを同時変更した更新全欠落sourceへ直接切り替え、
+    3定義をatomic復元してから旧全定義へ戻した。深い式、巨大入力、fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - 旧comment variant 4/mask 0→更新CRLF variant 11/mask 7→11/mask 0→4/mask 0、旧CRLF variant 5/mask 0→
+    更新comment variant 10/mask 7→10/mask 0→5/mask 0を対称に実行した。production compiler sourceは変更していない。
+  - 同じvariant/mask/cursorの再訪を初回Wasm完全snapshotと比較し、更新全欠落は同layoutのrevision横断snapshotとも比較した。
+    各keyの初回結果はfresh Native JSON snapshotと一致させ、Native共有sessionでも候補・診断・hover・rangeを検査した。
+- 調査結果:
+  - 更新全欠落は3候補・hover・派生enumeratorを除去し、第1macro名だけの1件のE3066を現在layoutのcallee invocation rangeへ返した。
+  - atomic復元後は新中央名だけが値9・更新documentationと現在offsetのrangeを持ち、両端macroはreplacement 7/11、派生値は127となった。
+  - 旧fullへ戻すと旧中央名・値6・旧documentation/range・replacement 1/3・派生値110へ復帰した。Native/Wasm差、stale name・値・
+    replacement・documentation・診断・hover・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、全欠落／全定義sourceの再訪snapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで更新comment variant 10全定義→旧CRLF variant 5全欠落→旧CRLF全定義→更新comment全定義とrevision方向を反転し、
+    更新CRLF variant 11と旧comment variant 4でも対称に、cross-layout全欠落・atomic復元・更新full復帰を確認する。

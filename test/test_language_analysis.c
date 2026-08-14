@@ -6817,7 +6817,9 @@ static int test_enum_three_argument_call_cursor(
       {10, 0}, {4, 0}, {10, 0},
       {5, 0}, {11, 0}, {5, 0}, {11, 0}, {4, 0}, {10, 0},
       {4, 0}, {11, 0}, {4, 0}, {11, 0},
-      {5, 0}, {10, 0}, {5, 0}, {10, 0}, {4, 0}, {10, 0}};
+      {5, 0}, {10, 0}, {5, 0}, {10, 0}, {4, 0}, {10, 0},
+      {4, 0}, {11, 7}, {11, 0}, {4, 0},
+      {5, 0}, {10, 7}, {10, 0}, {5, 0}, {4, 0}, {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
   const char *header_paths[] = {"enum-three-argument-call.h"};
