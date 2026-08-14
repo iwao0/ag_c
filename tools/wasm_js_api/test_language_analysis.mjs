@@ -3129,6 +3129,32 @@ const enumThreeArgumentCallSources = [
     "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n" +
     "  , ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM \\\r\n" +
     "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+  "#include <enum-three-argument-call.h>\n" +
+    "/// enum three argument first macro\n" +
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n" +
+    "enum EnumThreeArgumentMiddleValue {\n" +
+    "  /// enum three argument updated middle enum\n" +
+    "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 9\n" +
+    "};\n" +
+    "/// enum three argument last macro\n" +
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n" +
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = " +
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO " +
+    "/* first comma */ , ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM " +
+    "/* second comma */ , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+  "#include <enum-three-argument-call.h>\n" +
+    "/// enum three argument first macro\n" +
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n" +
+    "enum EnumThreeArgumentMiddleValue {\n" +
+    "  /// enum three argument updated middle enum\n" +
+    "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 9\n" +
+    "};\n" +
+    "/// enum three argument last macro\n" +
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n" +
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = " +
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n" +
+    "  , ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM \\\r\n" +
+    "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
 ].map((source) => ({name: "enum-three-argument-call.c", source}));
 const enumThreeArgumentMacroNames = [
   "ENUM_THREE_ARGUMENT_FIRST_MACRO",
@@ -3153,6 +3179,7 @@ const enumThreeArgumentRenamedMiddleEnumNames = [
 const enumThreeArgumentMacroValues = ["1", "2", "3"];
 const enumThreeArgumentMixedValues = ["4", "2", "5"];
 const enumThreeArgumentMiddleEnumValues = ["1", "6", "3"];
+const enumThreeArgumentUpdatedMiddleEnumValues = ["1", "9", "3"];
 const enumThreeArgumentMacroDocumentation = [
   "enum three argument first macro",
   "enum three argument middle macro",
@@ -3168,6 +3195,11 @@ const enumThreeArgumentMiddleEnumDocumentation = [
   "enum three argument middle enum",
   "enum three argument last macro",
 ];
+const enumThreeArgumentUpdatedMiddleEnumDocumentation = [
+  "enum three argument first macro",
+  "enum three argument updated middle enum",
+  "enum three argument last macro",
+];
 const enumThreeArgumentMacroComments = [
   "/// enum three argument first macro",
   "/// enum three argument middle macro",
@@ -3181,6 +3213,11 @@ const enumThreeArgumentMixedComments = [
 const enumThreeArgumentMiddleEnumComments = [
   "/// enum three argument first macro",
   "/// enum three argument middle enum",
+  "/// enum three argument last macro",
+];
+const enumThreeArgumentUpdatedMiddleEnumComments = [
+  "/// enum three argument first macro",
+  "/// enum three argument updated middle enum",
   "/// enum three argument last macro",
 ];
 function enumThreeArgumentMacroSource(input, missingArgumentMode) {
@@ -4843,6 +4880,9 @@ try {
     [5, 0], [5, 4], [5, 5], [5, 1], [5, 0], [4, 0],
     [6, 0], [6, 1], [6, 5], [6, 4], [6, 0], [4, 0],
     [5, 0], [7, 0], [7, 4], [7, 5], [7, 1], [7, 0], [5, 0], [4, 0],
+    [6, 0], [6, 1], [8, 1], [8, 5], [8, 4], [8, 1], [8, 0], [6, 0],
+    [7, 0], [7, 4], [9, 4], [9, 5], [9, 1], [9, 4], [9, 0], [7, 0],
+    [6, 0],
   ]) {
     const source = enumThreeArgumentMacroSource(
       enumThreeArgumentCallSources[variant], missingArgumentMode,
@@ -4850,25 +4890,32 @@ try {
     const outerEnumArguments = variant >= 2 && variant < 4;
     const middleEnumArgument = variant >= 4;
     const renamedMiddleEnumArgument = variant >= 6;
+    const updatedMiddleEnumArgument = variant >= 8;
     const argumentNames = renamedMiddleEnumArgument
       ? enumThreeArgumentRenamedMiddleEnumNames
       : middleEnumArgument
         ? enumThreeArgumentMiddleEnumNames
         : outerEnumArguments
           ? enumThreeArgumentMixedNames : enumThreeArgumentMacroNames;
-    const argumentValues = middleEnumArgument
-      ? enumThreeArgumentMiddleEnumValues
-      : outerEnumArguments
-        ? enumThreeArgumentMixedValues : enumThreeArgumentMacroValues;
-    const argumentDocumentation = middleEnumArgument
-      ? enumThreeArgumentMiddleEnumDocumentation
-      : outerEnumArguments
-        ? enumThreeArgumentMixedDocumentation
-        : enumThreeArgumentMacroDocumentation;
-    const argumentComments = middleEnumArgument
-      ? enumThreeArgumentMiddleEnumComments
-      : outerEnumArguments
-        ? enumThreeArgumentMixedComments : enumThreeArgumentMacroComments;
+    const argumentValues = updatedMiddleEnumArgument
+      ? enumThreeArgumentUpdatedMiddleEnumValues
+      : middleEnumArgument
+        ? enumThreeArgumentMiddleEnumValues
+        : outerEnumArguments
+          ? enumThreeArgumentMixedValues : enumThreeArgumentMacroValues;
+    const argumentDocumentation = updatedMiddleEnumArgument
+      ? enumThreeArgumentUpdatedMiddleEnumDocumentation
+      : middleEnumArgument
+        ? enumThreeArgumentMiddleEnumDocumentation
+        : outerEnumArguments
+          ? enumThreeArgumentMixedDocumentation
+          : enumThreeArgumentMacroDocumentation;
+    const argumentComments = updatedMiddleEnumArgument
+      ? enumThreeArgumentUpdatedMiddleEnumComments
+      : middleEnumArgument
+        ? enumThreeArgumentMiddleEnumComments
+        : outerEnumArguments
+          ? enumThreeArgumentMixedComments : enumThreeArgumentMacroComments;
     const text = source.source;
     const calleeName = "ENUM_THREE_ARGUMENT_CALL";
     const calleeIndex = text.lastIndexOf(calleeName);
@@ -5027,7 +5074,9 @@ try {
         assert.equal(derived, undefined);
       } else {
         assert.equal(derived?.initializer.constantValue,
-          middleEnumArgument ? "110" : outerEnumArguments ? "111" : "106");
+          updatedMiddleEnumArgument
+            ? "113" : middleEnumArgument
+              ? "110" : outerEnumArguments ? "111" : "106");
       }
       const firstMissingArgumentIndex = [0, 1, 2].find(
         (index) => (missingArgumentMode & (1 << index)) !== 0,

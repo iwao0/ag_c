@@ -33321,3 +33321,38 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズの3引数callで中央ordinary enumの値とdocumentationをrename後に更新し、両端macro欠落中／復元後に
     metadata・派生値・Native/Wasm snapshotが現在revisionだけへ追随する境界を確認する。
+
+### このセッション（続き1136）: 3引数callの中央ordinary enum metadata更新・復帰を固定した
+- 対象選定:
+  - 続き1135と同じ通常サイズの3引数enum direct callで、rename済み中央ordinary enumの名前を保ったまま値とdocumentationだけを
+    更新・復帰させた。
+  - 深い式、巨大入力、fuzz、資源枯渇などセキュリティ監査で止まりやすい探索には広げなかった。
+- 実装確認:
+  - comment/CRLFそれぞれに値9と`enum three argument updated middle enum` documentationを持つvariantを追加した。
+  - 既存の候補値、documentation、declaration/documentation range、hover、派生値、Native parity snapshot検査を共有し、
+    production compiler sourceは変更していない。
+- 調査結果:
+  - comment variantは旧metadata・第1macro欠落→更新metadata・第1欠落→両欠落→第3欠落→第1欠落へ復帰→全macro復元→
+    旧metadataへ戻した。CRLF variantは第3欠落から更新し、両欠落→第1欠落→第3欠落へ復帰→全復元→旧metadataへ戻した。
+  - 中央enumは全欠落状態で候補・hoverを維持し、更新時は値9、更新documentationとその長さに対応するrangeを返した。
+    旧値6・旧documentation・旧rangeは残らず、旧sourceへ戻すと元のmetadataへ復帰した。
+  - 両macro復元中の派生値は更新revisionで113、旧revisionで110だった。欠落時の派生enumerator除去、定義済みmacroの
+    replacement 1/3、現在source順のE3066対象も維持した。
+  - Native/Wasm差、stale候補・診断・hover・dependency・value・documentation・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、更新metadata中／旧metadata復帰後の同一source snapshotを
+    完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの3引数callで中央enum metadata更新と両端macro replacement更新を同じrevision列で交差させても、
+    候補metadata・source順E3066・派生値・Native/Wasm復帰snapshotが現在sourceだけへ追随する境界を確認する。
