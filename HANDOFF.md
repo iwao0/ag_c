@@ -33488,3 +33488,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズで全引数欠落mask `7`中に両端macro revisionをreplacement 1/3から7/11へ切り替え、宣言がない同一sourceの
     snapshotを維持したまま、段階復元後だけ更新metadataと派生値127へ移る境界をNative/Wasmで確認する。
+
+### このセッション（続き1141）: 3引数callの全欠落中macro revision切替を固定した
+- 対象選定:
+  - 続き1140と同じ通常サイズだけを使い、全引数欠落mask `7`中に両端object-like macroのreplacement revisionを
+    1/3から7/11へ切り替えた。深い式、巨大入力、fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - variant 8/10のcomment sourceと9/11のCRLF sourceは、3引数宣言をすべて除くとそれぞれ完全に同一になることを
+    Native/Wasm両テストで明示assertした。
+  - comment側は旧全定義→旧全欠落→更新全欠落→第1・中央・第3の段階復元→旧全定義、CRLF側は旧全定義→旧全欠落→
+    更新全欠落→第3・中央・第1の段階復元→旧全定義と遷移させた。production compiler sourceは変更していない。
+  - Wasm側にlayoutとcursor位置をキーとする全欠落revision snapshotを保持し、variant番号を跨いで完全一致させた。
+- 調査結果:
+  - 全欠落中は旧/更新revisionのsourceだけでなく、候補・診断・hover・dependency・rangeを含む完全snapshotも一致した。
+    第1macro名だけの1件のE3066とcallee invocation rangeを維持し、欠落候補・派生enumeratorは残らなかった。
+  - 段階復元中は定義済み候補だけが現在metadataを持ち、更新全復元時はreplacement 7/11、中央enum値9、派生値127へ移った。
+    旧revisionへ戻すとreplacement 1/3と派生値113へ復帰し、更新metadataは残らなかった。
+  - Native/Wasm差、revision横断のstale状態、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、全欠落revision横断snapshot、旧source復帰snapshotを
+    完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで全引数欠落mask `7`中に中央ordinary enum metadataを値6・旧documentationから値9・更新documentationへ
+    切り替え、同一source snapshotを維持したまま、復元後だけ更新enum metadataと派生値113へ移る境界をNative/Wasmで確認する。

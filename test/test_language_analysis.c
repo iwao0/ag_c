@@ -6800,6 +6800,8 @@ static int test_enum_three_argument_call_cursor(
       {11, 0}, {11, 4}, {11, 6}, {11, 2}, {11, 3}, {11, 1}, {11, 0},
       {10, 0}, {10, 1}, {10, 3}, {10, 7}, {10, 6}, {10, 4}, {10, 0},
       {11, 0}, {11, 4}, {11, 6}, {11, 7}, {11, 3}, {11, 1}, {11, 0},
+      {8, 0}, {8, 7}, {10, 7}, {10, 6}, {10, 4}, {10, 0}, {8, 0},
+      {9, 0}, {9, 7}, {11, 7}, {11, 3}, {11, 1}, {11, 0}, {9, 0},
       {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
@@ -6808,6 +6810,19 @@ static int test_enum_three_argument_call_cursor(
   header_bundle_t bundle = make_bundle(
       header_paths, header_sources, 1);
   CHECK(bundle.bytes != NULL, "enum three argument call bundle");
+  for (size_t old_variant = 8; old_variant < 10; old_variant++) {
+    char *old_all_missing = enum_three_argument_macro_source(
+        enum_three_argument_call_sources[old_variant], 7);
+    char *updated_all_missing = enum_three_argument_macro_source(
+        enum_three_argument_call_sources[old_variant + 2], 7);
+    int same_all_missing_source =
+        old_all_missing && updated_all_missing &&
+        strcmp(old_all_missing, updated_all_missing) == 0;
+    free(old_all_missing);
+    free(updated_all_missing);
+    CHECK(same_all_missing_source,
+          "enum three argument all missing revision source identity");
+  }
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "enum three argument call session");
   ag_language_analysis_limits_t defaults =

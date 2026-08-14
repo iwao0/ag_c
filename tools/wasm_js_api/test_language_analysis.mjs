@@ -4916,6 +4916,16 @@ try {
 
 const enumThreeArgumentCompiler = await createCompiler(wasmModule);
 const enumThreeArgumentFirstResults = new Map();
+const enumThreeArgumentAllMissingRevisionResults = new Map();
+for (const oldVariant of [8, 9]) {
+  assert.deepStrictEqual(
+    enumThreeArgumentMacroSource(enumThreeArgumentCallSources[oldVariant], 7),
+    enumThreeArgumentMacroSource(
+      enumThreeArgumentCallSources[oldVariant + 2], 7,
+    ),
+    "enum three argument all missing revision source identity",
+  );
+}
 try {
   for (const [variant, missingArgumentMode] of [
     [0, 0], [0, 2], [0, 0], [0, 4], [0, 0],
@@ -4939,6 +4949,8 @@ try {
     [11, 0], [11, 4], [11, 6], [11, 2], [11, 3], [11, 1], [11, 0],
     [10, 0], [10, 1], [10, 3], [10, 7], [10, 6], [10, 4], [10, 0],
     [11, 0], [11, 4], [11, 6], [11, 7], [11, 3], [11, 1], [11, 0],
+    [8, 0], [8, 7], [10, 7], [10, 6], [10, 4], [10, 0], [8, 0],
+    [9, 0], [9, 7], [11, 7], [11, 3], [11, 1], [11, 0], [9, 0],
     [10, 0],
   ]) {
     const source = enumThreeArgumentMacroSource(
@@ -5182,6 +5194,17 @@ try {
           {encoding: "utf8"},
         )),
         `native and Wasm enum three argument call differ for ${variant}, ${missingArgumentMode}, ${label}`);
+      }
+      if (variant >= 8 && missingArgumentMode === 7) {
+        const revisionKey = `${variant & 1}:${byteOffset}`;
+        const allMissingRevisionResult =
+          enumThreeArgumentAllMissingRevisionResults.get(revisionKey);
+        if (allMissingRevisionResult) {
+          assert.deepStrictEqual(result, allMissingRevisionResult,
+            `Wasm enum three argument all missing revision retained stale state for ${variant}, ${label}`);
+        } else {
+          enumThreeArgumentAllMissingRevisionResults.set(revisionKey, result);
+        }
       }
     }
   }
