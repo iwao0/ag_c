@@ -6831,7 +6831,9 @@ static int test_enum_three_argument_call_cursor(
       {4, 3}, {11, 3}, {4, 3}, {11, 3},
       {5, 3}, {10, 3}, {5, 3}, {10, 3}, {4, 0}, {10, 0},
       {4, 4}, {11, 4}, {4, 4}, {11, 4},
-      {5, 4}, {10, 4}, {5, 4}, {10, 4}, {4, 0}, {10, 0}};
+      {5, 4}, {10, 4}, {5, 4}, {10, 4}, {4, 0}, {10, 0},
+      {4, 2}, {11, 2}, {4, 2}, {11, 2},
+      {5, 2}, {10, 2}, {5, 2}, {10, 2}, {4, 0}, {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
   const char *header_paths[] = {"enum-three-argument-call.h"};
@@ -7124,6 +7126,12 @@ static int test_enum_three_argument_call_cursor(
                     !strstr(undefined_argument->message,
                             argument_names[1]),
                 "enum three argument surviving prefix diagnostic omitted");
+        if (missing_argument_mode == 2)
+          CHECK(!strstr(undefined_argument->message,
+                        argument_names[0]) &&
+                    !strstr(undefined_argument->message,
+                            argument_names[2]),
+                "enum three argument surviving outer diagnostic omitted");
         if (middle_enum_argument) {
           const char *inactive_middle_enum_name =
               renamed_middle_enum_argument
