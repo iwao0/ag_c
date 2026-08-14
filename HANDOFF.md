@@ -33287,3 +33287,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズの3引数callで中央ordinary enumを別名へrenameし、両端macroの片側／同時欠落列をrename前後で往復しても、
     ordinary候補・source順E3066・復帰snapshotがNative/Wasmで混線しない境界を確認する。
+
+### このセッション（続き1135）: 3引数callの中央ordinary enum rename往復回復を固定した
+- 対象選定:
+  - 続き1134の通常サイズの3引数enum direct callだけを使い、中央ordinary enumを長さの異なる別名へ変更して両端macroの
+    片側／同時欠落列を往復した。
+  - 深い式、巨大入力、fuzz、資源枯渇などセキュリティ監査で止まりやすい探索には広げなかった。
+- 実装確認:
+  - comment/CRLFそれぞれに`ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM` variantを追加し、既存の3引数missing bit mask生成器と
+    Native parity CLIをそのまま共有した。新旧名のsource長に従って全cursor byte offsetをrevisionごとに再計算した。
+  - production compiler sourceは変更していない。
+- 調査結果:
+  - comment variantでは旧名→新名→第1macro欠落→両macro欠落→第3macro欠落→全復元→旧名へ戻し、CRLF variantでは
+    旧名→新名→第3欠落→両欠落→第1欠落→全復元→旧名へ戻した。最後に旧comment sourceへも復帰させた。
+  - 各revisionで中央enumの現在名だけを候補・hoverとして公開し、非アクティブな新旧名は残らなかった。値6、documentation、
+    名前長に対応したdeclaration/documentation rangeも維持した。
+  - 両macro欠落時は現在source順の第1macro名だけをE3066 messageへ入れ、第1復元後は第3macro名へ切り替えた。定義済みmacroの
+    replacement 1/3、欠落候補と派生enumeratorの除去、全復元時の派生値110も正しかった。
+  - Native/Wasm差、stale候補・診断・hover・dependency・range、旧名残留、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、長さの異なる中央名を含む3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、新名／旧名それぞれの同一source復帰snapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの3引数callで中央ordinary enumの値とdocumentationをrename後に更新し、両端macro欠落中／復元後に
+    metadata・派生値・Native/Wasm snapshotが現在revisionだけへ追随する境界を確認する。

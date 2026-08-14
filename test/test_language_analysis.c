@@ -1144,6 +1144,32 @@ static const char *const enum_three_argument_call_sources[] = {
     "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n"
     "  , ENUM_THREE_ARGUMENT_MIDDLE_ENUM \\\r\n"
     "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+    "#include <enum-three-argument-call.h>\n"
+    "/// enum three argument first macro\n"
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n"
+    "enum EnumThreeArgumentMiddleValue {\n"
+    "  /// enum three argument middle enum\n"
+    "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 6\n"
+    "};\n"
+    "/// enum three argument last macro\n"
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n"
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = "
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO "
+    "/* first comma */ , ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM "
+    "/* second comma */ , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+    "#include <enum-three-argument-call.h>\n"
+    "/// enum three argument first macro\n"
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n"
+    "enum EnumThreeArgumentMiddleValue {\n"
+    "  /// enum three argument middle enum\n"
+    "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 6\n"
+    "};\n"
+    "/// enum three argument last macro\n"
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n"
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = "
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n"
+    "  , ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM \\\r\n"
+    "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
 };
 
 static const char initializer_designator_operand_hover_source[] =
@@ -6626,6 +6652,10 @@ static int test_enum_three_argument_call_cursor(
       "ENUM_THREE_ARGUMENT_FIRST_MACRO",
       "ENUM_THREE_ARGUMENT_MIDDLE_ENUM",
       "ENUM_THREE_ARGUMENT_LAST_MACRO"};
+  static const char *const renamed_middle_enum_argument_names[] = {
+      "ENUM_THREE_ARGUMENT_FIRST_MACRO",
+      "ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM",
+      "ENUM_THREE_ARGUMENT_LAST_MACRO"};
   static const char *const macro_argument_values[] = {"1", "2", "3"};
   static const char *const mixed_argument_values[] = {"4", "2", "5"};
   static const char *const middle_enum_argument_values[] = {"1", "6", "3"};
@@ -6662,7 +6692,9 @@ static int test_enum_three_argument_call_cursor(
       {2, 0}, {2, 2}, {2, 0},
       {3, 0}, {3, 2}, {3, 0}, {2, 0},
       {4, 0}, {4, 1}, {4, 5}, {4, 4}, {4, 0},
-      {5, 0}, {5, 4}, {5, 5}, {5, 1}, {5, 0}, {4, 0}};
+      {5, 0}, {5, 4}, {5, 5}, {5, 1}, {5, 0}, {4, 0},
+      {6, 0}, {6, 1}, {6, 5}, {6, 4}, {6, 0}, {4, 0},
+      {5, 0}, {7, 0}, {7, 4}, {7, 5}, {7, 1}, {7, 0}, {5, 0}, {4, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
   const char *header_paths[] = {"enum-three-argument-call.h"};
@@ -6682,8 +6714,10 @@ static int test_enum_three_argument_call_cursor(
     int missing_argument_mode = passes[pass_index].missing_argument_mode;
     int outer_enum_arguments = variant >= 2 && variant < 4;
     int middle_enum_argument = variant >= 4;
+    int renamed_middle_enum_argument = variant >= 6;
     const char *const *argument_names =
-        middle_enum_argument ? middle_enum_argument_names
+        renamed_middle_enum_argument ? renamed_middle_enum_argument_names
+        : middle_enum_argument ? middle_enum_argument_names
         : outer_enum_arguments ? mixed_argument_names
                                : macro_argument_names;
     const char *const *argument_values =
@@ -6864,6 +6898,15 @@ static int test_enum_three_argument_call_cursor(
                       (size_t)(comment - source) +
                           strlen(argument_comments[argument_index])),
               "enum three argument operand fields");
+      }
+      if (middle_enum_argument) {
+        const char *inactive_middle_enum_name =
+            renamed_middle_enum_argument
+                ? middle_enum_argument_names[1]
+                : renamed_middle_enum_argument_names[1];
+        CHECK(!find_symbol(&snapshot, inactive_middle_enum_name,
+                           AG_LANGUAGE_SYMBOL_ENUM_CONSTANT),
+              "enum three argument inactive middle enum removed");
       }
       const ag_language_symbol_t *derived = find_symbol(
           &snapshot, "ENUM_THREE_ARGUMENT_DERIVED",

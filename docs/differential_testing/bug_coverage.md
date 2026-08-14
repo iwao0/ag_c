@@ -775,6 +775,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 
 | **3引数enum direct callの両端macro＋中央ordinary enum混在回復** `CALL(FIRST_MACRO, MIDDLE_ENUM, LAST_MACRO)` | 🧪 | test_language_analysis (native/Wasm JS API) | ordinary enumを挟む2個のobject-like macroについて、現在sourceだけからsource順の未解決引数を選び直す境界を固定する。値6の中央enumを維持したまま、comment variantは両macroあり→第1欠落→両欠落→第3欠落→両復元、CRLF line splice variantは逆方向に遷移させる。両欠落時は第1macro名だけをmessageに含む1件のE3066をcallee invocation rangeへ返し、第1だけ復元すると第3macro名へ切り替える。各状態で中央enumと定義済みmacroの候補・hover・値/replacement・declaration/documentation rangeを維持し、欠落候補と派生enumeratorを除去する。全復元時は派生値110と初回snapshotへ戻る。共有Native/Wasm instance、各revisionのfresh Native snapshot、復帰snapshotを完全一致させ、深い式・巨大入力・fuzz・資源stressは追加しない |
 
+| **3引数enum direct callの中央ordinary enum rename往復回復** `MIDDLE_ENUM` ↔ `RENAMED_MIDDLE_ENUM` | 🧪 | test_language_analysis (native/Wasm JS API) | 両端object-like macroの片側／同時欠落履歴を跨いで中央ordinary enumを長さの異なる名前へ変更・復帰しても、現在sourceだけからordinary候補とsource順E3066を作り直す境界を固定する。comment variantはrename後に第1欠落→両欠落→第3欠落→両復元、CRLF variantは逆方向に遷移させ、旧名comment/CRLFへも往復する。各revisionで現在名だけをenum候補・hoverとして公開し、非アクティブ名を除去しつつ値6、documentation、更新後のdeclaration rangeを維持する。定義済みmacroだけがreplacement 1/3を保持し、欠落時は派生enumeratorを除去、復元時は派生値110へ戻す。共有Native/Wasm instance、fresh Native snapshot、旧名sourceへの復帰snapshotを完全一致させ、深い式・巨大入力・fuzz・資源stressは追加しない |
+
 ### リンケージ / 複数 TU（extern / static）
 複数ファイルをリンクする差分ハーネス（各 .c を ag_c で .s 化→clang で個別アセンブル→
 まとめてリンク、clang -I include 直ビルドと exit code 比較）で確認。

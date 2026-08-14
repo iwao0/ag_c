@@ -3103,6 +3103,32 @@ const enumThreeArgumentCallSources = [
     "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n" +
     "  , ENUM_THREE_ARGUMENT_MIDDLE_ENUM \\\r\n" +
     "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+  "#include <enum-three-argument-call.h>\n" +
+    "/// enum three argument first macro\n" +
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n" +
+    "enum EnumThreeArgumentMiddleValue {\n" +
+    "  /// enum three argument middle enum\n" +
+    "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 6\n" +
+    "};\n" +
+    "/// enum three argument last macro\n" +
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n" +
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = " +
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO " +
+    "/* first comma */ , ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM " +
+    "/* second comma */ , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+  "#include <enum-three-argument-call.h>\n" +
+    "/// enum three argument first macro\n" +
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n" +
+    "enum EnumThreeArgumentMiddleValue {\n" +
+    "  /// enum three argument middle enum\n" +
+    "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 6\n" +
+    "};\n" +
+    "/// enum three argument last macro\n" +
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n" +
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = " +
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n" +
+    "  , ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM \\\r\n" +
+    "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
 ].map((source) => ({name: "enum-three-argument-call.c", source}));
 const enumThreeArgumentMacroNames = [
   "ENUM_THREE_ARGUMENT_FIRST_MACRO",
@@ -3117,6 +3143,11 @@ const enumThreeArgumentMixedNames = [
 const enumThreeArgumentMiddleEnumNames = [
   "ENUM_THREE_ARGUMENT_FIRST_MACRO",
   "ENUM_THREE_ARGUMENT_MIDDLE_ENUM",
+  "ENUM_THREE_ARGUMENT_LAST_MACRO",
+];
+const enumThreeArgumentRenamedMiddleEnumNames = [
+  "ENUM_THREE_ARGUMENT_FIRST_MACRO",
+  "ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM",
   "ENUM_THREE_ARGUMENT_LAST_MACRO",
 ];
 const enumThreeArgumentMacroValues = ["1", "2", "3"];
@@ -4810,16 +4841,21 @@ try {
     [3, 0], [3, 2], [3, 0], [2, 0],
     [4, 0], [4, 1], [4, 5], [4, 4], [4, 0],
     [5, 0], [5, 4], [5, 5], [5, 1], [5, 0], [4, 0],
+    [6, 0], [6, 1], [6, 5], [6, 4], [6, 0], [4, 0],
+    [5, 0], [7, 0], [7, 4], [7, 5], [7, 1], [7, 0], [5, 0], [4, 0],
   ]) {
     const source = enumThreeArgumentMacroSource(
       enumThreeArgumentCallSources[variant], missingArgumentMode,
     );
     const outerEnumArguments = variant >= 2 && variant < 4;
     const middleEnumArgument = variant >= 4;
-    const argumentNames = middleEnumArgument
-      ? enumThreeArgumentMiddleEnumNames
-      : outerEnumArguments
-        ? enumThreeArgumentMixedNames : enumThreeArgumentMacroNames;
+    const renamedMiddleEnumArgument = variant >= 6;
+    const argumentNames = renamedMiddleEnumArgument
+      ? enumThreeArgumentRenamedMiddleEnumNames
+      : middleEnumArgument
+        ? enumThreeArgumentMiddleEnumNames
+        : outerEnumArguments
+          ? enumThreeArgumentMixedNames : enumThreeArgumentMacroNames;
     const argumentValues = middleEnumArgument
       ? enumThreeArgumentMiddleEnumValues
       : outerEnumArguments
@@ -4976,6 +5012,14 @@ try {
           commentIndex + Buffer.byteLength(argumentComments[index]));
         return candidate;
       });
+      if (middleEnumArgument) {
+        const inactiveMiddleEnumName = renamedMiddleEnumArgument
+          ? enumThreeArgumentMiddleEnumNames[1]
+          : enumThreeArgumentRenamedMiddleEnumNames[1];
+        assert.equal(symbol(
+          result, inactiveMiddleEnumName, "enumConstant",
+        ), undefined);
+      }
       const derived = symbol(
         result, "ENUM_THREE_ARGUMENT_DERIVED", "enumConstant",
       );
