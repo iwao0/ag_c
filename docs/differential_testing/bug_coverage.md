@@ -771,6 +771,8 @@ clang との差分テスト（同一 C ソースを ag_c と clang でコンパ�
 
 | **3引数enum direct macro callの中央・末尾object-like macro欠落回復** `CALL(FIRST, MIDDLE, LAST)` | 🧪 | test_language_analysis (native/Wasm JS API) | bounded enum call recoveryの単一識別子引数走査が2引数に依存せず、通常サイズの3引数callでもsource順に未解決引数を選ぶ境界を固定する。3個のobject-like macroを引数に置き、中央定義だけまたは末尾定義だけを削除・復元するほか、CRLF line splice variantで末尾欠落→中央＋末尾欠落→中央欠落→全復元を共有instanceへ連続投入する。欠落時は定義済みmacroだけの候補・hover・replacement 1/2/3・declaration/documentation rangeを維持し、欠落候補と派生enumeratorを除去する。中央＋末尾欠落では中央名だけをmessageに保持した1件のE3066をcallee invocation rangeへ返し、末尾名を混入させない。全復元時は診断なし、3 macro metadata、派生値106へ戻る。callee、3引数の先頭・中央・末尾、2個のcomma、comment内部またはCRLF splice位置について、同一Native/Wasm instance、fresh Native snapshot、復帰snapshotを完全一致させる。深い式・巨大入力・fuzz・資源stressは追加しない |
 
+| **3引数enum direct callのordinary enum＋object-like macro混在回復** `CALL(FIRST_ENUM, MIDDLE_MACRO, LAST_ENUM)` | 🧪 | test_language_analysis (native/Wasm JS API) | 3引数bounded recoveryが全引数をmacroと仮定せず、ScopeGraph ordinary namespaceで解決する両端enum定数を有効な単一識別子引数として扱う境界を固定する。第1・第3引数を値4/5のenum定数、第2だけをreplacement 2のobject-like macroにし、comment・CRLF line splice variantで中央macro定義を削除・復元する。削除時は中央macro候補と派生enumeratorだけを除去し、中央名をmessageに保持した1件のE3066をcallee invocation rangeへ返す一方、両端enumの候補・hover・値・declaration/documentation rangeを維持する。復元時は中央macro metadataと派生値111へ戻る。callee、3引数、2個のcomma、comment/splice位置について、共有Native/Wasm instance、fresh Native snapshot、復帰snapshotを完全一致させる。深い式・巨大入力・fuzz・資源stressは追加しない |
+
 ### リンケージ / 複数 TU（extern / static）
 複数ファイルをリンクする差分ハーネス（各 .c を ag_c で .s 化→clang で個別アセンブル→
 まとめてリンク、clang -I include 直ビルドと exit code 比較）で確認。

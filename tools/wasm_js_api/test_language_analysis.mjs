@@ -3051,22 +3051,64 @@ const enumThreeArgumentCallSources = [
     "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n" +
     "  , ENUM_THREE_ARGUMENT_MIDDLE_MACRO \\\r\n" +
     "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+  "#include <enum-three-argument-call.h>\n" +
+    "enum EnumThreeArgumentMixedValues {\n" +
+    "  /// enum three argument first enum\n" +
+    "  ENUM_THREE_ARGUMENT_FIRST_ENUM = 4,\n" +
+    "  /// enum three argument last enum\n" +
+    "  ENUM_THREE_ARGUMENT_LAST_ENUM = 5\n" +
+    "};\n" +
+    "/// enum three argument middle macro\n" +
+    "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n" +
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = " +
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_ENUM " +
+    "/* first comma */ , ENUM_THREE_ARGUMENT_MIDDLE_MACRO " +
+    "/* second comma */ , ENUM_THREE_ARGUMENT_LAST_ENUM)",
+  "#include <enum-three-argument-call.h>\n" +
+    "enum EnumThreeArgumentMixedValues {\n" +
+    "  /// enum three argument first enum\n" +
+    "  ENUM_THREE_ARGUMENT_FIRST_ENUM = 4,\n" +
+    "  /// enum three argument last enum\n" +
+    "  ENUM_THREE_ARGUMENT_LAST_ENUM = 5\n" +
+    "};\n" +
+    "/// enum three argument middle macro\n" +
+    "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n" +
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = " +
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_ENUM \\\r\n" +
+    "  , ENUM_THREE_ARGUMENT_MIDDLE_MACRO \\\r\n" +
+    "  , ENUM_THREE_ARGUMENT_LAST_ENUM)",
 ].map((source) => ({name: "enum-three-argument-call.c", source}));
-const enumThreeArgumentNames = [
+const enumThreeArgumentMacroNames = [
   "ENUM_THREE_ARGUMENT_FIRST_MACRO",
   "ENUM_THREE_ARGUMENT_MIDDLE_MACRO",
   "ENUM_THREE_ARGUMENT_LAST_MACRO",
 ];
-const enumThreeArgumentValues = ["1", "2", "3"];
-const enumThreeArgumentDocumentation = [
+const enumThreeArgumentMixedNames = [
+  "ENUM_THREE_ARGUMENT_FIRST_ENUM",
+  "ENUM_THREE_ARGUMENT_MIDDLE_MACRO",
+  "ENUM_THREE_ARGUMENT_LAST_ENUM",
+];
+const enumThreeArgumentMacroValues = ["1", "2", "3"];
+const enumThreeArgumentMixedValues = ["4", "2", "5"];
+const enumThreeArgumentMacroDocumentation = [
   "enum three argument first macro",
   "enum three argument middle macro",
   "enum three argument last macro",
 ];
-const enumThreeArgumentComments = [
+const enumThreeArgumentMixedDocumentation = [
+  "enum three argument first enum",
+  "enum three argument middle macro",
+  "enum three argument last enum",
+];
+const enumThreeArgumentMacroComments = [
   "/// enum three argument first macro",
   "/// enum three argument middle macro",
   "/// enum three argument last macro",
+];
+const enumThreeArgumentMixedComments = [
+  "/// enum three argument first enum",
+  "/// enum three argument middle macro",
+  "/// enum three argument last enum",
 ];
 function enumThreeArgumentMacroSource(input, missingArgumentMode) {
   const declarations = [
@@ -4722,10 +4764,22 @@ try {
   for (const [variant, missingArgumentMode] of [
     [0, 0], [0, 2], [0, 0], [0, 4], [0, 0],
     [1, 0], [1, 4], [1, 6], [1, 2], [1, 0], [0, 0],
+    [2, 0], [2, 2], [2, 0],
+    [3, 0], [3, 2], [3, 0], [2, 0],
   ]) {
     const source = enumThreeArgumentMacroSource(
       enumThreeArgumentCallSources[variant], missingArgumentMode,
     );
+    const mixedArguments = variant >= 2;
+    const argumentNames = mixedArguments
+      ? enumThreeArgumentMixedNames : enumThreeArgumentMacroNames;
+    const argumentValues = mixedArguments
+      ? enumThreeArgumentMixedValues : enumThreeArgumentMacroValues;
+    const argumentDocumentation = mixedArguments
+      ? enumThreeArgumentMixedDocumentation
+      : enumThreeArgumentMacroDocumentation;
+    const argumentComments = mixedArguments
+      ? enumThreeArgumentMixedComments : enumThreeArgumentMacroComments;
     const text = source.source;
     const calleeName = "ENUM_THREE_ARGUMENT_CALL";
     const calleeIndex = text.lastIndexOf(calleeName);
@@ -4733,22 +4787,22 @@ try {
     const argumentIndexes = [0, 0, 0];
     const commaIndexes = [0, 0];
     argumentIndexes[0] = text.indexOf(
-      enumThreeArgumentNames[0], callOpenIndex + 1,
+      argumentNames[0], callOpenIndex + 1,
     );
     commaIndexes[0] = text.indexOf(
-      ",", argumentIndexes[0] + enumThreeArgumentNames[0].length,
+      ",", argumentIndexes[0] + argumentNames[0].length,
     );
     argumentIndexes[1] = text.indexOf(
-      enumThreeArgumentNames[1], commaIndexes[0] + 1,
+      argumentNames[1], commaIndexes[0] + 1,
     );
     commaIndexes[1] = text.indexOf(
-      ",", argumentIndexes[1] + enumThreeArgumentNames[1].length,
+      ",", argumentIndexes[1] + argumentNames[1].length,
     );
     argumentIndexes[2] = text.indexOf(
-      enumThreeArgumentNames[2], commaIndexes[1] + 1,
+      argumentNames[2], commaIndexes[1] + 1,
     );
     const callCloseIndex = text.indexOf(
-      ")", argumentIndexes[2] + enumThreeArgumentNames[2].length,
+      ")", argumentIndexes[2] + argumentNames[2].length,
     );
     assert.ok(calleeIndex >= 0 && callOpenIndex >= 0 &&
       argumentIndexes.every((index) => index >= 0) &&
@@ -4760,7 +4814,7 @@ try {
       (index) => byteOffsetForIndex(text, index),
     );
     const argumentEnds = argumentStarts.map(
-      (start, index) => start + Buffer.byteLength(enumThreeArgumentNames[index]),
+      (start, index) => start + Buffer.byteLength(argumentNames[index]),
     );
     const commas = commaIndexes.map(
       (index) => byteOffsetForIndex(text, index),
@@ -4771,24 +4825,24 @@ try {
       [callOpen + 1, 0, "call-open"],
       [argumentStarts[0], 0, "first-start"],
       [argumentStarts[0] +
-        Math.floor(Buffer.byteLength(enumThreeArgumentNames[0]) / 2),
+        Math.floor(Buffer.byteLength(argumentNames[0]) / 2),
       0, "first-middle"],
       [argumentEnds[0], 0, "first-end"],
       [commas[0], -1, "first-comma"],
       [argumentStarts[1], 1, "middle-start"],
       [argumentStarts[1] +
-        Math.floor(Buffer.byteLength(enumThreeArgumentNames[1]) / 2),
+        Math.floor(Buffer.byteLength(argumentNames[1]) / 2),
       1, "middle-middle"],
       [argumentEnds[1], 1, "middle-end"],
       [commas[1], -1, "second-comma"],
       [argumentStarts[2], 2, "last-start"],
       [argumentStarts[2] +
-        Math.floor(Buffer.byteLength(enumThreeArgumentNames[2]) / 2),
+        Math.floor(Buffer.byteLength(argumentNames[2]) / 2),
       2, "last-middle"],
       [argumentEnds[2], 2, "last-end"],
       [byteOffsetForIndex(text, callCloseIndex + 1), -1, "call-end"],
     ];
-    if (variant === 0) {
+    if ((variant & 1) === 0) {
       for (const [comment, label] of [
         ["/* first comma */", "first-comment"],
         ["/* second comma */", "second-comment"],
@@ -4836,21 +4890,28 @@ try {
       );
       assert.equal(calleeCandidate?.macro?.replacement,
         "( ( first ) + ( middle ) + ( last ) + 100 )");
-      const argumentCandidates = enumThreeArgumentNames.map((name, index) => {
-        const candidate = symbol(result, name, "macro");
+      const argumentCandidates = argumentNames.map((name, index) => {
+        const enumArgument = mixedArguments && index !== 1;
+        const candidate = symbol(
+          result, name, enumArgument ? "enumConstant" : "macro",
+        );
         if ((missingArgumentMode & (1 << index)) !== 0) {
           assert.equal(candidate, undefined);
           return undefined;
         }
         const declarationIndex = text.indexOf(name);
-        const commentIndex = text.indexOf(enumThreeArgumentComments[index]);
-        assert.equal(candidate?.macro?.functionLike, false);
-        assert.equal(candidate?.macro?.variadic, false);
-        assert.deepStrictEqual(candidate?.macro?.parameters, []);
-        assert.equal(candidate?.macro?.replacement,
-          enumThreeArgumentValues[index]);
+        const commentIndex = text.indexOf(argumentComments[index]);
+        if (enumArgument) {
+          assert.equal(candidate?.initializer.constantValue,
+            argumentValues[index]);
+        } else {
+          assert.equal(candidate?.macro?.functionLike, false);
+          assert.equal(candidate?.macro?.variadic, false);
+          assert.deepStrictEqual(candidate?.macro?.parameters, []);
+          assert.equal(candidate?.macro?.replacement, argumentValues[index]);
+        }
         assert.equal(candidate?.documentation,
-          enumThreeArgumentDocumentation[index]);
+          argumentDocumentation[index]);
         assert.equal(candidate?.declaration.sourceName, source.name);
         assert.equal(candidate?.declaration.start.offset, declarationIndex);
         assert.equal(candidate?.declaration.end.offset,
@@ -4858,7 +4919,7 @@ try {
         assert.equal(candidate?.documentationRange?.start.offset,
           commentIndex);
         assert.equal(candidate?.documentationRange?.end.offset,
-          commentIndex + Buffer.byteLength(enumThreeArgumentComments[index]));
+          commentIndex + Buffer.byteLength(argumentComments[index]));
         return candidate;
       });
       const derived = symbol(
@@ -4867,7 +4928,8 @@ try {
       if (missingArgumentMode) {
         assert.equal(derived, undefined);
       } else {
-        assert.equal(derived?.initializer.constantValue, "106");
+        assert.equal(derived?.initializer.constantValue,
+          mixedArguments ? "111" : "106");
       }
       const firstMissingArgumentIndex = [0, 1, 2].find(
         (index) => (missingArgumentMode & (1 << index)) !== 0,
@@ -4877,12 +4939,12 @@ try {
       if (missingArgumentMode) {
         assert.equal(result.diagnostics[0].code, "E3066");
         assert.match(result.diagnostics[0].message,
-          new RegExp(enumThreeArgumentNames[firstMissingArgumentIndex]));
+          new RegExp(argumentNames[firstMissingArgumentIndex]));
         for (let argumentIndex = firstMissingArgumentIndex + 1;
           argumentIndex < 3; argumentIndex++) {
           if ((missingArgumentMode & (1 << argumentIndex)) !== 0) {
             assert.doesNotMatch(result.diagnostics[0].message,
-              new RegExp(enumThreeArgumentNames[argumentIndex]));
+              new RegExp(argumentNames[argumentIndex]));
           }
         }
         assert.equal(result.diagnostics[0].start.offset, calleeStart);
