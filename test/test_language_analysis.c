@@ -1196,6 +1196,32 @@ static const char *const enum_three_argument_call_sources[] = {
     "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n"
     "  , ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM \\\r\n"
     "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+    "#include <enum-three-argument-call.h>\n"
+    "/// enum three argument first macro\n"
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 7\n"
+    "enum EnumThreeArgumentMiddleValue {\n"
+    "  /// enum three argument updated middle enum\n"
+    "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 9\n"
+    "};\n"
+    "/// enum three argument last macro\n"
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 11\n"
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = "
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO "
+    "/* first comma */ , ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM "
+    "/* second comma */ , ENUM_THREE_ARGUMENT_LAST_MACRO)",
+    "#include <enum-three-argument-call.h>\n"
+    "/// enum three argument first macro\n"
+    "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 7\n"
+    "enum EnumThreeArgumentMiddleValue {\n"
+    "  /// enum three argument updated middle enum\n"
+    "  ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM = 9\n"
+    "};\n"
+    "/// enum three argument last macro\n"
+    "#define ENUM_THREE_ARGUMENT_LAST_MACRO 11\n"
+    "enum { ENUM_THREE_ARGUMENT_DERIVED = "
+    "ENUM_THREE_ARGUMENT_CALL(ENUM_THREE_ARGUMENT_FIRST_MACRO \\\r\n"
+    "  , ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM \\\r\n"
+    "  , ENUM_THREE_ARGUMENT_LAST_MACRO)",
 };
 
 static const char initializer_designator_operand_hover_source[] =
@@ -3526,13 +3552,18 @@ static char *enum_two_argument_both_renamed_source(
 
 static char *enum_three_argument_macro_source(
     const char *source, int missing_argument_mode) {
-  static const char *const declarations[] = {
-      "/// enum three argument first macro\n"
-      "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n",
-      "/// enum three argument middle macro\n"
-      "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n",
-      "/// enum three argument last macro\n"
-      "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n"};
+  static const char *const declarations[][2] = {
+      {"/// enum three argument first macro\n"
+       "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n",
+       "/// enum three argument first macro\n"
+       "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 7\n"},
+      {"/// enum three argument middle macro\n"
+       "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n",
+       NULL},
+      {"/// enum three argument last macro\n"
+       "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n",
+       "/// enum three argument last macro\n"
+       "#define ENUM_THREE_ARGUMENT_LAST_MACRO 11\n"}};
   if (!source || missing_argument_mode < 0 ||
       missing_argument_mode > 7)
     return NULL;
@@ -3542,8 +3573,12 @@ static char *enum_three_argument_macro_source(
   memcpy(result, source, source_length + 1);
   for (int argument_index = 0; argument_index < 3; argument_index++) {
     if (!(missing_argument_mode & (1 << argument_index))) continue;
-    const char *declaration = declarations[argument_index];
-    char *position = strstr(result, declaration);
+    const char *declaration = NULL;
+    char *position = NULL;
+    for (int revision = 0; revision < 2 && !position; revision++) {
+      declaration = declarations[argument_index][revision];
+      if (declaration) position = strstr(result, declaration);
+    }
     if (!position) {
       free(result);
       return NULL;
@@ -6687,6 +6722,8 @@ static int test_enum_three_argument_call_cursor(
   static const char *const middle_enum_argument_values[] = {"1", "6", "3"};
   static const char *const updated_middle_enum_argument_values[] = {
       "1", "9", "3"};
+  static const char *const updated_macro_argument_values[] = {
+      "7", "9", "11"};
   static const char *const macro_argument_documentation[] = {
       "enum three argument first macro",
       "enum three argument middle macro",
@@ -6733,7 +6770,11 @@ static int test_enum_three_argument_call_cursor(
       {5, 0}, {7, 0}, {7, 4}, {7, 5}, {7, 1}, {7, 0}, {5, 0}, {4, 0},
       {6, 0}, {6, 1}, {8, 1}, {8, 5}, {8, 4}, {8, 1}, {8, 0}, {6, 0},
       {7, 0}, {7, 4}, {9, 4}, {9, 5}, {9, 1}, {9, 4}, {9, 0}, {7, 0},
-      {6, 0}};
+      {6, 0},
+      {8, 0}, {8, 1}, {10, 1}, {10, 5}, {10, 4}, {10, 1}, {10, 0},
+      {8, 0},
+      {9, 0}, {9, 4}, {11, 4}, {11, 5}, {11, 1}, {11, 4}, {11, 0},
+      {9, 0}, {8, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
   const char *header_paths[] = {"enum-three-argument-call.h"};
@@ -6755,13 +6796,15 @@ static int test_enum_three_argument_call_cursor(
     int middle_enum_argument = variant >= 4;
     int renamed_middle_enum_argument = variant >= 6;
     int updated_middle_enum_argument = variant >= 8;
+    int updated_macro_arguments = variant >= 10;
     const char *const *argument_names =
         renamed_middle_enum_argument ? renamed_middle_enum_argument_names
         : middle_enum_argument ? middle_enum_argument_names
         : outer_enum_arguments ? mixed_argument_names
                                : macro_argument_names;
     const char *const *argument_values =
-        updated_middle_enum_argument ? updated_middle_enum_argument_values
+        updated_macro_arguments ? updated_macro_argument_values
+        : updated_middle_enum_argument ? updated_middle_enum_argument_values
         : middle_enum_argument ? middle_enum_argument_values
         : outer_enum_arguments ? mixed_argument_values
                                : macro_argument_values;
@@ -6959,7 +7002,8 @@ static int test_enum_three_argument_call_cursor(
                 (!missing_argument_mode && derived &&
                  derived->constant_value &&
                  strcmp(derived->constant_value,
-                        updated_middle_enum_argument ? "113"
+                        updated_macro_arguments ? "127"
+                        : updated_middle_enum_argument ? "113"
                         : middle_enum_argument ? "110"
                         : outer_enum_arguments ? "111"
                                                : "106") == 0),

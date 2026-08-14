@@ -33356,3 +33356,39 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズの3引数callで中央enum metadata更新と両端macro replacement更新を同じrevision列で交差させても、
     候補metadata・source順E3066・派生値・Native/Wasm復帰snapshotが現在sourceだけへ追随する境界を確認する。
+
+### このセッション（続き1137）: 3引数callの中央enum・両端macro metadata交差更新を固定した
+- 対象選定:
+  - 続き1136と同じ通常サイズの3引数enum direct callで、値9・更新documentationの中央enumを維持しながら、両端object-like
+    macroのreplacementを1/3から7/11へ更新・復帰させた。
+  - 深い式、巨大入力、fuzz、資源枯渇などセキュリティ監査で止まりやすい探索には広げなかった。
+- 実装確認:
+  - comment/CRLFそれぞれにreplacement 7/11を持つvariantを追加した。3引数欠落source生成器は第1・第3macroについて旧宣言または
+    更新宣言のどちらか一方を選んで除去し、既存variantの挙動を維持した。
+  - 候補replacement、declaration/documentation range、hover、中央enum metadata、派生値、Native parity snapshot検査を共有し、
+    production compiler sourceは変更していない。
+- 調査結果:
+  - comment variantは旧replacement・第1macro欠落→更新replacement・第1欠落→両欠落→第3欠落→第1欠落へ復帰→全復元→
+    旧replacementへ戻した。CRLF variantは第3欠落から更新し、両欠落→第1欠落→第3欠落へ復帰→全復元→旧replacementへ戻した。
+  - 各状態で中央enumの値9、更新documentationとrangeを維持した。定義済みmacroだけが現在replacement 7/11または1/3、
+    declaration/documentation range、hoverを持ち、欠落候補・派生enumerator・旧replacementは残らなかった。
+  - 両macro復元中の派生値は更新revisionで127、旧revisionで113だった。両欠落時と片側欠落時のE3066対象も現在source順だった。
+  - Native/Wasm差、stale候補・診断・hover・dependency・replacement・enum metadata・range、追加のproduction code不具合は
+    再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、更新replacement中／旧replacement復帰後の同一source
+    snapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの更新replacement 7/11 variantで中央ordinary enum宣言を削除・復元し、両macro候補を維持したまま中央名の
+    E3066、派生enumerator除去、Native/Wasm復帰snapshotが現在sourceだけへ追随する境界を確認する。
