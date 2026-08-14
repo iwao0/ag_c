@@ -4985,6 +4985,8 @@ try {
     [5, 4], [10, 4], [5, 4], [10, 4], [4, 0], [10, 0],
     [4, 2], [11, 2], [4, 2], [11, 2],
     [5, 2], [10, 2], [5, 2], [10, 2], [4, 0], [10, 0],
+    [4, 1], [11, 1], [4, 1], [11, 1],
+    [5, 1], [10, 1], [5, 1], [10, 1], [4, 0], [10, 0],
   ]) {
     const source = enumThreeArgumentMacroSource(
       enumThreeArgumentCallSources[variant], missingArgumentMode,
@@ -5217,6 +5219,12 @@ try {
         if (missingArgumentMode === 2) {
           assert.doesNotMatch(result.diagnostics[0].message,
             new RegExp(argumentNames[0]));
+          assert.doesNotMatch(result.diagnostics[0].message,
+            new RegExp(argumentNames[2]));
+        }
+        if (missingArgumentMode === 1) {
+          assert.doesNotMatch(result.diagnostics[0].message,
+            new RegExp(argumentNames[1]));
           assert.doesNotMatch(result.diagnostics[0].message,
             new RegExp(argumentNames[2]));
         }
