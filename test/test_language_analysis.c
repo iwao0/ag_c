@@ -6823,7 +6823,9 @@ static int test_enum_three_argument_call_cursor(
       {10, 0}, {5, 7}, {5, 0}, {10, 0},
       {11, 0}, {4, 7}, {4, 0}, {11, 0}, {4, 0}, {10, 0},
       {4, 7}, {11, 7}, {4, 7}, {11, 7},
-      {5, 7}, {10, 7}, {5, 7}, {10, 7}, {4, 0}, {10, 0}};
+      {5, 7}, {10, 7}, {5, 7}, {10, 7}, {4, 0}, {10, 0},
+      {4, 6}, {11, 6}, {4, 6}, {11, 6},
+      {5, 6}, {10, 6}, {5, 6}, {10, 6}, {4, 0}, {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
   const char *header_paths[] = {"enum-three-argument-call.h"};
@@ -7102,6 +7104,15 @@ static int test_enum_three_argument_call_cursor(
             CHECK(!strstr(undefined_argument->message,
                           argument_names[argument_index]),
                   "enum three argument later missing argument omitted");
+        if (middle_enum_argument) {
+          const char *inactive_middle_enum_name =
+              renamed_middle_enum_argument
+                  ? middle_enum_argument_names[1]
+                  : renamed_middle_enum_argument_names[1];
+          CHECK(!strstr(undefined_argument->message,
+                        inactive_middle_enum_name),
+                "enum three argument inactive middle diagnostic omitted");
+        }
       }
       const ag_language_symbol_t *hover = hover_symbol(&snapshot);
       int hover_index = cursor_steps[cursor_index].hover_index;
