@@ -3096,8 +3096,10 @@ static int print_enum_three_argument_call_parity_snapshot(
       (parsed_variant >= 4 && parsed_missing_argument_mode != 0 &&
        parsed_missing_argument_mode != 1 &&
        parsed_missing_argument_mode != 2 &&
+       parsed_missing_argument_mode != 3 &&
        parsed_missing_argument_mode != 4 &&
-       parsed_missing_argument_mode != 5) || !cursor_text[0] ||
+       parsed_missing_argument_mode != 5 &&
+       parsed_missing_argument_mode != 6) || !cursor_text[0] ||
       !cursor_end || *cursor_end != '\0')
     return 1;
   char *source = enum_three_argument_macro_source(
@@ -6792,7 +6794,10 @@ static int test_enum_three_argument_call_cursor(
       {9, 0}, {9, 4}, {11, 4}, {11, 5}, {11, 1}, {11, 4}, {11, 0},
       {9, 0}, {8, 0},
       {10, 0}, {10, 2}, {10, 0},
-      {11, 0}, {11, 2}, {11, 0}, {10, 0}};
+      {11, 0}, {11, 2}, {11, 0}, {10, 0},
+      {10, 0}, {10, 1}, {10, 3}, {10, 2}, {10, 6}, {10, 4}, {10, 0},
+      {11, 0}, {11, 4}, {11, 6}, {11, 2}, {11, 3}, {11, 1}, {11, 0},
+      {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
   const char *header_paths[] = {"enum-three-argument-call.h"};

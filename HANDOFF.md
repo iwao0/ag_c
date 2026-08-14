@@ -33424,3 +33424,35 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 同じ通常サイズの更新replacement variantで中央enumと片側macroを同時に削除し、両方欠落時のsource順E3066が
     第1macro→中央enum、または中央enum→第3macroへ現在sourceに従って切り替わる境界をNative/Wasmで確認する。
+
+### このセッション（続き1139）: 3引数callの中央enum＋片側macro同時欠落順序を固定した
+- 対象選定:
+  - 続き1138と同じ通常サイズの更新replacement 7/11 variantだけを使い、中央ordinary enumと片側object-like macroを
+    同時に削除・復元した。深い式、巨大入力、fuzz、資源枯渇などセキュリティ監査で止まりやすい探索には広げなかった。
+- 実装確認:
+  - Native parity CLIへ複数欠落mask `3`/`6`を限定追加し、既存の候補・metadata・range・diagnostic・hover検査を共有した。
+  - comment variantはmask `0→1→3→2→6→4→0`、CRLF line splice variantは`0→4→6→2→3→1→0`と遷移させた。
+    production compiler sourceは変更していない。
+- 調査結果:
+  - E3066は複数欠落時も現在source順の先頭だけをmessageへ含め、comment側では第1macro→第1macro→中央enum→
+    中央enum→第3macro、CRLF側では第3macro→中央enum→中央enum→第1macro→第1macroへ復元状態に従って切り替わった。
+    後続の欠落名はmessageへ混入せず、rangeはcallee invocationを維持した。
+  - 定義済み引数だけが候補・hover、macro replacement 7/11または中央enum値9、documentationとrangeを維持した。
+    欠落候補と派生enumeratorは除去され、全復元時は派生値127と初回snapshotへ戻った。
+  - Native/Wasm差、stale候補・診断・hover・dependency・macro/enum metadata・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、復元後の同一source snapshotを完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズの更新replacement variantで3引数すべてを欠落させるmask `7`を追加し、片側から段階的に復元した際に
+    E3066対象が第1macro→中央enum→第3macroへ現在source順で移る境界をNative/Wasmで確認する。
