@@ -34227,3 +34227,39 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同じ通常サイズで欠落maskを1bitずつ変更しながらcross-layout revisionを切り替え、旧comment variant 4/mask 0→更新CRLF variant 11/mask 1→
     4/mask 3→11/mask 2→4/mask 6→11/mask 7→4/mask 5→11/mask 4→4/mask 0と、旧CRLF variant 5・更新comment variant 10でも
     対称なGray cycleを実行する。全8 maskを一巡する間の候補・metadata・hover・派生enum・E3066 message/rangeのsnapshot復帰を確認する。
+
+### このセッション（続き1163）: 3引数callのcross-layout 3-bit欠落mask Gray cycleを固定した
+- 対象選定:
+  - 続き1162と同じ通常サイズで、欠落maskを1bitずつ変更しながらrevision・layoutも切り替えた。深い式、巨大入力、fuzz、資源枯渇には
+    広げなかった。
+- 実装確認:
+  - 旧comment variant 4/mask 0→更新CRLF variant 11/mask 1→4/mask 3→11/mask 2→4/mask 6→11/mask 7→4/mask 5→
+    11/mask 4→4/mask 0と、旧CRLF variant 5・更新comment variant 10でも対称なGray cycleを実行した。production compiler sourceは
+    変更していない。
+  - 各variant/mask/cursor keyは既存履歴でfresh Native JSON snapshotおよびWasm完全snapshotと一致済みで、今回のcycle再訪を同じsnapshotと
+    比較した。Native共有sessionでも候補・診断・hover・dependency・declaration/documentation rangeを検査した。
+- 調査結果:
+  - 各stepで現在sourceの存続macro replacement、中央enum名・値・documentation、declaration/documentation rangeとhoverだけを公開し、
+    欠落候補・hoverを除去した。
+  - 派生enumeratorはmask `0`で現在revisionの値へ復帰し、mask `1`〜`7`では除去した。非zero maskの1件のE3066は最初の欠落operandだけを
+    現在layoutのcallee invocation rangeへ返し、後続欠落名、存続名、非アクティブな中央enum名をmessageへ混入させなかった。
+    mask `0`では診断を除去した。
+  - Native/Wasm差、stale name・値・replacement・documentation・診断・hover・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - 全8 maskを `0→1→3→2→6→7→5→4→0` の1bit差で一巡した。
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - 同一Native/Wasm instance、各revisionのfresh Native JSON snapshot、全maskの既存Wasm snapshotへのcycle再訪を完全一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    **language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズでGray cycleを逆向きに辿り、旧comment variant 4/mask 0→更新CRLF variant 11/mask 4→4/mask 5→11/mask 7→
+    4/mask 6→11/mask 2→4/mask 3→11/mask 1→4/mask 0と、旧CRLF variant 5・更新comment variant 10でも対称に、全8 maskを
+    1bit差で逆順に一巡する間の候補・metadata・hover・派生enum・E3066 message/rangeのsnapshot復帰を確認する。
