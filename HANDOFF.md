@@ -34374,3 +34374,40 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同じ通常サイズの3引数callでcallee headerを旧／更新の2 revisionにし、parameter名、replacementの定数項、documentationを小さく変更した
     header bundleをsource revision・comment／CRLF layoutと交互に渡す。callee候補・hover・dependency・header側declaration/documentation range、
     派生enum値または現在のE3066をfresh Native/Wasm snapshotと一致させ、旧header metadataが残らず復帰することを確認する。
+
+### このセッション（続き1167）: 3引数callのcallee header metadata revision復帰を固定した
+- 対象選定:
+  - 続き1166と同じ通常サイズの3引数callで、固定だったcallee headerだけに小さな旧／更新revisionを設けた。深い式、巨大入力、fuzz、
+    資源枯渇には広げなかった。
+- 実装確認:
+  - 旧headerはparameter `first/middle/last`、replacement定数項`+100`、documentation
+    `enum three argument function-like macro`、更新headerは`left/center/right`、`+200`、
+    `enum three argument updated function-like macro`とした。
+  - comment側はvariant 4/header 0→11/header 1→4/header 1→11/header 0→4/header 0、CRLF側はvariant 5/header 0→
+    10/header 1→5/header 1→10/header 0→5/header 0を、完全callのmask `0`と中央operand欠落のmask `2`で対称に実行した。
+  - 既存passはheader 0のまま維持し、追加passだけ名前付きvariant offsetでheader 1を指定した。snapshot keyとNative parity CLIには
+    header revisionを追加し、revision引数を省略する従来CLIはheader 0として互換維持した。production compiler sourceは変更していない。
+- 調査結果:
+  - callee候補のfunction-like/variadic状態、3 parameter、replacement、documentation、header側declaration/documentation rangeとhoverを
+    現在headerから再構築し、旧／更新metadataが相互に残留しなかった。
+  - mask `0`では派生enumeratorを旧headerのvariant 4/5で`110`、variant 10/11で`127`、更新headerではそれぞれ`210`と`227`へ
+    切り替えた。mask `2`では派生を除去し、現在sourceの中央operandだけを示す1件のE3066を現在layoutのcallee invocation rangeへ返した。
+  - Native/Wasm差、stale parameter・replacement・documentation・値・診断・hover・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - dependency `enum-three-argument-call.h`、header側metadata/range、source側operand metadata/range、派生enumまたはE3066を同一Native/Wasm
+    instanceで検査した。header revisionを含む各keyをfresh Native JSONと一致させ、再訪Wasm完全snapshotを一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    警告なし、**language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで全operand欠落mask `7`を使い、source bytesが同一になるvariant 6/10のcomment組と7/11のCRLF組でheader 0→1→1→0→0を
+    交互に渡す。source本文を変えずcallee headerだけを更新・復帰した際のparameter/replacement/documentation・header range・hoverと、
+    現在の1件のE3066・dependency・派生enum除去をfresh Native/Wasm snapshotへ一致させ、header-only cache invalidationを確認する。

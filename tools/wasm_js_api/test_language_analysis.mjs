@@ -3024,10 +3024,30 @@ function enumTwoArgumentBothRenamedSource(input, missingArgumentMode) {
   }
   return {name: renamed.name, source};
 }
-const enumThreeArgumentCallHeader =
+const enumThreeArgumentCallHeaders = [
   "/// enum three argument function-like macro\n" +
-  "#define ENUM_THREE_ARGUMENT_CALL(first, middle, last) " +
-  "((first) + (middle) + (last) + 100)\n";
+    "#define ENUM_THREE_ARGUMENT_CALL(first, middle, last) " +
+    "((first) + (middle) + (last) + 100)\n",
+  "/// enum three argument updated function-like macro\n" +
+    "#define ENUM_THREE_ARGUMENT_CALL(left, center, right) " +
+    "((left) + (center) + (right) + 200)\n",
+];
+const enumThreeArgumentCallHeaderParameters = [
+  ["first", "middle", "last"],
+  ["left", "center", "right"],
+];
+const enumThreeArgumentCallHeaderReplacements = [
+  "( ( first ) + ( middle ) + ( last ) + 100 )",
+  "( ( left ) + ( center ) + ( right ) + 200 )",
+];
+const enumThreeArgumentCallHeaderDocumentation = [
+  "enum three argument function-like macro",
+  "enum three argument updated function-like macro",
+];
+const enumThreeArgumentCallHeaderComments = [
+  "/// enum three argument function-like macro",
+  "/// enum three argument updated function-like macro",
+];
 const enumThreeArgumentCallSources = [
   "#include <enum-three-argument-call.h>\n" +
     "/// enum three argument first macro\n" +
@@ -4929,7 +4949,7 @@ for (const [oldVariant, updatedVariant] of [
   );
 }
 try {
-  for (const [variant, missingArgumentMode] of [
+  for (const [variant, missingArgumentMode, headerRevision = 0] of [
     [0, 0], [0, 2], [0, 0], [0, 4], [0, 0],
     [1, 0], [1, 4], [1, 6], [1, 2], [1, 0], [0, 0],
     [2, 0], [2, 2], [2, 0],
@@ -5015,7 +5035,13 @@ try {
     [5, 1], [10, 0], [5, 4], [10, 5], [5, 7],
     [10, 6], [5, 2], [10, 3], [5, 1],
     [4, 0], [10, 0],
+    [4, 0, 0], [11, 0, 1], [4, 0, 1], [11, 0, 0], [4, 0, 0],
+    [5, 0, 0], [10, 0, 1], [5, 0, 1], [10, 0, 0], [5, 0, 0],
+    [4, 2, 0], [11, 2, 1], [4, 2, 1], [11, 2, 0], [4, 2, 0],
+    [5, 2, 0], [10, 2, 1], [5, 2, 1], [10, 2, 0], [5, 2, 0],
+    [4, 0, 0], [10, 0, 0],
   ]) {
+    const header = enumThreeArgumentCallHeaders[headerRevision];
     const source = enumThreeArgumentMacroSource(
       enumThreeArgumentCallSources[variant], missingArgumentMode,
     );
@@ -5145,7 +5171,7 @@ try {
     for (const [byteOffset, hoverIndex, label] of cursorSteps) {
       const result = enumThreeArgumentCompiler.analyzeSource(source, {
         headers: {
-          "enum-three-argument-call.h": enumThreeArgumentCallHeader,
+          "enum-three-argument-call.h": header,
         },
         cursor: {sourceName: source.name, byteOffset},
       });
@@ -5157,10 +5183,31 @@ try {
       assert.equal(calleeCandidate?.macro?.functionLike, true);
       assert.equal(calleeCandidate?.macro?.variadic, false);
       assert.deepStrictEqual(
-        calleeCandidate?.macro?.parameters, ["first", "middle", "last"],
+        calleeCandidate?.macro?.parameters,
+        enumThreeArgumentCallHeaderParameters[headerRevision],
       );
       assert.equal(calleeCandidate?.macro?.replacement,
-        "( ( first ) + ( middle ) + ( last ) + 100 )");
+        enumThreeArgumentCallHeaderReplacements[headerRevision]);
+      const calleeDeclarationIndex = header.indexOf(calleeName);
+      const calleeComment =
+        enumThreeArgumentCallHeaderComments[headerRevision];
+      const calleeCommentIndex = header.indexOf(calleeComment);
+      assert.ok(calleeDeclarationIndex >= 0 && calleeCommentIndex >= 0,
+        "enum three argument header anchors");
+      assert.equal(calleeCandidate?.declaration.sourceName,
+        "enum-three-argument-call.h");
+      assert.equal(calleeCandidate?.declaration.start.offset,
+        calleeDeclarationIndex);
+      assert.equal(calleeCandidate?.declaration.end.offset,
+        calleeDeclarationIndex + Buffer.byteLength(calleeName));
+      assert.equal(calleeCandidate?.documentation,
+        enumThreeArgumentCallHeaderDocumentation[headerRevision]);
+      assert.equal(calleeCandidate?.documentationRange?.sourceName,
+        "enum-three-argument-call.h");
+      assert.equal(calleeCandidate?.documentationRange?.start.offset,
+        calleeCommentIndex);
+      assert.equal(calleeCandidate?.documentationRange?.end.offset,
+        calleeCommentIndex + Buffer.byteLength(calleeComment));
       const argumentCandidates = argumentNames.map((name, index) => {
         const enumArgument = (outerEnumArguments && index !== 1) ||
           (middleEnumArgument && index === 1);
@@ -5209,10 +5256,15 @@ try {
         assert.equal(derived, undefined);
       } else {
         assert.equal(derived?.initializer.constantValue,
-          updatedMacroArguments
-            ? "127" : updatedMiddleEnumArgument
-              ? "113" : middleEnumArgument
-              ? "110" : outerEnumArguments ? "111" : "106");
+          headerRevision
+            ? updatedMacroArguments
+              ? "227" : updatedMiddleEnumArgument
+                ? "213" : middleEnumArgument
+                ? "210" : outerEnumArguments ? "211" : "206"
+            : updatedMacroArguments
+              ? "127" : updatedMiddleEnumArgument
+                ? "113" : middleEnumArgument
+                ? "110" : outerEnumArguments ? "111" : "106");
       }
       const firstMissingArgumentIndex = [0, 1, 2].find(
         (index) => (missingArgumentMode & (1 << index)) !== 0,
@@ -5280,20 +5332,22 @@ try {
       } else {
         assert.equal(result.hover, null);
       }
-      const key = `${variant}:${missingArgumentMode}:${byteOffset}`;
+      const key =
+        `${variant}:${missingArgumentMode}:${headerRevision}:${byteOffset}`;
       const firstResult = enumThreeArgumentFirstResults.get(key);
       if (firstResult) {
         assert.deepStrictEqual(result, firstResult,
-          `Wasm enum three argument call retained stale state for ${variant}, ${missingArgumentMode}, ${label}`);
+          `Wasm enum three argument call retained stale state for ${variant}, ${missingArgumentMode}, header ${headerRevision}, ${label}`);
       } else {
         enumThreeArgumentFirstResults.set(key, result);
         assert.deepStrictEqual(result, JSON.parse(execFileSync(
           nativeAnalysisPath,
           ["--enum-three-argument-call-parity-json", String(variant),
-            String(missingArgumentMode), String(byteOffset)],
+            String(missingArgumentMode), String(byteOffset),
+            String(headerRevision)],
           {encoding: "utf8"},
         )),
-        `native and Wasm enum three argument call differ for ${variant}, ${missingArgumentMode}, ${label}`);
+        `native and Wasm enum three argument call differ for ${variant}, ${missingArgumentMode}, header ${headerRevision}, ${label}`);
       }
       if (variant >= 6 && missingArgumentMode === 7) {
         const revisionKey = `${variant & 1}:${byteOffset}`;
