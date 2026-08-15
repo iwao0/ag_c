@@ -5039,6 +5039,8 @@ try {
     [5, 0, 0], [10, 0, 1], [5, 0, 1], [10, 0, 0], [5, 0, 0],
     [4, 2, 0], [11, 2, 1], [4, 2, 1], [11, 2, 0], [4, 2, 0],
     [5, 2, 0], [10, 2, 1], [5, 2, 1], [10, 2, 0], [5, 2, 0],
+    [6, 7, 0], [10, 7, 1], [6, 7, 1], [10, 7, 0], [6, 7, 0],
+    [7, 7, 0], [11, 7, 1], [7, 7, 1], [11, 7, 0], [7, 7, 0],
     [4, 0, 0], [10, 0, 0],
   ]) {
     const header = enumThreeArgumentCallHeaders[headerRevision];
@@ -5350,12 +5352,13 @@ try {
         `native and Wasm enum three argument call differ for ${variant}, ${missingArgumentMode}, header ${headerRevision}, ${label}`);
       }
       if (variant >= 6 && missingArgumentMode === 7) {
-        const revisionKey = `${variant & 1}:${byteOffset}`;
+        const revisionKey =
+          `${variant & 1}:${headerRevision}:${byteOffset}`;
         const allMissingRevisionResult =
           enumThreeArgumentAllMissingRevisionResults.get(revisionKey);
         if (allMissingRevisionResult) {
           assert.deepStrictEqual(result, allMissingRevisionResult,
-            `Wasm enum three argument all missing revision retained stale state for ${variant}, ${label}`);
+            `Wasm enum three argument all missing revision retained stale state for ${variant}, header ${headerRevision}, ${label}`);
         } else {
           enumThreeArgumentAllMissingRevisionResults.set(revisionKey, result);
         }

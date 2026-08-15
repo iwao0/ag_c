@@ -6905,6 +6905,14 @@ static int test_enum_three_argument_call_cursor(
       {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 10, 2},
       {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 5, 2},
       {10, 2}, {5, 2},
+      {6, 7},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 10, 7},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 6, 7},
+      {10, 7}, {6, 7},
+      {7, 7},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 11, 7},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 7, 7},
+      {11, 7}, {7, 7},
       {4, 0}, {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);

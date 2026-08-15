@@ -34411,3 +34411,38 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同じ通常サイズで全operand欠落mask `7`を使い、source bytesが同一になるvariant 6/10のcomment組と7/11のCRLF組でheader 0→1→1→0→0を
     交互に渡す。source本文を変えずcallee headerだけを更新・復帰した際のparameter/replacement/documentation・header range・hoverと、
     現在の1件のE3066・dependency・派生enum除去をfresh Native/Wasm snapshotへ一致させ、header-only cache invalidationを確認する。
+
+### このセッション（続き1168）: byte-identical全欠落sourceのcallee header-only復帰を固定した
+- 対象選定:
+  - 続き1167と同じ通常サイズの3引数callで、全operand欠落によりsource bytesが同一になるrevision組を使い、callee headerだけを更新・復帰した。
+    深い式、巨大入力、fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - mask `7`のcommentはvariant 6/header 0→10/header 1→6/header 1→10/header 0→6/header 0、CRLFはvariant 7/header 0→
+    11/header 1→7/header 1→11/header 0→7/header 0を同一Native/Wasm instanceで実行した。
+  - 既存のsource identity assertionでvariant 6/10と7/11がそれぞれbyte-identicalであることを確認した。Wasmのall-missing revision mapは
+    header revisionをkeyへ含め、header 0と1の正当な結果差を分離しながら、同一header内のvariant結果を完全一致させた。
+  - production compiler sourceは変更していない。
+- 調査結果:
+  - source本文を変えず、callee候補のparameter、replacement、documentation、header側declaration/documentation rangeとhoverを現在headerへ
+    更新・復帰し、旧／更新metadataが相互に残留しなかった。dependencyは全stepで`enum-three-argument-call.h`を維持した。
+  - 全operand候補と派生enumeratorを除去した。1件のE3066は最初の欠落operandだけを同一sourceのcallee invocation rangeへ返し、後続欠落名、
+    非アクティブな中央enum名をmessageへ混入させなかった。
+  - Native/Wasm差、stale parameter・replacement・documentation・診断・hover・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - header revisionを含む各keyをfresh Native JSONと一致させ、再訪Wasm完全snapshotを一致させた。同一header revisionではbyte-identicalな
+    旧／更新source variantの完全snapshotも一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    警告なし、**language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズでsource variant自体を固定し、完全callのvariant 6・7・10・11をそれぞれheader 0→1→0で往復する。source bytesを変えず、
+    callee metadata・header range・hoverだけでなく派生enumerator値もvariant 6/7では`110→210→110`、variant 10/11では`127→227→127`へ
+    更新・復帰することをfresh Native/Wasm snapshotへ一致させ、header-only semantic invalidationを確認する。
