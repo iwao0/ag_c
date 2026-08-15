@@ -34446,3 +34446,35 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同じ通常サイズでsource variant自体を固定し、完全callのvariant 6・7・10・11をそれぞれheader 0→1→0で往復する。source bytesを変えず、
     callee metadata・header range・hoverだけでなく派生enumerator値もvariant 6/7では`110→210→110`、variant 10/11では`127→227→127`へ
     更新・復帰することをfresh Native/Wasm snapshotへ一致させ、header-only semantic invalidationを確認する。
+
+### このセッション（続き1169）: 固定完全sourceのcallee header-only semantic復帰を固定した
+- 対象選定:
+  - 続き1168と同じ通常サイズの3引数callで、完全source variant自体を固定したままcallee headerだけを更新・復帰した。深い式、巨大入力、
+    fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - comment variant 6・10、CRLF variant 7・11をそれぞれheader 0→1→0で往復し、各3 stepのsource bytesを変えなかった。
+  - 既存のheader-aware snapshot keyとNative parity CLIを使い、各header revisionのfresh Native JSONおよび再訪Wasm完全snapshotと一致させた。
+    production compiler sourceは変更していない。
+- 調査結果:
+  - callee候補のparameter、replacement、documentation、header側declaration/documentation rangeとhoverを現在headerへ更新・復帰し、
+    sourceが同一でも旧／更新metadataが相互に残留しなかった。dependencyは全stepで`enum-three-argument-call.h`を維持した。
+  - 全operand候補と派生enumeratorを維持し、診断は全stepで除去した。派生値はvariant 6/7で`110→210→110`、variant 10/11で
+    `127→227→127`となり、header replacementの`+100↔+200`だけによるsemantic更新・復帰を確認した。
+  - Native/Wasm差、stale parameter・replacement・documentation・値・診断・hover・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - header revisionを含む各keyをfresh Native JSONと一致させ、再訪Wasm完全snapshotを一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    警告なし、**language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで第3のcallee header revisionを追加し、parameterだけを`lhs/mid/rhs`へ、documentationを更新する一方、replacementの定数項は
+    旧headerと同じ`+100`に保つ。固定sourceをheader 0→2→0で往復し、callee metadata・header range・hoverは更新・復帰するが派生enum値は
+    不変であることをfresh Native/Wasm snapshotへ一致させ、metadata-only invalidationとsemantic不変を分離して確認する。
