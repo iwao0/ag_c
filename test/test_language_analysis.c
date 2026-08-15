@@ -1070,7 +1070,10 @@ static const char *const enum_three_argument_call_headers[] = {
     "((first) + (middle) + (last) + 100)\n",
     "/// enum three argument updated function-like macro\n"
     "#define ENUM_THREE_ARGUMENT_CALL(left, center, right) "
-    "((left) + (center) + (right) + 200)\n"};
+    "((left) + (center) + (right) + 200)\n",
+    "/// enum three argument metadata-only function-like macro\n"
+    "#define ENUM_THREE_ARGUMENT_CALL(lhs, mid, rhs) "
+    "((lhs) + (mid) + (rhs) + 100)\n"};
 
 static const char *const enum_three_argument_call_sources[] = {
     "#include <enum-three-argument-call.h>\n"
@@ -3112,7 +3115,10 @@ static int print_enum_three_argument_call_parity_snapshot(
       !cursor_end || *cursor_end != '\0' ||
       (header_revision_text &&
        (!header_revision_text[0] || !header_revision_end ||
-        *header_revision_end != '\0' || parsed_header_revision > 1)))
+        *header_revision_end != '\0' ||
+        parsed_header_revision >=
+            sizeof(enum_three_argument_call_headers) /
+                sizeof(enum_three_argument_call_headers[0]))))
     return 1;
   char *source = enum_three_argument_macro_source(
       enum_three_argument_call_sources[(size_t)parsed_variant],
@@ -6732,19 +6738,28 @@ static int test_enum_two_argument_call_cursor(
 
 static int test_enum_three_argument_call_cursor(
     ag_target_info_t target) {
-  enum { ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET = 12 };
+  enum {
+    ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET = 12,
+    ENUM_THREE_ARGUMENT_HEADER_REVISION_COUNT =
+        sizeof(enum_three_argument_call_headers) /
+        sizeof(enum_three_argument_call_headers[0])
+  };
   static const char *const header_parameter_names[][3] = {
       {"first", "middle", "last"},
-      {"left", "center", "right"}};
+      {"left", "center", "right"},
+      {"lhs", "mid", "rhs"}};
   static const char *const header_replacements[] = {
       "( ( first ) + ( middle ) + ( last ) + 100 )",
-      "( ( left ) + ( center ) + ( right ) + 200 )"};
+      "( ( left ) + ( center ) + ( right ) + 200 )",
+      "( ( lhs ) + ( mid ) + ( rhs ) + 100 )"};
   static const char *const header_documentation[] = {
       "enum three argument function-like macro",
-      "enum three argument updated function-like macro"};
+      "enum three argument updated function-like macro",
+      "enum three argument metadata-only function-like macro"};
   static const char *const header_comments[] = {
       "/// enum three argument function-like macro",
-      "/// enum three argument updated function-like macro"};
+      "/// enum three argument updated function-like macro",
+      "/// enum three argument metadata-only function-like macro"};
   static const char *const macro_argument_names[] = {
       "ENUM_THREE_ARGUMENT_FIRST_MACRO",
       "ENUM_THREE_ARGUMENT_MIDDLE_MACRO",
@@ -6925,6 +6940,18 @@ static int test_enum_three_argument_call_cursor(
       {11, 0},
       {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 11, 0},
       {11, 0},
+      {6, 0},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 6, 0},
+      {6, 0},
+      {7, 0},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 7, 0},
+      {7, 0},
+      {10, 0},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 10, 0},
+      {10, 0},
+      {11, 0},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 11, 0},
+      {11, 0},
       {4, 0}, {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
@@ -6933,8 +6960,9 @@ static int test_enum_three_argument_call_cursor(
             ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET,
         "enum three argument header revision variant offset");
   const char *header_paths[] = {"enum-three-argument-call.h"};
-  header_bundle_t bundles[2] = {0};
-  for (size_t header_revision = 0; header_revision < 2;
+  header_bundle_t bundles[ENUM_THREE_ARGUMENT_HEADER_REVISION_COUNT] = {0};
+  for (size_t header_revision = 0;
+       header_revision < ENUM_THREE_ARGUMENT_HEADER_REVISION_COUNT;
        header_revision++) {
     const char *header_sources[] = {
         enum_three_argument_call_headers[header_revision]};
@@ -6978,7 +7006,9 @@ static int test_enum_three_argument_call_cursor(
     size_t variant =
         encoded_variant %
         ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET;
-    CHECK(header_revision >= 0 && header_revision < 2,
+    CHECK(header_revision >= 0 &&
+              header_revision <
+                  ENUM_THREE_ARGUMENT_HEADER_REVISION_COUNT,
           "enum three argument header revision");
     int missing_argument_mode = passes[pass_index].missing_argument_mode;
     const char *header = enum_three_argument_call_headers[header_revision];
@@ -7215,7 +7245,7 @@ static int test_enum_three_argument_call_cursor(
                 (!missing_argument_mode && derived &&
                  derived->constant_value &&
                  strcmp(derived->constant_value,
-                        header_revision
+                        header_revision == 1
                             ? updated_macro_arguments ? "227"
                               : updated_middle_enum_argument ? "213"
                               : middle_enum_argument ? "210"
@@ -7311,7 +7341,8 @@ static int test_enum_three_argument_call_cursor(
     free(source);
   }
   ag_compilation_session_destroy(session);
-  for (size_t header_revision = 0; header_revision < 2;
+  for (size_t header_revision = 0;
+       header_revision < ENUM_THREE_ARGUMENT_HEADER_REVISION_COUNT;
        header_revision++)
     free(bundles[header_revision].bytes);
   return 0;

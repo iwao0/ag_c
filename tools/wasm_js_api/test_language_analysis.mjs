@@ -3031,22 +3031,29 @@ const enumThreeArgumentCallHeaders = [
   "/// enum three argument updated function-like macro\n" +
     "#define ENUM_THREE_ARGUMENT_CALL(left, center, right) " +
     "((left) + (center) + (right) + 200)\n",
+  "/// enum three argument metadata-only function-like macro\n" +
+    "#define ENUM_THREE_ARGUMENT_CALL(lhs, mid, rhs) " +
+    "((lhs) + (mid) + (rhs) + 100)\n",
 ];
 const enumThreeArgumentCallHeaderParameters = [
   ["first", "middle", "last"],
   ["left", "center", "right"],
+  ["lhs", "mid", "rhs"],
 ];
 const enumThreeArgumentCallHeaderReplacements = [
   "( ( first ) + ( middle ) + ( last ) + 100 )",
   "( ( left ) + ( center ) + ( right ) + 200 )",
+  "( ( lhs ) + ( mid ) + ( rhs ) + 100 )",
 ];
 const enumThreeArgumentCallHeaderDocumentation = [
   "enum three argument function-like macro",
   "enum three argument updated function-like macro",
+  "enum three argument metadata-only function-like macro",
 ];
 const enumThreeArgumentCallHeaderComments = [
   "/// enum three argument function-like macro",
   "/// enum three argument updated function-like macro",
+  "/// enum three argument metadata-only function-like macro",
 ];
 const enumThreeArgumentCallSources = [
   "#include <enum-three-argument-call.h>\n" +
@@ -5045,6 +5052,10 @@ try {
     [7, 0, 0], [7, 0, 1], [7, 0, 0],
     [10, 0, 0], [10, 0, 1], [10, 0, 0],
     [11, 0, 0], [11, 0, 1], [11, 0, 0],
+    [6, 0, 0], [6, 0, 2], [6, 0, 0],
+    [7, 0, 0], [7, 0, 2], [7, 0, 0],
+    [10, 0, 0], [10, 0, 2], [10, 0, 0],
+    [11, 0, 0], [11, 0, 2], [11, 0, 0],
     [4, 0, 0], [10, 0, 0],
   ]) {
     const header = enumThreeArgumentCallHeaders[headerRevision];
@@ -5262,7 +5273,7 @@ try {
         assert.equal(derived, undefined);
       } else {
         assert.equal(derived?.initializer.constantValue,
-          headerRevision
+          headerRevision === 1
             ? updatedMacroArguments
               ? "227" : updatedMiddleEnumArgument
                 ? "213" : middleEnumArgument

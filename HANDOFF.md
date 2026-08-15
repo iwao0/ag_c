@@ -34478,3 +34478,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同じ通常サイズで第3のcallee header revisionを追加し、parameterだけを`lhs/mid/rhs`へ、documentationを更新する一方、replacementの定数項は
     旧headerと同じ`+100`に保つ。固定sourceをheader 0→2→0で往復し、callee metadata・header range・hoverは更新・復帰するが派生enum値は
     不変であることをfresh Native/Wasm snapshotへ一致させ、metadata-only invalidationとsemantic不変を分離して確認する。
+
+### このセッション（続き1170）: 固定完全sourceのcallee metadata-only復帰とsemantic不変を固定した
+- 対象選定:
+  - 続き1169と同じ通常サイズの3引数callで、semantic値を旧headerと同じに保つ第3header revisionを追加した。深い式、巨大入力、fuzz、
+    資源枯渇には広げなかった。
+- 実装確認:
+  - header 2はparameter `lhs/mid/rhs`、documentation `enum three argument metadata-only function-like macro`、対応するreplacement表記とし、
+    定数項はheader 0と同じ`+100`に保った。
+  - 完全callのcomment variant 6・10、CRLF variant 7・11をそれぞれ固定し、header 0→2→0で往復した。
+  - Native CLIのheader revision上限、Native bundle配列と生成・解放loop、pass側revision検証をheader配列長から導いた。既存revision 0/1の挙動を
+    維持し、production compiler sourceは変更していない。
+- 調査結果:
+  - callee候補のparameter、replacement、documentation、header側declaration/documentation rangeとhoverを現在headerへ更新・復帰し、
+    sourceが同一でもheader 0/2のmetadataが相互に残留しなかった。dependencyは全stepで`enum-three-argument-call.h`を維持した。
+  - 全operand候補と診断除去を維持した。派生値はvariant 6/7で`110→110→110`、variant 10/11で`127→127→127`となり、
+    metadata-only invalidation中のsemantic不変を確認した。
+  - Native/Wasm差、stale parameter・replacement・documentation・値・診断・hover・range、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、3引数の先頭・中央・末尾、2個のcomma、comment内部または両CRLF line splice位置を確認した。
+  - revision 2を含む各keyをfresh Native JSONと一致させ、再訪Wasm完全snapshotを一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    警告なし、**language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで中央operand欠落mask `2`のvariant 6・7・10・11をそれぞれ固定し、header 0→2→0で往復する。callee metadata・
+    header range・hoverは更新・復帰する一方、派生enumerator除去と現在sourceの中央operandを示す1件のE3066 message/rangeは不変であることを
+    fresh Native/Wasm snapshotへ一致させ、metadata-only invalidation中の診断semantic不変を確認する。
