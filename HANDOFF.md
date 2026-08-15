@@ -34512,3 +34512,35 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同じ通常サイズで中央operand欠落mask `2`のvariant 6・7・10・11をそれぞれ固定し、header 0→2→0で往復する。callee metadata・
     header range・hoverは更新・復帰する一方、派生enumerator除去と現在sourceの中央operandを示す1件のE3066 message/rangeは不変であることを
     fresh Native/Wasm snapshotへ一致させ、metadata-only invalidation中の診断semantic不変を確認する。
+
+### このセッション（続き1171）: 固定sourceの中央operand欠落中にcallee metadata-only復帰と診断semantic不変を固定した
+- 対象選定:
+  - 続き1170と同じ通常サイズの3引数callを使い、中央operand欠落mask `2`だけを第3header revisionの往復へ追加した。深い式、巨大入力、fuzz、
+    資源枯渇には広げなかった。
+- 実装確認:
+  - 完全callと同じ固定sourceのcomment variant 6・10、CRLF variant 7・11をそれぞれheader 0→2→0で往復する12状態を、Native/Wasmのpass表へ
+    対称追加した。既存の診断・symbol・hover・range・snapshot検査をそのまま適用し、production compiler sourceは変更していない。
+- 調査結果:
+  - callee候補のparameter、replacement、documentation、header側declaration/documentation rangeとhoverを現在headerへ更新・復帰し、
+    header 0/2のmetadataが相互に残留しなかった。dependencyは全stepで`enum-three-argument-call.h`を維持した。
+  - 外側2 operandの候補を維持し、中央operand `ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM`の候補と派生enumeratorは全stepで除去した。
+  - E3066は全stepで1件とし、messageは現在sourceの中央operandだけを示して外側operand名と非アクティブな旧中央enum名を含まず、rangeは同一sourceの
+    callee invocationを維持した。
+  - Native/Wasm差、stale parameter・replacement・documentation・診断message/range・hover、追加のproduction code不具合は再現しなかった。
+- 回帰範囲:
+  - callee、残存する先頭・末尾operand、2個のcomma、欠落した中央operand位置、comment内部または両CRLF line splice位置を確認した。
+  - revision 2を含む各keyをfresh Native JSONと一致させ、header 0再訪時のWasm完全snapshotを一致させた。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` =
+    警告なし、**language analysis tests passed (58 scenarios)**。
+  - `make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで先頭operand欠落mask `1`のvariant 6・7・10・11をそれぞれ固定し、header 0→2→0で往復する。callee metadata・header range・
+    hoverは更新・復帰する一方、派生enumerator除去と現在sourceの先頭operandだけを示す1件のE3066 message/rangeは不変であることをfresh Native/Wasm
+    snapshotへ一致させ、metadata-only invalidation中のprefix診断semantic不変を確認する。
