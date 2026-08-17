@@ -35554,3 +35554,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     hoverはrevision 1→2→1を含めて更新・復帰する一方、外側2 operandの候補・種別・metadata・range・hoverを維持し、中央operand候補と
     派生enumeratorの除去、中央macroだけを示す1件のE3066 message/rangeが不変であることをNative/Wasm snapshotへ一致させる。深い式・巨大入力・
     fuzz・資源stressは追加しない。
+
+### このセッション（続き1202）: 初期macro/outer-enum世代の中央operand欠落順header再入場を固定した
+- 対象選定:
+  - 続き1201の浅い次候補どおり、通常サイズの中央operand欠落mask `2`とvariant 0・1・2・3だけを使った。header 1→2→1を基底headerを挟まず
+    往復し、深い式、巨大入力、fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - macro 3 operandのvariant 0・1と外側enum + 中央macroのvariant 2・3をそれぞれ固定し、header 0→1→2→1→0を連続遷移する20状態を
+    Native/Wasmのpass表へ対称追加した。Nativeは全cursor境界、Wasmは各variant + maskの初回だけ全境界、header-only revisionと再入場を
+    回転cursor 1点で完全snapshotとNative parityへ一致させた。production compiler sourceは変更していない。
+- 調査結果:
+  - callee parameterを`first/middle/last`→`left/center/right`→`lhs/mid/rhs`→`left/center/right`→`first/middle/last`、replacement定数項を
+    `+100`→`+200`→`+100`→`+200`→`+100`へ更新・復帰した。documentation、header側declaration/documentation range、hoverも現在headerへ
+    追従し、dependencyは全stepで`enum-three-argument-call.h`を維持した。
+  - 外側2 operandはvariant 0/1ではmacro、variant 2/3ではenum constantとして候補・種別・metadata・range・hoverを全stepで維持し、中央operandの
+    候補・hoverと派生enumeratorは除去した。E3066は1件で`ENUM_THREE_ARGUMENT_MIDDLE_MACRO`だけをmessageへ含め、外側operand名は含まず、
+    rangeは同一sourceのcallee invocationを維持した。
+  - Native/Wasm差、revision 1再入場後に残るrevision 2由来のstale parameter・replacement・documentation・診断message/range・hover、追加の
+    production code不具合は再現しなかった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (58 scenarios)**。
+  - `/usr/bin/time -p make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功。計測は`real 9735.08秒`、`user 988.85秒`、
+    `sys 10.32秒`だったが、`pmset -g log`で実行中に通常sleepとdark wakeが繰り返されたことを確認したため、real値は続き1201との性能比較には
+    使用しない。ゲート自体の成功判定には影響しなかった。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。sleepを避けたWasm再計測も、同じ全体ゲートを重ねないため実施しなかった。
+- 浅い次候補:
+  - 同じ通常サイズで両端単一operand欠落mask `1`・`4`のvariant 0・1・2・3を固定し、header 0→1→2→1→0を連続遷移する。焦点Native JSON用の
+    `--dump-enum-three-argument-call`引数検証もmask 1/4へ必要最小限に拡張し、残る2 operandの候補・種別・metadata・range・hover、欠落operandと
+    派生enumeratorの除去、該当operandだけを示す1件のE3066 message/rangeをNative/Wasm snapshotへ一致させる。深い式・巨大入力・fuzz・
+    資源stressは追加しない。
