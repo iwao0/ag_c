@@ -35133,3 +35133,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     hoverは非基底revision 2→1→2を含めて更新・復帰する一方、全operand候補と派生enumeratorを除去し、最初の先頭operandだけを示す1件のE3066
     message/rangeが不変であることをfresh Native/Wasm snapshotへ一致させる。variant 6/10および7/11のbyte-identical source結果もrevisionごとに一致させ、
     深い式・巨大入力・fuzz・資源stressは追加しない。
+
+### このセッション（続き1189）: Wasm language-analysis再訪テストの重複解析を縮約した
+- 対象選定:
+  - `make test-wasm-js-api`が直近約163分まで増加していたため、次の被覆追加を止め、通常サイズの2引数・3引数callライフサイクルだけを調べた。
+    深い式、巨大入力、fuzz、資源枯渇、production compiler sourceには広げなかった。
+- 原因:
+  - 各passは同じ意味状態の再訪でも16〜20個の全cursor位置を再解析していた。Native参照値のprocess起動は初回keyだけに既に抑止されており、
+    時間増加の中心はstateful Wasm解析の重複だった。
+  - 2引数は156 pass・80状態で2,972回、3引数は997 pass・139状態で16,906回、合計19,878回のWasm解析になっていた。
+- 変更:
+  - 各意味状態の初回は従来どおり全cursor境界をNative snapshotと比較し、同じ状態の再訪はpass indexに応じて回転する1 cursorだけを解析して、
+    初回Wasm snapshotとの完全一致を確認するようにした。
+  - 1,153回の状態遷移、初回状態の全cursor境界、Native/Wasm parity、診断・symbol・hover・range、同一状態再訪時のstale-state検査は維持した。
+  - 解析回数は2引数1,604回、3引数3,222回、合計4,826回へ減り、対象2区間で約75.7%削減した。
+- 実測:
+  - `/usr/bin/time -p make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功、**real 897.81秒（14分57.81秒）**。
+    直近約163分から約90.8%短縮した。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (58 scenarios)**、real 5.33秒。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - test harnessだけの変更でproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、fuzz・深度/巨大入力・資源stress系も対象外とした。
+- 浅い次候補:
+  - 続き1188の候補へ戻り、同じ通常サイズで全operand欠落mask `7`のvariant 6・7・10・11を固定してheader 0→2→1→2→0を確認する。
+    再訪passは回転cursor 1点、各意味状態の初回は全cursor境界を維持し、深い式・巨大入力・fuzz・資源stressは追加しない。

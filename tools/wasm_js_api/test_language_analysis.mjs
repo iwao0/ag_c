@@ -4505,6 +4505,8 @@ const enumTwoArgumentMacroComments = [
   [null, null, null],
 ];
 const enumTwoArgumentFirstResults = new Map();
+const enumTwoArgumentVisitedStates = new Set();
+let enumTwoArgumentPassIndex = 0;
 try {
   for (const [variant, state, argumentMode, argumentRevision] of [
     [0, 0, 0, 0], [1, 0, 0, 0], [2, 0, 0, 0], [3, 0, 0, 0],
@@ -4742,8 +4744,17 @@ try {
       );
     }
     const enumOnly = state === 1;
+    const stateKey =
+      `${variant}:${state}:${argumentMode}:${argumentRevision}`;
+    // Cover every cursor boundary on the first visit, then keep each lifecycle
+    // reentry stateful with one rotating boundary instead of repeating the set.
+    const cursorStepsForPass = enumTwoArgumentVisitedStates.has(stateKey)
+      ? [cursorSteps[enumTwoArgumentPassIndex % cursorSteps.length]]
+      : cursorSteps;
+    enumTwoArgumentVisitedStates.add(stateKey);
+    enumTwoArgumentPassIndex++;
     for (const [byteOffset, hoverEnumIndex, label] of
-      cursorSteps) {
+      cursorStepsForPass) {
       const result = enumTwoArgumentCompiler.analyzeSource(
         source,
         {
@@ -4944,6 +4955,8 @@ try {
 const enumThreeArgumentCompiler = await createCompiler(wasmModule);
 const enumThreeArgumentFirstResults = new Map();
 const enumThreeArgumentAllMissingRevisionResults = new Map();
+const enumThreeArgumentVisitedStates = new Set();
+let enumThreeArgumentPassIndex = 0;
 for (const [oldVariant, updatedVariant] of [
   [6, 8], [7, 9], [8, 10], [9, 11], [6, 10], [7, 11],
 ]) {
@@ -5305,7 +5318,15 @@ try {
         );
       }
     }
-    for (const [byteOffset, hoverIndex, label] of cursorSteps) {
+    const stateKey = `${variant}:${missingArgumentMode}:${headerRevision}`;
+    // Cover every cursor boundary on the first visit, then keep each lifecycle
+    // reentry stateful with one rotating boundary instead of repeating the set.
+    const cursorStepsForPass = enumThreeArgumentVisitedStates.has(stateKey)
+      ? [cursorSteps[enumThreeArgumentPassIndex % cursorSteps.length]]
+      : cursorSteps;
+    enumThreeArgumentVisitedStates.add(stateKey);
+    enumThreeArgumentPassIndex++;
+    for (const [byteOffset, hoverIndex, label] of cursorStepsForPass) {
       const result = enumThreeArgumentCompiler.analyzeSource(source, {
         headers: {
           "enum-three-argument-call.h": header,
