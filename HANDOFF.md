@@ -35387,3 +35387,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     header range・hoverはrevision 1→2→1を含めて更新・復帰する一方、外側2 operand候補を維持し、中央operand候補と派生enumeratorの除去、
     現在sourceの中央operandだけを示す1件のE3066 message/rangeが不変であることをNative/Wasm snapshotへ一致させる。深い式・巨大入力・fuzz・
     資源stressは追加しない。
+
+### このセッション（続き1197）: 残存中央enum世代の中央operand欠落順header再入場を固定した
+- 対象選定:
+  - 続き1196の浅い次候補どおり、通常サイズの中央operand欠落mask `2`だけを使った。header 1→2→1を基底headerを挟まず往復し、
+    深い式、巨大入力、fuzz、資源枯渇には広げなかった。
+- 実装確認:
+  - 旧中央enum variant 4・5と更新中央enum variant 8・9をそれぞれ固定し、header 0→1→2→1→0を連続遷移する20状態をNative/Wasmのpass表へ
+    対称追加した。Nativeは全cursor境界、Wasmは続き1196の縮約を維持してheader-only revisionを回転cursor 1点で完全snapshotとNative parityへ
+    一致させた。production compiler sourceは変更していない。
+- 調査結果:
+  - callee parameterを`first/middle/last`→`left/center/right`→`lhs/mid/rhs`→`left/center/right`→`first/middle/last`、replacement定数項を
+    `+100`→`+200`→`+100`→`+200`→`+100`へ更新・復帰した。documentation、header側declaration/documentation range、hoverも現在headerへ
+    追従し、dependencyは全stepで`enum-three-argument-call.h`を維持した。
+  - 外側2 operandの候補・metadata・range・hoverを維持し、中央operand候補と派生enumeratorは全stepで除去した。
+  - E3066は全stepで1件とし、variant 4/5では`ENUM_THREE_ARGUMENT_MIDDLE_ENUM`、variant 8/9では
+    `ENUM_THREE_ARGUMENT_RENAMED_MIDDLE_ENUM`だけをmessageへ含めた。外側operand名と非アクティブな中央enum名は含まず、rangeは同一sourceの
+    callee invocationを維持した。
+  - Native/Wasm差、revision 1再入場後に残るrevision 2由来のstale parameter・replacement・documentation・診断message/range・hover、追加の
+    production code不具合は再現しなかった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (58 scenarios)**。
+  - `/usr/bin/time -p make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功、**real 774.31秒（12分54.31秒）**。
+    続き1196の短縮後基準からの増加は4.55秒に留まった。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis回帰追加だけでproduction compiler pipelineを変更していないためnative/Wasm E2Eは未実施し、
+    fuzz・深度/巨大入力/資源stress系も対象外とした。
+- 浅い次候補:
+  - 同じ通常サイズで先頭operand欠落mask `1`と末尾operand欠落mask `4`のvariant 4・5・8・9を固定し、header 0→1→2→1→0を連続遷移する。
+    callee metadata・header range・hoverはrevision 1→2→1を含めて更新・復帰する一方、各maskで残る2 operand候補を維持し、欠落operand候補と
+    派生enumeratorの除去、現在sourceの欠落operandだけを示す1件のE3066 message/rangeが不変であることをNative/Wasm snapshotへ一致させる。
+    深い式・巨大入力・fuzz・資源stressは追加しない。
