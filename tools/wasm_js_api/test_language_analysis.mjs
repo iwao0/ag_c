@@ -4955,7 +4955,7 @@ try {
 const enumThreeArgumentCompiler = await createCompiler(wasmModule);
 const enumThreeArgumentFirstResults = new Map();
 const enumThreeArgumentAllMissingRevisionResults = new Map();
-const enumThreeArgumentVisitedStates = new Set();
+const enumThreeArgumentVisitedCursorLayouts = new Set();
 let enumThreeArgumentPassIndex = 0;
 for (const [oldVariant, updatedVariant] of [
   [6, 8], [7, 9], [8, 10], [9, 11], [6, 10], [7, 11],
@@ -5225,6 +5225,10 @@ try {
     [7, 7, 0], [7, 7, 1], [7, 7, 2], [7, 7, 1], [7, 7, 0],
     [10, 7, 0], [10, 7, 1], [10, 7, 2], [10, 7, 1], [10, 7, 0],
     [11, 7, 0], [11, 7, 1], [11, 7, 2], [11, 7, 1], [11, 7, 0],
+    [4, 0, 0], [4, 0, 1], [4, 0, 2], [4, 0, 1], [4, 0, 0],
+    [5, 0, 0], [5, 0, 1], [5, 0, 2], [5, 0, 1], [5, 0, 0],
+    [8, 0, 0], [8, 0, 1], [8, 0, 2], [8, 0, 1], [8, 0, 0],
+    [9, 0, 0], [9, 0, 1], [9, 0, 2], [9, 0, 1], [9, 0, 0],
     [4, 0, 0], [10, 0, 0],
   ]) {
     const header = enumThreeArgumentCallHeaders[headerRevision];
@@ -5354,13 +5358,15 @@ try {
         );
       }
     }
-    const stateKey = `${variant}:${missingArgumentMode}:${headerRevision}`;
-    // Cover every cursor boundary on the first visit, then keep each lifecycle
-    // reentry stateful with one rotating boundary instead of repeating the set.
-    const cursorStepsForPass = enumThreeArgumentVisitedStates.has(stateKey)
+    const cursorLayoutKey = `${variant}:${missingArgumentMode}`;
+    // Cover every boundary once per source layout. Header-only revisions and
+    // lifecycle reentries keep one rotating boundary, because they do not move
+    // any cursor anchor in the source under analysis.
+    const cursorStepsForPass =
+      enumThreeArgumentVisitedCursorLayouts.has(cursorLayoutKey)
       ? [cursorSteps[enumThreeArgumentPassIndex % cursorSteps.length]]
       : cursorSteps;
-    enumThreeArgumentVisitedStates.add(stateKey);
+    enumThreeArgumentVisitedCursorLayouts.add(cursorLayoutKey);
     enumThreeArgumentPassIndex++;
     for (const [byteOffset, hoverIndex, label] of cursorStepsForPass) {
       const result = enumThreeArgumentCompiler.analyzeSource(source, {
