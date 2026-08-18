@@ -882,6 +882,7 @@ static char *build_record_member_recovery_source(
   if (after_name >= length ||
       (source[after_name] != ';' && source[after_name] != ',' &&
        source[after_name] != '[' && source[after_name] != ':' &&
+       source[after_name] != ']' &&
        !is_parenthesized_pointer_name))
     return NULL;
   size_t record_open = 0;
@@ -1521,7 +1522,9 @@ static int analysis_case_label_end_mode(
 
 static int object_declaration_prefix(
     const char *source, size_t name_start, size_t *outer_brace_count,
-    int *paren_depth, int *bracket_depth, int *brace_depth) {
+    int *paren_depth, int *bracket_depth, int *brace_depth,
+    int *definite_declaration) {
+  if (definite_declaration) *definite_declaration = 0;
   size_t start = 0;
   size_t open_braces = 0;
   int parens = 0;
@@ -1678,13 +1681,18 @@ static int object_declaration_prefix(
              local_braces == 0)
       assignment_after_comma = 1;
   }
-  if ((!has_type && typedef_candidate_count != 1) ||
+  int has_typedef_declarator_prefix =
+      definite_declaration && typedef_candidate_count == 2;
+  if ((!has_type && typedef_candidate_count != 1 &&
+       !has_typedef_declarator_prefix) ||
       has_non_declaration || assignment_after_comma)
     return 0;
   *outer_brace_count = open_braces;
   *paren_depth = local_parens;
   *bracket_depth = local_brackets;
   *brace_depth = local_braces;
+  if (definite_declaration)
+    *definite_declaration = has_type || has_typedef_declarator_prefix;
   return 1;
 }
 
@@ -2314,7 +2322,7 @@ static char *build_function_declaration_recovery_source(
   int brace_depth = 0;
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
-          &bracket_depth, &brace_depth) ||
+          &bracket_depth, &brace_depth, NULL) ||
       brace_depth != 0 || (paren_depth == 0 && bracket_depth != 0))
     return NULL;
   size_t declaration_end = 0;
@@ -2365,7 +2373,7 @@ static char *build_object_declaration_recovery_source(
   int brace_depth = 0;
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
-          &bracket_depth, &brace_depth) ||
+          &bracket_depth, &brace_depth, NULL) ||
       bracket_depth != 0)
     return NULL;
   size_t after_name = skip_analysis_space_and_comments(
@@ -2396,6 +2404,57 @@ static char *build_object_declaration_recovery_source(
   memcpy(
       result + name_start, source + name_start, declarator_length);
   size_t output = name_start + declarator_length;
+  memcpy(result + output, suffix, sizeof(suffix) - 1);
+  output += sizeof(suffix) - 1;
+  for (size_t i = 0; i < outer_brace_count; i++) {
+    result[output++] = '}';
+    result[output++] = '\n';
+  }
+  result[output] = '\0';
+  if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+  if (source_consumed) *source_consumed = declarator_end;
+  return result;
+}
+
+static char *build_declarator_array_bound_recovery_source(
+    const char *source, size_t length, size_t cursor, int *changed,
+    size_t *source_consumed) {
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(source, length, cursor, &name, &name_length);
+  if (!name || name_length == 0) return NULL;
+  size_t name_start = (size_t)(name - source);
+  size_t name_end = name_start + name_length;
+  size_t outer_brace_count = 0;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  int definite_declaration = 0;
+  if (!object_declaration_prefix(
+          source, name_start, &outer_brace_count, &paren_depth,
+          &bracket_depth, &brace_depth, &definite_declaration) ||
+      !definite_declaration || bracket_depth == 0)
+    return NULL;
+  size_t record_open = 0;
+  if (record_body_open_at(source, name_start, &record_open)) return NULL;
+  size_t declarator_end = 0;
+  if (!object_declarator_end(
+          source, length, name_end, paren_depth, bracket_depth,
+          brace_depth, &declarator_end))
+    return NULL;
+  static const char suffix[] =
+      ";\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  if (outer_brace_count > SIZE_MAX / 2 ||
+      declarator_end > SIZE_MAX - sizeof(suffix) ||
+      declarator_end + sizeof(suffix) >
+          SIZE_MAX - outer_brace_count * 2)
+    return NULL;
+  size_t result_length = declarator_end + sizeof(suffix) - 1 +
+                         outer_brace_count * 2;
+  char *result = malloc(result_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, declarator_end);
+  size_t output = declarator_end;
   memcpy(result + output, suffix, sizeof(suffix) - 1);
   output += sizeof(suffix) - 1;
   for (size_t i = 0; i < outer_brace_count; i++) {
@@ -2996,6 +3055,14 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (record_member_recovery)
       return append_conditional_validation_tail(
           record_member_recovery, source, source_length,
+          source_consumed);
+    char *declarator_array_bound_recovery =
+        build_declarator_array_bound_recovery_source(
+            source, source_length, recovery_cursor, changed,
+            &source_consumed);
+    if (declarator_array_bound_recovery)
+      return append_conditional_validation_tail(
+          declarator_array_bound_recovery, source, source_length,
           source_consumed);
     char *jump_label_recovery = build_jump_label_recovery_source(
         source, source_length, recovery_cursor, changed);

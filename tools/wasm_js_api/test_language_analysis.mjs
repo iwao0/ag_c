@@ -6341,6 +6341,146 @@ assert.equal(reusedTypeNameArrayBoundResult.hover?.name,
   "TYPE_NAME_ARRAY_BOUND_A",
   "type-name array bound compiler was not reusable after invalid source");
 
+const declaratorArrayBoundOperandHoverSource = {
+  name: "declarator-array-bound-operand.c",
+  source: "/// declarator array bound macro documentation\n" +
+    "#define DECLARATOR_ARRAY_BOUND_MACRO 4\n" +
+    "enum DeclaratorArrayBoundValue {\n" +
+    "  DECLARATOR_ARRAY_BOUND_ENUM = 3\n" +
+    "};\n" +
+    "typedef int DeclaratorArrayElement;\n" +
+    "int declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO], declarator_array_bound_later;\n" +
+    "DeclaratorArrayElement declarator_array_bound_typedef[DECLARATOR_ARRAY_BOUND_MACRO];\n" +
+    "int declarator_array_bound_enum[DECLARATOR_ARRAY_BOUND_ENUM];\n" +
+    "struct DeclaratorArrayBoundRecord {\n" +
+    "  int member[DECLARATOR_ARRAY_BOUND_ENUM];\n" +
+    "  int later_member;\n" +
+    "};\n" +
+    "static int declarator_array_bound_block(int bound_parameter) {\n" +
+    "  int bound_before = bound_parameter;\n" +
+    "  int local_values[bound_parameter];\n" +
+    "  int bound_after = bound_before;\n" +
+    "  return sizeof(local_values) + bound_after;\n" +
+    "}\n" +
+    "static int declarator_array_bound_subscript(int subscript_index) {\n" +
+    "  return declarator_array_bound_file[subscript_index];\n" +
+    "}\n",
+};
+const declaratorArrayBoundOperandCases = [
+  ["declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO]",
+    "DECLARATOR_ARRAY_BOUND_MACRO", "macro", 1],
+  ["declarator_array_bound_typedef[DECLARATOR_ARRAY_BOUND_MACRO]",
+    "DECLARATOR_ARRAY_BOUND_MACRO", "macro", 0],
+  ["declarator_array_bound_enum[DECLARATOR_ARRAY_BOUND_ENUM]",
+    "DECLARATOR_ARRAY_BOUND_ENUM", "enumConstant", 0],
+  ["member[DECLARATOR_ARRAY_BOUND_ENUM]",
+    "DECLARATOR_ARRAY_BOUND_ENUM", "enumConstant", 0],
+  ["local_values[bound_parameter]", "bound_parameter", "parameter", 2],
+  ["declarator_array_bound_file[subscript_index]", "subscript_index",
+    "parameter", 0],
+];
+for (const [fragmentText, name, kind, boundaryCase] of
+  declaratorArrayBoundOperandCases) {
+  const fragmentIndex = declaratorArrayBoundOperandHoverSource.source.indexOf(
+    fragmentText,
+  );
+  const useIndex = declaratorArrayBoundOperandHoverSource.source.indexOf(
+    name, fragmentIndex,
+  );
+  assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+    `declarator array bound operand anchor missing for ${name}`);
+  const useStart = byteOffsetForIndex(
+    declaratorArrayBoundOperandHoverSource.source, useIndex,
+  );
+  for (const delta of [
+    0, Math.floor(Buffer.byteLength(name) / 2), Buffer.byteLength(name),
+  ]) {
+    const byteOffset = useStart + delta;
+    const result = compiler.analyzeSource(
+      declaratorArrayBoundOperandHoverSource,
+      {
+        cursor: {
+          sourceName: declaratorArrayBoundOperandHoverSource.name,
+          byteOffset,
+        },
+      },
+    );
+    const completion = symbol(result, name, kind);
+    assert.equal(result.partial, false,
+      `${name} declarator array bound operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `${name} declarator array bound operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `${name} declarator array bound operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `${name} declarator array bound operand kind`);
+    assert.deepStrictEqual(result.hover?.declaration, completion?.declaration,
+      `${name} declarator array bound operand declaration`);
+    if (kind === "enumConstant")
+      assert.equal(result.hover?.initializer.constantValue, "3");
+    if (kind === "macro") {
+      assert.equal(result.hover?.macro?.replacement, "4");
+      assert.equal(result.hover?.documentation,
+        "declarator array bound macro documentation");
+    }
+    if (boundaryCase === 1)
+      assert.equal(symbol(result, "declarator_array_bound_later", "object"),
+        undefined, "later declarator array bound object remains invisible");
+    if (boundaryCase === 2) {
+      assert.ok(symbol(result, "bound_before", "object"));
+      assert.equal(symbol(result, "bound_after", "object"), undefined,
+        "declarator array bound preserves cursor lookup point");
+    }
+    assert.deepStrictEqual(
+      result,
+      JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--declarator-array-bound-operand-hover-parity-json",
+          String(byteOffset)],
+        { encoding: "utf8" },
+      )),
+      `native and Wasm declarator array bound operand differ for ${name} at ${delta}`,
+    );
+  }
+}
+
+const freshDeclaratorArrayBoundCompiler = await createCompiler(wasmModule);
+try {
+  for (const [fragmentText, name, kind] of [
+    ["declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO]",
+      "DECLARATOR_ARRAY_BOUND_MACRO", "macro"],
+    ["local_values[bound_parameter]", "bound_parameter", "parameter"],
+  ]) {
+    const fragmentIndex = declaratorArrayBoundOperandHoverSource.source.indexOf(
+      fragmentText,
+    );
+    const useIndex = declaratorArrayBoundOperandHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+    const result = freshDeclaratorArrayBoundCompiler.analyzeSource(
+      declaratorArrayBoundOperandHoverSource,
+      {
+        cursor: {
+          sourceName: declaratorArrayBoundOperandHoverSource.name,
+          byteOffset: byteOffsetForIndex(
+            declaratorArrayBoundOperandHoverSource.source, useIndex,
+          ) + Math.floor(Buffer.byteLength(name) / 2),
+        },
+      },
+    );
+    assert.equal(result.partial, false,
+      `fresh ${name} declarator array bound operand unexpectedly partial`);
+    assert.deepStrictEqual(result.diagnostics, [],
+      `fresh ${name} declarator array bound operand diagnostics`);
+    assert.equal(result.hover?.name, name,
+      `fresh ${name} declarator array bound operand hover`);
+    assert.equal(result.hover?.kind, kind,
+      `fresh ${name} declarator array bound operand kind`);
+  }
+} finally {
+  freshDeclaratorArrayBoundCompiler.dispose();
+}
+
 const snakeCastFragment = "(unsigned int)MAX_SNAKE_LENGTH";
 const snakeCastFragmentIndex = macroDefinitionSnake.source.indexOf(
   snakeCastFragment,

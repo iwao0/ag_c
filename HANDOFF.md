@@ -35757,3 +35757,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 3引数enum行列は全variant・maskが揃ったため離れ、bug coverage表の通常サイズかつ単一sourceで未固定のlanguage-analysis recoveryを探す。
     深い式、巨大入力、fuzz、資源stress、security audit待ちになる領域は避ける。
+
+### このセッション（続き1208）: object declarator配列bound内のoperand hoverを回復した
+- 対象選定:
+  - 続き1207どおり、通常サイズの単一sourceを使う未固定のlanguage-analysis recoveryを探索した。file/block/recordのobject declarator配列boundに
+    cursorを置く浅い文脈だけを対象とし、深い式、巨大入力、fuzz、資源枯渇、security audit待ちになる領域へは広げなかった。
+- 原因:
+  - `int values[BOUND]`ではobject宣言回復がbracket内の`BOUND`を宣言名候補から意図的に除外し、その後の汎用回復がboundを`0`へ置換して、
+    有効なfile-scope arrayをE3096、block VLAをE3064にしていた。record memberは既存member回復がcursor識別子直後の`]`を受理せずE3016になっていた。
+  - typedef宣言では`Element values[BOUND]`のcursorまでにtypedef候補と宣言子名の2識別子があるため、既存のobject prefix判定が宣言候補自体を
+    棄却していた。通常の`values[index]`は1識別子だけなので、この差を字句的な宣言確定条件に使える。
+- 変更:
+  - 明示型、または新しい呼び出しだけが要求する`typedef候補 + 宣言子`の2識別子prefixで、cursor位置に未閉鎖の`[`がある場合だけ、同じ宣言子の
+    top-level`,` / `;`までを保持して元scopeへcursor markerを置く専用回復を追加した。既存のfunction/object宣言回復は従来条件を維持する。
+  - record member回復は、直接のbound識別子の次が`]`である完全なmember declaratorを許可した。通常のsubscript式は専用回復へ入れない。
+  - Native/Wasmへbuiltin/typedef宣言、file/block/record scope、macro・enum・parameter bound、通常subscriptを対称追加した。全ケースで名前の
+    先頭・中央・末尾、declaration range、enum値、macro replacement/documentation、後続declarator/local非可視、同一/fresh instance、
+    Native/Wasm完全snapshot parity、diagnostics空、`partial:false`を固定した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (58 scenarios)**。
+  - `/usr/bin/time -p caffeinate -i make test-wasm-js-api` = self-host API再生成、smoke、language analysis、package exportsすべて成功、
+    **real 878.62秒 / user 868.87秒 / sys 11.74秒**。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis専用回復でcode generation pipelineを変更していないためNative/Wasm E2Eは未実施とした。深い式、巨大入力、fuzz、
+    資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - bug coverage表と小さいvalid C sourceのprobeから、単一sourceで診断例外または`partial:true`になる次の通常サイズのhover文脈を探す。
+    Nativeの4〜5秒gateで小増分を固め、全Wasm parityは複数増分をまとめるintegration gate方針を維持する。

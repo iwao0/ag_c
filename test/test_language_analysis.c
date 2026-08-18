@@ -1365,6 +1365,32 @@ static const char type_name_array_bound_operand_hover_source[] =
     "         bound_generic + bound_local + bound_after;\n"
     "}\n";
 
+static const char declarator_array_bound_operand_hover_source[] =
+    "/// declarator array bound macro documentation\n"
+    "#define DECLARATOR_ARRAY_BOUND_MACRO 4\n"
+    "enum DeclaratorArrayBoundValue {\n"
+    "  DECLARATOR_ARRAY_BOUND_ENUM = 3\n"
+    "};\n"
+    "typedef int DeclaratorArrayElement;\n"
+    "int declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO], "
+    "declarator_array_bound_later;\n"
+    "DeclaratorArrayElement declarator_array_bound_typedef["
+    "DECLARATOR_ARRAY_BOUND_MACRO];\n"
+    "int declarator_array_bound_enum[DECLARATOR_ARRAY_BOUND_ENUM];\n"
+    "struct DeclaratorArrayBoundRecord {\n"
+    "  int member[DECLARATOR_ARRAY_BOUND_ENUM];\n"
+    "  int later_member;\n"
+    "};\n"
+    "static int declarator_array_bound_block(int bound_parameter) {\n"
+    "  int bound_before = bound_parameter;\n"
+    "  int local_values[bound_parameter];\n"
+    "  int bound_after = bound_before;\n"
+    "  return sizeof(local_values) + bound_after;\n"
+    "}\n"
+    "static int declarator_array_bound_subscript(int subscript_index) {\n"
+    "  return declarator_array_bound_file[subscript_index];\n"
+    "}\n";
+
 static const char macro_definition_forms_source[] =
     "#define SIMPLE_MACRO 1\n"
     "# define PARENTHESIZED_MACRO (2 + 3)\r\n"
@@ -3188,6 +3214,21 @@ static int print_type_name_array_bound_operand_hover_parity_snapshot(
   return print_macro_definition_source_snapshot(
       "type-name-array-bound-operand.c",
       type_name_array_bound_operand_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_declarator_array_bound_operand_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length =
+      strlen(declarator_array_bound_operand_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "declarator-array-bound-operand.c",
+      declarator_array_bound_operand_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -8948,6 +8989,127 @@ static int test_type_name_array_bound_operand_hover(
   return 0;
 }
 
+static int test_declarator_array_bound_operand_hover(
+    ag_target_info_t target) {
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "declarator array bound operand session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+    const char *constant_value;
+    int boundary_case;
+  } cases[] = {
+      {"declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO]",
+       "DECLARATOR_ARRAY_BOUND_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "DECLARATOR_ARRAY_BOUND_MACRO 4", "", 1},
+      {"declarator_array_bound_typedef[DECLARATOR_ARRAY_BOUND_MACRO]",
+       "DECLARATOR_ARRAY_BOUND_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "DECLARATOR_ARRAY_BOUND_MACRO 4", "", 0},
+      {"declarator_array_bound_enum[DECLARATOR_ARRAY_BOUND_ENUM]",
+       "DECLARATOR_ARRAY_BOUND_ENUM", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "DECLARATOR_ARRAY_BOUND_ENUM = 3", "3", 0},
+      {"member[DECLARATOR_ARRAY_BOUND_ENUM]",
+       "DECLARATOR_ARRAY_BOUND_ENUM", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "DECLARATOR_ARRAY_BOUND_ENUM = 3", "3", 0},
+      {"local_values[bound_parameter]", "bound_parameter",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "bound_parameter)", "", 2},
+      {"declarator_array_bound_file[subscript_index]", "subscript_index",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "subscript_index)", "", 0},
+  };
+  const char *macro_comment = strstr(
+      declarator_array_bound_operand_hover_source,
+      "/// declarator array bound macro documentation");
+  CHECK(macro_comment != NULL,
+        "declarator array bound macro comment anchor");
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          declarator_array_bound_operand_hover_source,
+          cases[case_index].fragment);
+      const char *use = fragment ? strstr(fragment, cases[case_index].name)
+                                 : NULL;
+      const char *declaration = strstr(
+          declarator_array_bound_operand_hover_source,
+          cases[case_index].declaration_fragment);
+      CHECK(use && declaration, "declarator array bound operand anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh declarator array bound operand session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "declarator-array-bound-operand.c",
+                  declarator_array_bound_operand_hover_source,
+                  (size_t)(use -
+                           declarator_array_bound_operand_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "declarator array bound operand analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(hover && completion && !snapshot.partial &&
+                  snapshot.diagnostic_count == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            declarator_array_bound_operand_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            declarator_array_bound_operand_hover_source +
+                            name_length) &&
+                  same_range(&hover->declaration, &completion->declaration),
+              "declarator array bound operand fields");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(strcmp(hover->constant_value,
+                       cases[case_index].constant_value) == 0,
+                "declarator array bound enum value");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+          CHECK(hover->macro_replacement &&
+                    strcmp(hover->macro_replacement, "4") == 0 &&
+                    check_documentation_symbol(
+                        hover, "declarator array bound macro documentation",
+                        "declarator-array-bound-operand.c",
+                        (size_t)(macro_comment -
+                                 declarator_array_bound_operand_hover_source),
+                        (size_t)(macro_comment -
+                                 declarator_array_bound_operand_hover_source) +
+                            strlen("/// declarator array bound macro documentation")),
+                "declarator array bound macro fields");
+        if (cases[case_index].boundary_case == 1)
+          CHECK(!find_symbol(
+                    &snapshot, "declarator_array_bound_later",
+                    AG_LANGUAGE_SYMBOL_OBJECT),
+                "later declarator array bound object remains invisible");
+        if (cases[case_index].boundary_case == 2)
+          CHECK(find_symbol(
+                    &snapshot, "bound_before", AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "bound_after", AG_LANGUAGE_SYMBOL_OBJECT),
+                "declarator array bound preserves cursor lookup point");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -10303,6 +10465,11 @@ int main(int argc, char **argv) {
     return print_type_name_array_bound_operand_hover_parity_snapshot(
         argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1],
+             "--declarator-array-bound-operand-hover-parity-json") == 0)
+    return print_declarator_array_bound_operand_hover_parity_snapshot(
+        argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-project-parity-json") == 0)
     return print_cast_operand_project_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -10375,6 +10542,8 @@ int main(int argc, char **argv) {
         "compound literal designator operand hover scenarios");
   CHECK(test_type_name_array_bound_operand_hover(target) == 0,
         "type-name array bound operand hover scenarios");
+  CHECK(test_declarator_array_bound_operand_hover(target) == 0,
+        "declarator array bound operand hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
