@@ -213,7 +213,9 @@ wasm32-scans: wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-
 test-wasm-obj-linker: check-runtime-symbol-manifest $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@bash tools/wasm_obj_linker/test_smoke.sh
 
-$(WASM_SELFHOST_API): FORCE $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
+$(WASM_SELFHOST_API): scripts/build_wasm_selfhost_api.sh \
+		tools/wasm_obj_linker/runtime/libagc_runtime_js.c \
+		$(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@bash scripts/build_wasm_selfhost_api.sh build/wasm_selfhost_api
 
 wasm-selfhost-api: $(WASM_SELFHOST_API)

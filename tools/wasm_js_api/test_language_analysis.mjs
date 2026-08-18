@@ -10,6 +10,14 @@ const wasmPath = process.argv[2] || "build/wasm_selfhost_api/ag_c_wasm_api.wasm"
 const nativeAnalysisPath = process.argv[3] || "build/test_language_analysis";
 const wasmModule = await WebAssembly.compile(await readFile(wasmPath));
 const compiler = await createCompiler(wasmModule);
+const testTimingStart = performance.now();
+function reportTestTiming(label) {
+  if (process.env.AGC_LANGUAGE_ANALYSIS_TIMING === "1") {
+    console.error(`[language-analysis timing] ${label}: ${(
+      (performance.now() - testTimingStart) / 1000
+    ).toFixed(2)}s`);
+  }
+}
 
 const paritySource = {
   name: "main.c",
@@ -686,6 +694,7 @@ const macroProjectSources = [
   "#define PROJECT_DOC 30\n" +
     "int macro_project_main(void) { return PROJECT_DOC; }\n",
 ];
+reportTestTiming("basic and documentation");
 const macroProjectCompiler = await createCompiler(wasmModule);
 try {
   for (let revision = 1; revision <= 3; revision++) {
@@ -1282,6 +1291,7 @@ for (const macroCase of snakeMacroCases) {
   }
 }
 
+reportTestTiming("macros");
 const castOperandHoverSource = {
   name: "cast-operand.c",
   source: "/// cast operand macro documentation\n" +
@@ -2344,6 +2354,7 @@ try {
   freshIncompleteEnumInitializerCompiler.dispose();
 }
 
+reportTestTiming("operand hover and incomplete enum initializer");
 const incompleteEnumInvalidSource = {
   name: "incomplete-enum-invalid.c",
   source: "enum { INCOMPLETE_ENUM_INVALID_BASE = 3, " +
@@ -3429,6 +3440,7 @@ try {
   freshIncompleteEnumHeaderCompiler.dispose();
 }
 
+reportTestTiming("incomplete enum header baseline");
 const incompleteEnumHeaderRevisionCompiler = await createCompiler(wasmModule);
 try {
   for (const revisionIndex of [0, 1, 2, 0]) {
@@ -4121,6 +4133,7 @@ try {
   incompleteEnumHeaderCollisionRevisionCompiler.dispose();
 }
 
+reportTestTiming("incomplete enum header revisions");
 const projectEnumMacroRevisionCompiler = await createCompiler(wasmModule);
 const projectEnumMacroName = "PROJECT_COLLIDING_SYMBOL";
 const projectEnumMacroSpacedRevisionIndices = new Set([0, 3, 7, 9, 11, 15]);
@@ -4471,6 +4484,7 @@ try {
   projectEnumMacroRevisionCompiler.dispose();
 }
 
+reportTestTiming("project enum macro revisions");
 const enumTwoArgumentCompiler = await createCompiler(wasmModule);
 const enumTwoArgumentNames = [
   "ENUM_TWO_ARGUMENT_CALL",
@@ -4969,6 +4983,7 @@ try {
   enumTwoArgumentCompiler.dispose();
 }
 
+reportTestTiming("two-argument enum calls");
 const enumThreeArgumentCompiler = await createCompiler(wasmModule);
 const enumThreeArgumentFirstResults = new Map();
 const enumThreeArgumentAllMissingRevisionResults = new Map();
@@ -5644,6 +5659,7 @@ try {
   enumThreeArgumentCompiler.dispose();
 }
 
+reportTestTiming("three-argument enum calls");
 const initializerDesignatorOperandHoverSource = {
   name: "initializer-designator-operand.c",
   source: "/// initializer designator macro documentation\n" +
@@ -6471,6 +6487,7 @@ for (const input of [
   );
 }
 
+reportTestTiming("designators, array bounds, and cast recovery");
 const castProjectCompiler = await createCompiler(wasmModule);
 try {
   const castProjectSources = [
@@ -7069,6 +7086,7 @@ assertMacroDefinitionSnapshot(macroDefinitionAfterLimit, {
   name: "SAFE_MACRO", replacement: "1", parameters: [],
 }, "macro definition reuse after limit");
 
+reportTestTiming("documentation and enum limits");
 const documentationProjectCompiler = await createCompiler(wasmModule);
 try {
   const projectCallSource = {
@@ -7215,6 +7233,7 @@ try {
   documentationProjectCompiler.dispose();
 }
 
+reportTestTiming("documentation project lifecycle");
 const starterSource = {
   name: "starter.c",
   source: "#include <game.h>\n" +
@@ -8327,6 +8346,7 @@ for (const analysisCase of genericSplicedIdentifierCases) {
   }
 }
 
+reportTestTiming("control expressions and generic selections");
 const functionDeclaratorSource = {
   name: "function-declarator.c",
   source: "int increment(int value) { return value + 1; }\n" +
@@ -9064,6 +9084,7 @@ for (const analysisCase of functionParameterEnumCases) {
   }
 }
 
+reportTestTiming("declarator and member hover");
 const enumParitySource = {
   name: "main.c",
   source: "enum {\n" +
@@ -9497,6 +9518,7 @@ const projectHeaders = {
     "void declared_only_project(void);\n" +
     "void local_only(void);\n",
 };
+reportTestTiming("declaration parity");
 const projectPlayerSource = {
   name: "player.c",
   source: "#include \"player.h\"\n/* プレイヤー */\nvoid move_and_draw(void) {}\n",
@@ -9946,6 +9968,7 @@ const guardedProjectHeaders = {
     "void other_action(void);\n" +
     "#endif\n",
 };
+reportTestTiming("project lifecycle and recovery");
 const guardedMoveSource = {
   name: "move.c",
   source: "#include \"move.h\"\n\nvoid move_and_draw(void) {}\n",
@@ -10409,6 +10432,7 @@ for (const analysisCase of declarationFreeCases) {
   }
 }
 
+reportTestTiming("guarded project lifecycle");
 const implicitIntSource = { name: "aab/a.c", source: "value;" };
 const implicitIntResult = compiler.analyzeSource(implicitIntSource, {
   headers: declarationFreeHeaders,
@@ -10910,6 +10934,7 @@ try {
   }
 }
 
+reportTestTiming("remaining diagnostics and limits");
 compiler.dispose();
 try {
   analyzeAtEnd({ name: "disposed.c", source: "int disposed;" });

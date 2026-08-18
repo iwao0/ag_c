@@ -35726,3 +35726,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 3引数enum行列の状態追加はここで止め、Wasm parity harnessが同一Native snapshotを重複生成していないかを計測・監査する。各source layoutの
     全cursor境界被覆とheader再入場の完全snapshotを維持し、被覆を弱めたpresentation-family単位の集約は再導入しない。
+
+### このセッション（続き1207）: Wasm language-analysisの時間内訳を可視化し反復buildを省いた
+- 対象選定:
+  - 続き1206どおり、3引数enum行列の追加を止めて`make test-wasm-js-api`の時間内訳とNative subprocess起動を計測した。既存のcursor境界、
+    Native/Wasm parity、fresh/reused instance、header lifecycle被覆は削らず、production compiler sourceにも変更を加えなかった。
+- 原因確認:
+  - Nativeの3引数snapshot processを100回起動してもreal 0.17秒、同程度の小さいWasm sourceを100回解析しても約1秒で、Native process起動は
+    主因ではなかった。
+  - idle sleepを防いだ全ゲートでlanguage-analysis本体は832.79秒だった。主要区間は3引数enum call 230.58秒、2引数enum call 122.45秒、
+    control/generic 123.35秒、declarator/member hover 127.16秒で、同じ通常サイズsourceをcursor位置ごとに完全解析する境界行列へ集中していた。
+  - `WASM_SELFHOST_API`が`FORCE`へ依存していたため、source変更がなくても全Wasm APIを毎回再生成し、全ゲートのうち約44.96秒を占めていた。
+- 変更:
+  - `WASM_SELFHOST_API`から`FORCE`を外し、selfhost API build script、JS runtime source、compiler、linker、runtime objectを明示依存にした。
+    compiler source変更は`WASM_TARGET`経由、linker/runtime変更も各target経由で従来どおり再生成へ伝播する。
+  - `AGC_LANGUAGE_ANALYSIS_TIMING=1`のときだけ主要区間の累積秒数をstderrへ表示する計測点を追加した。通常実行のassertion・解析回数・順序は変えない。
+  - manual build文書へselfhost APIの増分build条件、Wasm JS API gateの実際の範囲、任意タイミング表示を記載した。
+- 確認:
+  - 変更前の区間計測付き`/usr/bin/time -p caffeinate -i make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功、
+    **real 877.75秒 / language-analysis 832.79秒 / user 868.85秒 / sys 10.99秒**。
+  - 変更後の`make -n build/wasm_selfhost_api/ag_c_wasm_api.wasm`はup-to-date、`make wasm-selfhost-api`は**real 0.04秒**でno-opとなった。
+    `make -n -W scripts/build_wasm_selfhost_api.sh ...`ではbuild script再実行が選択され、依存更新時の再生成も維持した。反復全ゲートでは
+    実測差分から約44.96秒（約5.1%）を省く見込みである。
+  - `make -j4 build/test_language_analysis && /usr/bin/time -p ./build/test_language_analysis` = **58 scenarios、real 4.74秒**。
+  - `./build/test_parser`、`make test-design-invariants`、Wasm JS API smoke、package exports smokeはすべて成功した。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 方針:
+  - cursor境界またはNative/Wasm lifecycle被覆を削る短縮は行わない。通常の開発反復は4〜5秒のNative `make test-language-analysis`を使い、
+    全Wasm parityは複数の小増分をまとめたintegration gateとして実行する。さらに短縮する場合は、被覆を保ったworker分割を独立設計する。
+- 浅い次候補:
+  - 3引数enum行列は全variant・maskが揃ったため離れ、bug coverage表の通常サイズかつ単一sourceで未固定のlanguage-analysis recoveryを探す。
+    深い式、巨大入力、fuzz、資源stress、security audit待ちになる領域は避ける。
