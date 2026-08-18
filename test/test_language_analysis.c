@@ -3105,7 +3105,9 @@ static int print_enum_three_argument_call_parity_snapshot(
        parsed_missing_argument_mode != 0 &&
        parsed_missing_argument_mode != 1 &&
        parsed_missing_argument_mode != 2 &&
-       parsed_missing_argument_mode != 4) ||
+       parsed_missing_argument_mode != 3 &&
+       parsed_missing_argument_mode != 4 &&
+       parsed_missing_argument_mode != 6) ||
       (parsed_variant >= 4 && parsed_missing_argument_mode != 0 &&
        parsed_missing_argument_mode != 1 &&
        parsed_missing_argument_mode != 2 &&
@@ -7856,6 +7858,46 @@ static int test_enum_three_argument_call_cursor(
       {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 4},
       {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 4},
       {3, 4},
+      {0, 3},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET, 3},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET, 3},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET, 3},
+      {0, 3},
+      {1, 3},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 1, 3},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 1, 3},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 1, 3},
+      {1, 3},
+      {2, 3},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 2, 3},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 2, 3},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 2, 3},
+      {2, 3},
+      {3, 3},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 3},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 3},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 3},
+      {3, 3},
+      {0, 6},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET, 6},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET, 6},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET, 6},
+      {0, 6},
+      {1, 6},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 1, 6},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 1, 6},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 1, 6},
+      {1, 6},
+      {2, 6},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 2, 6},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 2, 6},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 2, 6},
+      {2, 6},
+      {3, 6},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 6},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 6},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 6},
+      {3, 6},
       {4, 0}, {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
