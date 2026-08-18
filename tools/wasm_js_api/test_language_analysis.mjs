@@ -3275,6 +3275,13 @@ const enumThreeArgumentUpdatedMiddleEnumComments = [
   "/// enum three argument last macro",
 ];
 function enumThreeArgumentMacroSource(input, missingArgumentMode) {
+  const mixedOuterEnumDeclaration =
+    "enum EnumThreeArgumentMixedValues {\n" +
+    "  /// enum three argument first enum\n" +
+    "  ENUM_THREE_ARGUMENT_FIRST_ENUM = 4,\n" +
+    "  /// enum three argument last enum\n" +
+    "  ENUM_THREE_ARGUMENT_LAST_ENUM = 5\n" +
+    "};\n";
   const declarations = [
     ["/// enum three argument first macro\n" +
        "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n",
@@ -3306,8 +3313,14 @@ function enumThreeArgumentMacroSource(input, missingArgumentMode) {
   assert.ok(missingArgumentMode >= 0 && missingArgumentMode <= 7,
     "enum three argument source revision");
   let source = input.source;
+  let pendingMissingArgumentMode = missingArgumentMode;
+  if ((pendingMissingArgumentMode & 5) === 5 &&
+      source.includes(mixedOuterEnumDeclaration)) {
+    source = source.replace(mixedOuterEnumDeclaration, "");
+    pendingMissingArgumentMode &= ~5;
+  }
   for (let argumentIndex = 0; argumentIndex < 3; argumentIndex++) {
-    if ((missingArgumentMode & (1 << argumentIndex)) === 0) continue;
+    if ((pendingMissingArgumentMode & (1 << argumentIndex)) === 0) continue;
     const declaration = declarations[argumentIndex].find(
       (candidate) => source.includes(candidate),
     );
@@ -5285,6 +5298,10 @@ try {
     [1, 6, 0], [1, 6, 1], [1, 6, 2], [1, 6, 1], [1, 6, 0],
     [2, 6, 0], [2, 6, 1], [2, 6, 2], [2, 6, 1], [2, 6, 0],
     [3, 6, 0], [3, 6, 1], [3, 6, 2], [3, 6, 1], [3, 6, 0],
+    [0, 5, 0], [0, 5, 1], [0, 5, 2], [0, 5, 1], [0, 5, 0],
+    [1, 5, 0], [1, 5, 1], [1, 5, 2], [1, 5, 1], [1, 5, 0],
+    [2, 5, 0], [2, 5, 1], [2, 5, 2], [2, 5, 1], [2, 5, 0],
+    [3, 5, 0], [3, 5, 1], [3, 5, 2], [3, 5, 1], [3, 5, 0],
     [4, 0, 0], [10, 0, 0],
   ]) {
     const header = enumThreeArgumentCallHeaders[headerRevision];

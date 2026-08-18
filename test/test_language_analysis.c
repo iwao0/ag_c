@@ -3107,6 +3107,7 @@ static int print_enum_three_argument_call_parity_snapshot(
        parsed_missing_argument_mode != 2 &&
        parsed_missing_argument_mode != 3 &&
        parsed_missing_argument_mode != 4 &&
+       parsed_missing_argument_mode != 5 &&
        parsed_missing_argument_mode != 6) ||
       (parsed_variant >= 4 && parsed_missing_argument_mode != 0 &&
        parsed_missing_argument_mode != 1 &&
@@ -3578,6 +3579,13 @@ static char *enum_two_argument_both_renamed_source(
 
 static char *enum_three_argument_macro_source(
     const char *source, int missing_argument_mode) {
+  static const char mixed_outer_enum_declaration[] =
+      "enum EnumThreeArgumentMixedValues {\n"
+      "  /// enum three argument first enum\n"
+      "  ENUM_THREE_ARGUMENT_FIRST_ENUM = 4,\n"
+      "  /// enum three argument last enum\n"
+      "  ENUM_THREE_ARGUMENT_LAST_ENUM = 5\n"
+      "};\n";
   static const char *const declarations[][4] = {
       {"/// enum three argument first macro\n"
        "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n",
@@ -3614,8 +3622,18 @@ static char *enum_three_argument_macro_source(
   char *result = malloc(source_length + 1);
   if (!result) return NULL;
   memcpy(result, source, source_length + 1);
+  int pending_missing_argument_mode = missing_argument_mode;
+  if ((pending_missing_argument_mode & 5) == 5) {
+    char *position = strstr(result, mixed_outer_enum_declaration);
+    if (position) {
+      size_t declaration_length = strlen(mixed_outer_enum_declaration);
+      memmove(position, position + declaration_length,
+              strlen(position + declaration_length) + 1);
+      pending_missing_argument_mode &= ~5;
+    }
+  }
   for (int argument_index = 0; argument_index < 3; argument_index++) {
-    if (!(missing_argument_mode & (1 << argument_index))) continue;
+    if (!(pending_missing_argument_mode & (1 << argument_index))) continue;
     const char *declaration = NULL;
     char *position = NULL;
     for (int revision = 0; revision < 4 && !position; revision++) {
@@ -7898,6 +7916,26 @@ static int test_enum_three_argument_call_cursor(
       {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 6},
       {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 6},
       {3, 6},
+      {0, 5},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET, 5},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET, 5},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET, 5},
+      {0, 5},
+      {1, 5},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 1, 5},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 1, 5},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 1, 5},
+      {1, 5},
+      {2, 5},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 2, 5},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 2, 5},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 2, 5},
+      {2, 5},
+      {3, 5},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 5},
+      {2 * ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 5},
+      {ENUM_THREE_ARGUMENT_HEADER_REVISION_VARIANT_OFFSET + 3, 5},
+      {3, 5},
       {4, 0}, {10, 0}};
   const char *callee_name = "ENUM_THREE_ARGUMENT_CALL";
   size_t callee_length = strlen(callee_name);
