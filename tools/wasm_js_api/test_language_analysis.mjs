@@ -3279,7 +3279,9 @@ function enumThreeArgumentMacroSource(input, missingArgumentMode) {
     ["/// enum three argument first macro\n" +
        "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 1\n",
      "/// enum three argument first macro\n" +
-       "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 7\n"],
+       "#define ENUM_THREE_ARGUMENT_FIRST_MACRO 7\n",
+     "  /// enum three argument first enum\n" +
+       "  ENUM_THREE_ARGUMENT_FIRST_ENUM = 4,\n"],
     ["/// enum three argument middle macro\n" +
        "#define ENUM_THREE_ARGUMENT_MIDDLE_MACRO 2\n",
      "enum EnumThreeArgumentMiddleValue {\n" +
@@ -3297,7 +3299,9 @@ function enumThreeArgumentMacroSource(input, missingArgumentMode) {
     ["/// enum three argument last macro\n" +
        "#define ENUM_THREE_ARGUMENT_LAST_MACRO 3\n",
      "/// enum three argument last macro\n" +
-       "#define ENUM_THREE_ARGUMENT_LAST_MACRO 11\n"],
+       "#define ENUM_THREE_ARGUMENT_LAST_MACRO 11\n",
+     "  /// enum three argument last enum\n" +
+       "  ENUM_THREE_ARGUMENT_LAST_ENUM = 5\n"],
   ];
   assert.ok(missingArgumentMode >= 0 && missingArgumentMode <= 7,
     "enum three argument source revision");
@@ -5265,6 +5269,14 @@ try {
     [1, 2, 0], [1, 2, 1], [1, 2, 2], [1, 2, 1], [1, 2, 0],
     [2, 2, 0], [2, 2, 1], [2, 2, 2], [2, 2, 1], [2, 2, 0],
     [3, 2, 0], [3, 2, 1], [3, 2, 2], [3, 2, 1], [3, 2, 0],
+    [0, 1, 0], [0, 1, 1], [0, 1, 2], [0, 1, 1], [0, 1, 0],
+    [1, 1, 0], [1, 1, 1], [1, 1, 2], [1, 1, 1], [1, 1, 0],
+    [2, 1, 0], [2, 1, 1], [2, 1, 2], [2, 1, 1], [2, 1, 0],
+    [3, 1, 0], [3, 1, 1], [3, 1, 2], [3, 1, 1], [3, 1, 0],
+    [0, 4, 0], [0, 4, 1], [0, 4, 2], [0, 4, 1], [0, 4, 0],
+    [1, 4, 0], [1, 4, 1], [1, 4, 2], [1, 4, 1], [1, 4, 0],
+    [2, 4, 0], [2, 4, 1], [2, 4, 2], [2, 4, 1], [2, 4, 0],
+    [3, 4, 0], [3, 4, 1], [3, 4, 2], [3, 4, 1], [3, 4, 0],
     [4, 0, 0], [10, 0, 0],
   ]) {
     const header = enumThreeArgumentCallHeaders[headerRevision];
