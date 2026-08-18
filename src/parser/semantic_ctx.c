@@ -3,6 +3,7 @@
 #include "../diag/diag.h"
 #include "../semantic/type_identity.h"
 #include "../semantic/record_layout.h"
+#include "../source_manager.h"
 #include "../tokenizer/tokenizer.h"
 #include "../target_info.h"
 #include "../type_layout.h"
@@ -15,6 +16,13 @@ struct deferred_parser_diagnostic_t {
   deferred_parser_diagnostic_t *next_all;
   const token_t *tok;
   const char *name;
+};
+
+typedef struct resolved_member_reference_t resolved_member_reference_t;
+struct resolved_member_reference_t {
+  resolved_member_reference_t *next;
+  const token_t *token;
+  psx_decl_id_t declaration_id;
 };
 
 typedef struct tag_type_t tag_type_t;
@@ -174,6 +182,7 @@ struct psx_semantic_context_t {
   psx_ctx_allocation_t *allocations;
   deferred_parser_diagnostic_t *pending_diagnostics_all;
   tag_member_layout_draft_t *aggregate_member_layout_drafts;
+  resolved_member_reference_t *resolved_member_references;
 };
 
 static psx_function_symbol_t *function_symbol_from_declaration(
@@ -1205,6 +1214,50 @@ psx_decl_id_t ps_ctx_record_member_declaration_id_in(
   return binding && binding->kind == PSX_DECL_MEMBER
              ? binding->id
              : PSX_DECL_ID_INVALID;
+}
+
+void ps_ctx_record_member_reference_in(
+    psx_semantic_context_t *context, const token_t *token,
+    psx_record_id_t record_id, const char *member_name,
+    int member_len) {
+  if (!context || !token || token->byte_offset < 0 ||
+      token->byte_length <= 0)
+    return;
+  psx_decl_id_t declaration_id =
+      ps_ctx_record_member_declaration_id_in(
+          context, record_id, member_name, member_len);
+  if (declaration_id == PSX_DECL_ID_INVALID) return;
+  resolved_member_reference_t *reference =
+      ctx_calloc_in(context, 1, sizeof(*reference));
+  if (!reference) return;
+  reference->token = token;
+  reference->declaration_id = declaration_id;
+  reference->next = context->resolved_member_references;
+  context->resolved_member_references = reference;
+}
+
+psx_decl_id_t ps_ctx_record_member_reference_at_in(
+    const psx_semantic_context_t *context, const char *source_name,
+    size_t cursor_byte_offset) {
+  if (!context || !context->diagnostic_context || !source_name)
+    return PSX_DECL_ID_INVALID;
+  ag_source_manager_t *sources = diag_context_source_manager(
+      context->diagnostic_context);
+  for (const resolved_member_reference_t *reference =
+           context->resolved_member_references;
+       reference; reference = reference->next) {
+    const token_t *token = reference->token;
+    if (!token || token->byte_offset < 0 || token->byte_length <= 0)
+      continue;
+    const char *token_source_name = ag_source_manager_name(
+        sources, token->file_name_id);
+    size_t start = (size_t)token->byte_offset;
+    size_t end = start + (size_t)token->byte_length;
+    if (token_source_name && strcmp(token_source_name, source_name) == 0 &&
+        cursor_byte_offset >= start && cursor_byte_offset <= end)
+      return reference->declaration_id;
+  }
+  return PSX_DECL_ID_INVALID;
 }
 
 bool ps_ctx_record_member_qual_type_by_declaration_id_in(

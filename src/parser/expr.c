@@ -1120,6 +1120,7 @@ static node_t *parse_builtin_offsetof(expr_parse_ctx_t *ctx) {
       .member_name = member->str,
       .member_name_len = member->len,
       .tok = (token_t *)member,
+      .member_tok = (token_t *)member,
   };
 
   while (curtok(ctx)->kind == TK_DOT ||
@@ -1140,6 +1141,7 @@ static node_t *parse_builtin_offsetof(expr_parse_ctx_t *ctx) {
           .member_name = member->str,
           .member_name_len = member->len,
           .tok = dot,
+          .member_tok = (token_t *)member,
       };
       continue;
     }

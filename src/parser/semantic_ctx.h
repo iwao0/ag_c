@@ -183,6 +183,13 @@ bool ps_ctx_find_record_member_in(
 psx_decl_id_t ps_ctx_record_member_declaration_id_in(
     psx_semantic_context_t *context, psx_record_id_t record_id,
     const char *member_name, int member_len);
+void ps_ctx_record_member_reference_in(
+    psx_semantic_context_t *context, const token_t *token,
+    psx_record_id_t record_id, const char *member_name,
+    int member_len);
+psx_decl_id_t ps_ctx_record_member_reference_at_in(
+    const psx_semantic_context_t *context, const char *source_name,
+    size_t cursor_byte_offset);
 bool ps_ctx_record_member_qual_type_by_declaration_id_in(
     const psx_semantic_context_t *context,
     psx_decl_id_t declaration_id, psx_qual_type_t *out_qual_type);

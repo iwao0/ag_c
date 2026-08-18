@@ -35821,3 +35821,38 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 小さいvalid C probeで未固定の通常hover文脈を引き続き探す。開発中はNative約5秒と必要時のself-host再生成約44秒を使い、全Wasm parityは
     関連する小増分をまとめた最後のintegration gateとして一度だけ実行する。
+
+### このセッション（続き1210）: initializer member designatorとoffsetofのmember hoverを回復した
+- 対象選定:
+  - 続き1209後の小さいvalid C probeで、通常object/compound literal/nested initializerの`.member`と、direct/nested
+    `__builtin_offsetof(..., member)`が`partial:false`・diagnostics空でもnull hoverになることを確認した。通常サイズの完全なsourceだけを対象とし、
+    深い式、巨大入力、fuzz、資源stress、security監査系には広げなかった。
+- 原因:
+  - member候補はmember宣言上、または`object.member` / `object->member`の基底objectから型を求められる場合だけ追加していた。initializer
+    designatorと`offsetof`には通常objectがないため、意味解析がrecord/member identityを正しく解決済みでもlanguage analysisへ渡す経路がなかった。
+  - source上のmember名だけでScopeGraphを検索すると、別recordの同名memberを区別できない。parser ASTの既存designator `tok`は失敗診断位置にも
+    使われるため、hover対応のためにdot tokenから識別子tokenへ置き換えると既存診断rangeを変えてしまう。
+- 変更:
+  - semantic contextへ、意味解析で確定したmember declaration IDとmember識別子tokenの対応をtranslation-unit単位で記録するregistryを追加した。
+    flat initializerはanonymous aggregateを含む最終record member解決後、`offsetof`はmember layout確認後に記録する。session reset時は既存context allocation
+    と一緒に解放される。
+  - initializer/offsetof designator ASTへ`member_tok`を分離して識別子rangeを保持し、診断に使う既存`tok`は変更しなかった。language analysisはcursorと
+    source nameが一致する解決済みmemberだけをcompletionへ1件追加し、member hoverを選ぶ。通常member候補の列挙は広げない。
+  - Native/Wasmの既存function-declarator/member hover sourceへ、同名`shared`が`int`/`long`で異なる2 record、file object、未指定長arrayの
+    `[1].shared`、nested `.inner.nested`、block local、compound literal、direct/nested `offsetof`の9文脈を対称追加した。名前の先頭・中央・末尾、
+    正確な型/declaration range、diagnostics空、`partial:false`、同一/fresh instance、Native/Wasm完全snapshot parityを固定した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (58 scenarios)**。
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - 焦点self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.96秒**。元probeのobject/compound/nested designatorと
+    direct/nested `offsetof`がすべてmember hoverへ変わり、既存member access/tag/typedefも維持した。
+  - `/usr/bin/time -p caffeinate -i make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功、
+    **real 922.15秒 / user 920.03秒 / sys 5.80秒**。self-host APIの重複再生成なしで、関連増分の完全Wasm gateを一度だけ実行した。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - code generation結果を変えないlanguage-analysis metadata経路のためNative/Wasm E2Eは未実施とし、深い式、巨大入力、fuzz、資源stress、
+    security監査系も対象外とした。
+- 浅い次候補:
+  - 小さいvalid C probeで残った`#if TARGET`のmacro operand解析例外を、preprocessor directive専用の通常サイズsourceとして切り分ける。
+    既存の`#ifdef TARGET`とmacro replacement hoverを維持し、深い条件式やdirective stressへは広げない。

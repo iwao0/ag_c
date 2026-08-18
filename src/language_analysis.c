@@ -6266,6 +6266,19 @@ int ag_language_analyze_source(
           : tag_declaration_at_cursor(scope_graph, request);
   const psx_scope_declaration_t *cursor_member_declaration =
       member_declaration_at_cursor(scope_graph, request);
+  psx_semantic_context_t *semantic_context =
+      ag_compilation_session_semantic_context(session);
+  psx_decl_id_t cursor_member_reference_id =
+      ps_ctx_record_member_reference_at_in(
+          semantic_context, request->source_name,
+          request->cursor_byte_offset);
+  const psx_scope_declaration_t *cursor_member_reference =
+      psx_scope_graph_declaration(
+          scope_graph, cursor_member_reference_id);
+  const psx_scope_declaration_t *cursor_member_symbol =
+      cursor_member_declaration
+          ? cursor_member_declaration
+          : cursor_member_reference;
   const psx_scope_declaration_t *cursor_label_declaration =
       final_parse->has_cursor_lookup_point
           ? label_declaration_at_cursor(scope_graph, request, point)
@@ -6281,8 +6294,6 @@ int ag_language_analyze_source(
         cursor_scoped_declaration->declaration_order,
     };
   }
-  psx_semantic_context_t *semantic_context =
-      ag_compilation_session_semantic_context(session);
   int symbol_capacity = 0;
   for (size_t i = 0; i < declaration_count && !builder.failed; i++) {
     const psx_scope_declaration_t *declaration =
@@ -6301,9 +6312,9 @@ int ag_language_analyze_source(
     add_declaration_symbol(&builder, request, semantic_context,
                            declaration, point, &symbol_capacity);
   }
-  if (!builder.failed && cursor_member_declaration)
+  if (!builder.failed && cursor_member_symbol)
     add_declaration_symbol(
-        &builder, request, semantic_context, cursor_member_declaration,
+        &builder, request, semantic_context, cursor_member_symbol,
         point, &symbol_capacity);
   if (!builder.failed && cursor_label_declaration)
     add_declaration_symbol(
@@ -6372,7 +6383,7 @@ int ag_language_analyze_source(
         snapshot, request->source, request->source_length,
         has_hover_identifier ? &hover_identifier : NULL,
         builder.enable_trigraphs, AG_LANGUAGE_SYMBOL_LABEL);
-  else if (cursor_member_declaration || cursor_is_member_access)
+  else if (cursor_member_symbol || cursor_is_member_access)
     (void)select_hover_kind(
         snapshot, request->source, request->source_length,
         has_hover_identifier ? &hover_identifier : NULL,

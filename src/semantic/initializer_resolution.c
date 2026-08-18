@@ -44,6 +44,7 @@ typedef struct {
   psx_initializer_constant_index_resolver_t resolve_index;
   psx_initializer_value_type_resolver_t resolve_value_type;
   psx_record_member_name_lookup_t resolve_member;
+  psx_initializer_member_reference_recorder_t record_member_reference;
   void *resolver_context;
   psx_initializer_scalar_leaf_list_t *leaves;
   psx_local_initializer_plan_t *plan;
@@ -615,9 +616,15 @@ static int flat_initializer_designated_member_span(
           designator->member_name, designator->member_len,
           &member_index))
     return 0;
-  return member_index >= 0 &&
-         flat_initializer_child_span(
-             context, aggregate, member_index, target);
+  if (member_index < 0 ||
+      !flat_initializer_child_span(
+          context, aggregate, member_index, target))
+    return 0;
+  if (context->record_member_reference)
+    context->record_member_reference(
+        context->resolver_context, designator->member_tok, shape.record_id,
+        designator->member_name, designator->member_len);
+  return 1;
 }
 
 static int flat_initializer_child_containing_leaf(
@@ -1301,6 +1308,7 @@ psx_local_initializer_status_t psx_resolve_flat_local_initializer_plan(
     psx_record_member_name_lookup_t resolve_member,
     psx_initializer_constant_index_resolver_t resolve_index,
     psx_initializer_value_type_resolver_t resolve_value_type,
+    psx_initializer_member_reference_recorder_t record_member_reference,
     void *resolver_context, psx_local_initializer_plan_t *plan) {
   if (plan) *plan = (psx_local_initializer_plan_t){0};
   if (!arena_context || !semantic_types || !record_decls || !record_layouts ||
@@ -1321,6 +1329,7 @@ psx_local_initializer_status_t psx_resolve_flat_local_initializer_plan(
       .resolve_member = resolve_member,
       .resolve_index = resolve_index,
       .resolve_value_type = resolve_value_type,
+      .record_member_reference = record_member_reference,
       .resolver_context = resolver_context,
       .plan = plan,
   };

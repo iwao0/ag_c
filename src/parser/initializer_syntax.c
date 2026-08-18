@@ -153,6 +153,7 @@ node_t *psx_parse_initializer_syntax_list_with_context(
               .member_name = current_member->str,
               .member_len = current_member->len,
               .tok = designator_tok,
+              .member_tok = (token_t *)current_member,
           };
         } else {
           tk_expect_ctx(tk_ctx, '[');

@@ -2254,6 +2254,10 @@ static int resolve_direct_offsetof_query(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
             &query->base);
+      ps_ctx_record_member_reference_in(
+          context->semantic_context, designator->member_tok,
+          member.record_id, designator->member_name,
+          designator->member_name_len);
       offset += member_layout->offset;
       current_type = member.member_qual_type;
       continue;
@@ -7909,6 +7913,16 @@ static int resolve_direct_initializer_member(
       member_name_len, out_member_index, NULL);
 }
 
+static void record_direct_initializer_member_reference(
+    void *opaque, const token_t *token, psx_record_id_t record_id,
+    const char *member_name, int member_name_len) {
+  direct_resolution_context_t *context = opaque;
+  if (!context) return;
+  ps_ctx_record_member_reference_in(
+      context->semantic_context, token, record_id,
+      member_name, member_name_len);
+}
+
 static int resolve_direct_initializer_value_type(
     void *opaque, const node_t *expression, psx_qual_type_t *type) {
   direct_resolution_context_t *context =
@@ -8032,7 +8046,8 @@ static int preflight_direct_flat_initializer(
               : ps_ctx_data_layout(context->semantic_context),
           object_qual_type, list, resolve_direct_initializer_member,
           resolve_direct_initializer_index,
-          resolve_direct_initializer_value_type, context, plan);
+          resolve_direct_initializer_value_type,
+          record_direct_initializer_member_reference, context, plan);
   if (status == PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY) {
     context->preflight_failed = 1;
     set_failure(

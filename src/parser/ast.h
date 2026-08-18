@@ -35,6 +35,7 @@ typedef struct {
   char *member_name;
   int member_len;
   token_t *tok;
+  token_t *member_tok;
   unsigned char is_range;
 } psx_initializer_designator_t;
 
@@ -132,6 +133,7 @@ typedef struct {
   char *member_name;
   int member_name_len;
   token_t *tok;
+  token_t *member_tok;
 } psx_offsetof_designator_t;
 
 typedef struct {

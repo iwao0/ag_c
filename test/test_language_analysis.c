@@ -296,6 +296,19 @@ static const char function_declarator_hover_source[] =
     "int read_file_members(struct FileRecord *record, union FileUnion value) {\n"
     "  return (record->member != 0) + (int)value.member;\n"
     "}\n"
+    "struct InitializerInt { int shared; };\n"
+    "struct InitializerLong { long shared; };\n"
+    "struct InitializerInner { unsigned short nested; };\n"
+    "struct InitializerOuter { struct InitializerInner inner; };\n"
+    "struct InitializerInt initializer_object = { .shared = 1 };\n"
+    "struct InitializerLong initializer_array[] = { [1].shared = 2 };\n"
+    "struct InitializerOuter initializer_nested = { .inner.nested = 3 };\n"
+    "enum { INITIALIZER_OFFSET = __builtin_offsetof(struct InitializerInt, shared) };\n"
+    "enum { INITIALIZER_NESTED_OFFSET = __builtin_offsetof(struct InitializerOuter, inner.nested) };\n"
+    "int initializer_member_block(void) {\n"
+    "  struct InitializerLong local = { .shared = 4 };\n"
+    "  return ((struct InitializerInt){ .shared = 5 }).shared + local.shared;\n"
+    "}\n"
     "int forward_label(int value) {\n"
     "  {\n"
     "    int shared_label = value;\n"
@@ -12280,6 +12293,94 @@ int main(int argc, char **argv) {
                           name_length) &&
                 !snapshot.partial && snapshot.diagnostic_count == 0,
             "aggregate member use hover fields");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+    }
+  }
+
+  struct {
+    const char *anchor;
+    const char *name;
+    const char *declaration_anchor;
+    const char *type;
+  } aggregate_member_designator_cases[] = {
+      {"initializer_object = { .shared = 1", "shared",
+       "InitializerInt { int shared; }", "int"},
+      {"initializer_array[] = { [1].shared = 2", "shared",
+       "InitializerLong { long shared; }", "long"},
+      {"initializer_nested = { .inner.nested = 3", "inner",
+       "InitializerOuter { struct InitializerInner inner; }",
+       "struct InitializerInner"},
+      {".nested = 3", "nested",
+       "InitializerInner { unsigned short nested; }", "unsigned short"},
+      {"InitializerInt, shared)", "shared",
+       "InitializerInt { int shared; }", "int"},
+      {"InitializerOuter, inner.nested)", "inner",
+       "InitializerOuter { struct InitializerInner inner; }",
+       "struct InitializerInner"},
+      {"InitializerOuter, inner.nested)", "nested",
+       "InitializerInner { unsigned short nested; }", "unsigned short"},
+      {"local = { .shared = 4", "shared",
+       "InitializerLong { long shared; }", "long"},
+      {"InitializerInt){ .shared = 5", "shared",
+       "InitializerInt { int shared; }", "int"},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(aggregate_member_designator_cases) /
+                        sizeof(aggregate_member_designator_cases[0]);
+       case_index++) {
+    const char *anchor = strstr(
+        function_declarator_hover_source,
+        aggregate_member_designator_cases[case_index].anchor);
+    const char *name = anchor
+                           ? strstr(
+                                 anchor,
+                                 aggregate_member_designator_cases[case_index]
+                                     .name)
+                           : NULL;
+    const char *declaration_anchor = strstr(
+        function_declarator_hover_source,
+        aggregate_member_designator_cases[case_index].declaration_anchor);
+    const char *declaration = declaration_anchor
+                                  ? strstr(
+                                        declaration_anchor,
+                                        aggregate_member_designator_cases[
+                                            case_index]
+                                            .name)
+                                  : NULL;
+    size_t name_length = strlen(
+        aggregate_member_designator_cases[case_index].name);
+    size_t cursor_deltas[] = {0, name_length / 2, name_length};
+    CHECK(name && declaration, "aggregate member designator hover anchors");
+    for (size_t cursor_index = 0;
+         cursor_index < sizeof(cursor_deltas) / sizeof(cursor_deltas[0]);
+         cursor_index++) {
+      CHECK(analyze_named(
+                session, "function-declarator.c",
+                function_declarator_hover_source,
+                (size_t)(name - function_declarator_hover_source) +
+                    cursor_deltas[cursor_index],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "aggregate member designator hover analysis");
+      const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+      CHECK(hover && hover->kind == AG_LANGUAGE_SYMBOL_MEMBER &&
+                hover->name_space == AG_LANGUAGE_NAMESPACE_MEMBER &&
+                strcmp(
+                    hover->name,
+                    aggregate_member_designator_cases[case_index].name) == 0 &&
+                strcmp(
+                    hover->type,
+                    aggregate_member_designator_cases[case_index].type) == 0 &&
+                strcmp(hover->signature, "") == 0 &&
+                strcmp(hover->storage_class, "member") == 0 &&
+                hover->initializer_state == AG_LANGUAGE_INITIALIZER_NONE &&
+                !hover->has_definition &&
+                hover->declaration.start.offset ==
+                    (int)(declaration - function_declarator_hover_source) &&
+                hover->declaration.end.offset ==
+                    (int)(declaration - function_declarator_hover_source +
+                          name_length) &&
+                !snapshot.partial && snapshot.diagnostic_count == 0,
+            "aggregate member designator hover fields");
       ag_language_analysis_snapshot_dispose(&snapshot);
     }
   }

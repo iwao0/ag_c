@@ -13,6 +13,9 @@ typedef int (*psx_initializer_constant_index_resolver_t)(
     void *context, const node_t *expression, long long *value);
 typedef int (*psx_initializer_value_type_resolver_t)(
     void *context, const node_t *expression, psx_qual_type_t *type);
+typedef void (*psx_initializer_member_reference_recorder_t)(
+    void *context, const token_t *token, psx_record_id_t record_id,
+    const char *member_name, int member_name_len);
 
 typedef struct {
   int relative_offset;
@@ -101,6 +104,7 @@ psx_local_initializer_status_t psx_resolve_flat_local_initializer_plan(
     psx_record_member_name_lookup_t resolve_member,
     psx_initializer_constant_index_resolver_t resolve_index,
     psx_initializer_value_type_resolver_t resolve_value_type,
+    psx_initializer_member_reference_recorder_t record_member_reference,
     void *resolver_context, psx_local_initializer_plan_t *plan);
 
 int psx_collect_initializer_scalar_leaves_with_records(
