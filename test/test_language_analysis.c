@@ -1445,6 +1445,45 @@ static const char macro_definition_forms_source[] =
     "#undef REDEFINED_MACRO\n"
     "#define REDEFINED_MACRO 13\n"
     "#pragma macro_definition_boundary\n"
+    "#define CONDITIONAL_FALSE_MACRO 0\n"
+    "#if SIMPLE_MACRO\n"
+    "int conditional_direct_value;\n"
+    "#endif\n"
+    "#if defined(SIMPLE_MACRO)\n"
+    "int conditional_defined_call_value;\n"
+    "#endif\n"
+    "#if defined SIMPLE_MACRO\n"
+    "int conditional_defined_space_value;\n"
+    "#endif\n"
+    "#if /* condition gap */ SIMPLE_MACRO\n"
+    "int conditional_comment_value;\n"
+    "#endif\n"
+    "#if \\\n"
+    "  SIMPLE_MACRO\n"
+    "int conditional_spliced_value;\n"
+    "#endif\n"
+    "#if 0\n"
+    "int conditional_hidden_value;\n"
+    "#elif SIMPLE_MACRO\n"
+    "int conditional_elif_value;\n"
+    "#endif\n"
+    "#if CONDITIONAL_FALSE_MACRO\n"
+    "int conditional_false_hidden_value;\n"
+    "#endif\n"
+    "static int conditional_block(void) {\n"
+    "#if SIMPLE_MACRO\n"
+    "  return 1;\n"
+    "#else\n"
+    "  return 0;\n"
+    "#endif\n"
+    "}\n"
+    "static int conditional_false_block(void) {\n"
+    "#if CONDITIONAL_FALSE_MACRO\n"
+    "  return 1;\n"
+    "#else\n"
+    "  return 0;\n"
+    "#endif\n"
+    "}\n"
     "EMPTY_MACRO\n"
     "enum MacroDefinitionEnum { MACRO_DEFINITION_ENUM = 1 };\n"
     "int macro_definition_left, macro_definition_right[2];\n"
@@ -9291,6 +9330,119 @@ static int test_macro_definition_hover(ag_target_info_t target) {
             find_diagnostic(&snapshot, "E3016") == NULL,
         "non-define directive has no macro hover");
   ag_language_analysis_snapshot_dispose(&snapshot);
+
+  struct {
+    const char *fragment;
+    const char *name;
+    const char *replacement;
+    const char *later_object;
+  } conditional_cases[] = {
+      {"#if SIMPLE_MACRO\nint conditional_direct_value",
+       "SIMPLE_MACRO", "1", "conditional_direct_value"},
+      {"#if defined(SIMPLE_MACRO)", "SIMPLE_MACRO", "1",
+       "conditional_defined_call_value"},
+      {"#if defined SIMPLE_MACRO", "SIMPLE_MACRO", "1",
+       "conditional_defined_space_value"},
+      {"#if /* condition gap */ SIMPLE_MACRO", "SIMPLE_MACRO", "1",
+       "conditional_comment_value"},
+      {"#if \\\n  SIMPLE_MACRO", "SIMPLE_MACRO", "1",
+       "conditional_spliced_value"},
+      {"#elif SIMPLE_MACRO\nint conditional_elif_value",
+       "SIMPLE_MACRO", "1", NULL},
+      {"#if CONDITIONAL_FALSE_MACRO\nint conditional_false_hidden_value",
+       "CONDITIONAL_FALSE_MACRO", "0",
+       "conditional_false_hidden_value"},
+      {"static int conditional_block(void) {\n#if SIMPLE_MACRO",
+       "SIMPLE_MACRO", "1", NULL},
+      {"static int conditional_false_block(void) {\n"
+       "#if CONDITIONAL_FALSE_MACRO",
+       "CONDITIONAL_FALSE_MACRO", "0", NULL},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(conditional_cases) /
+                        sizeof(conditional_cases[0]);
+       case_index++) {
+    const char *fragment = strstr(
+        macro_definition_forms_source,
+        conditional_cases[case_index].fragment);
+    const char *operand = fragment
+                              ? strstr(fragment,
+                                       conditional_cases[case_index].name)
+                              : NULL;
+    const char *definition_fragment =
+        strcmp(conditional_cases[case_index].name,
+               "CONDITIONAL_FALSE_MACRO") == 0
+            ? "#define CONDITIONAL_FALSE_MACRO 0"
+            : "#define SIMPLE_MACRO 1";
+    const char *definition = strstr(
+        macro_definition_forms_source, definition_fragment);
+    definition = definition
+                     ? strstr(definition,
+                              conditional_cases[case_index].name)
+                     : NULL;
+    CHECK(fragment && operand && definition,
+          "conditional directive macro anchors");
+    size_t name_length = strlen(conditional_cases[case_index].name);
+    size_t deltas[] = {0, name_length / 2, name_length};
+    for (size_t delta_index = 0;
+         delta_index < sizeof(deltas) / sizeof(deltas[0]);
+         delta_index++) {
+      for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+        ag_compilation_session_t *analysis_session =
+            fresh_session ? ag_compilation_session_create(&target) : session;
+        CHECK(analysis_session != NULL,
+              "conditional directive macro fresh session");
+        CHECK(analyze_named(
+                  analysis_session, "macro-definition.c",
+                  macro_definition_forms_source,
+                  (size_t)(operand - macro_definition_forms_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "conditional directive macro analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        int snapshot_matches =
+            macro_definition_snapshot_matches(
+                &snapshot, conditional_cases[case_index].name,
+                conditional_cases[case_index].replacement, 0) &&
+            hover->declaration.source_name &&
+            strcmp(hover->declaration.source_name,
+                   "macro-definition.c") == 0 &&
+            hover->declaration.start.offset ==
+                (int)(definition - macro_definition_forms_source) &&
+            hover->declaration.end.offset ==
+                (int)(definition - macro_definition_forms_source) +
+                    (int)name_length &&
+            (!conditional_cases[case_index].later_object ||
+             !find_symbol(
+                 &snapshot, conditional_cases[case_index].later_object,
+                 AG_LANGUAGE_SYMBOL_OBJECT));
+        if (!snapshot_matches)
+          fprintf(
+              stderr,
+              "conditional directive case=%zu delta=%zu fresh=%d "
+              "hover=%s partial=%d diagnostics=%d decl=%d..%d "
+              "expected=%td..%td later=%d\n",
+              case_index, deltas[delta_index], fresh_session,
+              hover && hover->name ? hover->name : "<null>",
+              snapshot.partial, snapshot.diagnostic_count,
+              hover ? hover->declaration.start.offset : -1,
+              hover ? hover->declaration.end.offset : -1,
+              definition - macro_definition_forms_source,
+              definition - macro_definition_forms_source +
+                  (ptrdiff_t)name_length,
+              conditional_cases[case_index].later_object &&
+                  find_symbol(
+                      &snapshot,
+                      conditional_cases[case_index].later_object,
+                      AG_LANGUAGE_SYMBOL_OBJECT) != NULL);
+        CHECK(snapshot_matches,
+              "conditional directive macro snapshot");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
 
   const char *trailing_sources[] = {
       "#define BEFORE_INCOMPLETE 1\nint unfinished(",

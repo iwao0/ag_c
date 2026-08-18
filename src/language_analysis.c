@@ -457,6 +457,120 @@ static size_t analysis_complete_macro_definition_at_cursor(
   return length;
 }
 
+static size_t analysis_conditional_directive_line_end_mode(
+    const char *source, size_t length, size_t start,
+    int enable_trigraphs) {
+  size_t cursor = start;
+  while (cursor < length) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, cursor, enable_trigraphs);
+    if (splice_size) {
+      cursor += splice_size;
+      continue;
+    }
+    if (source[cursor] == '\n') return cursor + 1;
+    cursor++;
+  }
+  return length;
+}
+
+static int analysis_offset_is_directive_code_mode(
+    const char *source, size_t length, size_t start, size_t offset,
+    int enable_trigraphs) {
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  for (size_t cursor = start; cursor < offset && cursor < length;
+       cursor++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, cursor, enable_trigraphs);
+    if (splice_size) {
+      cursor += splice_size - 1;
+      continue;
+    }
+    char current = source[cursor];
+    char next = cursor + 1 < offset ? source[cursor + 1] : 0;
+    if (line_comment) continue;
+    if (block_comment) {
+      if (current == '*' && next == '/') {
+        block_comment = 0;
+        cursor++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) {
+        escaped = 0;
+      } else if (current == '\\') {
+        escaped = 1;
+      } else if (current == quote) {
+        quote = 0;
+      }
+      continue;
+    }
+    if (current == '/' && next == '/') {
+      line_comment = 1;
+      cursor++;
+    } else if (current == '/' && next == '*') {
+      block_comment = 1;
+      cursor++;
+    } else if (current == '\'' || current == '"') {
+      quote = current;
+    }
+  }
+  return !line_comment && !block_comment && !quote;
+}
+
+static int analysis_conditional_if_operand_line_start_at_cursor(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs, size_t *out_line_start) {
+  if (out_line_start) *out_line_start = 0;
+  analysis_identifier_span_t identifier = {0};
+  if (!analysis_identifier_span_at_mode(
+          source, length, cursor, enable_trigraphs, &identifier))
+    return 0;
+  size_t line_start = analysis_logical_line_start_mode(
+      source, length, identifier.start, enable_trigraphs);
+  size_t line_end = analysis_conditional_directive_line_end_mode(
+      source, length, line_start, enable_trigraphs);
+  size_t probe = analysis_skip_directive_spacing_mode(
+      source, length, line_start, identifier.start,
+      enable_trigraphs, NULL);
+  if (probe < identifier.start && source[probe] == '#') {
+    probe++;
+  } else {
+    return 0;
+  }
+  probe = analysis_skip_directive_spacing_mode(
+      source, length, probe, identifier.start,
+      enable_trigraphs, NULL);
+  static const char directive[] = "if";
+  size_t after_directive = 0;
+  if (!analysis_match_directive_word_mode(
+          source, length, probe, identifier.start,
+          enable_trigraphs, directive, sizeof(directive) - 1,
+          &after_directive))
+    return 0;
+  size_t boundary = after_directive;
+  while (boundary < identifier.start) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, boundary, enable_trigraphs);
+    if (!splice_size) break;
+    boundary += splice_size;
+  }
+  if ((boundary < identifier.start &&
+       is_identifier_byte((unsigned char)source[boundary])) ||
+      identifier.start < after_directive ||
+      identifier.end > line_end ||
+      !analysis_offset_is_directive_code_mode(
+          source, length, after_directive, identifier.start,
+          enable_trigraphs))
+    return 0;
+  if (out_line_start) *out_line_start = line_start;
+  return 1;
+}
+
 static size_t skip_analysis_space_and_comments_mode(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs) {
@@ -2936,13 +3050,22 @@ static char *build_recovery_source(const char *source, size_t source_length,
       analysis_complete_macro_definition_at_cursor(
           source, source_length, cursor, enable_trigraphs);
   int cursor_on_complete_macro_definition = macro_definition_end > 0;
+  size_t conditional_directive_line_start = 0;
+  int cursor_on_complete_conditional_directive_operand =
+      !cursor_on_complete_macro_definition &&
+      analysis_conditional_if_operand_line_start_at_cursor(
+          source, source_length, cursor, enable_trigraphs,
+          &conditional_directive_line_start);
   size_t recovery_cursor = cursor_on_complete_macro_definition
                                ? macro_definition_end
+                           : cursor_on_complete_conditional_directive_operand
+                               ? conditional_directive_line_start
                                : analysis_complete_line_splice_at_cursor(
                                      source, source_length, cursor,
                                      enable_trigraphs);
   size_t source_consumed = recovery_cursor;
-  if (!cursor_on_complete_macro_definition) {
+  if (!cursor_on_complete_macro_definition &&
+      !cursor_on_complete_conditional_directive_operand) {
     char *function_parameter_recovery =
         build_function_parameter_recovery_source(
             source, source_length, recovery_cursor, changed,
@@ -3043,8 +3166,10 @@ static char *build_recovery_source(const char *source, size_t source_length,
   memcpy(result, source, recovery_cursor);
   int identifier_elided = has_cursor_identifier &&
                           !cursor_on_complete_macro_definition &&
+                          !cursor_on_complete_conditional_directive_operand &&
                           !cursor_on_complete_member_access;
   if (!cursor_on_complete_macro_definition &&
+      !cursor_on_complete_conditional_directive_operand &&
       !cursor_on_complete_member_access && has_cursor_identifier) {
     size_t elide_end = cursor < cursor_identifier.end
                            ? cursor : cursor_identifier.end;

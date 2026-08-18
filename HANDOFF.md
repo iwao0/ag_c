@@ -35856,3 +35856,41 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 小さいvalid C probeで残った`#if TARGET`のmacro operand解析例外を、preprocessor directive専用の通常サイズsourceとして切り分ける。
     既存の`#ifdef TARGET`とmacro replacement hoverを維持し、深い条件式やdirective stressへは広げない。
+
+### このセッション（続き1211）: `#if`条件内のmacro operand hoverを回復した
+- 対象選定:
+  - 続き1210で残した小さいvalid C probeの`#if TARGET`、`#if defined(TARGET)`、`#if defined TARGET`が、名前の先頭・中央・末尾で
+    E1008またはE1010の解析例外になる問題だけを対象とした。通常サイズの完全な条件ディレクティブに限定し、深い条件式、巨大入力、fuzz、
+    資源stress、security監査系には広げなかった。
+- 原因:
+  - 汎用recoveryはsourceをcursor位置までで切り、cursor識別子をelideした後、preprocessor行として改行していた。このため`#if`はoperandなし、
+    `defined`形は未閉鎖となり、scope snapshotを作る前にpreprocessorがE1008/E1010で停止していた。
+  - 条件行末まで単純に保持してmarkerを後置すると、偽条件ではmarkerとC scope終端がpreprocessで除去される。そこで条件式を評価・書換えず、
+    markerとscope終端を条件行より前に確定する必要があった。
+- 変更:
+  - cursorが通常の`#if`論理行にあり、comment・quote外の識別子である場合だけをboundedに識別する。`ifdef`/`ifndef`をprefix一致させず、
+    trigraph hashは既存conditional tailが通常`#`だけを保持する境界に合わせて専用経路へ入れない。
+  - 専用経路ではrecovery cursorを論理行先頭へ戻し、元scopeへcursor markerを置いて開いているC delimiterを閉じた後、既存のconditional
+    validation tailで元sourceの`#if` / `#elif` / `#else` / `#endif`だけを保持する。これにより真偽に依存せず、元の条件式も評価・変更しない。
+  - Native/Wasmへ直接条件、括弧あり/なし`defined`、block comment、LF行継続、真/偽macro、file/block scope、既存`#elif`を追加した。
+    Nativeは全ケースの名前先頭・中央・末尾を同一/fresh sessionで固定する。Wasmは全文脈の中央と代表的な真/偽/file/blockの境界位置、
+    fresh instance、Native完全snapshot parity、正確なmacro declaration range、後続object非可視、diagnostics空、`partial:false`を固定する。
+- テスト時間の調整:
+  - 最初のWasm完全gateでは全9文脈を名前の先頭・中央・末尾で反復し、fresh 3件を加えたsupersetを実行して成功したが、所要時間は
+    **1205.87秒**だった。Native側の全位置・全fresh検証は約7秒のため維持し、Wasm側は代表3文脈だけを3位置、他6文脈は中央位置へ縮約した。
+    final harnessは成功済みsupersetの部分集合で、Wasmの重複解析を12回削減する。前コミットのself-host API重複再生成抑制も維持する。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (58 scenarios)**。
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `make wasm-selfhost-api`後の小さいWasm probeで、`#if`直接/`defined`2形/浅い二項条件が全cursor位置でmacro hover、diagnostics空、
+    `partial:false`へ変わり、既存`#elif`、`#ifdef`、macro replacement hoverも維持した。
+  - `/usr/bin/time -p caffeinate -i make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功、
+    **real 1205.87秒 / user 1196.38秒 / sys 11.94秒**。self-host APIの重複再生成はなかった。この実行はfinalの縮約後Wasm行列を包含する。
+  - 縮約後に`node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`を再確認した。
+- 未実施:
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。深い条件式、巨大入力、fuzz、
+    資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 小さいvalid C sourceのprobeから、通常サイズで診断例外または`partial:true`になる次のhover文脈を探す。開発中はNative約7秒と焦点Wasm
+    probeを使い、全Wasm parityは関連する小増分の最後に一度だけ実行する。
