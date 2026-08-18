@@ -5685,11 +5685,17 @@ const initializerDesignatorOperandHoverSource = {
     "struct InitializerDesignatorRecord { int value; };\n" +
     "struct InitializerDesignatorRecord initializer_designator_member_chain[8] = { [INITIALIZER_DESIGNATOR_A].value = 1 };\n" +
     "int initializer_designator_array_chain[8][8] = { [INITIALIZER_DESIGNATOR_A][INITIALIZER_DESIGNATOR_B] = 1 };\n" +
+    "int initializer_operand_scalar = { INITIALIZER_DESIGNATOR_A };\n" +
+    "int initializer_operand_nested[2][2] = { { INITIALIZER_DESIGNATOR_B, 0 }, { 0, 0 } };\n" +
+    "int initializer_operand_binary = { INITIALIZER_DESIGNATOR_A + INITIALIZER_DESIGNATOR_C };\n" +
+    "int initializer_operand_macro = { /* value gap */ INITIALIZER_DESIGNATOR_MACRO };\n" +
+    "int initializer_operand_multi = { INITIALIZER_DESIGNATOR_C }, initializer_operand_later;\n" +
     "int initializer_designator_multi[16] = { [INITIALIZER_DESIGNATOR_B] = 1 }, initializer_designator_later[16];\n" +
     "static int initializer_designator_block(int designator_parameter) {\n" +
     "  enum { INITIALIZER_DESIGNATOR_LOCAL = 6 };\n" +
     "  int designator_before = designator_parameter;\n" +
     "  int designator_local[16] = { [INITIALIZER_DESIGNATOR_LOCAL] = 1 };\n" +
+    "  int designator_operand_local[2] = { designator_parameter, INITIALIZER_DESIGNATOR_LOCAL };\n" +
     "  int designator_after = designator_before;\n" +
     "  return designator_local[INITIALIZER_DESIGNATOR_LOCAL] + designator_after;\n" +
     "}\n",
@@ -5716,10 +5722,22 @@ const initializerDesignatorOperandCases = [
     "INITIALIZER_DESIGNATOR_A", "enumConstant", 0],
   ["][INITIALIZER_DESIGNATOR_B] = 1",
     "INITIALIZER_DESIGNATOR_B", "enumConstant", 0],
+  ["initializer_operand_scalar = { INITIALIZER_DESIGNATOR_A }",
+    "INITIALIZER_DESIGNATOR_A", "enumConstant", 0],
+  ["initializer_operand_nested[2][2] = { { INITIALIZER_DESIGNATOR_B, 0 }",
+    "INITIALIZER_DESIGNATOR_B", "enumConstant", 0],
+  ["initializer_operand_binary = { INITIALIZER_DESIGNATOR_A + INITIALIZER_DESIGNATOR_C }",
+    "INITIALIZER_DESIGNATOR_C", "enumConstant", 0],
+  ["initializer_operand_macro = { /* value gap */ INITIALIZER_DESIGNATOR_MACRO }",
+    "INITIALIZER_DESIGNATOR_MACRO", "macro", 0],
+  ["initializer_operand_multi = { INITIALIZER_DESIGNATOR_C }",
+    "INITIALIZER_DESIGNATOR_C", "enumConstant", 3],
   ["initializer_designator_multi[16] = { [INITIALIZER_DESIGNATOR_B] = 1 }",
     "INITIALIZER_DESIGNATOR_B", "enumConstant", 1],
   ["designator_local[16] = { [INITIALIZER_DESIGNATOR_LOCAL] = 1 }",
     "INITIALIZER_DESIGNATOR_LOCAL", "enumConstant", 2],
+  ["designator_operand_local[2] = { designator_parameter,",
+    "designator_parameter", "parameter", 2],
 ];
 for (const [fragmentText, name, kind, boundaryCase] of
   initializerDesignatorOperandCases) {
@@ -5776,6 +5794,9 @@ for (const [fragmentText, name, kind, boundaryCase] of
       assert.equal(symbol(result, "designator_after", "object"), undefined,
         "block designator preserves cursor lookup point");
     }
+    if (boundaryCase === 3)
+      assert.equal(symbol(result, "initializer_operand_later", "object"),
+        undefined, "later initializer operand declarator remains invisible");
     assert.deepStrictEqual(
       result,
       JSON.parse(execFileSync(
@@ -5795,6 +5816,8 @@ try {
       "INITIALIZER_DESIGNATOR_A", "enumConstant"],
     ["designator_local[16] = { [INITIALIZER_DESIGNATOR_LOCAL] = 1 }",
       "INITIALIZER_DESIGNATOR_LOCAL", "enumConstant"],
+    ["initializer_operand_nested[2][2] = { { INITIALIZER_DESIGNATOR_B, 0 }",
+      "INITIALIZER_DESIGNATOR_B", "enumConstant"],
   ]) {
     const fragmentIndex = initializerDesignatorOperandHoverSource.source.indexOf(
       fragmentText,
@@ -5868,6 +5891,12 @@ const compoundLiteralDesignatorOperandHoverSource = {
     ".values[COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n" +
     "int (*compound_literal_designator_file_chain)[8] = (int[8][8]){ " +
     "[COMPOUND_LITERAL_DESIGNATOR_A][COMPOUND_LITERAL_DESIGNATOR_B] = 1 };\n" +
+    "int *compound_literal_operand_file = (int[8]){ " +
+    "COMPOUND_LITERAL_DESIGNATOR_A, 0 };\n" +
+    "struct CompoundLiteralDesignatorRecord " +
+    "*compound_literal_operand_record = " +
+    "&(struct CompoundLiteralDesignatorRecord){ .values = { " +
+    "COMPOUND_LITERAL_DESIGNATOR_B, 0 } };\n" +
     "int *compound_literal_designator_file_multi = (int[8]){ " +
     "[COMPOUND_LITERAL_DESIGNATOR_C] = 1 }, " +
     "*compound_literal_designator_file_later;\n" +
@@ -5881,6 +5910,12 @@ const compoundLiteralDesignatorOperandHoverSource = {
     "[COMPOUND_LITERAL_DESIGNATOR_A];\n" +
     "  int designator_call = compound_literal_designator_take((int[8]){ " +
     "[COMPOUND_LITERAL_DESIGNATOR_B] = 1 });\n" +
+    "  int operand_value = ((int[8]){ designator_parameter, " +
+    "COMPOUND_LITERAL_DESIGNATOR_A })[0];\n" +
+    "  int operand_record = ((struct CompoundLiteralDesignatorRecord){ " +
+    ".values = { COMPOUND_LITERAL_DESIGNATOR_B, 0 } }).values[0];\n" +
+    "  int operand_macro = ((int[8]){ " +
+    "COMPOUND_LITERAL_DESIGNATOR_MACRO, 0 })[0];\n" +
     "  int *designator_multi = (int[8]){ " +
     "[COMPOUND_LITERAL_DESIGNATOR_C] = 1 }, *designator_later;\n" +
     "  int designator_after = designator_before;\n" +
@@ -5929,6 +5964,18 @@ const compoundLiteralDesignatorOperandCases = [
     "COMPOUND_LITERAL_DESIGNATOR_B", "enumConstant", 2],
   ["designator_multi = (int[8]){ [COMPOUND_LITERAL_DESIGNATOR_C] = 1",
     "COMPOUND_LITERAL_DESIGNATOR_C", "enumConstant", 3],
+  ["compound_literal_operand_file = (int[8]){ " +
+    "COMPOUND_LITERAL_DESIGNATOR_A, 0",
+    "COMPOUND_LITERAL_DESIGNATOR_A", "enumConstant", 0],
+  [".values = { COMPOUND_LITERAL_DESIGNATOR_B, 0 }",
+    "COMPOUND_LITERAL_DESIGNATOR_B", "enumConstant", 0],
+  ["operand_value = ((int[8]){ designator_parameter,",
+    "designator_parameter", "parameter", 2],
+  ["operand_record = ((struct CompoundLiteralDesignatorRecord){ " +
+    ".values = { COMPOUND_LITERAL_DESIGNATOR_B, 0 }",
+    "COMPOUND_LITERAL_DESIGNATOR_B", "enumConstant", 2],
+  ["operand_macro = ((int[8]){ COMPOUND_LITERAL_DESIGNATOR_MACRO, 0",
+    "COMPOUND_LITERAL_DESIGNATOR_MACRO", "macro", 2],
 ];
 
 for (const [fragmentText, name, kind, boundaryCase] of
@@ -6009,7 +6056,7 @@ for (const [fragmentText, name, kind, boundaryCase] of
 
 const freshCompoundLiteralDesignatorCompiler = await createCompiler(wasmModule);
 try {
-  for (const caseIndex of [11, 18]) {
+  for (const caseIndex of [11, 18, 22]) {
     const [fragmentText, name, kind] =
       compoundLiteralDesignatorOperandCases[caseIndex];
     const fragmentIndex =

@@ -1927,55 +1927,7 @@ typedef struct {
   int is_initializer_brace;
 } analysis_designator_frame_t;
 
-static int analysis_designator_assignment_end_mode(
-    const char *source, size_t length, size_t bracket_open,
-    const analysis_identifier_span_t *identifier,
-    int enable_trigraphs, size_t *designator_end) {
-  if (!source || !identifier || bracket_open >= length ||
-      source[bracket_open] != '[')
-    return 0;
-  size_t candidate_end = 0;
-  if (!analysis_delimited_tail_end_mode(
-          source, length, bracket_open + 1, ']', 1,
-          enable_trigraphs, &candidate_end) ||
-      identifier->end > candidate_end)
-    return 0;
-  size_t after_designator = candidate_end + 1;
-  for (;;) {
-    after_designator = skip_analysis_space_and_comments_mode(
-        source, length, after_designator, enable_trigraphs);
-    if (after_designator >= length) return 0;
-    if (source[after_designator] == '.') {
-      analysis_identifier_span_t member = {0};
-      size_t member_start = skip_analysis_space_and_comments_mode(
-          source, length, after_designator + 1, enable_trigraphs);
-      if (!analysis_identifier_span_at_mode(
-              source, length, member_start, enable_trigraphs,
-              &member) || member.start != member_start)
-        return 0;
-      after_designator = member.end;
-      continue;
-    }
-    if (source[after_designator] == '[') {
-      size_t nested_end = 0;
-      if (!analysis_delimited_tail_end_mode(
-              source, length, after_designator + 1, ']', 1,
-              enable_trigraphs, &nested_end))
-        return 0;
-      after_designator = nested_end + 1;
-      continue;
-    }
-    break;
-  }
-  after_designator = skip_analysis_space_and_comments_mode(
-      source, length, after_designator, enable_trigraphs);
-  if (after_designator >= length || source[after_designator] != '=')
-    return 0;
-  if (designator_end) *designator_end = candidate_end;
-  return 1;
-}
-
-static char *build_initializer_designator_recovery_source(
+static char *build_object_initializer_recovery_source(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs, int *changed, size_t *source_consumed) {
   analysis_identifier_span_t identifier = {0};
@@ -2079,23 +2031,8 @@ static char *build_initializer_designator_recovery_source(
     }
     if (!isspace((unsigned char)c)) last_significant = c;
   }
-  size_t designator_frame = SIZE_MAX;
-  size_t designator_end = 0;
-  for (size_t i = frame_count; i > 0; i--) {
-    if (frames[i - 1].open != '[') continue;
-    if (analysis_designator_assignment_end_mode(
-            source, length, frames[i - 1].open_offset,
-            &identifier, enable_trigraphs, &designator_end)) {
-      designator_frame = i - 1;
-      break;
-    }
-  }
-  if (designator_frame == SIZE_MAX || identifier.end > designator_end) {
-    free(frames);
-    return NULL;
-  }
   size_t initializer_frame = SIZE_MAX;
-  for (size_t i = designator_frame; i > 0; i--) {
+  for (size_t i = frame_count; i > 0; i--) {
     if (frames[i - 1].open != '{' ||
         !frames[i - 1].is_initializer_brace)
       continue;
@@ -2127,7 +2064,7 @@ static char *build_initializer_designator_recovery_source(
   if (!analysis_delimited_tail_end_mode(
           source, length, frames[initializer_frame].open_offset + 1,
           '}', 1, enable_trigraphs, &initializer_end) ||
-      initializer_end <= designator_end) {
+      initializer_end + 1 < identifier.end) {
     free(frames);
     return NULL;
   }
@@ -2845,37 +2782,17 @@ static int analysis_complete_expression_statement_tail_end_mode(
   return 0;
 }
 
-static char *build_compound_literal_designator_recovery_source(
+static char *build_compound_literal_initializer_recovery_source(
     const char *source, size_t source_length,
     const recovery_delimiter_t *stack, size_t stack_count,
     const analysis_identifier_span_t *identifier,
     int enable_trigraphs, int *changed, size_t *source_consumed) {
   if (!source || !stack || !identifier || identifier->logical_length == 0)
     return NULL;
-  size_t designator_frame = SIZE_MAX;
-  size_t designator_end = 0;
-  for (size_t i = stack_count; i > 0; i--) {
-    if (stack[i - 1].open != '[') continue;
-    if (analysis_designator_assignment_end_mode(
-            source, source_length, stack[i - 1].open_offset,
-            identifier, enable_trigraphs, &designator_end)) {
-      designator_frame = i - 1;
-      break;
-    }
-  }
-  if (designator_frame == SIZE_MAX) return NULL;
   size_t compound_frame = SIZE_MAX;
-  for (size_t i = designator_frame; i > 0; i--) {
-    if (stack[i - 1].open != '{' ||
-        !stack[i - 1].is_compound_literal)
-      continue;
-    int valid_initializer_nesting = 1;
-    for (size_t inner = i; inner < designator_frame; inner++)
-      if (stack[inner].open != '{') {
-        valid_initializer_nesting = 0;
-        break;
-      }
-    if (valid_initializer_nesting) {
+  for (size_t i = stack_count; i > 0; i--) {
+    if (stack[i - 1].open == '{' &&
+        stack[i - 1].is_compound_literal) {
       compound_frame = i - 1;
       break;
     }
@@ -2885,7 +2802,7 @@ static char *build_compound_literal_designator_recovery_source(
   if (!analysis_delimited_tail_end_mode(
           source, source_length, stack[compound_frame].open_offset + 1,
           '}', 1, enable_trigraphs, &compound_end) ||
-      compound_end <= designator_end)
+      identifier->end > compound_end + 1)
     return NULL;
   size_t statement_end = 0;
   int ends_with_comma = 0;
@@ -3033,14 +2950,6 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (function_parameter_recovery)
       return append_conditional_validation_tail(
           function_parameter_recovery, source, source_length,
-          source_consumed);
-    char *initializer_designator_recovery =
-        build_initializer_designator_recovery_source(
-            source, source_length, recovery_cursor, enable_trigraphs,
-            changed, &source_consumed);
-    if (initializer_designator_recovery)
-      return append_conditional_validation_tail(
-          initializer_designator_recovery, source, source_length,
           source_consumed);
     char *enum_recovery = build_enum_declaration_recovery_source(
         source, source_length, recovery_cursor,
@@ -3438,17 +3347,31 @@ static char *build_recovery_source(const char *source, size_t source_length,
   }
   if (has_complete_identifier) {
     size_t compound_literal_consumed = recovery_cursor;
-    char *compound_literal_designator_recovery =
-        build_compound_literal_designator_recovery_source(
+    char *compound_literal_initializer_recovery =
+        build_compound_literal_initializer_recovery_source(
             source, source_length, stack, stack_count,
             &cursor_identifier, enable_trigraphs, changed,
             &compound_literal_consumed);
-    if (compound_literal_designator_recovery) {
+    if (compound_literal_initializer_recovery) {
       free(stack);
       free(result);
       return append_conditional_validation_tail(
-          compound_literal_designator_recovery, source,
+          compound_literal_initializer_recovery, source,
           source_length, compound_literal_consumed);
+    }
+  }
+  if (!cursor_on_complete_macro_definition) {
+    size_t object_initializer_consumed = recovery_cursor;
+    char *object_initializer_recovery =
+        build_object_initializer_recovery_source(
+            source, source_length, recovery_cursor, enable_trigraphs,
+            changed, &object_initializer_consumed);
+    if (object_initializer_recovery) {
+      free(stack);
+      free(result);
+      return append_conditional_validation_tail(
+          object_initializer_recovery, source, source_length,
+          object_initializer_consumed);
     }
   }
   size_t length = recovery_cursor;

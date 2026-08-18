@@ -35787,3 +35787,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - bug coverage表と小さいvalid C sourceのprobeから、単一sourceで診断例外または`partial:true`になる次の通常サイズのhover文脈を探す。
     Nativeの4〜5秒gateで小増分を固め、全Wasm parityは複数増分をまとめるintegration gate方針を維持する。
+
+### このセッション（続き1209）: brace initializerの通常value operand hoverを回復した
+- 対象選定:
+  - 続き1208後の小さいvalid C probeで、通常objectのnested brace initializer valueがE3064、block-scope record compound literalのmember valueが
+    E2006になることを確認した。いずれも通常サイズの完全なinitializerだけを対象とし、深い式、巨大入力、fuzz、資源stress、security監査系には
+    広げなかった。
+- 原因:
+  - object brace initializer回復はarray designator indexだけを入口にしていたため、通常value上では汎用回復が対応するnested `}`と宣言終端を
+    捨てていた。compound literal側もdesignator indexだけを入口にし、通常valueでは完全なliteralと後続postfix/statementを保持しなかった。
+  - object回復を単純に一般化すると、compound literal内の`.member = { value }`を通常block内initializerと先に誤認し、正しいcompound専用回復へ
+    到達する前に`partial:true`へしていた。
+- 変更:
+  - 既存のcomment/quote/directive/行継続対応frame scannerで、完全な最外object initializer `}`が元sourceに実在すればvalue位置からもそこまで
+    保持し、宣言を閉じて元scopeへmarkerを置くよう一般化した。通常object回復の呼び出しはmain delimiter scan後へ移した。
+  - main delimiter scannerがtype-name直後のcompound literal braceを先に識別し、完全なliteral `}`と浅い式statementまたはtop-level commaまでを
+    保持する既存designator経路を通常valueへ一般化した。これによりcompound内nested braceは通常object経路へ入らない。
+  - Native/Wasmへscalar/nested aggregate、二項値、macro・enum・parameter、member initializer、後続postfix、file/block scope、後続declarator/local
+    非可視を対称追加した。名前の先頭・中央・末尾、declaration range、enum値、macro replacement/documentation、同一/fresh instance、
+    Native/Wasm完全snapshot parity、diagnostics空、`partial:false`を固定した。既存designatorとinvalid initializer診断も維持した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (58 scenarios)**。
+  - 焦点self-host再生成 `make wasm-selfhost-api` = **real 44.23秒**、小さいWasm probeで通常nested initializerとblock record compound literalの
+    両方が`partial:false`・diagnostics空・macro hoverになった。
+  - `/usr/bin/time -p caffeinate -i make test-wasm-js-api` = 再生成なしでsmoke、language analysis、package exportsすべて成功、
+    **real 909.04秒 / user 900.98秒 / sys 10.23秒**。関連する通常/compound initializerの2増分をまとめて一度だけ実行した。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`および`git diff --check`問題なし。
+- 未実施:
+  - language-analysis専用回復でcode generation pipelineを変更していないためNative/Wasm E2Eは未実施とした。深い式、巨大入力、fuzz、
+    資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 小さいvalid C probeで未固定の通常hover文脈を引き続き探す。開発中はNative約5秒と必要時のself-host再生成約44秒を使い、全Wasm parityは
+    関連する小増分をまとめた最後のintegration gateとして一度だけ実行する。

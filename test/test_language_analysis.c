@@ -1254,11 +1254,17 @@ static const char initializer_designator_operand_hover_source[] =
     "struct InitializerDesignatorRecord { int value; };\n"
     "struct InitializerDesignatorRecord initializer_designator_member_chain[8] = { [INITIALIZER_DESIGNATOR_A].value = 1 };\n"
     "int initializer_designator_array_chain[8][8] = { [INITIALIZER_DESIGNATOR_A][INITIALIZER_DESIGNATOR_B] = 1 };\n"
+    "int initializer_operand_scalar = { INITIALIZER_DESIGNATOR_A };\n"
+    "int initializer_operand_nested[2][2] = { { INITIALIZER_DESIGNATOR_B, 0 }, { 0, 0 } };\n"
+    "int initializer_operand_binary = { INITIALIZER_DESIGNATOR_A + INITIALIZER_DESIGNATOR_C };\n"
+    "int initializer_operand_macro = { /* value gap */ INITIALIZER_DESIGNATOR_MACRO };\n"
+    "int initializer_operand_multi = { INITIALIZER_DESIGNATOR_C }, initializer_operand_later;\n"
     "int initializer_designator_multi[16] = { [INITIALIZER_DESIGNATOR_B] = 1 }, initializer_designator_later[16];\n"
     "static int initializer_designator_block(int designator_parameter) {\n"
     "  enum { INITIALIZER_DESIGNATOR_LOCAL = 6 };\n"
     "  int designator_before = designator_parameter;\n"
     "  int designator_local[16] = { [INITIALIZER_DESIGNATOR_LOCAL] = 1 };\n"
+    "  int designator_operand_local[2] = { designator_parameter, INITIALIZER_DESIGNATOR_LOCAL };\n"
     "  int designator_after = designator_before;\n"
     "  return designator_local[INITIALIZER_DESIGNATOR_LOCAL] + designator_after;\n"
     "}\n";
@@ -1304,6 +1310,12 @@ static const char compound_literal_designator_operand_hover_source[] =
     ".values[COMPOUND_LITERAL_DESIGNATOR_A] = 1 };\n"
     "int (*compound_literal_designator_file_chain)[8] = (int[8][8]){ "
     "[COMPOUND_LITERAL_DESIGNATOR_A][COMPOUND_LITERAL_DESIGNATOR_B] = 1 };\n"
+    "int *compound_literal_operand_file = (int[8]){ "
+    "COMPOUND_LITERAL_DESIGNATOR_A, 0 };\n"
+    "struct CompoundLiteralDesignatorRecord "
+    "*compound_literal_operand_record = "
+    "&(struct CompoundLiteralDesignatorRecord){ .values = { "
+    "COMPOUND_LITERAL_DESIGNATOR_B, 0 } };\n"
     "int *compound_literal_designator_file_multi = (int[8]){ "
     "[COMPOUND_LITERAL_DESIGNATOR_C] = 1 }, "
     "*compound_literal_designator_file_later;\n"
@@ -1317,6 +1329,12 @@ static const char compound_literal_designator_operand_hover_source[] =
     "[COMPOUND_LITERAL_DESIGNATOR_A];\n"
     "  int designator_call = compound_literal_designator_take((int[8]){ "
     "[COMPOUND_LITERAL_DESIGNATOR_B] = 1 });\n"
+    "  int operand_value = ((int[8]){ designator_parameter, "
+    "COMPOUND_LITERAL_DESIGNATOR_A })[0];\n"
+    "  int operand_record = ((struct CompoundLiteralDesignatorRecord){ "
+    ".values = { COMPOUND_LITERAL_DESIGNATOR_B, 0 } }).values[0];\n"
+    "  int operand_macro = ((int[8]){ "
+    "COMPOUND_LITERAL_DESIGNATOR_MACRO, 0 })[0];\n"
     "  int *designator_multi = (int[8]){ "
     "[COMPOUND_LITERAL_DESIGNATOR_C] = 1 }, *designator_later;\n"
     "  int designator_after = designator_before;\n"
@@ -8452,12 +8470,30 @@ static int test_initializer_designator_operand_hover(
       {"][INITIALIZER_DESIGNATOR_B] = 1",
        "INITIALIZER_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
        "INITIALIZER_DESIGNATOR_B = 3", "3", 0},
+      {"initializer_operand_scalar = { INITIALIZER_DESIGNATOR_A }",
+       "INITIALIZER_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_A = 2", "2", 0},
+      {"initializer_operand_nested[2][2] = { { INITIALIZER_DESIGNATOR_B, 0 }",
+       "INITIALIZER_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_B = 3", "3", 0},
+      {"initializer_operand_binary = { INITIALIZER_DESIGNATOR_A + INITIALIZER_DESIGNATOR_C }",
+       "INITIALIZER_DESIGNATOR_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_C = 4", "4", 0},
+      {"initializer_operand_macro = { /* value gap */ INITIALIZER_DESIGNATOR_MACRO }",
+       "INITIALIZER_DESIGNATOR_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "INITIALIZER_DESIGNATOR_MACRO 5", "", 0},
+      {"initializer_operand_multi = { INITIALIZER_DESIGNATOR_C }",
+       "INITIALIZER_DESIGNATOR_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "INITIALIZER_DESIGNATOR_C = 4", "4", 3},
       {"initializer_designator_multi[16] = { [INITIALIZER_DESIGNATOR_B] = 1 }",
        "INITIALIZER_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
        "INITIALIZER_DESIGNATOR_B = 3", "3", 1},
       {"designator_local[16] = { [INITIALIZER_DESIGNATOR_LOCAL] = 1 }",
        "INITIALIZER_DESIGNATOR_LOCAL", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
        "INITIALIZER_DESIGNATOR_LOCAL = 6", "6", 2},
+      {"designator_operand_local[2] = { designator_parameter,",
+       "designator_parameter", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "designator_parameter)", "", 2},
   };
   const char *macro_comment = strstr(
       initializer_designator_operand_hover_source,
@@ -8541,6 +8577,11 @@ static int test_initializer_designator_operand_hover(
                         &snapshot, "designator_after",
                         AG_LANGUAGE_SYMBOL_OBJECT),
                 "block designator preserves cursor lookup point");
+        if (cases[case_index].boundary_case == 3)
+          CHECK(!find_symbol(
+                    &snapshot, "initializer_operand_later",
+                    AG_LANGUAGE_SYMBOL_OBJECT),
+                "later initializer operand declarator remains invisible");
         ag_language_analysis_snapshot_dispose(&snapshot);
         if (fresh_session)
           ag_compilation_session_destroy(analysis_session);
@@ -8630,6 +8671,24 @@ static int test_compound_literal_designator_operand_hover(
        "[COMPOUND_LITERAL_DESIGNATOR_C] = 1",
        "COMPOUND_LITERAL_DESIGNATOR_C", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
        "COMPOUND_LITERAL_DESIGNATOR_C = 4", "4", 3},
+      {"compound_literal_operand_file = (int[8]){ "
+       "COMPOUND_LITERAL_DESIGNATOR_A, 0",
+       "COMPOUND_LITERAL_DESIGNATOR_A", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_A = 2", "2", 0},
+      {".values = { COMPOUND_LITERAL_DESIGNATOR_B, 0 }",
+       "COMPOUND_LITERAL_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_B = 3", "3", 0},
+      {"operand_value = ((int[8]){ designator_parameter,",
+       "designator_parameter", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "designator_parameter)", "", 2},
+      {"operand_record = ((struct CompoundLiteralDesignatorRecord){ "
+       ".values = { COMPOUND_LITERAL_DESIGNATOR_B, 0 }",
+       "COMPOUND_LITERAL_DESIGNATOR_B", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "COMPOUND_LITERAL_DESIGNATOR_B = 3", "3", 2},
+      {"operand_macro = ((int[8]){ "
+       "COMPOUND_LITERAL_DESIGNATOR_MACRO, 0",
+       "COMPOUND_LITERAL_DESIGNATOR_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
+       "COMPOUND_LITERAL_DESIGNATOR_MACRO 5", "", 2},
   };
   const char *macro_comment = strstr(
       compound_literal_designator_operand_hover_source,
@@ -8723,7 +8782,7 @@ static int test_compound_literal_designator_operand_hover(
     }
   }
 
-  const size_t fresh_case_indices[] = {11, 18};
+  const size_t fresh_case_indices[] = {11, 18, 22};
   for (size_t i = 0;
        i < sizeof(fresh_case_indices) / sizeof(fresh_case_indices[0]); i++) {
     size_t case_index = fresh_case_indices[i];
