@@ -4534,6 +4534,19 @@ static int print_same_typedef_declarator_hover_parity_snapshot(
       (header_bundle_t){0});
 }
 
+static int print_language_analysis_source_parity_snapshot(
+    const char *source_name, const char *cursor_text,
+    const char *source) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  if (!source_name[0] || !cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)strlen(source))
+    return 1;
+  return print_macro_definition_source_snapshot(
+      source_name, source, (size_t)parsed_cursor,
+      (header_bundle_t){0});
+}
+
 static int print_extern_typedef_shadow_conflict_parity_snapshot(
     const char *variant_text, const char *cursor_text) {
   static const char *sources[] = {
@@ -14807,6 +14820,11 @@ int main(int argc, char **argv) {
       strcmp(argv[1],
              "--same-typedef-declarator-hover-parity-json") == 0)
     return print_same_typedef_declarator_hover_parity_snapshot(argv[2]);
+  if (argc == 5 &&
+      strcmp(argv[1],
+             "--language-analysis-source-parity-json") == 0)
+    return print_language_analysis_source_parity_snapshot(
+        argv[2], argv[3], argv[4]);
   if (argc == 4 &&
       strcmp(argv[1],
              "--extern-typedef-shadow-conflict-parity-json") == 0)

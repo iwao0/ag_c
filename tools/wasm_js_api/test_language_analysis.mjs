@@ -3041,56 +3041,87 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
     ["extern ExternObjectParenthesizedDoublePointerSingleLevelCvSpliceType (** volatile \\\nconst ExternObjectParenthesizedDoublePointerSingleLevelCvSpliceType)",
       "ExternObjectParenthesizedDoublePointerSingleLevelCvSpliceType", false],
   ];
+  function assertExternObjectTypeResult(
+    result, source, name, declarationIndex, label,
+  ) {
+    assert.equal(result.partial, false, `${label} partial`);
+    assert.deepStrictEqual(result.diagnostics, [], `${label} diagnostics`);
+    assert.equal(result.hover?.name, name, `${label} hover`);
+    assert.equal(result.hover?.kind, "typedef", `${label} kind`);
+    assert.equal(result.hover?.declaration.start.offset,
+      byteOffsetForIndex(source.source, declarationIndex),
+      `${label} declaration`);
+    assert.deepStrictEqual(result.hover?.declaration,
+      symbol(result, name, "typedef")?.declaration,
+      `${label} completion`);
+    assert.equal(symbol(result, name, "object"), undefined,
+      `${label} current block extern object hidden`);
+    assert.equal(symbol(result, "block_after", "object"), undefined);
+    assert.equal(symbol(result, "file_after", "object"), undefined);
+  }
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
-    const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
-      fragmentText,
+    const isolatedSource = {
+      name: "isolated-block-extern-object-type.c",
+      source: `typedef int ${name};\n` +
+        "int isolated_block_extern_object_type(void) {\n" +
+        `  { ${fragmentText}; }\n` +
+        "  int block_after;\n" +
+        "  return 0;\n" +
+        "}\n" +
+        "int file_after;\n",
+    };
+    const isolatedFragmentIndex = isolatedSource.source.indexOf(fragmentText);
+    const isolatedUseIndex = isolatedSource.source.indexOf(
+      name, isolatedFragmentIndex,
     );
-    const useIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
-      name, fragmentIndex,
-    );
-    const declarationIndex =
-      sameTypedefDeclaratorHoverSource.source.indexOf(name);
-    assert.ok(fragmentIndex >= 0 && useIndex > declarationIndex,
-      `missing block extern object type anchor for ${name}`);
+    const isolatedDeclarationIndex = isolatedSource.source.indexOf(name);
+    assert.ok(isolatedFragmentIndex >= 0 &&
+      isolatedUseIndex > isolatedDeclarationIndex,
+    `missing isolated block extern object type anchor for ${name}`);
     const nameBytes = Buffer.byteLength(name);
-    const deltas = checkBoundaries
-      ? [0, Math.floor(nameBytes / 2), nameBytes]
-      : [Math.floor(nameBytes / 2)];
-    for (const delta of deltas) {
-      const byteOffset = byteOffsetForIndex(
-        sameTypedefDeclaratorHoverSource.source, useIndex,
-      ) + delta;
-      const result = compiler.analyzeSource(
-        sameTypedefDeclaratorHoverSource,
-        { cursor: {
-          sourceName: sameTypedefDeclaratorHoverSource.name,
-          byteOffset,
-        } },
-      );
-      assert.equal(result.partial, false,
-        `${name} block extern object type partial`);
-      assert.deepStrictEqual(result.diagnostics, [],
-        `${name} block extern object type diagnostics`);
-      assert.equal(result.hover?.name, name,
-        `${name} block extern object type hover`);
-      assert.equal(result.hover?.kind, "typedef",
-        `${name} block extern object type kind`);
-      assert.equal(result.hover?.declaration.start.offset,
-        byteOffsetForIndex(
-          sameTypedefDeclaratorHoverSource.source, declarationIndex,
-        ), `${name} block extern object type declaration`);
-      assert.deepStrictEqual(result.hover?.declaration,
-        symbol(result, name, "typedef")?.declaration,
-        `${name} block extern object type completion`);
-      assert.equal(symbol(result, name, "object"), undefined,
-        `${name} current block extern object hidden`);
-      assert.equal(symbol(result, "block_after", "object"), undefined);
-      assert.equal(symbol(result, "file_after", "object"), undefined);
-      assert.deepStrictEqual(result, JSON.parse(execFileSync(
-        nativeAnalysisPath,
-        ["--same-typedef-declarator-hover-parity-json", String(byteOffset)],
-        { encoding: "utf8" },
-      )), `native and Wasm block extern object type differ for ${name}`);
+    const isolatedByteOffset = byteOffsetForIndex(
+      isolatedSource.source, isolatedUseIndex,
+    ) + Math.floor(nameBytes / 2);
+    const isolatedResult = compiler.analyzeSource(
+      isolatedSource,
+      { cursor: {
+        sourceName: isolatedSource.name,
+        byteOffset: isolatedByteOffset,
+      } },
+    );
+    assertExternObjectTypeResult(
+      isolatedResult, isolatedSource, name, isolatedDeclarationIndex,
+      `${name} isolated block extern object type`,
+    );
+    assert.deepStrictEqual(isolatedResult, JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--language-analysis-source-parity-json", isolatedSource.name,
+        String(isolatedByteOffset), isolatedSource.source],
+      { encoding: "utf8" },
+    )), `native and Wasm isolated block extern object type differ for ${name}`);
+    if (checkBoundaries) {
+      for (const delta of [0, nameBytes]) {
+        const byteOffset = byteOffsetForIndex(
+          isolatedSource.source, isolatedUseIndex,
+        ) + delta;
+        const result = compiler.analyzeSource(
+          isolatedSource,
+          { cursor: {
+            sourceName: isolatedSource.name,
+            byteOffset,
+          } },
+        );
+        assertExternObjectTypeResult(
+          result, isolatedSource, name, isolatedDeclarationIndex,
+          `${name} isolated block extern object type boundary`,
+        );
+        assert.deepStrictEqual(result, JSON.parse(execFileSync(
+          nativeAnalysisPath,
+          ["--language-analysis-source-parity-json", isolatedSource.name,
+            String(byteOffset), isolatedSource.source],
+          { encoding: "utf8" },
+        )), `native and Wasm isolated block extern object boundary differ for ${name}`);
+      }
     }
   }
   const freshExternObjectTypeCompiler = await createCompiler(wasmModule);

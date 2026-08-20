@@ -37388,3 +37388,24 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同一qualifierの重複、片段で`restrict`を含む複数qualifier、片段`const volatile`と他段qualifierの複合、`_Atomic`付き2段pointer、3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - 焦点gateは続き1258の31.84秒から39.15秒へ伸びた。compiler修正は止めず、次は全65形の中央Native/Wasm parityを維持したまま、巨大な共通fixtureを各cursorごとに再解析する構成をカテゴリ単位の小型fixtureまたは同等のbatch方式へ整理し、追加形に対する線形増加を先に抑える。
+
+### このセッション（続き1260）: same-typedef declarator焦点gateの共通fixture再解析を削減した
+- 計測:
+  - `externObjectTypeCases`は65形・15カテゴリ代表で、従来は全65形の中央と15代表の名前両端を共有compilerで共通fixtureから解析し、さらに15代表の中央を第2compiler instanceで解析していた。共通fixture解析は共有側95回と第2instance側15回の合計110回だった。
+  - 続き1259の変更前焦点gateは内部**39.02秒**、**real 39.15秒**であり、各形追加に対して共通fixture全体の再解析時間が線形に増えていた。Native parity subprocessの起動は続き1255で50回real 0.10秒と計測済みで、支配要因ではない。
+- 変更:
+  - 全65形の中央cursorについて、対象typedef、対象`extern`宣言、後続block/file objectだけを持つ形別の小型sourceをJS側で生成し、同じsourceを新しいNative test CLI `--language-analysis-source-parity-json`へ渡して完全snapshot parityを維持する。
+  - 15代表の名前両端も同じ小型sourceで共有compilerとNative parityを確認する。第2compiler instanceの15代表中央だけは従来の共通fixtureを維持し、Wasm側でも複数宣言が共存するsourceとfresh lifecycleを残す。
+  - これにより共通fixture解析を110回から15回へ削減した。Native Cの`test_same_typedef_declarator_hover`は変更せず、全65形の共通fixture、名前端点、shared/fresh session coverageを維持する。
+  - 小型sourceでも外側typedefの正確なrange、現在objectと後続block/file宣言の非可視、diagnostics空・`partial:false`を確認する共通assertionへ集約した。
+- 時間:
+  - 中央65形だけを小型sourceへ移した中間段階は**real 27.02秒**で、変更前39.15秒から12.13秒・約31%短縮した。
+  - 代表名前端点も小型sourceへ移した最終構成は、内部**16.38秒**、**real 16.55秒 / user 17.07秒 / sys 0.44秒**で成功した。変更前から**22.60秒・約58%短縮**し、42形だった続き1255の最適化後17.99秒よりも65形の現在の方が短い。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 12.39秒 / user 9.98秒 / sys 2.40秒**。Native側の全65形共通fixture・名前端点・shared/fresh coverageを確認した。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 4.22秒 / user 1.45秒 / sys 0.70秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`、`git diff --check`、`make -q wasm-selfhost-api`も成功した。production sourceとWasm成果物は変更していない。
+- 未実施:
+  - 同じ焦点本体が16.55秒で通るため、1354秒規模の`make test-wasm-js-api`は実行しない。compiler挙動を変更しないテスト構成最適化のため、self-host Wasm再生成、Native/Wasm E2E、parser、隣接language-analysis、fuzz、stress、security監査系も反復しない。
+- 浅い次候補:
+  - compiler修正へ戻り、Clang strictとag_c本体が受理し、小型Wasm probeではE3088・`partial:true`を残す`extern T (* const restrict *T);`と`extern T (** const restrict T);`を調べる。片方のpointerだけに重複なしのCVR qualifierを2個置く浅い形に限定し、深い宣言子やsecurity監査系には広げない。
