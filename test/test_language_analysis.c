@@ -622,6 +622,17 @@ static const char local_member_array_bound_hover_source[] =
     "  struct LocalMemberShadow { int shadow_array[SHADOW_MEMBER_BOUND]; };\n"
     "  struct LocalMemberAlign { _Alignas(LOCAL_MEMBER_ALIGN) int aligned; };\n"
     "  struct LocalMemberAtomic { _Atomic(LocalMemberType) atomic_member; };\n"
+    "  struct LocalMemberCallbackNamed { void (*callback)(int [LOCAL_MEMBER_BOUND]); };\n"
+    "  union LocalMemberCallbackUnion { void (*callback)(int [LOCAL_MEMBER_BOUND]); };\n"
+    "  struct { void (*callback)(int [LOCAL_MEMBER_BOUND]); } local_member_callback_anonymous;\n"
+    "  { struct LocalMemberCallbackNested { void (*callback)(int [LOCAL_MEMBER_BOUND]); }; }\n"
+    "  struct LocalMemberCallbackFile { void (*callback)(int [FILE_MEMBER_BOUND]); };\n"
+    "  struct LocalMemberCallbackMacro { void (*callback)(int [MEMBER_BOUND_MACRO]); };\n"
+    "  struct LocalMemberCallbackComment { void (*callback)(int [/* bound */ LOCAL_MEMBER_BOUND]); };\n"
+    "  struct LocalMemberCallbackLf { void (*callback)(int [\\\nLOCAL_MEMBER_BOUND]); };\n"
+    "  struct LocalMemberCallbackCrlf { void (*callback)(int [\\\r\nLOCAL_MEMBER_BOUND]); };\r\n"
+    "  struct LocalMemberCallbackShadow { void (*callback)(int [SHADOW_MEMBER_BOUND]); };\n"
+    "  struct LocalMemberCallbackLater { void (*callback)(int [LOCAL_MEMBER_BOUND], int callback_parameter_after); };\n"
     "  enum { MEMBER_BOUND_AFTER = 7 };\n"
     "  int member_bound_after_local;\n"
     "  return (int)sizeof(struct LocalMemberNamed) +\n"
@@ -11040,6 +11051,38 @@ static int test_local_member_array_bound_hover(ag_target_info_t target) {
        AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "8", NULL},
       {"_Atomic(LocalMemberType", "LocalMemberType",
        AG_LANGUAGE_SYMBOL_TYPEDEF, NULL, NULL, NULL},
+      {"CallbackNamed { void (*callback)(int [LOCAL_MEMBER_BOUND",
+       "LOCAL_MEMBER_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "5",
+       NULL},
+      {"CallbackUnion { void (*callback)(int [LOCAL_MEMBER_BOUND",
+       "LOCAL_MEMBER_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "5",
+       NULL},
+      {"struct { void (*callback)(int [LOCAL_MEMBER_BOUND",
+       "LOCAL_MEMBER_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "5",
+       NULL},
+      {"CallbackNested { void (*callback)(int [LOCAL_MEMBER_BOUND",
+       "LOCAL_MEMBER_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "5",
+       NULL},
+      {"CallbackFile { void (*callback)(int [FILE_MEMBER_BOUND",
+       "FILE_MEMBER_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "3",
+       NULL},
+      {"CallbackMacro { void (*callback)(int [MEMBER_BOUND_MACRO",
+       "MEMBER_BOUND_MACRO", AG_LANGUAGE_SYMBOL_MACRO, NULL, NULL, "4"},
+      {"callback)(int [/* bound */ LOCAL_MEMBER_BOUND",
+       "LOCAL_MEMBER_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "5",
+       NULL},
+      {"CallbackLf { void (*callback)(int [\\\nLOCAL_MEMBER_BOUND",
+       "LOCAL_MEMBER_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "5",
+       NULL},
+      {"CallbackCrlf { void (*callback)(int [\\\r\nLOCAL_MEMBER_BOUND",
+       "LOCAL_MEMBER_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "5",
+       NULL},
+      {"CallbackShadow { void (*callback)(int [SHADOW_MEMBER_BOUND",
+       "SHADOW_MEMBER_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "enum LocalMemberConstants", "6", NULL},
+      {"CallbackLater { void (*callback)(int [LOCAL_MEMBER_BOUND",
+       "LOCAL_MEMBER_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "5",
+       NULL},
   };
   ag_compilation_session_t *session =
       ag_compilation_session_create(&target);
@@ -11105,6 +11148,8 @@ static int test_local_member_array_bound_hover(ag_target_info_t target) {
                                AG_LANGUAGE_SYMBOL_ENUM_CONSTANT) &&
                   !find_symbol(&snapshot, "member_bound_after_local",
                                AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "callback_parameter_after",
+                               AG_LANGUAGE_SYMBOL_PARAMETER) &&
                   !find_symbol(&snapshot, "member_bound_after_file",
                                AG_LANGUAGE_SYMBOL_OBJECT),
               "local member array bound hover snapshot");

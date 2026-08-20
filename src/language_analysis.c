@@ -1255,6 +1255,135 @@ static int analysis_identifier_before_offset_matches(
              name, name_length);
 }
 
+static int analysis_delimited_tail_end_mode(
+    const char *source, size_t source_length, size_t start,
+    char terminator, int allow_top_level_comma, int enable_trigraphs,
+    size_t *tail_end);
+
+static int analysis_direct_parameter_array_bound_marker_offset(
+    const char *source, size_t length, size_t parameter_open,
+    size_t parameter_close, size_t selected_start,
+    size_t *marker_offset);
+
+static int analysis_record_parameter_array_bound_marker_offset(
+    const char *source, size_t length, size_t record_open,
+    size_t selected_start, int enable_trigraphs, size_t *marker_offset,
+    size_t *record_member_end) {
+  if (!source || !marker_offset || !record_member_end ||
+      record_open >= selected_start ||
+      selected_start >= length || source[record_open] != '{')
+    return 0;
+  size_t parameter_open = SIZE_MAX;
+  size_t paren_depth = 0;
+  size_t bracket_depth = 0;
+  size_t brace_depth = 0;
+  size_t array_bound_paren_depth = SIZE_MAX;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = 0;
+  int preprocessor_line = 0;
+  for (size_t i = record_open + 1; i < selected_start; i++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, i, enable_trigraphs);
+    if (splice_size > 0) {
+      i += splice_size - 1;
+      continue;
+    }
+    char c = source[i];
+    char next = i + 1 < length ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      at_line_start = 1;
+      preprocessor_line = 0;
+      continue;
+    }
+    if (at_line_start && (c == ' ' || c == '\t' || c == '\r')) continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    at_line_start = 0;
+    if (preprocessor_line) continue;
+    if (c == '(') {
+      if (paren_depth == 0 && brace_depth == 0) parameter_open = i;
+      paren_depth++;
+    } else if (c == ')' && paren_depth > 0) {
+      paren_depth--;
+      if (paren_depth == 0) parameter_open = SIZE_MAX;
+    } else if (c == '[') {
+      if (bracket_depth == 0) array_bound_paren_depth = paren_depth;
+      bracket_depth++;
+    } else if (c == ']' && bracket_depth > 0) {
+      bracket_depth--;
+      if (bracket_depth == 0) array_bound_paren_depth = SIZE_MAX;
+    } else if (c == '{') {
+      brace_depth++;
+    } else if (c == '}' && brace_depth > 0) {
+      brace_depth--;
+    }
+  }
+  if (parameter_open == SIZE_MAX || paren_depth != 1 ||
+      bracket_depth == 0 || array_bound_paren_depth != 1 ||
+      brace_depth != 0)
+    return 0;
+  size_t prefix_last_offset = SIZE_MAX;
+  if (analysis_last_significant_between(
+          source, record_open + 1, parameter_open,
+          enable_trigraphs, &prefix_last_offset) != ')' ||
+      prefix_last_offset == SIZE_MAX)
+    return 0;
+  size_t parameter_close = 0;
+  if (!analysis_delimited_tail_end_mode(
+          source, length, parameter_open + 1, ')', 1,
+          enable_trigraphs, &parameter_close) ||
+      skip_analysis_space_and_comments_mode(
+          source, length, parameter_close + 1, enable_trigraphs) >= length)
+    return 0;
+  size_t member_end = skip_analysis_space_and_comments_mode(
+      source, length, parameter_close + 1, enable_trigraphs);
+  if (source[member_end] != ';') return 0;
+  if (!analysis_direct_parameter_array_bound_marker_offset(
+          source, length, parameter_open, parameter_close, selected_start,
+          marker_offset))
+    return 0;
+  *record_member_end = member_end;
+  return 1;
+}
+
 static char *build_record_member_recovery_source(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs, int *changed, size_t *source_consumed) {
@@ -1293,6 +1422,58 @@ static char *build_record_member_recovery_source(
           source, length, record_open + 1, prefix_last_offset,
           enable_trigraphs, "_Static_assert"))
     return NULL;
+  size_t direct_open = 0;
+  size_t outer_brace_count = 0;
+  int direct_record =
+      (tag_body_open_at(
+           source, name_start, "struct", &direct_open,
+           &outer_brace_count) ||
+       tag_body_open_at(
+           source, name_start, "union", &direct_open,
+           &outer_brace_count)) &&
+      direct_open == record_open;
+  size_t parameter_marker_offset = 0;
+  size_t parameter_member_end = 0;
+  if (direct_record &&
+      analysis_record_parameter_array_bound_marker_offset(
+          source, length, record_open, name_start, enable_trigraphs,
+          &parameter_marker_offset, &parameter_member_end)) {
+    static const char parameter_marker[] =
+        ", int " AG_LANGUAGE_CURSOR_MARKER;
+    static const char record_tail[] =
+        " } __agc_record_operand;\n";
+    size_t prefix_length = parameter_member_end + 1;
+    if (prefix_length > SIZE_MAX - sizeof(parameter_marker) ||
+        prefix_length + sizeof(parameter_marker) >
+            SIZE_MAX - sizeof(record_tail) ||
+        outer_brace_count >
+            (SIZE_MAX - prefix_length - sizeof(parameter_marker) -
+             sizeof(record_tail)) /
+                2)
+      return NULL;
+    size_t result_length =
+        prefix_length + sizeof(parameter_marker) - 1 +
+        sizeof(record_tail) - 1 + outer_brace_count * 2;
+    char *result = malloc(result_length + 1);
+    if (!result) return NULL;
+    memcpy(result, source, parameter_marker_offset);
+    memcpy(result + parameter_marker_offset, parameter_marker,
+           sizeof(parameter_marker) - 1);
+    memcpy(result + parameter_marker_offset + sizeof(parameter_marker) - 1,
+           source + parameter_marker_offset,
+           prefix_length - parameter_marker_offset);
+    size_t output = prefix_length + sizeof(parameter_marker) - 1;
+    memcpy(result + output, record_tail, sizeof(record_tail) - 1);
+    output += sizeof(record_tail) - 1;
+    for (size_t i = 0; i < outer_brace_count; i++) {
+      result[output++] = '}';
+      result[output++] = '\n';
+    }
+    result[output] = '\0';
+    if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+    if (source_consumed) *source_consumed = prefix_length;
+    return result;
+  }
   const char *record_operand_tail = NULL;
   size_t record_operand_tail_length = 0;
   size_t operand_source_consumed = 0;
@@ -1316,16 +1497,6 @@ static char *build_record_member_recovery_source(
     }
   }
   if (record_operand_tail) {
-    size_t direct_open = 0;
-    size_t outer_brace_count = 0;
-    int direct_record =
-        (tag_body_open_at(
-             source, name_start, "struct", &direct_open,
-             &outer_brace_count) ||
-         tag_body_open_at(
-             source, name_start, "union", &direct_open,
-             &outer_brace_count)) &&
-        direct_open == record_open;
     size_t prefix_length = name_start + name_length;
     if (direct_record &&
         prefix_length <= SIZE_MAX - record_operand_tail_length &&
@@ -1569,11 +1740,6 @@ static int enum_initializer_operand_end(
   }
   return 0;
 }
-
-static int analysis_delimited_tail_end_mode(
-    const char *source, size_t source_length, size_t start,
-    char terminator, int allow_top_level_comma, int enable_trigraphs,
-    size_t *tail_end);
 
 static int enum_direct_call_identifier_at_cursor(
     const char *source, size_t length, size_t cursor,

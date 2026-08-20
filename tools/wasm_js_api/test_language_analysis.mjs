@@ -1616,6 +1616,17 @@ const localMemberArrayBoundSource = {
     "  struct LocalMemberShadow { int shadow_array[SHADOW_MEMBER_BOUND]; };\n" +
     "  struct LocalMemberAlign { _Alignas(LOCAL_MEMBER_ALIGN) int aligned; };\n" +
     "  struct LocalMemberAtomic { _Atomic(LocalMemberType) atomic_member; };\n" +
+    "  struct LocalMemberCallbackNamed { void (*callback)(int [LOCAL_MEMBER_BOUND]); };\n" +
+    "  union LocalMemberCallbackUnion { void (*callback)(int [LOCAL_MEMBER_BOUND]); };\n" +
+    "  struct { void (*callback)(int [LOCAL_MEMBER_BOUND]); } local_member_callback_anonymous;\n" +
+    "  { struct LocalMemberCallbackNested { void (*callback)(int [LOCAL_MEMBER_BOUND]); }; }\n" +
+    "  struct LocalMemberCallbackFile { void (*callback)(int [FILE_MEMBER_BOUND]); };\n" +
+    "  struct LocalMemberCallbackMacro { void (*callback)(int [MEMBER_BOUND_MACRO]); };\n" +
+    "  struct LocalMemberCallbackComment { void (*callback)(int [/* bound */ LOCAL_MEMBER_BOUND]); };\n" +
+    "  struct LocalMemberCallbackLf { void (*callback)(int [\\\nLOCAL_MEMBER_BOUND]); };\n" +
+    "  struct LocalMemberCallbackCrlf { void (*callback)(int [\\\r\nLOCAL_MEMBER_BOUND]); };\r\n" +
+    "  struct LocalMemberCallbackShadow { void (*callback)(int [SHADOW_MEMBER_BOUND]); };\n" +
+    "  struct LocalMemberCallbackLater { void (*callback)(int [LOCAL_MEMBER_BOUND], int callback_parameter_after); };\n" +
     "  enum { MEMBER_BOUND_AFTER = 7 };\n" +
     "  int member_bound_after_local;\n" +
     "  return (int)sizeof(struct LocalMemberNamed) +\n" +
@@ -1678,6 +1689,54 @@ const localMemberArrayBoundCases = [
   {
     fragment: "_Atomic(LocalMemberType",
     name: "LocalMemberType", kind: "typedef",
+  },
+  {
+    fragment: "CallbackNamed { void (*callback)(int [LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant",
+    constantValue: "5", checkBoundaries: true,
+  },
+  {
+    fragment: "CallbackUnion { void (*callback)(int [LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "struct { void (*callback)(int [LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "CallbackNested { void (*callback)(int [LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "CallbackFile { void (*callback)(int [FILE_MEMBER_BOUND",
+    name: "FILE_MEMBER_BOUND", kind: "enumConstant", constantValue: "3",
+  },
+  {
+    fragment: "CallbackMacro { void (*callback)(int [MEMBER_BOUND_MACRO",
+    name: "MEMBER_BOUND_MACRO", kind: "macro", macroReplacement: "4",
+  },
+  {
+    fragment: "callback)(int [/* bound */ LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "CallbackLf { void (*callback)(int [\\\nLOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "CallbackCrlf { void (*callback)(int [\\\r\nLOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "CallbackShadow { void (*callback)(int [SHADOW_MEMBER_BOUND",
+    name: "SHADOW_MEMBER_BOUND", kind: "enumConstant",
+    declarationFragment: "enum LocalMemberConstants", constantValue: "6",
+    checkBoundaries: true,
+  },
+  {
+    fragment: "CallbackLater { void (*callback)(int [LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+    checkBoundaries: true,
   },
 ];
 if (!languageAnalysisFocus ||
@@ -1751,6 +1810,9 @@ if (!languageAnalysisFocus ||
       assert.equal(symbol(
         wasmResult, "member_bound_after_local", "object",
       ), undefined, `${memberCase.name} later local object hidden`);
+      assert.equal(symbol(
+        wasmResult, "callback_parameter_after", "parameter",
+      ), undefined, `${memberCase.name} later callback parameter hidden`);
       assert.equal(symbol(
         wasmResult, "member_bound_after_file", "object",
       ), undefined, `${memberCase.name} later file object hidden`);

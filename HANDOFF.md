@@ -36574,3 +36574,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - local record static assertion 12形は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationの反復は避け、
     Native約6秒と0.54秒のlocal record static-assert焦点gateを使う。
+
+### このセッション（続き1230）: local record callback parameter配列境界のenum hoverを回復した
+- 対象選定:
+  - enum initializer、`case`、`goto`、`_Alignas`、`_Atomic`と既修正のrecord operandを再探索せず、通常サイズの完全sourceにある浅い宣言operandを小型Wasm probeで分類した。
+  - statement operand、通常/typedef配列、pointer-to-array member、多次元member配列はdiagnosticsなし・`partial:false`で正しいhoverだった。
+  - `enum { LOCAL_BOUND=5 }; struct Local { void (*callback)(int [LOCAL_BOUND]); };`という関数ポインタmemberのparameter配列境界だけは、hover/completionがnullだった。
+- 原因:
+  - record member専用recoveryがgeneric function parameter recoveryより先に完全sourceを保持し、cursor markerをtranslation unit末尾へ追加していた。
+  - callback parameterの配列境界から参照されるblock-local enumはfile scopeのmarkerからlookupできず、単純member配列とは異なる`])` tailのため既存の直接bound分岐にも入らなかった。
+- 変更:
+  - 最内の直接struct/union bodyを反復scanし、選択識別子がtop-level callback parameter listの直接配列境界にあり、list直前が`)`、list直後がmember終端`;`である場合だけを分類する。
+  - 選択bound直後へsynthetic parameter markerを挿入し、現在memberでsourceを切ってrecordをsynthetic objectとして閉じる。markerをcallback prototype scopeへ置くことで外側local enumを見せ、後続parameter・member後のenum/local/file objectは読まない。
+  - named struct/union、anonymous record、nested block、file enum、macro、comment、LF/CRLF splice、local shadowing、後続named parameterの11形を、既存のlocal-member-array-bound fixtureへ統合した。新しい重複targetは追加しない。
+- テスト時間の改善:
+  - 既存`make test-wasm-language-analysis-local-member-array-bounds`へ統合し、従来12形とcallback 11形、runtime manifest、Native parityを含む最終実測は**real 1.11秒 / user 1.30秒 / sys 0.11秒**だった。
+  - 隣接するbit-field/member-array/static-assertの3 targetを直列実行しても**real 1.87秒 / user 2.31秒 / sys 0.29秒**だった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = compile warningなし、**language analysis tests passed (70 scenarios)**。callback 11形を名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.63秒 / user 42.12秒 / sys 0.96秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-local-member-array-bounds` = 成功、**real 1.11秒 / user 1.30秒 / sys 0.11秒**。全callback形の中央と代表3形の名前境界をNative snapshotへ完全一致させた。
+  - `make test-wasm-language-analysis-local-bitfield-widths test-wasm-language-analysis-local-member-array-bounds test-wasm-language-analysis-local-record-static-asserts` = 3 target成功。
+  - callback parameter配列境界の代表sourceは`clang -std=c11 -pedantic-errors -fsyntax-only`で成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体を1.11秒のNative parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行せず、関連batch gateへまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。nested callback declarator、複合bound式、nested record body、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - callback parameter配列境界11形は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationの反復は避け、Native約6秒と1.11秒のlocal member配列境界焦点gateを使う。
