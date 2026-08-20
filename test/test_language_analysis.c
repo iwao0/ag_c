@@ -1899,6 +1899,11 @@ static const char same_typedef_declarator_hover_source[] =
     "(*FileCallback)(FilePointerParameter);\n"
     "typedef struct SameTypedefRecord FileRecordAlias, "
     "(*FileRecordCallback)(FileRecordAlias);\n"
+    "typedef int ExternObjectDirectType;\n"
+    "typedef int ExternObjectQualifiedType;\n"
+    "typedef int ExternObjectPointerType;\n"
+    "typedef int ExternObjectCommentType;\n"
+    "typedef int ExternObjectSpliceType;\n"
     "static int same_typedef_block(void) {\n"
     "  typedef int FirstBlockBase;\n"
     "  typedef int FirstBlockAtomicBase;\n"
@@ -1920,6 +1925,14 @@ static const char same_typedef_declarator_hover_source[] =
     "  typedef int InternalBlockShadow;\n"
     "  typedef int BlockAlias, BlockArray[sizeof(BlockAlias)];\n"
     "  typedef int BlockParameter, (*BlockCallback)(BlockParameter);\n"
+    "  { extern ExternObjectDirectType ExternObjectDirectType; }\n"
+    "  { extern const ExternObjectQualifiedType "
+    "ExternObjectQualifiedType; }\n"
+    "  { extern ExternObjectPointerType *ExternObjectPointerType; }\n"
+    "  { extern /* before type */ ExternObjectCommentType "
+    "/* before object */ ExternObjectCommentType; }\n"
+    "  { extern ExternObjectSpliceType \\\n"
+    "ExternObjectSpliceType; }\n"
     "  { typedef int FirstNestedBase; "
     "typedef FirstNestedBase FirstNestedArray[4]; "
     "typedef FirstBlockShadow FirstBlockShadow; "
@@ -1937,6 +1950,46 @@ static const char same_typedef_declarator_hover_source[] =
     "  return 0;\n"
     "}\n"
     "int file_after;\n";
+
+static const char same_block_extern_typedef_conflict_source[] =
+    "int same_block_extern_typedef_conflict(void) {\n"
+    "  typedef int SameBlockExternType;\n"
+    "  extern SameBlockExternType SameBlockExternType;\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char outer_object_extern_typedef_conflict_source[] =
+    "typedef int OuterObjectExternType;\n"
+    "int outer_object_extern_typedef_conflict(void) {\n"
+    "  int OuterObjectExternType = 0;\n"
+    "  { extern OuterObjectExternType OuterObjectExternType; }\n"
+    "  return OuterObjectExternType;\n"
+    "}\n";
+
+static const char parameter_extern_typedef_conflict_source[] =
+    "typedef int ParameterExternType;\n"
+    "int parameter_extern_typedef_conflict(int ParameterExternType) {\n"
+    "  { extern ParameterExternType ParameterExternType; }\n"
+    "  return ParameterExternType;\n"
+    "}\n";
+
+static const char outer_enum_extern_typedef_conflict_source[] =
+    "typedef int OuterEnumExternType;\n"
+    "int outer_enum_extern_typedef_conflict(void) {\n"
+    "  enum { OuterEnumExternType = 1 };\n"
+    "  { extern OuterEnumExternType OuterEnumExternType; }\n"
+    "  return OuterEnumExternType;\n"
+    "}\n";
+
+static const char for_init_extern_typedef_conflict_source[] =
+    "typedef int ForInitExternType;\n"
+    "int for_init_extern_typedef_conflict(void) {\n"
+    "  for (int ForInitExternType = 0; ForInitExternType < 1; "
+    "ForInitExternType++) {\n"
+    "    { extern ForInitExternType ForInitExternType; }\n"
+    "  }\n"
+    "  return 0;\n"
+    "}\n";
 
 static const char macro_definition_forms_source[] =
     "#define SIMPLE_MACRO 1\n"
@@ -4108,6 +4161,38 @@ static int print_same_typedef_declarator_hover_parity_snapshot(
   return print_macro_definition_source_snapshot(
       "same-typedef-declarator-hover.c",
       same_typedef_declarator_hover_source, (size_t)parsed_cursor,
+      (header_bundle_t){0});
+}
+
+static int print_extern_typedef_shadow_conflict_parity_snapshot(
+    const char *variant_text, const char *cursor_text) {
+  static const char *sources[] = {
+      same_block_extern_typedef_conflict_source,
+      outer_object_extern_typedef_conflict_source,
+      parameter_extern_typedef_conflict_source,
+      outer_enum_extern_typedef_conflict_source,
+      for_init_extern_typedef_conflict_source,
+  };
+  static const char *source_names[] = {
+      "same-block-extern-typedef-conflict.c",
+      "outer-object-extern-typedef-conflict.c",
+      "parameter-extern-typedef-conflict.c",
+      "outer-enum-extern-typedef-conflict.c",
+      "for-init-extern-typedef-conflict.c",
+  };
+  char *variant_end = NULL;
+  unsigned long variant = strtoul(variant_text, &variant_end, 10);
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  if (!variant_text[0] || !variant_end || *variant_end != '\0' ||
+      variant >= sizeof(sources) / sizeof(sources[0]) ||
+      !cursor_text[0] || !end || *end != '\0')
+    return 1;
+  size_t source_length = strlen(sources[variant]);
+  if (parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      source_names[variant], sources[variant], (size_t)parsed_cursor,
       (header_bundle_t){0});
 }
 
@@ -10430,6 +10515,153 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
       }
     }
   }
+  static const struct {
+    const char *fragment;
+    const char *name;
+    int check_boundaries;
+  } extern_object_type_cases[] = {
+      {"extern ExternObjectDirectType ExternObjectDirectType",
+       "ExternObjectDirectType", 1},
+      {"extern const ExternObjectQualifiedType ExternObjectQualifiedType",
+       "ExternObjectQualifiedType", 0},
+      {"extern ExternObjectPointerType *ExternObjectPointerType",
+       "ExternObjectPointerType", 0},
+      {"extern /* before type */ ExternObjectCommentType "
+       "/* before object */ ExternObjectCommentType",
+       "ExternObjectCommentType", 0},
+      {"extern ExternObjectSpliceType \\\nExternObjectSpliceType",
+       "ExternObjectSpliceType", 1},
+  };
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(extern_object_type_cases) /
+                          sizeof(extern_object_type_cases[0]);
+         case_index++) {
+      const char *fragment = strstr(
+          same_typedef_declarator_hover_source,
+          extern_object_type_cases[case_index].fragment);
+      const char *use = fragment
+                            ? strstr(
+                                  fragment,
+                                  extern_object_type_cases[case_index].name)
+                            : NULL;
+      const char *declaration = strstr(
+          same_typedef_declarator_hover_source,
+          extern_object_type_cases[case_index].name);
+      CHECK(use && declaration && use != declaration,
+            "block extern object type anchors");
+      size_t name_length = strlen(extern_object_type_cases[case_index].name);
+      size_t deltas[] = {name_length / 2, 0, name_length};
+      size_t delta_count =
+          extern_object_type_cases[case_index].check_boundaries ? 3 : 1;
+      if (extern_object_type_cases[case_index].check_boundaries) {
+        deltas[0] = 0;
+        deltas[1] = name_length / 2;
+      }
+      for (size_t delta_index = 0;
+           delta_index < delta_count; delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh block extern object type session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "same-typedef-declarator-hover.c",
+                  same_typedef_declarator_hover_source,
+                  (size_t)(use - same_typedef_declarator_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "block extern object type analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, extern_object_type_cases[case_index].name,
+            AG_LANGUAGE_SYMBOL_TYPEDEF);
+        CHECK(hover && completion && !snapshot.partial &&
+                  snapshot.diagnostic_count == 0 &&
+                  hover->kind == AG_LANGUAGE_SYMBOL_TYPEDEF &&
+                  strcmp(hover->name,
+                         extern_object_type_cases[case_index].name) == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            same_typedef_declarator_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            same_typedef_declarator_hover_source +
+                            name_length) &&
+                  same_range(&hover->declaration,
+                             &completion->declaration),
+              "block extern object type resolves file typedef");
+        CHECK(!find_symbol(
+                  &snapshot, extern_object_type_cases[case_index].name,
+                  AG_LANGUAGE_SYMBOL_OBJECT),
+              "current block extern object remains invisible");
+        CHECK(!find_symbol(
+                    &snapshot, "block_after", AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(
+                      &snapshot, "file_after", AG_LANGUAGE_SYMBOL_OBJECT),
+              "block extern object later declarations remain invisible");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  static const struct {
+    const char *source_name;
+    const char *source;
+    const char *fragment;
+    const char *name;
+  } extern_typedef_conflicts[] = {
+      {"same-block-extern-typedef-conflict.c",
+       same_block_extern_typedef_conflict_source,
+       "extern SameBlockExternType SameBlockExternType",
+       "SameBlockExternType"},
+      {"outer-object-extern-typedef-conflict.c",
+       outer_object_extern_typedef_conflict_source,
+       "extern OuterObjectExternType OuterObjectExternType",
+       "OuterObjectExternType"},
+      {"parameter-extern-typedef-conflict.c",
+       parameter_extern_typedef_conflict_source,
+       "extern ParameterExternType ParameterExternType",
+       "ParameterExternType"},
+      {"outer-enum-extern-typedef-conflict.c",
+       outer_enum_extern_typedef_conflict_source,
+       "extern OuterEnumExternType OuterEnumExternType",
+       "OuterEnumExternType"},
+      {"for-init-extern-typedef-conflict.c",
+       for_init_extern_typedef_conflict_source,
+       "extern ForInitExternType ForInitExternType",
+       "ForInitExternType"},
+  };
+  for (size_t conflict_index = 0;
+       conflict_index < sizeof(extern_typedef_conflicts) /
+                            sizeof(extern_typedef_conflicts[0]);
+       conflict_index++) {
+    const char *conflict_fragment = strstr(
+        extern_typedef_conflicts[conflict_index].source,
+        extern_typedef_conflicts[conflict_index].fragment);
+    const char *conflict_use =
+        conflict_fragment
+            ? strstr(
+                  conflict_fragment,
+                  extern_typedef_conflicts[conflict_index].name)
+            : NULL;
+    CHECK(conflict_use != NULL,
+          "extern typedef shadow conflict anchor");
+    CHECK(analyze_named(
+              session,
+              extern_typedef_conflicts[conflict_index].source_name,
+              extern_typedef_conflicts[conflict_index].source,
+              (size_t)(conflict_use -
+                       extern_typedef_conflicts[conflict_index].source) +
+                  strlen(extern_typedef_conflicts[conflict_index].name) / 2,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "extern typedef shadow conflict analysis");
+    CHECK(snapshot.partial && snapshot.diagnostic_count > 0,
+          "extern typedef shadow conflict remains invalid");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
   const char *current_declaration_fragment = strstr(
       same_typedef_declarator_hover_source, "FileAlias, FileArray");
   const char *current_declaration =
@@ -13777,6 +14009,11 @@ int main(int argc, char **argv) {
       strcmp(argv[1],
              "--same-typedef-declarator-hover-parity-json") == 0)
     return print_same_typedef_declarator_hover_parity_snapshot(argv[2]);
+  if (argc == 4 &&
+      strcmp(argv[1],
+             "--extern-typedef-shadow-conflict-parity-json") == 0)
+    return print_extern_typedef_shadow_conflict_parity_snapshot(
+        argv[2], argv[3]);
   if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-project-parity-json") == 0)
     return print_cast_operand_project_parity_snapshot(argv[2]);

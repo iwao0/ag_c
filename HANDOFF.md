@@ -37030,3 +37030,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - initializer/alignment、複合declarator、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - 小型language-analysis probeで`extern T T;`の先頭の型指定子`T`は正しい外側typedefをhoverに返す一方、recovery sourceが後続宣言名を型指定子なしと解釈してE3088・`partial:true`になった。core backingとblock後のscope復帰は再探索せず、次はfile-scope outer typedefに限定してこの直接同名型指定子のlookup recoveryを調べる。同一block typedefとの不正形を誤って回復しないscope境界を必須とする。
+
+### このセッション（続き1245）: block extern同名objectの型指定子lookup pointを回復した
+- 対象選定:
+  - 続き1244の浅い次候補`typedef int T; { extern T T; }`について、cursorを先頭の型指定子`T`へ置いた。direct/`const`/pointer/comment/LF spliceの5形はいずれも外側typedefのhover range自体は正しかったが、後続同名宣言子を型指定子なしと再解釈してE3088・`partial:true`を残した。
+  - core compilerのblock extern backing、block内の宣言名・参照、block後のtypedef復帰は続き1244でgreenのため再探索しない。file-scope outer typedef、直接同名object、通常サイズの完全sourceだけへ限定し、array suffix、括弧付き・複合declarator、深い宣言子、深い式、security監査系には入っていない。
+- 原因と変更:
+  - generic recoveryは現在の`extern T T;`を残してcursor markerを後ろへ置くため、現在objectの宣言点より前にある型指定子を調べる場合にも、同名宣言子側でE3088を発生させていた。
+  - 選択identifier後をcomment・行継続対応で走査し、型修飾子とpointerだけを挟んだ同名の直接objectが`;`へ直結すること、宣言prefixが`extern`と型修飾子だけであること、block-scopeの直接宣言であることを確認する専用recoveryをgeneric declarator recoveryより先に追加した。一致時は現在宣言全体を除き、元の宣言開始位置へmarkerを置く。
+  - raw sourceのactive brace pathをcomment・quote・preprocessor line・LF/CRLF splice・trigraph mode対応で取り、cursorのactive path上に見える同名ordinary宣言を分類する。file-scopeの直接typedefだけを回復対象にし、active scopeのtypedef・automatic object・parameter・enum定数・`for`初期宣言や別kind宣言がある場合は辞退する。終了済みsibling blockの同名宣言はcurrent pathのprefixでないため除外する。
+  - same-typedef Native/Wasm共通fixtureへvalid 5形を統合し、名前先頭・中央・末尾、再利用/fresh session、外側typedefの正確なrange、現在objectと後続block/file宣言の非可視、diagnostics空・`partial:false`を固定した。同一block typedef、外側automatic object、parameter、enum定数、`for`初期宣言の5つの不正shadow境界はE3088・partialを維持し、Native/Wasm snapshotを完全一致させる。
+- テスト時間の改善:
+  - 新targetは増やさず、既存`make test-wasm-language-analysis-same-typedef-declarators`へ統合した。Native parityとvalid/invalid scope境界を含む最終実測は**real 3.67秒 / user 3.82秒 / sys 0.28秒**だった。
+  - prototype bound、declarator array bound、local member array boundの隣接3 targetだけを`make -j3`で並列実行し、**real 6.72秒 / user 9.74秒 / sys 0.69秒**だった。全JS APIは反復しない。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 6.67秒 / user 4.91秒 / sys 1.48秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.54秒 / user 42.55秒 / sys 1.18秒**。更新後のsame-typedef焦点Wasm gateはvalid 5形とinvalid 5境界のNative snapshot parity込みで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.40秒 / user 3.08秒 / sys 0.24秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.36秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 3.67秒のNative parity付き焦点gateで同じJS本体を確認できるため、1354秒規模の`make test-wasm-js-api`は実行しない。code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eも実行しない。
+  - header/macro由来typedef、block-local outer typedef、array suffix、括弧付き・function/複合declarator、attribute、initializer、複合式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - 更新後の小型Wasm probeでは`extern T T[];`、`extern T (T);`、`extern T (*T)[4];`の先頭型名は正しい外側typedef rangeを返す一方、いずれもE3088・`partial:true`が残る。今回のdirect `;`境界とshadow分類は再探索せず、次は不完全配列suffix `extern T T[];`だけを通常サイズの浅い宣言として扱えるか調べる。括弧付き・pointer-to-arrayは複合declaratorとして後回しにする。

@@ -2921,6 +2921,433 @@ static int object_declarator_end(
   return 0;
 }
 
+static int analysis_active_brace_path_at_mode(
+    const char *source, size_t length, size_t limit,
+    int enable_trigraphs, size_t **path, size_t *path_count) {
+  if (path) *path = NULL;
+  if (path_count) *path_count = 0;
+  if (!source || limit > length || !path || !path_count) return 0;
+  size_t *braces = NULL;
+  size_t brace_count = 0;
+  size_t brace_capacity = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = 1;
+  int preprocessor_line = 0;
+  for (size_t i = 0; i < limit; i++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, i, enable_trigraphs);
+    if (splice_size > 0) {
+      i += splice_size - 1;
+      continue;
+    }
+    char c = source[i];
+    char next = i + 1 < limit ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      at_line_start = 1;
+      preprocessor_line = 0;
+      continue;
+    }
+    if (at_line_start && (c == ' ' || c == '\t' || c == '\r'))
+      continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    else if (at_line_start && enable_trigraphs && c == '?' &&
+             next == '?' && i + 2 < limit && source[i + 2] == '=') {
+      preprocessor_line = 1;
+      i += 2;
+    }
+    at_line_start = 0;
+    if (preprocessor_line) continue;
+    if (c == '{') {
+      if (brace_count == brace_capacity) {
+        size_t next_capacity = brace_capacity ? brace_capacity * 2 : 8;
+        if (next_capacity < brace_capacity ||
+            next_capacity > SIZE_MAX / sizeof(*braces)) {
+          free(braces);
+          return 0;
+        }
+        size_t *next_braces = realloc(
+            braces, next_capacity * sizeof(*braces));
+        if (!next_braces) {
+          free(braces);
+          return 0;
+        }
+        braces = next_braces;
+        brace_capacity = next_capacity;
+      }
+      braces[brace_count++] = i;
+    } else if (c == '}') {
+      if (brace_count == 0) {
+        free(braces);
+        return 0;
+      }
+      brace_count--;
+    }
+  }
+  if (block_comment || quote || preprocessor_line) {
+    free(braces);
+    return 0;
+  }
+  *path = braces;
+  *path_count = brace_count;
+  return 1;
+}
+
+static int analysis_brace_path_is_prefix(
+    const size_t *prefix, size_t prefix_count,
+    const size_t *path, size_t path_count) {
+  if (prefix_count > path_count) return 0;
+  for (size_t i = 0; i < prefix_count; i++)
+    if (prefix[i] != path[i]) return 0;
+  return 1;
+}
+
+static int analysis_declaration_prefix_contains_word_mode(
+    const char *source, size_t length, size_t start, size_t end,
+    const char *word, int enable_trigraphs) {
+  if (!source || !word || start > end || end > length) return 0;
+  size_t scan = start;
+  while (scan < end) {
+    scan = skip_analysis_space_and_comments_mode(
+        source, end, scan, enable_trigraphs);
+    if (scan >= end) break;
+    if (!is_identifier_byte((unsigned char)source[scan])) {
+      scan++;
+      continue;
+    }
+    size_t word_start = scan;
+    while (scan < end &&
+           is_identifier_byte((unsigned char)source[scan]))
+      scan++;
+    if (analysis_word_is(
+            source, word_start, scan - word_start, word))
+      return 1;
+  }
+  return 0;
+}
+
+typedef enum {
+  ANALYSIS_VISIBLE_DIRECT_DECLARATION_NONE = 0,
+  ANALYSIS_VISIBLE_DIRECT_DECLARATION_FILE_TYPEDEF,
+  ANALYSIS_VISIBLE_DIRECT_DECLARATION_OTHER,
+} analysis_visible_direct_declaration_kind_t;
+
+static analysis_visible_direct_declaration_kind_t
+analysis_visible_direct_declaration_before(
+    const char *source, size_t length, size_t limit,
+    const char *name, size_t name_length,
+    const size_t *current_path, size_t current_path_count,
+    int enable_trigraphs) {
+  analysis_visible_direct_declaration_kind_t visible =
+      ANALYSIS_VISIBLE_DIRECT_DECLARATION_NONE;
+  size_t visible_scope_depth = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = 1;
+  int preprocessor_line = 0;
+  for (size_t i = 0; i < limit; i++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, i, enable_trigraphs);
+    if (splice_size > 0) {
+      i += splice_size - 1;
+      continue;
+    }
+    char c = source[i];
+    char next = i + 1 < limit ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      at_line_start = 1;
+      preprocessor_line = 0;
+      continue;
+    }
+    if (at_line_start && (c == ' ' || c == '\t' || c == '\r'))
+      continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    else if (at_line_start && enable_trigraphs && c == '?' &&
+             next == '?' && i + 2 < limit && source[i + 2] == '=') {
+      preprocessor_line = 1;
+      i += 2;
+    }
+    at_line_start = 0;
+    if (preprocessor_line ||
+        !is_identifier_byte((unsigned char)c))
+      continue;
+    size_t candidate_start = i;
+    while (i + 1 < limit &&
+           is_identifier_byte((unsigned char)source[i + 1]))
+      i++;
+    size_t candidate_length = i + 1 - candidate_start;
+    if (candidate_length != name_length ||
+        memcmp(source + candidate_start, name, name_length) != 0)
+      continue;
+
+    size_t enum_open = 0;
+    size_t enum_outer_brace_count = 0;
+    size_t enum_item_end = 0;
+    if (tag_body_open_at(
+            source, candidate_start, "enum", &enum_open,
+            &enum_outer_brace_count) &&
+        enum_enumerator_bounds(
+            source, length, enum_open, candidate_start,
+            candidate_start + candidate_length, &enum_item_end) &&
+        enum_item_end < limit) {
+      size_t *enum_path = NULL;
+      size_t enum_path_count = 0;
+      if (analysis_active_brace_path_at_mode(
+              source, length, enum_open, enable_trigraphs,
+              &enum_path, &enum_path_count) &&
+          enum_path_count == enum_outer_brace_count &&
+          enum_path_count >= visible_scope_depth &&
+          analysis_brace_path_is_prefix(
+              enum_path, enum_path_count,
+              current_path, current_path_count)) {
+        visible = ANALYSIS_VISIBLE_DIRECT_DECLARATION_OTHER;
+        visible_scope_depth = enum_path_count;
+      }
+      free(enum_path);
+      continue;
+    }
+
+    size_t candidate_outer_brace_count = 0;
+    size_t candidate_declaration_start = 0;
+    int candidate_paren_depth = 0;
+    int candidate_bracket_depth = 0;
+    int candidate_brace_depth = 0;
+    int candidate_definite_declaration = 0;
+    int candidate_for_init_declaration = 0;
+    if (!object_declaration_prefix(
+            source, candidate_start, &candidate_outer_brace_count,
+            &candidate_paren_depth, &candidate_bracket_depth,
+            &candidate_brace_depth, &candidate_definite_declaration,
+            &candidate_for_init_declaration,
+            &candidate_declaration_start) ||
+        !candidate_definite_declaration)
+      continue;
+    size_t *candidate_path = NULL;
+    size_t candidate_path_count = 0;
+    if (!analysis_active_brace_path_at_mode(
+            source, length, candidate_start, enable_trigraphs,
+            &candidate_path, &candidate_path_count)) {
+      free(candidate_path);
+      continue;
+    }
+    int visible_candidate =
+        candidate_path_count == candidate_outer_brace_count &&
+        candidate_path_count >= visible_scope_depth &&
+        analysis_brace_path_is_prefix(
+            candidate_path, candidate_path_count,
+            current_path, current_path_count);
+    free(candidate_path);
+    if (!visible_candidate) continue;
+    int direct_declaration =
+        !candidate_for_init_declaration && candidate_paren_depth == 0 &&
+        candidate_bracket_depth == 0 && candidate_brace_depth == 0;
+    if (!direct_declaration) {
+      visible = ANALYSIS_VISIBLE_DIRECT_DECLARATION_OTHER;
+      visible_scope_depth = candidate_path_count;
+      continue;
+    }
+    size_t candidate_declarator_end = 0;
+    if (!object_declarator_end(
+            source, length, candidate_start + candidate_length,
+            candidate_paren_depth, candidate_bracket_depth,
+            candidate_brace_depth, &candidate_declarator_end) ||
+        candidate_declarator_end >= limit)
+      continue;
+    int is_typedef = analysis_declaration_prefix_contains_word_mode(
+        source, length, candidate_declaration_start, candidate_start,
+        "typedef", enable_trigraphs);
+    visible = is_typedef && candidate_path_count == 0
+                  ? ANALYSIS_VISIBLE_DIRECT_DECLARATION_FILE_TYPEDEF
+                  : ANALYSIS_VISIBLE_DIRECT_DECLARATION_OTHER;
+    visible_scope_depth = candidate_path_count;
+  }
+  return visible;
+}
+
+static char *build_file_typedef_block_extern_type_recovery_source(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs, int *changed, size_t *source_consumed) {
+  const char *selected_name = NULL;
+  size_t selected_length = 0;
+  identifier_at(
+      source, length, cursor, &selected_name, &selected_length);
+  if (!selected_name || selected_length == 0) return NULL;
+  size_t selected_start = (size_t)(selected_name - source);
+  size_t scan = selected_start + selected_length;
+  size_t candidate_start = SIZE_MAX;
+  while (scan < length) {
+    scan = skip_analysis_space_and_comments_mode(
+        source, length, scan, enable_trigraphs);
+    if (scan >= length) return NULL;
+    if (source[scan] == '*') {
+      scan++;
+      continue;
+    }
+    if (!is_identifier_byte((unsigned char)source[scan])) return NULL;
+    size_t word_start = scan;
+    while (scan < length &&
+           is_identifier_byte((unsigned char)source[scan]))
+      scan++;
+    size_t word_length = scan - word_start;
+    if (analysis_type_name_qualifier_word(
+            source, word_start, word_length))
+      continue;
+    if (word_length != selected_length ||
+        memcmp(source + word_start, selected_name,
+               selected_length) != 0)
+      return NULL;
+    candidate_start = word_start;
+    break;
+  }
+  if (candidate_start == SIZE_MAX) return NULL;
+  size_t candidate_end = candidate_start + selected_length;
+  size_t declaration_end = skip_analysis_space_and_comments_mode(
+      source, length, candidate_end, enable_trigraphs);
+  if (declaration_end >= length || source[declaration_end] != ';')
+    return NULL;
+
+  size_t outer_brace_count = 0;
+  size_t declaration_start = 0;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  int definite_declaration = 0;
+  int for_init_declaration = 0;
+  if (!object_declaration_prefix(
+          source, candidate_start, &outer_brace_count,
+          &paren_depth, &bracket_depth, &brace_depth,
+          &definite_declaration, &for_init_declaration,
+          &declaration_start) ||
+      outer_brace_count == 0 || for_init_declaration ||
+      paren_depth != 0 || bracket_depth != 0 || brace_depth != 0)
+    return NULL;
+  (void)definite_declaration;
+
+  int has_extern = 0;
+  scan = declaration_start;
+  while (scan < selected_start) {
+    scan = skip_analysis_space_and_comments_mode(
+        source, selected_start, scan, enable_trigraphs);
+    if (scan >= selected_start) break;
+    if (!is_identifier_byte((unsigned char)source[scan])) return NULL;
+    size_t word_start = scan;
+    while (scan < selected_start &&
+           is_identifier_byte((unsigned char)source[scan]))
+      scan++;
+    size_t word_length = scan - word_start;
+    if (analysis_word_is(
+            source, word_start, word_length, "extern")) {
+      if (has_extern) return NULL;
+      has_extern = 1;
+      continue;
+    }
+    if (analysis_type_name_qualifier_word(
+            source, word_start, word_length) ||
+        analysis_word_is(
+            source, word_start, word_length, "_Thread_local"))
+      continue;
+    return NULL;
+  }
+  if (!has_extern) return NULL;
+
+  size_t *current_path = NULL;
+  size_t current_path_count = 0;
+  if (!analysis_active_brace_path_at_mode(
+          source, length, selected_start, enable_trigraphs,
+          &current_path, &current_path_count) ||
+      current_path_count != outer_brace_count) {
+    free(current_path);
+    return NULL;
+  }
+  analysis_visible_direct_declaration_kind_t visible =
+      analysis_visible_direct_declaration_before(
+          source, length, declaration_start,
+          selected_name, selected_length,
+          current_path, current_path_count, enable_trigraphs);
+  free(current_path);
+  if (visible != ANALYSIS_VISIBLE_DIRECT_DECLARATION_FILE_TYPEDEF)
+    return NULL;
+  return build_declaration_start_lookup_recovery_source(
+      source, declaration_start, outer_brace_count, 0,
+      changed, source_consumed);
+}
+
 static int analysis_complete_direct_object_initializer_operand(
     const char *source, size_t length,
     size_t candidate_start, size_t candidate_end,
@@ -4822,6 +5249,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
   size_t source_consumed = recovery_cursor;
   if (!cursor_on_complete_macro_definition &&
       !cursor_on_complete_preprocessor_operand) {
+    char *file_typedef_block_extern_type_recovery =
+        build_file_typedef_block_extern_type_recovery_source(
+            source, source_length, recovery_cursor, enable_trigraphs,
+            changed, &source_consumed);
+    if (file_typedef_block_extern_type_recovery)
+      return append_conditional_validation_tail(
+          file_typedef_block_extern_type_recovery,
+          source, source_length, source_consumed,
+          enable_trigraphs);
     char *prior_declarator_lookup_recovery =
         build_prior_declarator_lookup_recovery_source(
             source, source_length, recovery_cursor, enable_trigraphs,

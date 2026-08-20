@@ -2361,6 +2361,11 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int FileParameter, FileFunction(FileParameter);\n" +
     "typedef int FilePointerParameter, (*FileCallback)(FilePointerParameter);\n" +
     "typedef struct SameTypedefRecord FileRecordAlias, (*FileRecordCallback)(FileRecordAlias);\n" +
+    "typedef int ExternObjectDirectType;\n" +
+    "typedef int ExternObjectQualifiedType;\n" +
+    "typedef int ExternObjectPointerType;\n" +
+    "typedef int ExternObjectCommentType;\n" +
+    "typedef int ExternObjectSpliceType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2380,12 +2385,64 @@ const sameTypedefDeclaratorHoverSource = {
     "  typedef int InternalBlockShadow;\n" +
     "  typedef int BlockAlias, BlockArray[sizeof(BlockAlias)];\n" +
     "  typedef int BlockParameter, (*BlockCallback)(BlockParameter);\n" +
+    "  { extern ExternObjectDirectType ExternObjectDirectType; }\n" +
+    "  { extern const ExternObjectQualifiedType ExternObjectQualifiedType; }\n" +
+    "  { extern ExternObjectPointerType *ExternObjectPointerType; }\n" +
+    "  { extern /* before type */ ExternObjectCommentType /* before object */ ExternObjectCommentType; }\n" +
+    "  { extern ExternObjectSpliceType \\\nExternObjectSpliceType; }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
     "}\n" +
     "int file_after;\n",
 };
+const sameBlockExternTypedefConflictSource = {
+  name: "same-block-extern-typedef-conflict.c",
+  source: "int same_block_extern_typedef_conflict(void) {\n" +
+    "  typedef int SameBlockExternType;\n" +
+    "  extern SameBlockExternType SameBlockExternType;\n" +
+    "  return 0;\n" +
+    "}\n",
+};
+const externTypedefShadowConflictSources = [
+  [sameBlockExternTypedefConflictSource, "SameBlockExternType"],
+  [{
+    name: "outer-object-extern-typedef-conflict.c",
+    source: "typedef int OuterObjectExternType;\n" +
+      "int outer_object_extern_typedef_conflict(void) {\n" +
+      "  int OuterObjectExternType = 0;\n" +
+      "  { extern OuterObjectExternType OuterObjectExternType; }\n" +
+      "  return OuterObjectExternType;\n" +
+      "}\n",
+  }, "OuterObjectExternType"],
+  [{
+    name: "parameter-extern-typedef-conflict.c",
+    source: "typedef int ParameterExternType;\n" +
+      "int parameter_extern_typedef_conflict(int ParameterExternType) {\n" +
+      "  { extern ParameterExternType ParameterExternType; }\n" +
+      "  return ParameterExternType;\n" +
+      "}\n",
+  }, "ParameterExternType"],
+  [{
+    name: "outer-enum-extern-typedef-conflict.c",
+    source: "typedef int OuterEnumExternType;\n" +
+      "int outer_enum_extern_typedef_conflict(void) {\n" +
+      "  enum { OuterEnumExternType = 1 };\n" +
+      "  { extern OuterEnumExternType OuterEnumExternType; }\n" +
+      "  return OuterEnumExternType;\n" +
+      "}\n",
+  }, "OuterEnumExternType"],
+  [{
+    name: "for-init-extern-typedef-conflict.c",
+    source: "typedef int ForInitExternType;\n" +
+      "int for_init_extern_typedef_conflict(void) {\n" +
+      "  for (int ForInitExternType = 0; ForInitExternType < 1; ForInitExternType++) {\n" +
+      "    { extern ForInitExternType ForInitExternType; }\n" +
+      "  }\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "ForInitExternType"],
+];
 const sameTypedefDeclaratorCases = [
   ["typedef FirstFileBase FirstFileCopy", "FirstFileBase", "FirstFileCopy",
     0, true],
@@ -2524,6 +2581,134 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
         { encoding: "utf8" },
       )), `native and Wasm same typedef declarator differ for ${name}`);
     }
+  }
+  const externObjectTypeCases = [
+    ["extern ExternObjectDirectType ExternObjectDirectType",
+      "ExternObjectDirectType", true],
+    ["extern const ExternObjectQualifiedType ExternObjectQualifiedType",
+      "ExternObjectQualifiedType", false],
+    ["extern ExternObjectPointerType *ExternObjectPointerType",
+      "ExternObjectPointerType", false],
+    ["extern /* before type */ ExternObjectCommentType /* before object */ ExternObjectCommentType",
+      "ExternObjectCommentType", false],
+    ["extern ExternObjectSpliceType \\\nExternObjectSpliceType",
+      "ExternObjectSpliceType", true],
+  ];
+  for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
+    const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+      fragmentText,
+    );
+    const useIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+    const declarationIndex =
+      sameTypedefDeclaratorHoverSource.source.indexOf(name);
+    assert.ok(fragmentIndex >= 0 && useIndex > declarationIndex,
+      `missing block extern object type anchor for ${name}`);
+    const nameBytes = Buffer.byteLength(name);
+    const deltas = checkBoundaries
+      ? [0, Math.floor(nameBytes / 2), nameBytes]
+      : [Math.floor(nameBytes / 2)];
+    for (const delta of deltas) {
+      const byteOffset = byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source, useIndex,
+      ) + delta;
+      const result = compiler.analyzeSource(
+        sameTypedefDeclaratorHoverSource,
+        { cursor: {
+          sourceName: sameTypedefDeclaratorHoverSource.name,
+          byteOffset,
+        } },
+      );
+      assert.equal(result.partial, false,
+        `${name} block extern object type partial`);
+      assert.deepStrictEqual(result.diagnostics, [],
+        `${name} block extern object type diagnostics`);
+      assert.equal(result.hover?.name, name,
+        `${name} block extern object type hover`);
+      assert.equal(result.hover?.kind, "typedef",
+        `${name} block extern object type kind`);
+      assert.equal(result.hover?.declaration.start.offset,
+        byteOffsetForIndex(
+          sameTypedefDeclaratorHoverSource.source, declarationIndex,
+        ), `${name} block extern object type declaration`);
+      assert.deepStrictEqual(result.hover?.declaration,
+        symbol(result, name, "typedef")?.declaration,
+        `${name} block extern object type completion`);
+      assert.equal(symbol(result, name, "object"), undefined,
+        `${name} current block extern object hidden`);
+      assert.equal(symbol(result, "block_after", "object"), undefined);
+      assert.equal(symbol(result, "file_after", "object"), undefined);
+      assert.deepStrictEqual(result, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--same-typedef-declarator-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm block extern object type differ for ${name}`);
+    }
+  }
+  const freshExternObjectTypeCompiler = await createCompiler(wasmModule);
+  try {
+    for (const [fragmentText, name] of externObjectTypeCases) {
+      const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+        fragmentText,
+      );
+      const useIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+        name, fragmentIndex,
+      );
+      const byteOffset = byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source, useIndex,
+      ) + Math.floor(Buffer.byteLength(name) / 2);
+      const result = freshExternObjectTypeCompiler.analyzeSource(
+        sameTypedefDeclaratorHoverSource,
+        { cursor: {
+          sourceName: sameTypedefDeclaratorHoverSource.name,
+          byteOffset,
+        } },
+      );
+      assert.equal(result.partial, false,
+        `${name} fresh block extern object type partial`);
+      assert.deepStrictEqual(result.diagnostics, [],
+        `${name} fresh block extern object type diagnostics`);
+      assert.equal(result.hover?.name, name);
+      assert.equal(result.hover?.kind, "typedef");
+      assert.equal(symbol(result, name, "object"), undefined);
+    }
+  } finally {
+    freshExternObjectTypeCompiler.dispose();
+  }
+  for (let conflictIndex = 0;
+    conflictIndex < externTypedefShadowConflictSources.length;
+    conflictIndex++) {
+    const [conflictSource, conflictName] =
+      externTypedefShadowConflictSources[conflictIndex];
+    const conflictFragmentIndex = conflictSource.source.indexOf(
+      `extern ${conflictName} ${conflictName}`,
+    );
+    const conflictUseIndex = conflictSource.source.indexOf(
+      conflictName, conflictFragmentIndex,
+    );
+    assert.ok(conflictFragmentIndex >= 0 && conflictUseIndex >= 0,
+      `missing extern typedef shadow conflict anchor for ${conflictName}`);
+    const conflictByteOffset = byteOffsetForIndex(
+      conflictSource.source, conflictUseIndex,
+    ) + Math.floor(Buffer.byteLength(conflictName) / 2);
+    const conflictResult = compiler.analyzeSource(
+      conflictSource,
+      { cursor: {
+        sourceName: conflictSource.name,
+        byteOffset: conflictByteOffset,
+      } },
+    );
+    assert.equal(conflictResult.partial, true,
+      `${conflictName} extern typedef shadow conflict remains partial`);
+    assert.ok(conflictResult.diagnostics.length > 0,
+      `${conflictName} extern typedef shadow conflict remains diagnosed`);
+    assert.deepStrictEqual(conflictResult, JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--extern-typedef-shadow-conflict-parity-json",
+        String(conflictIndex), String(conflictByteOffset)],
+      { encoding: "utf8" },
+    )), `native and Wasm extern typedef shadow conflict differ for ${conflictName}`);
   }
   const shadowFragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
     "typedef FirstBlockShadow FirstBlockShadow",
