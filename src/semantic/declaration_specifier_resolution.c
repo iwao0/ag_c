@@ -183,6 +183,9 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
       return base_status;
     int requested_alignment = resolve_decl_alignment_value(
         context, &declaration->specifier);
+    int declares_only_enumerators =
+        psx_aggregate_declaration_declares_only_enumerators(
+            declaration);
     for (int j = 0; j < declaration->declarator_count; j++) {
       const psx_parsed_declarator_t *declarator =
           &declaration->declarators[j];
@@ -223,6 +226,7 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
               declarator->has_bitfield,
               declarator->diagnostic_token))
         return PSX_DECL_SPECIFIER_VALUE_INVALID;
+      if (declares_only_enumerators) continue;
       int bit_width = 0;
       if (declarator->has_bitfield) {
         long long value = resolve_const_expr_value(

@@ -1645,6 +1645,7 @@ static const test_case_t test_cases[] = {
     {"probes", "qualified_aggregate_value_context_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/qualified_aggregate_value_context_boundaries.c", 0, 0},
     {"probes", "register_aggregate_value_context_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/register_aggregate_value_context_boundaries.c", 0, 0},
     {"probes", "anonymous_member_aggregate_value_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/anonymous_member_aggregate_value_boundaries.c", 0, 0},
+    {"probes", "aggregate_anonymous_enum_declarations", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/aggregate_anonymous_enum_declarations.c", 0, 0},
     {"probes", "flexible_array_value_context_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/flexible_array_value_context_boundaries.c", 0, 0},
     {"probes", "overaligned_flexible_array_layout_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/overaligned_flexible_array_layout_boundaries.c", 0, 0},
     {"probes", "bitfield_aggregate_value_abi_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/bitfield_aggregate_value_abi_boundaries.c", 0, 0},
@@ -5644,6 +5645,14 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"anonymous_member_named_definition_rejected",
      "fixture:test/fixtures/should_reject/"
      "anonymous_member_named_definition.c",
+     "E3065"},
+    {"aggregate_anonymous_enum_only_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "aggregate_anonymous_enum_only.c",
+     "E3064"},
+    {"aggregate_named_enum_without_member_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "aggregate_named_enum_without_member.c",
      "E3065"},
     {"zero_array_bound_rejected",
      "fixture:test/fixtures/should_reject/"

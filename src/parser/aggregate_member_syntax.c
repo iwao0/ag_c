@@ -72,6 +72,22 @@ typedef enum {
   PSX_AGGREGATE_NAMED_MEMBER_PRESENT = 1,
 } psx_aggregate_named_member_status_t;
 
+int psx_aggregate_declaration_declares_only_enumerators(
+    const psx_parsed_aggregate_member_declaration_t *declaration) {
+  if (!declaration || declaration->declarator_count != 1)
+    return 0;
+  const psx_parsed_tag_action_t *tag =
+      &declaration->specifier.tag_action;
+  const psx_parsed_declarator_t *declarator =
+      &declaration->declarators[0];
+  return declaration->specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
+         tag->action == PSX_PARSED_TAG_DEFINITION &&
+         tag->kind == TK_ENUM && tag->is_anonymous &&
+         tag->enum_body && !declarator->identifier &&
+         !declarator->has_bitfield &&
+         declarator->declarator_shape.count == 0;
+}
+
 static psx_aggregate_named_member_status_t aggregate_body_named_member_status(
     const psx_parsed_aggregate_body_t *body) {
   if (!body) return PSX_AGGREGATE_NAMED_MEMBER_INVALID_DECLARATION;
@@ -85,6 +101,9 @@ static psx_aggregate_named_member_status_t aggregate_body_named_member_status(
       if (declaration->declarators[j].identifier)
         return PSX_AGGREGATE_NAMED_MEMBER_PRESENT;
     }
+    if (psx_aggregate_declaration_declares_only_enumerators(
+            declaration))
+      continue;
     const psx_parsed_tag_action_t *tag =
         &declaration->specifier.tag_action;
     if (tag->is_anonymous &&

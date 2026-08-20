@@ -34,6 +34,8 @@ struct psx_parsed_aggregate_body_t {
 void psx_parse_aggregate_body_with_options(
     psx_parsed_aggregate_body_t *body,
     const psx_decl_specifier_syntax_options_t *options);
+int psx_aggregate_declaration_declares_only_enumerators(
+    const psx_parsed_aggregate_member_declaration_t *declaration);
 void psx_dispose_parsed_aggregate_body(psx_parsed_aggregate_body_t *body);
 
 #endif

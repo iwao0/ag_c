@@ -7649,14 +7649,23 @@ const aggregateMemberSyntaxSource = await readFile(
   "src/parser/aggregate_member_syntax.c",
   "utf8",
 );
-if (!/aggregate_body_named_member_status\s*\([^]*?PSX_AGGREGATE_NAMED_MEMBER_INVALID_DECLARATION[^]*?declaration->declarators\[j\]\.identifier[^]*?tag->is_anonymous[^]*?aggregate_body_named_member_status\(tag->aggregate_body\)[^]*?declaration->declarators\[j\]\.has_bitfield/.test(
+if (!/psx_aggregate_declaration_declares_only_enumerators\s*\([^]*?PSX_PARSED_TAG_DEFINITION[^]*?TK_ENUM[^]*?tag->is_anonymous[^]*?declarator->declarator_shape\.count\s*==\s*0/.test(
+      aggregateMemberSyntaxSource,
+    ) ||
+    !/aggregate_body_named_member_status\s*\([^]*?PSX_AGGREGATE_NAMED_MEMBER_INVALID_DECLARATION[^]*?declaration->declarators\[j\]\.identifier[^]*?psx_aggregate_declaration_declares_only_enumerators\s*\([^]*?tag->is_anonymous[^]*?aggregate_body_named_member_status\(tag->aggregate_body\)[^]*?declaration->declarators\[j\]\.has_bitfield/.test(
       aggregateMemberSyntaxSource,
     ) ||
     !/while\s*\(\s*!tk_consume_ctx\(tk_ctx, '\}'\)\s*\)[^]*?aggregate_body_named_member_status\(body\)\s*==\s*PSX_AGGREGATE_NAMED_MEMBER_NONE[^]*?ps_diag_ctx_in\s*\(/.test(
       aggregateMemberSyntaxSource,
+    ) ||
+    !/psx_aggregate_declaration_declares_only_enumerators\s*\([^]*?psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?if\s*\(declares_only_enumerators\)\s*continue;[^]*?psx_apply_aggregate_member_declaration\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_aggregate_declaration_declares_only_enumerators\s*\([^]*?psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?if\s*\(declares_only_enumerators\)\s*continue;[^]*?psx_apply_aggregate_member_declaration\s*\(/.test(
+      declarationSpecifierResolutionSource,
     )) {
   throw new Error(
-    "aggregate syntax must reject definitions without a direct or recursively promoted named member",
+    "aggregate syntax must admit anonymous enum declarations without laying out a member while still requiring a direct or recursively promoted named member",
   );
 }
 const scalableSyntaxListSources = [

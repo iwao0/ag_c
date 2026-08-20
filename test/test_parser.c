@@ -20062,6 +20062,26 @@ static void test_parse_invalid(
       "struct Outer outer={.promoted=1}; "
       "return item.value != outer.promoted; }");
   expect_parse_ok(test_suite_session,
+      "struct Item { enum { ITEM_WIDTH=3 }; int values[ITEM_WIDTH]; }; "
+      "union Choice { enum { CHOICE_WIDTH=2 }; int values[CHOICE_WIDTH]; }; "
+      "struct Flexible { int count; int values[]; "
+      "enum { FLEXIBLE_MARKER=1 }; }; "
+      "int main(void) { struct Local { enum { LOCAL_WIDTH=2 }; "
+      "int values[LOCAL_WIDTH]; } value={{1,2}}; "
+      "return value.values[1] != 2; }");
+  expect_parse_fail_with_message(test_suite_session,
+      "struct Item { enum { ITEM_READY=1 }; }; "
+      "int main(void) { return 0; }",
+      "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "struct Item { enum State { STATE_READY=1 }; int value; }; "
+      "int main(void) { return 0; }",
+      "E3065");
+  expect_parse_fail_with_message(test_suite_session,
+      "struct Item { static enum { ITEM_READY=1 }; int value; }; "
+      "int main(void) { return 0; }",
+      "E3064");
+  expect_parse_ok(test_suite_session,
       "struct record; typedef int reader(struct record); "
       "reader read; struct record { int value; }; "
       "int read(struct record value) { return value.value; } "

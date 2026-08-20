@@ -99,6 +99,9 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
         psx_resolve_parsed_decl_alignment_in_contexts(
             semantic_context, global_registry, local_registry,
             &declaration->specifier);
+    int declares_only_enumerators =
+        psx_aggregate_declaration_declares_only_enumerators(
+            declaration);
     for (int j = 0; j < declaration->declarator_count; j++) {
       psx_parsed_declarator_t *head = &declaration->declarators[j];
       psx_declarator_shape_t resolved_shape;
@@ -118,6 +121,7 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
               PSX_DECLARATION_CONTEXT_MEMBER,
               head->has_bitfield, head->diagnostic_token))
         continue;
+      if (declares_only_enumerators) continue;
       member_count += psx_apply_aggregate_member_declaration(
           &layout,
           &(psx_aggregate_member_declaration_request_t){

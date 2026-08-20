@@ -37758,3 +37758,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規fixtureをClang/Native/WAT/Wasm objectで直接実行し、既存negative 2件もNative/Wasmで再確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - `_Alignas`の直接VLA、typedef VLA、不完全配列境界は閉じた。次は複雑なVLA式へ広げず、通常サイズの別の宣言・型制約をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1276）: aggregate内のanonymous enum宣言を受理した
+- 対象選定:
+  - 続き1275後、通常サイズのlabel直後declaration、case直後declaration、末尾label、prototype parameter名重複、不完全record parameter、void object、宣言子なしtag member、unsized qualified array parameter、Atomic return、parameter initializer、const flexible arrayをClang C11 strictと少数比較した。これらはag_cと一致したため変更していない。
+  - `struct Item { enum { ITEM_WIDTH = 3 }; int values[ITEM_WIDTH]; };`だけはClang strictが受理する一方、ag_cがdeclaratorなしmemberとしてE3065で過剰拒否した。tagなしenum定義はrecord memberを宣言しないが、enumeratorを後続memberで使える合法なstruct-declarationである。
+  - file/local struct、union、anonymous struct内、flexible array member後でも同じ合法境界を確認した。anonymous enum宣言だけのstructと、unnamed bit-fieldしか続かないstructはnamed member欠落で不正、名前付きenum定義のdeclarator省略もClang strictでは不正だった。深いrecord nesting、式、layout監査、security監査系には広げていない。
+- 原因と変更:
+  - aggregate body parserは宣言子が省略されても空のparsed declaratorを1件作り、両semantic entry pathがspecifierを解決した後、共通aggregate member resolverへ渡していた。このresolverはanonymous struct/union以外の名前なし宣言を一律`PSX_AGGREGATE_MEMBER_MISSING_NAME`にしていた。
+  - `psx_aggregate_declaration_declares_only_enumerators`を追加し、tagなし・直接enum定義・単一の空declarator・bit-fieldなしの構文identityを判定する。parserのnamed-member走査ではこの宣言をinvalidではなくmemberなしとして数え、enum宣言だけのaggregateは従来どおりE3064にする。
+  - 通常aggregate適用とdirect declaration-specifier解決の両方で、enum body解決・enumerator登録・storage/function/alignment等のspecifier制約検査までは従来どおり行い、その後だけrecord member登録とlayout更新を省く。これにより`static`/`inline`付き不正形はE3064のまま、名前付きenum省略はE3065のままになる。
+  - design invariantでanonymous enum構文判定、named-member走査、および両semantic entry pathが共通specifier検査後にだけlayout登録を省く順序を固定した。
+- coverage:
+  - parser unitへfile struct、union、flexible array後、local structの合法形を追加した。anonymous enumだけでnamed memberがない形をE3064、named enum省略をE3065、`static`付きanonymous enumをE3064で拒否する対照も追加した。
+  - `aggregate_anonymous_enum_declarations` fixtureをNative/Wasm E2E一覧へ登録した。file/local struct、union、anonymous aggregate、flexible array後について、enumeratorをarray boundへ使い、余分なmember storageが増えず、初期化・member読出しが一致することを実行確認する。
+  - should_rejectへ`aggregate_anonymous_enum_only`と`aggregate_named_enum_without_member`を追加し、Native/Wasm compile-fail registryへE3064/E3065で登録した。
+- 確認:
+  - 新規正例はhost Clang strict、ag_c Native実行、WATの`wasm-interp`実行、Wasm object compile/validateがすべて成功した。WATは`main() => i32:0`だった。
+  - 新規negative 2件はhost Clang strict、Native、Wasm objectがすべて拒否し、Native/WasmはそれぞれE3064/E3065で一致した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.58秒 / user 2.99秒 / sys 0.25秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.43秒 / user 0.76秒 / sys 0.48秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.42秒 / user 11.53秒 / sys 1.63秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.72秒 / user 42.71秒 / sys 1.15秒**。`make -q wasm-selfhost-api`もcurrentを確認した。`build/test_e2e`のwarningなしビルドと`git diff --check`も成功した。
+- 未実施:
+  - 新規正例をClang/Native/WAT/Wasm objectで直接実行し、negative 2件を3 compilerで確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深いrecord nesting・式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - aggregate内のanonymous enum、named enum、named member有無、flexible array後の境界は閉じた。次も深いaggregate layoutへ広げず、通常サイズの別の宣言・型制約をClang strict差分probeから選ぶ。
