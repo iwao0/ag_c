@@ -249,6 +249,9 @@ test-wasm-language-analysis-prototype-bounds: check-runtime-symbol-manifest $(WA
 test-wasm-language-analysis-static-assert: check-runtime-symbol-manifest $(WASM_SELFHOST_API) $(TEST_LANGUAGE_ANALYSIS)
 	@AGC_LANGUAGE_ANALYSIS_FOCUS=static-assert node tools/wasm_js_api/test_language_analysis.mjs $(WASM_SELFHOST_API) $(TEST_LANGUAGE_ANALYSIS)
 
+test-wasm-language-analysis-do-body: check-runtime-symbol-manifest $(WASM_SELFHOST_API) $(TEST_LANGUAGE_ANALYSIS)
+	@AGC_LANGUAGE_ANALYSIS_FOCUS=do-body node tools/wasm_js_api/test_language_analysis.mjs $(WASM_SELFHOST_API) $(TEST_LANGUAGE_ANALYSIS)
+
 $(WASM_LINKER_SELFHOST): FORCE $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@bash scripts/build_wasm_linker_selfhost.sh build/wasm_linker_selfhost
 
@@ -321,6 +324,6 @@ c-testsuite-verbose: $(TARGET)
 
 FORCE:
 
-.PHONY: test test-asan test-design-invariants test-e2e-sandbox generate-runtime-symbol-manifest check-runtime-symbol-manifest clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-selfhost-source test-wasm-js-api test-wasm-language-analysis-macros test-wasm-language-analysis-inline-tags test-wasm-language-analysis-for-init test-wasm-language-analysis-prototype-bounds test-wasm-language-analysis-static-assert wasm-linker-selfhost test-wasm-linker-selfhost test-wasm-js-pipeline test-wasm-runtime-contracts test-wasm-js-e2e c-testsuite c-testsuite-verbose FORCE
+.PHONY: test test-asan test-design-invariants test-e2e-sandbox generate-runtime-symbol-manifest check-runtime-symbol-manifest clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-selfhost-source test-wasm-js-api test-wasm-language-analysis-macros test-wasm-language-analysis-inline-tags test-wasm-language-analysis-for-init test-wasm-language-analysis-prototype-bounds test-wasm-language-analysis-static-assert test-wasm-language-analysis-do-body wasm-linker-selfhost test-wasm-linker-selfhost test-wasm-js-pipeline test-wasm-runtime-contracts test-wasm-js-e2e c-testsuite c-testsuite-verbose FORCE
 
 -include $(DEPS)

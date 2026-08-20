@@ -577,6 +577,178 @@ if (languageAnalysisFocus === "static-assert") {
   process.exit(0);
 }
 
+const doBodyHoverSource = {
+  name: "do-body-hover.c",
+  source: "/// do body macro documentation\n" +
+    "#define DO_BODY_MACRO 1\n" +
+    "enum { DO_BODY_ENUM = 3 };\n" +
+    "int do_body_helper(int value);\n" +
+    "int do_body_hover(int do_body_parameter) {\n" +
+    "  int do_body_object = do_body_parameter;\n" +
+    "  do { do_body_object--; } while (do_body_object > 20);\n" +
+    "  do { do_body_parameter--; } while (do_body_parameter > 19);\n" +
+    "  do { do_body_object += DO_BODY_ENUM; } while (do_body_object < 18);\n" +
+    "  do { do_body_object += DO_BODY_MACRO; } while (do_body_object < 17);\n" +
+    "  do { do_body_object = do_body_helper(do_body_parameter); } while (do_body_object < 16);\n" +
+    "  do { int do_body_local = do_body_object; do_body_object += do_body_local; int do_body_local_after; } while (do_body_object < 15);\n" +
+    "  do { { int do_body_nested = do_body_object; do_body_object += do_body_nested; int do_body_nested_after; } } while (do_body_object < 14);\n" +
+    "  do /* gap */ { do_body_object--; } while (do_body_object < 13);\n" +
+    "  do \\\n{ do_body_object--; } while (do_body_object < 12);\n" +
+    "  do \\\r\n{ do_body_object--; } while (do_body_object < 11);\r\n" +
+    "  do do_body_object--; while (do_body_object < 10);\n" +
+    "  do if (do_body_parameter) do_body_object--; while (do_body_object < 9);\n" +
+    "  do { do { do_body_object--; } while (do_body_object < 8); } while (do_body_object < 7);\n" +
+    "  do_body_object += do_body_parameter;\n" +
+    "  int do_body_after;\n" +
+    "  return do_body_object;\n" +
+    "}\n" +
+    "int do_body_file_after;\n",
+};
+const doBodyHoverCases = [
+  {
+    fragment: "do { do_body_object--", name: "do_body_object",
+    kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "do { do_body_parameter--", name: "do_body_parameter",
+    kind: "parameter",
+  },
+  {
+    fragment: "+= DO_BODY_ENUM", name: "DO_BODY_ENUM",
+    kind: "enumConstant",
+  },
+  {
+    fragment: "+= DO_BODY_MACRO", name: "DO_BODY_MACRO",
+    kind: "macro", checkBoundaries: true,
+  },
+  {
+    fragment: "= do_body_helper", name: "do_body_helper",
+    kind: "function",
+  },
+  {
+    fragment: "do_body_helper(do_body_parameter)",
+    name: "do_body_parameter", kind: "parameter",
+  },
+  {
+    fragment: "+= do_body_local", name: "do_body_local",
+    kind: "object", laterBodyObject: "do_body_local_after",
+    checkBoundaries: true,
+  },
+  {
+    fragment: "+= do_body_nested", name: "do_body_nested",
+    kind: "object", laterBodyObject: "do_body_nested_after",
+  },
+  {
+    fragment: "do /* gap */ { do_body_object--", name: "do_body_object",
+    kind: "object",
+  },
+  {
+    fragment: "do \\\n{ do_body_object--", name: "do_body_object",
+    kind: "object",
+  },
+  {
+    fragment: "do \\\r\n{ do_body_object--", name: "do_body_object",
+    kind: "object",
+  },
+  {
+    fragment: "do do_body_object--", name: "do_body_object",
+    kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "if (do_body_parameter)", name: "do_body_parameter",
+    kind: "parameter",
+  },
+  {
+    fragment: ") do_body_object--; while (do_body_object < 9)",
+    name: "do_body_object", kind: "object",
+  },
+  {
+    fragment: "do { do { do_body_object--", name: "do_body_object",
+    kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "while (do_body_object > 20)", name: "do_body_object",
+    kind: "object",
+  },
+  {
+    fragment: "do_body_object += do_body_parameter",
+    name: "do_body_object", kind: "object",
+  },
+  {
+    fragment: "do_body_object += do_body_parameter",
+    name: "do_body_parameter", kind: "parameter",
+  },
+];
+if (!languageAnalysisFocus || languageAnalysisFocus === "do-body") {
+  for (const doCase of doBodyHoverCases) {
+    const fragmentIndex = doBodyHoverSource.source.indexOf(doCase.fragment);
+    const useIndex = doBodyHoverSource.source.indexOf(
+      doCase.name, fragmentIndex,
+    );
+    const declarationIndex = doBodyHoverSource.source.indexOf(doCase.name);
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${doCase.name} do body anchor`);
+    const nameBytes = Buffer.byteLength(doCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = doCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        doBodyHoverSource.source.slice(0, useIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(doBodyHoverSource, {
+        cursor: { sourceName: doBodyHoverSource.name, byteOffset },
+      });
+      assert.equal(wasmResult.partial, false,
+        `${doCase.name} do body partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${doCase.name} do body diagnostics`);
+      assert.equal(wasmResult.hover?.name, doCase.name,
+        `${doCase.name} do body hover name`);
+      assert.equal(wasmResult.hover?.kind, doCase.kind,
+        `${doCase.name} do body hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        doBodyHoverSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.equal(symbol(wasmResult, "do_body_after", "object"), undefined,
+        `${doCase.name} later do body object hidden`);
+      assert.equal(symbol(
+        wasmResult, "do_body_file_after", "object",
+      ), undefined, `${doCase.name} later file object hidden`);
+      if (doCase.laterBodyObject) {
+        assert.equal(symbol(
+          wasmResult, doCase.laterBodyObject, "object",
+        ), undefined, `${doCase.name} later nested object hidden`);
+      }
+      if (doCase.kind === "enumConstant") {
+        assert.equal(wasmResult.hover.initializer?.constantValue, "3",
+          "do body enum value");
+      }
+      if (doCase.kind === "macro") {
+        assert.equal(wasmResult.hover.macro?.replacement, "1",
+          "do body macro replacement");
+        assert.equal(wasmResult.hover.documentation,
+          "do body macro documentation");
+      }
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--do-body-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${doCase.name} do body differ`);
+    }
+  }
+  reportTestTiming("do body hover");
+}
+if (languageAnalysisFocus === "do-body") {
+  compiler.dispose();
+  console.log("wasm language analysis do body tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",

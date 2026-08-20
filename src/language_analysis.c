@@ -2976,6 +2976,7 @@ typedef struct {
   size_t open_offset;
   int is_for_control;
   size_t for_separator_count;
+  int is_do_body;
   int is_static_assert;
   int is_generic_selection;
   size_t generic_separator_count;
@@ -3547,6 +3548,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int at_line_start = 1;
   int preprocessor_line = 0;
   int previous_token_is_for = 0;
+  int previous_token_is_do = 0;
   int previous_token_is_static_assert = 0;
   int previous_token_is_generic = 0;
   int previous_token_requires_type_name = 0;
@@ -3555,6 +3557,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int previous_token_requires_expression = 0;
   int previous_token_is_tag_keyword = 0;
   int previous_token_ends_expression = 0;
+  int simple_do_statement_active = 0;
   size_t root_pending_conditional_count = 0;
   int case_expression_active = 0;
   size_t case_expression_start = 0;
@@ -3608,6 +3611,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       quote = c;
       at_line_start = 0;
       previous_token_is_for = 0;
+      previous_token_is_do = 0;
       previous_token_is_static_assert = 0;
       previous_token_is_generic = 0;
       previous_token_requires_type_name = 0;
@@ -3635,6 +3639,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     at_line_start = 0;
     if (preprocessor_line) continue;
     int opens_for_control = 0;
+    int opens_do_body = 0;
     int opens_static_assert = 0;
     int opens_generic_selection = 0;
     int opens_type_name_context = 0;
@@ -3651,6 +3656,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
           identifier_end++;
         previous_token_is_for = identifier_end - i == strlen("for") &&
                                 memcmp(result + i, "for", strlen("for")) == 0;
+        previous_token_is_do = identifier_end - i == strlen("do") &&
+                               memcmp(result + i, "do", strlen("do")) == 0;
+        if (previous_token_is_do) simple_do_statement_active = 1;
         previous_token_is_static_assert =
             identifier_end - i == strlen("_Static_assert") &&
             memcmp(result + i, "_Static_assert",
@@ -3694,7 +3702,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
             identifier_end - i == strlen("default") &&
             memcmp(result + i, "default", strlen("default")) == 0;
         int identifier_is_expression_prefix_keyword =
-            previous_token_is_for || previous_token_is_static_assert ||
+            previous_token_is_for || previous_token_is_do ||
+            previous_token_is_static_assert ||
             previous_token_is_generic ||
             previous_token_requires_type_name ||
             previous_token_requires_expression;
@@ -3727,6 +3736,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
              next_parenthesized_is_definite_type_name);
       }
       opens_for_control = c == '(' && previous_token_is_for;
+      opens_do_body = c == '{' && previous_token_is_do;
       opens_static_assert = c == '(' && previous_token_is_static_assert;
       opens_generic_selection = c == '(' && previous_token_is_generic;
       opens_type_name_context =
@@ -3743,6 +3753,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
         opens_compound_literal = after_type_name == i;
       }
       previous_token_is_for = 0;
+      previous_token_is_do = 0;
       previous_token_is_static_assert = 0;
       previous_token_is_generic = 0;
       previous_token_requires_type_name = 0;
@@ -3751,6 +3762,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       previous_token_requires_expression = 0;
       previous_token_is_tag_keyword = 0;
       previous_token_ends_expression = 0;
+      if (c == '{') simple_do_statement_active = 0;
     }
     if (c == '(' || c == '[' || c == '{') {
       stack[stack_count++] = (recovery_delimiter_t){
@@ -3758,6 +3770,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
           .open_offset = i,
           .is_for_control = opens_for_control,
           .for_separator_count = 0,
+          .is_do_body = opens_do_body,
           .is_static_assert = opens_static_assert,
           .is_generic_selection = opens_generic_selection,
           .generic_separator_count = 0,
@@ -3799,6 +3812,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
                stack[stack_count - 1].is_for_control) {
       stack[stack_count - 1].for_separator_count++;
     }
+    if (c == ';' &&
+        (stack_count == 0 || stack[stack_count - 1].open == '{'))
+      simple_do_statement_active = 0;
     size_t *pending_conditional_count =
         stack_count > 0
             ? &stack[stack_count - 1].pending_conditional_count
@@ -4126,13 +4142,23 @@ static char *build_recovery_source(const char *source, size_t source_length,
   }
   APPEND_PENDING_CONDITIONALS(root_pending_conditional_count);
   if (!cursor_marker_appended) {
+    if (simple_do_statement_active) {
+      if (last_significant != 0 && last_significant != ';' &&
+          last_significant != '}')
+        APPEND_LITERAL(";");
+      APPEND_LITERAL(" while (0);\n");
+      last_significant = ';';
+    }
     if (last_significant != 0 && last_significant != ';' &&
         last_significant != '}')
       APPEND_LITERAL(";");
     APPEND_LITERAL("\nint " AG_LANGUAGE_CURSOR_MARKER ";\n");
   }
   for (size_t i = stack_count; i > 0; i--)
-    if (stack[i - 1].open == '{') APPEND_LITERAL("}\n");
+    if (stack[i - 1].open == '{') {
+      APPEND_LITERAL("}\n");
+      if (stack[i - 1].is_do_body) APPEND_LITERAL("while (0);\n");
+    }
   result[length] = '\0';
 #undef APPEND_PENDING_CONDITIONALS
 #undef APPEND_BYTES

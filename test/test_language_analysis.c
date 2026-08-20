@@ -411,6 +411,31 @@ static const char block_static_assert_hover_source[] =
     "  return 0;\n"
     "}\n"
     "int block_assert_file_after;\n";
+static const char do_body_hover_source[] =
+    "/// do body macro documentation\n"
+    "#define DO_BODY_MACRO 1\n"
+    "enum { DO_BODY_ENUM = 3 };\n"
+    "int do_body_helper(int value);\n"
+    "int do_body_hover(int do_body_parameter) {\n"
+    "  int do_body_object = do_body_parameter;\n"
+    "  do { do_body_object--; } while (do_body_object > 20);\n"
+    "  do { do_body_parameter--; } while (do_body_parameter > 19);\n"
+    "  do { do_body_object += DO_BODY_ENUM; } while (do_body_object < 18);\n"
+    "  do { do_body_object += DO_BODY_MACRO; } while (do_body_object < 17);\n"
+    "  do { do_body_object = do_body_helper(do_body_parameter); } while (do_body_object < 16);\n"
+    "  do { int do_body_local = do_body_object; do_body_object += do_body_local; int do_body_local_after; } while (do_body_object < 15);\n"
+    "  do { { int do_body_nested = do_body_object; do_body_object += do_body_nested; int do_body_nested_after; } } while (do_body_object < 14);\n"
+    "  do /* gap */ { do_body_object--; } while (do_body_object < 13);\n"
+    "  do \\\n{ do_body_object--; } while (do_body_object < 12);\n"
+    "  do \\\r\n{ do_body_object--; } while (do_body_object < 11);\r\n"
+    "  do do_body_object--; while (do_body_object < 10);\n"
+    "  do if (do_body_parameter) do_body_object--; while (do_body_object < 9);\n"
+    "  do { do { do_body_object--; } while (do_body_object < 8); } while (do_body_object < 7);\n"
+    "  do_body_object += do_body_parameter;\n"
+    "  int do_body_after;\n"
+    "  return do_body_object;\n"
+    "}\n"
+    "int do_body_file_after;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -3054,6 +3079,19 @@ static int print_block_static_assert_parity_snapshot(
     return 1;
   return print_macro_definition_source_snapshot(
       "block-static-assert.c", block_static_assert_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_do_body_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(do_body_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "do-body-hover.c", do_body_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -9954,6 +9992,137 @@ static int test_block_static_assert_hover(ag_target_info_t target) {
   return 0;
 }
 
+static int test_do_body_hover(ag_target_info_t target) {
+  static const struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *later_body_object;
+  } cases[] = {
+      {"do { do_body_object--", "do_body_object",
+       AG_LANGUAGE_SYMBOL_OBJECT, NULL},
+      {"do { do_body_parameter--", "do_body_parameter",
+       AG_LANGUAGE_SYMBOL_PARAMETER, NULL},
+      {"+= DO_BODY_ENUM", "DO_BODY_ENUM",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL},
+      {"+= DO_BODY_MACRO", "DO_BODY_MACRO",
+       AG_LANGUAGE_SYMBOL_MACRO, NULL},
+      {"= do_body_helper", "do_body_helper",
+       AG_LANGUAGE_SYMBOL_FUNCTION, NULL},
+      {"do_body_helper(do_body_parameter)", "do_body_parameter",
+       AG_LANGUAGE_SYMBOL_PARAMETER, NULL},
+      {"+= do_body_local", "do_body_local",
+       AG_LANGUAGE_SYMBOL_OBJECT, "do_body_local_after"},
+      {"+= do_body_nested", "do_body_nested",
+       AG_LANGUAGE_SYMBOL_OBJECT, "do_body_nested_after"},
+      {"do /* gap */ { do_body_object--", "do_body_object",
+       AG_LANGUAGE_SYMBOL_OBJECT, NULL},
+      {"do \\\n{ do_body_object--", "do_body_object",
+       AG_LANGUAGE_SYMBOL_OBJECT, NULL},
+      {"do \\\r\n{ do_body_object--", "do_body_object",
+       AG_LANGUAGE_SYMBOL_OBJECT, NULL},
+      {"do do_body_object--", "do_body_object",
+       AG_LANGUAGE_SYMBOL_OBJECT, NULL},
+      {"if (do_body_parameter)", "do_body_parameter",
+       AG_LANGUAGE_SYMBOL_PARAMETER, NULL},
+      {") do_body_object--; while (do_body_object < 9)",
+       "do_body_object", AG_LANGUAGE_SYMBOL_OBJECT, NULL},
+      {"do { do { do_body_object--", "do_body_object",
+       AG_LANGUAGE_SYMBOL_OBJECT, NULL},
+      {"while (do_body_object > 20)", "do_body_object",
+       AG_LANGUAGE_SYMBOL_OBJECT, NULL},
+      {"do_body_object += do_body_parameter", "do_body_object",
+       AG_LANGUAGE_SYMBOL_OBJECT, NULL},
+      {"do_body_object += do_body_parameter", "do_body_parameter",
+       AG_LANGUAGE_SYMBOL_PARAMETER, NULL},
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "do body hover session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  const char *macro_comment = strstr(
+      do_body_hover_source, "/// do body macro documentation");
+  CHECK(macro_comment != NULL, "do body macro comment anchor");
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          do_body_hover_source, cases[case_index].fragment);
+      const char *use = fragment ? strstr(
+          fragment, cases[case_index].name) : NULL;
+      const char *declaration = strstr(
+          do_body_hover_source, cases[case_index].name);
+      CHECK(use && declaration, "do body hover anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]);
+           delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL, "do body hover fresh session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "do-body-hover.c",
+                  do_body_hover_source,
+                  (size_t)(use - do_body_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "do body hover analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover && completion &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "do-body-hover.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration - do_body_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration - do_body_hover_source) +
+                          (int)name_length &&
+                  same_range(&hover->declaration,
+                             &completion->declaration) &&
+                  !find_symbol(&snapshot, "do_body_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "do_body_file_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  (!cases[case_index].later_body_object ||
+                   !find_symbol(&snapshot,
+                                cases[case_index].later_body_object,
+                                AG_LANGUAGE_SYMBOL_OBJECT)),
+              "do body hover snapshot");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(hover->constant_value &&
+                    strcmp(hover->constant_value, "3") == 0,
+                "do body enum value");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+          CHECK(hover->macro_replacement &&
+                    strcmp(hover->macro_replacement, "1") == 0 &&
+                    check_documentation_symbol(
+                        hover, "do body macro documentation",
+                        "do-body-hover.c",
+                        (size_t)(macro_comment - do_body_hover_source),
+                        (size_t)(macro_comment - do_body_hover_source) +
+                            strlen("/// do body macro documentation")),
+                "do body macro fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -11567,6 +11736,9 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--block-static-assert-parity-json") == 0)
     return print_block_static_assert_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--do-body-hover-parity-json") == 0)
+    return print_do_body_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -11722,6 +11894,8 @@ int main(int argc, char **argv) {
         "prototype parameter bound hover scenarios");
   CHECK(test_block_static_assert_hover(target) == 0,
         "block static assert hover scenarios");
+  CHECK(test_do_body_hover(target) == 0,
+        "do body hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -14822,6 +14996,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (62 scenarios)");
+  puts("language analysis tests passed (63 scenarios)");
   return 0;
 }

@@ -36172,3 +36172,41 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 今回greenだった28文脈は再探索せず、通常サイズの完全sourceで未固定のblock itemまたはstatement lookup境界を小型probeから探す。
     開発中はNative約5秒と0.4秒のstatic-assert焦点gateを使い、全Wasmは関連batch末尾に一度だけ実行する。
+
+### このセッション（続き1219）: `do` body内operand hoverを回復した
+- 対象選定:
+  - 通常サイズの完全なvalid Cで、`if`/`while`/`do`/`switch`/`for`、case/default、call、nested block、loop後statementを含む22の浅い
+    statement lookup文脈を小型Wasm probeで確認し、21形はgreenだった。
+  - 唯一、`do { object--; } while (condition);`のbody内`object`がE3065「`while`が必要」の解析例外になった。compound body、body-local、
+    nested block、enum/macro/call、単一expression・単一`if`、nested direct `do`、comment・LF/CRLF spliceの16比較形はすべて同じ失敗で、
+    後続while条件内だけはgreenだった。
+- 原因:
+  - 汎用recoveryはcursor位置までのbodyを式statementとして閉じ、開いているcompound braceも閉じていたが、`do` statementに必須の後続`while`
+    節を一時sourceへ作らなかった。このため完全な元sourceでもparserがfunction終端でE3065を返した。
+- 変更:
+  - 既存のcomment・quote・preprocessor・LF/CRLF splice対応反復scannerで、`do`直後の直接compound braceをdelimiter frameへ記録した。
+    recoveryでそのbraceを閉じる際に最小`while (0);`を追加するため、markerはbody-local scope内に残り、後続body宣言を候補へ入れない。
+  - 浅い単一statementは同じstatement境界内にある`do`だけを反復scannerで追跡し、現在bodyを`;`で閉じ、最小while節の後へmarkerを置く。
+    完了済みdoのbody終端`;`で状態を消すため、後続の通常statementへ過剰適用しない。
+  - object/parameter/enum/macro/function call、body-local・nested block、comment/splice、単一expression・単一`if`、nested direct `do`、元while条件、
+    完了済みdo後statementの18形を専用sourceへまとめた。別control statement配下にcompound bodyを持つ深い単一statementは対象外とした。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=do-body`と`make test-wasm-language-analysis-do-body`を追加した。全18形の中央と代表5形の名前先頭・末尾、
+    runtime manifest、Native snapshot parityを含む最終実測は**real 0.60秒 / user 0.86秒 / sys 0.16秒**だった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = compile warningなし、
+    **language analysis tests passed (63 scenarios)**。18形すべてを名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.68秒 / user 42.01秒 / sys 0.97秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-do-body` = 成功、**real 0.60秒 / user 0.86秒 / sys 0.16秒**。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `AGC_LANGUAGE_ANALYSIS_TIMING=1 /usr/bin/time -p make test-wasm-js-api` = language-analysis、smoke、package exportsすべて成功、
+    **real 1326.18秒 / user 1320.94秒 / sys 8.56秒**。続き1218との関連statement batch末尾の全統合gateとして一度だけ実施した。
+    新規block static assertion区間まで0.98秒、`do` body区間まで1.48秒で、既存enum call/declarator群が総時間の大半を占めた。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。別control statement配下のcompound body、
+    深い制御入れ子・式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回greenだった21 statement文脈は再探索せず、通常サイズの完全sourceで未固定のinitializerまたはtype-query lookup境界を小型probeから探す。
+    開発中はNative約6秒と0.6秒の`do`焦点gateを使い、全Wasm integrationは次の関連batch末尾まで繰り返さない。
