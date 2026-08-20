@@ -3351,10 +3351,7 @@ static char *build_file_typedef_block_extern_type_recovery_source(
         if (declarator_pointer_count > 1 &&
             ((!is_const && !is_volatile && !is_restrict) ||
              parenthesized_second_pointer_qualifier_count != 0 ||
-             has_parenthesized_atomic_pointer_qualifier ||
-             (parenthesized_pointer_qualifier_count != 0 &&
-              (is_restrict ||
-               has_parenthesized_restrict_pointer_qualifier))))
+             has_parenthesized_atomic_pointer_qualifier))
           return NULL;
         parenthesized_pointer_qualifier_count++;
         if (declarator_pointer_count > 1)
