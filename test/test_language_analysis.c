@@ -1776,6 +1776,9 @@ static const char declarator_array_bound_operand_hover_source[] =
     "  DECLARATOR_ARRAY_BOUND_ENUM = 3\n"
     "};\n"
     "typedef int DeclaratorArrayElement;\n"
+    "enum { DECLARATOR_CURRENT_BOUND = 6, "
+    "DECLARATOR_CURRENT_MULTI = 7, DECLARATOR_CURRENT_COMMENT = 8, "
+    "DECLARATOR_CURRENT_SPLICE = 9, DECLARATOR_CURRENT_FOR = 10 };\n"
     "int declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO], "
     "declarator_array_bound_later;\n"
     "DeclaratorArrayElement declarator_array_bound_typedef["
@@ -1791,11 +1794,23 @@ static const char declarator_array_bound_operand_hover_source[] =
     "  int declarator_same_count = 4, declarator_same_values[declarator_same_count], declarator_same_later;\n"
     "  DeclaratorArrayElement declarator_typedef_count = 4, declarator_typedef_values[declarator_typedef_count], declarator_typedef_later;\n"
     "  { int declarator_nested_prior = 4; int declarator_nested_values[declarator_nested_prior]; int declarator_nested_after; }\n"
+    "  { int DECLARATOR_CURRENT_BOUND[DECLARATOR_CURRENT_BOUND]; "
+    "int declarator_current_bound_after; }\n"
+    "  { int declarator_current_prior = 0, "
+    "DECLARATOR_CURRENT_MULTI[DECLARATOR_CURRENT_MULTI], "
+    "declarator_current_multi_after; }\n"
+    "  { int DECLARATOR_CURRENT_COMMENT[/* current gap */ "
+    "DECLARATOR_CURRENT_COMMENT]; int declarator_current_comment_after; }\n"
+    "  { int DECLARATOR_CURRENT_SPLICE[\\\n"
+    "DECLARATOR_CURRENT_SPLICE]; int declarator_current_splice_after; }\n"
     "  int bound_after = bound_before;\n"
     "  return sizeof(local_values) + sizeof(declarator_same_values) + sizeof(declarator_typedef_values) + bound_after;\n"
     "}\n"
     "static int declarator_array_bound_for(void) {\n"
     "  for (int declarator_for_count = 4, (*declarator_for_values)[declarator_for_count] = 0; declarator_for_values; ) { break; }\n"
+    "  for (int declarator_current_for_prior = 0, "
+    "DECLARATOR_CURRENT_FOR[DECLARATOR_CURRENT_FOR]; "
+    "declarator_current_for_prior; ) { break; }\n"
     "  int declarator_for_after;\n"
     "  return 0;\n"
     "}\n"
@@ -9879,35 +9894,59 @@ static int test_declarator_array_bound_operand_hover(
     const char *declaration_fragment;
     const char *constant_value;
     int boundary_case;
+    const char *hidden_current_object;
+    const char *hidden_after_object;
   } cases[] = {
       {"declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO]",
        "DECLARATOR_ARRAY_BOUND_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
-       "DECLARATOR_ARRAY_BOUND_MACRO 4", "", 1},
+       "DECLARATOR_ARRAY_BOUND_MACRO 4", "", 1, NULL, NULL},
       {"declarator_array_bound_typedef[DECLARATOR_ARRAY_BOUND_MACRO]",
        "DECLARATOR_ARRAY_BOUND_MACRO", AG_LANGUAGE_SYMBOL_MACRO,
-       "DECLARATOR_ARRAY_BOUND_MACRO 4", "", 0},
+       "DECLARATOR_ARRAY_BOUND_MACRO 4", "", 0, NULL, NULL},
       {"declarator_array_bound_enum[DECLARATOR_ARRAY_BOUND_ENUM]",
        "DECLARATOR_ARRAY_BOUND_ENUM", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
-       "DECLARATOR_ARRAY_BOUND_ENUM = 3", "3", 0},
+       "DECLARATOR_ARRAY_BOUND_ENUM = 3", "3", 0, NULL, NULL},
       {"member[DECLARATOR_ARRAY_BOUND_ENUM]",
        "DECLARATOR_ARRAY_BOUND_ENUM", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
-       "DECLARATOR_ARRAY_BOUND_ENUM = 3", "3", 0},
+       "DECLARATOR_ARRAY_BOUND_ENUM = 3", "3", 0, NULL, NULL},
       {"local_values[bound_parameter]", "bound_parameter",
-       AG_LANGUAGE_SYMBOL_PARAMETER, "bound_parameter)", "", 2},
+       AG_LANGUAGE_SYMBOL_PARAMETER, "bound_parameter)", "", 2,
+       NULL, NULL},
       {"declarator_same_values[declarator_same_count]",
        "declarator_same_count", AG_LANGUAGE_SYMBOL_OBJECT,
-       "declarator_same_count = 4", "", 3},
+       "declarator_same_count = 4", "", 3, NULL, NULL},
       {"declarator_nested_values[declarator_nested_prior]",
        "declarator_nested_prior", AG_LANGUAGE_SYMBOL_OBJECT,
-       "declarator_nested_prior = 4", "", 4},
+       "declarator_nested_prior = 4", "", 4, NULL, NULL},
       {"declarator_typedef_values[declarator_typedef_count]",
        "declarator_typedef_count", AG_LANGUAGE_SYMBOL_OBJECT,
-       "declarator_typedef_count = 4", "", 5},
+       "declarator_typedef_count = 4", "", 5, NULL, NULL},
       {"declarator_for_values)[declarator_for_count]",
        "declarator_for_count", AG_LANGUAGE_SYMBOL_OBJECT,
-       "declarator_for_count = 4", "", 6},
+       "declarator_for_count = 4", "", 6, NULL, NULL},
+      {"[DECLARATOR_CURRENT_BOUND]",
+       "DECLARATOR_CURRENT_BOUND", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "DECLARATOR_CURRENT_BOUND = 6", "6", 0,
+       "DECLARATOR_CURRENT_BOUND", "declarator_current_bound_after"},
+      {"[DECLARATOR_CURRENT_MULTI]",
+       "DECLARATOR_CURRENT_MULTI", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "DECLARATOR_CURRENT_MULTI = 7", "7", 7,
+       "DECLARATOR_CURRENT_MULTI", "declarator_current_multi_after"},
+      {"/* current gap */ DECLARATOR_CURRENT_COMMENT]",
+       "DECLARATOR_CURRENT_COMMENT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "DECLARATOR_CURRENT_COMMENT = 8", "8", 0,
+       "DECLARATOR_CURRENT_COMMENT", "declarator_current_comment_after"},
+      {"\\\nDECLARATOR_CURRENT_SPLICE]",
+       "DECLARATOR_CURRENT_SPLICE", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "DECLARATOR_CURRENT_SPLICE = 9", "9", 0,
+       "DECLARATOR_CURRENT_SPLICE", "declarator_current_splice_after"},
+      {"[DECLARATOR_CURRENT_FOR]",
+       "DECLARATOR_CURRENT_FOR", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "DECLARATOR_CURRENT_FOR = 10", "10", 8,
+       "DECLARATOR_CURRENT_FOR", "declarator_for_after"},
       {"declarator_array_bound_file[subscript_index]", "subscript_index",
-       AG_LANGUAGE_SYMBOL_PARAMETER, "subscript_index)", "", 0},
+       AG_LANGUAGE_SYMBOL_PARAMETER, "subscript_index)", "", 0,
+       NULL, NULL},
   };
   const char *macro_comment = strstr(
       declarator_array_bound_operand_hover_source,
@@ -9976,6 +10015,16 @@ static int test_declarator_array_bound_operand_hover(
                                  declarator_array_bound_operand_hover_source) +
                             strlen("/// declarator array bound macro documentation")),
                 "declarator array bound macro fields");
+        if (cases[case_index].hidden_current_object)
+          CHECK(!find_symbol(
+                    &snapshot, cases[case_index].hidden_current_object,
+                    AG_LANGUAGE_SYMBOL_OBJECT),
+                "current array declarator remains invisible");
+        if (cases[case_index].hidden_after_object)
+          CHECK(!find_symbol(
+                    &snapshot, cases[case_index].hidden_after_object,
+                    AG_LANGUAGE_SYMBOL_OBJECT),
+                "object after current array declarator remains invisible");
         if (cases[case_index].boundary_case == 1)
           CHECK(!find_symbol(
                     &snapshot, "declarator_array_bound_later",
@@ -10034,6 +10083,16 @@ static int test_declarator_array_bound_operand_hover(
                     &snapshot, "declarator_for_after",
                     AG_LANGUAGE_SYMBOL_OBJECT),
                 "for init bound later object remains hidden");
+        if (cases[case_index].boundary_case == 7)
+          CHECK(find_symbol(
+                    &snapshot, "declarator_current_prior",
+                    AG_LANGUAGE_SYMBOL_OBJECT),
+                "later current declarator preserves prior declarator");
+        if (cases[case_index].boundary_case == 8)
+          CHECK(find_symbol(
+                    &snapshot, "declarator_current_for_prior",
+                    AG_LANGUAGE_SYMBOL_OBJECT),
+                "for current declarator preserves prior declarator");
         ag_language_analysis_snapshot_dispose(&snapshot);
         if (fresh_session)
           ag_compilation_session_destroy(analysis_session);

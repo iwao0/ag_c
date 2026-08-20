@@ -36904,3 +36904,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。tagのscope-aware宣言/reference分類、配列・括弧付きatomic abstract declarator、attribute、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - 今回の中間pointer修飾子は再探索せず、tagや括弧付きabstract declaratorへ入らない別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationは反復せず、Native約6秒と2.45秒のsame-typedef焦点gateを使う。
+
+### このセッション（続き1241）: object配列宣言子内のcurrent object lookup pointを回復した
+- 対象選定:
+  - 通常サイズの完全sourceで、外側enum/typedefと同名の直接object配列、parameter配列、block-scope function宣言を小型Wasm probeへ並べた。
+  - `int LocalBound[LocalBound]`、`int LocalType[sizeof(LocalType)]`、`void f(int Parameter[Parameter])`、`int LocalType(LocalType)`はいずれもhover自体は返る一方、外側enum/typedefではなく、まだpoint of declarationへ達していない現在object/parameter/functionへ誤解決していた。
+  - 今回は深い式へ入らず既存declarator-array焦点gateへ統合できる、括弧式を含まない直接object配列の最初/後続/`for`初期宣言、comment、LF spliceの5形を回復した。parameter/function宣言と`sizeof`を含むboundは別のscope-aware経路が必要な次候補として残した。
+- 原因:
+  - declarator array-bound recoveryは現在の配列object宣言子を完結してからmarkerを置くため、marker lookup pointが現在objectの宣言点を越えていた。
+  - 先行objectを参照する従来形は正しく見える一方、外側enumと現在objectが同名の場合は、外側symbolがlookup結果から既に失われるためcompletion後処理だけでは復元できない。
+- 変更:
+  - 既存のtypedef宣言点scanner/helperを一般的なdeclarator lookup recoveryへ改名し、非typedefでは直接object配列宣言子、brace/paren depth 0、top-level assignmentなしの場合だけ共有した。
+  - 最初の宣言子では現在宣言全体を除いて宣言直前へmarkerを置く。後続宣言子では直前のtop-level commaを`;`へ置き換え、先行宣言子だけを保持する。
+  - `for`初期宣言では、最初の宣言子なら`for (`直後へsynthetic marker宣言と空condition/iteration/bodyを置き、後続なら先行宣言子の後へmarker declaratorを置いて同じloop scopeを維持する。
+  - scannerが誤って前の宣言まで遡った場合に一致しないよう、選択位置までにtop-level `;`があれば辞退する。parameter/function declarator、record/enum body、括弧式を含むboundは既存専用経路へ残した。
+  - 最初/後続/`for`、comment、LF spliceの5形を既存declarator-array Native/Wasm fixtureへ追加し、外側enumの正確なrange・値、現在objectと後続objectの非可視、先行declaratorの可視を固定した。
+- 取り下げた一般化:
+  - 最初の試行ではparameter/function declaratorも同じ宣言開始回復へ通したが、parameter宣言名自身のhoverと既存prototype parameter boundを誤って除去する退行をNative full fixtureが検出した。
+  - function parameter専用markerを現在parameter前へ移す試行も、block-scope typedef戻り型prototypeの既存lookupを失ったため取り下げた。最終差分は直接object配列だけに限定し、既存prototype/inline-tag fixtureがgreenであることを確認した。
+- テスト時間の改善:
+  - 新しいtargetは追加せず、既存`make test-wasm-language-analysis-declarator-array-bounds`へ統合した。Native parity、代表境界、fresh instanceを含む最終実測は**real 0.83秒 / user 1.12秒 / sys 0.15秒**だった。
+  - same-typedef、prototype bound、local member array boundの隣接3 targetは`make -j3`で並列実行し、**real 2.76秒 / user 6.33秒 / sys 0.62秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 6.21秒 / user 4.51秒 / sys 1.49秒**。追加5形を名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.94秒 / user 42.57秒 / sys 1.21秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-declarator-array-bounds` = 成功、**real 0.83秒 / user 1.12秒 / sys 0.15秒**。
+  - `make -j3 test-wasm-language-analysis-same-typedef-declarators test-wasm-language-analysis-prototype-bounds test-wasm-language-analysis-local-member-array-bounds` = 3 target成功、**real 2.76秒 / user 6.33秒 / sys 0.62秒**。
+  - `make test-wasm-language-analysis-for-init` = 成功、**real 0.67秒 / user 0.79秒 / sys 0.19秒**。
+  - 代表5形は`clang -std=c11 -pedantic-errors -fsyntax-only`で成功した。更新後の小型Wasm probeでは直接object配列だけが外側enumへ戻り、対象外のparameter/function/`sizeof`形は未変更であることを確認した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 3.45秒 / user 3.04秒 / sys 0.29秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.40秒**。
+- 未実施:
+  - 同じJS本体を0.83秒のfresh instance・Native parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行しない。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。current parameter/function宣言、`sizeof`を含むbound、tagのscope-aware分類、複合式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - parameter/function宣言は既存prototype recoveryを壊さない専用のcurrent-declarator分類が必要と分かったため、次は小型probeで現在parameterの開始位置と先行parameter保持境界を分離する。直接object配列は再探索せず、Native約6秒と0.83秒の既存焦点gateを使う。

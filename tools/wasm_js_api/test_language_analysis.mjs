@@ -2653,6 +2653,7 @@ const declaratorArrayBoundOperandHoverSource = {
     "  DECLARATOR_ARRAY_BOUND_ENUM = 3\n" +
     "};\n" +
     "typedef int DeclaratorArrayElement;\n" +
+    "enum { DECLARATOR_CURRENT_BOUND = 6, DECLARATOR_CURRENT_MULTI = 7, DECLARATOR_CURRENT_COMMENT = 8, DECLARATOR_CURRENT_SPLICE = 9, DECLARATOR_CURRENT_FOR = 10 };\n" +
     "int declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO], declarator_array_bound_later;\n" +
     "DeclaratorArrayElement declarator_array_bound_typedef[DECLARATOR_ARRAY_BOUND_MACRO];\n" +
     "int declarator_array_bound_enum[DECLARATOR_ARRAY_BOUND_ENUM];\n" +
@@ -2666,11 +2667,16 @@ const declaratorArrayBoundOperandHoverSource = {
     "  int declarator_same_count = 4, declarator_same_values[declarator_same_count], declarator_same_later;\n" +
     "  DeclaratorArrayElement declarator_typedef_count = 4, declarator_typedef_values[declarator_typedef_count], declarator_typedef_later;\n" +
     "  { int declarator_nested_prior = 4; int declarator_nested_values[declarator_nested_prior]; int declarator_nested_after; }\n" +
+    "  { int DECLARATOR_CURRENT_BOUND[DECLARATOR_CURRENT_BOUND]; int declarator_current_bound_after; }\n" +
+    "  { int declarator_current_prior = 0, DECLARATOR_CURRENT_MULTI[DECLARATOR_CURRENT_MULTI], declarator_current_multi_after; }\n" +
+    "  { int DECLARATOR_CURRENT_COMMENT[/* current gap */ DECLARATOR_CURRENT_COMMENT]; int declarator_current_comment_after; }\n" +
+    "  { int DECLARATOR_CURRENT_SPLICE[\\\nDECLARATOR_CURRENT_SPLICE]; int declarator_current_splice_after; }\n" +
     "  int bound_after = bound_before;\n" +
     "  return sizeof(local_values) + sizeof(declarator_same_values) + sizeof(declarator_typedef_values) + bound_after;\n" +
     "}\n" +
     "static int declarator_array_bound_for(void) {\n" +
     "  for (int declarator_for_count = 4, (*declarator_for_values)[declarator_for_count] = 0; declarator_for_values; ) { break; }\n" +
+    "  for (int declarator_current_for_prior = 0, DECLARATOR_CURRENT_FOR[DECLARATOR_CURRENT_FOR]; declarator_current_for_prior; ) { break; }\n" +
     "  int declarator_for_after;\n" +
     "  return 0;\n" +
     "}\n" +
@@ -2697,11 +2703,27 @@ const declaratorArrayBoundOperandCases = [
     "declarator_typedef_count", "object", 5, true],
   ["declarator_for_values)[declarator_for_count]",
     "declarator_for_count", "object", 6, true],
+  ["[DECLARATOR_CURRENT_BOUND]", "DECLARATOR_CURRENT_BOUND",
+    "enumConstant", 0, true, "DECLARATOR_CURRENT_BOUND",
+    "declarator_current_bound_after"],
+  ["[DECLARATOR_CURRENT_MULTI]", "DECLARATOR_CURRENT_MULTI",
+    "enumConstant", 7, false, "DECLARATOR_CURRENT_MULTI",
+    "declarator_current_multi_after"],
+  ["/* current gap */ DECLARATOR_CURRENT_COMMENT]",
+    "DECLARATOR_CURRENT_COMMENT", "enumConstant", 0, false,
+    "DECLARATOR_CURRENT_COMMENT", "declarator_current_comment_after"],
+  ["\\\nDECLARATOR_CURRENT_SPLICE]", "DECLARATOR_CURRENT_SPLICE",
+    "enumConstant", 0, false, "DECLARATOR_CURRENT_SPLICE",
+    "declarator_current_splice_after"],
+  ["[DECLARATOR_CURRENT_FOR]", "DECLARATOR_CURRENT_FOR",
+    "enumConstant", 8, true, "DECLARATOR_CURRENT_FOR",
+    "declarator_for_after"],
   ["declarator_array_bound_file[subscript_index]", "subscript_index",
     "parameter", 0, false],
 ];
 if (languageAnalysisFocus === "declarator-array-bounds") {
-  for (const [fragmentText, name, kind, boundaryCase, checkBoundaries] of
+  for (const [fragmentText, name, kind, boundaryCase, checkBoundaries,
+    hiddenCurrentObject, hiddenAfterObject] of
     declaratorArrayBoundOperandCases) {
     const fragmentIndex = declaratorArrayBoundOperandHoverSource.source.indexOf(
       fragmentText,
@@ -2738,6 +2760,12 @@ if (languageAnalysisFocus === "declarator-array-bounds") {
       assert.deepStrictEqual(result.hover?.declaration,
         symbol(result, name, kind)?.declaration,
         `${name} focused declarator array bound declaration`);
+      if (hiddenCurrentObject)
+        assert.equal(symbol(result, hiddenCurrentObject, "object"), undefined,
+          `${name} focused current array declarator hidden`);
+      if (hiddenAfterObject)
+        assert.equal(symbol(result, hiddenAfterObject, "object"), undefined,
+          `${name} focused object after current declarator hidden`);
       if (boundaryCase === 1)
         assert.equal(symbol(
           result, "declarator_array_bound_later", "object",
@@ -2768,6 +2796,12 @@ if (languageAnalysisFocus === "declarator-array-bounds") {
         assert.equal(symbol(
           result, "declarator_for_after", "object",
         ), undefined, "focused for-init later object hidden");
+      if (boundaryCase === 7)
+        assert.ok(symbol(result, "declarator_current_prior", "object"),
+          "focused later current declarator preserves prior declarator");
+      if (boundaryCase === 8)
+        assert.ok(symbol(result, "declarator_current_for_prior", "object"),
+          "focused for current declarator preserves prior declarator");
       assert.deepStrictEqual(result, JSON.parse(execFileSync(
         nativeAnalysisPath,
         ["--declarator-array-bound-operand-hover-parity-json",
@@ -2781,6 +2815,10 @@ if (languageAnalysisFocus === "declarator-array-bounds") {
       "declarator_typedef_count", "object"],
     ["declarator_for_values)[declarator_for_count]",
       "declarator_for_count", "object"],
+    ["[DECLARATOR_CURRENT_BOUND]", "DECLARATOR_CURRENT_BOUND",
+      "enumConstant"],
+    ["[DECLARATOR_CURRENT_FOR]", "DECLARATOR_CURRENT_FOR",
+      "enumConstant"],
   ]) {
     const freshCompiler = await createCompiler(wasmModule);
     try {

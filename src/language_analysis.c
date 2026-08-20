@@ -2598,12 +2598,18 @@ static int analysis_typedef_specifier_before_first_declarator(
   return 0;
 }
 
-static char *build_typedef_declaration_start_recovery_source(
+static char *build_declaration_start_lookup_recovery_source(
     const char *source, size_t declaration_start,
-    size_t outer_brace_count, int *changed, size_t *source_consumed) {
-  static const char marker[] =
+    size_t outer_brace_count, int for_init_declaration, int *changed,
+    size_t *source_consumed) {
+  static const char regular_marker[] =
       "int " AG_LANGUAGE_CURSOR_MARKER ";\n";
-  size_t marker_length = sizeof(marker) - 1;
+  static const char for_init_marker[] =
+      "int " AG_LANGUAGE_CURSOR_MARKER "; ; ) {\n}\n";
+  const char *marker = for_init_declaration
+                           ? for_init_marker
+                           : regular_marker;
+  size_t marker_length = strlen(marker);
   if (outer_brace_count > SIZE_MAX / 2 ||
       declaration_start > SIZE_MAX - marker_length ||
       declaration_start + marker_length >
@@ -2627,7 +2633,7 @@ static char *build_typedef_declaration_start_recovery_source(
   return result;
 }
 
-static char *build_prior_typedef_declarator_recovery_source(
+static char *build_prior_declarator_lookup_recovery_source(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs, int *changed, size_t *source_consumed) {
   const char *name = NULL;
@@ -2645,15 +2651,15 @@ static char *build_prior_typedef_declarator_recovery_source(
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
           &bracket_depth, &brace_depth, &definite_declaration,
-          &for_init_declaration, &declaration_start) ||
-      for_init_declaration)
+          &for_init_declaration, &declaration_start))
     return NULL;
 
-  if (analysis_typedef_specifier_before_first_declarator(
+  if (!for_init_declaration &&
+      analysis_typedef_specifier_before_first_declarator(
           source, length, name_start, name_start + name_length,
           declaration_start, outer_brace_count, enable_trigraphs))
-    return build_typedef_declaration_start_recovery_source(
-        source, declaration_start, outer_brace_count, changed,
+    return build_declaration_start_lookup_recovery_source(
+        source, declaration_start, outer_brace_count, 0, changed,
         source_consumed);
   if (!definite_declaration) return NULL;
 
@@ -2661,6 +2667,7 @@ static char *build_prior_typedef_declarator_recovery_source(
   int has_typedef_keyword = 0;
   int has_current_declarator_identifier = 0;
   int has_first_declarator_identifier = 0;
+  int current_declarator_has_assignment = 0;
   char first_declarator_delimiter = 0;
   int local_parens = 0;
   int local_brackets = 0;
@@ -2760,7 +2767,7 @@ static char *build_prior_typedef_declarator_recovery_source(
                 &candidate_for_init_declaration,
                 &candidate_declaration_start) &&
             candidate_definite_declaration &&
-            !candidate_for_init_declaration &&
+            candidate_for_init_declaration == for_init_declaration &&
             candidate_declaration_start == declaration_start &&
             candidate_outer_brace_count == outer_brace_count)
           has_first_declarator_identifier = 1;
@@ -2773,6 +2780,9 @@ static char *build_prior_typedef_declarator_recovery_source(
     if (has_first_declarator_identifier &&
         first_declarator_delimiter == 0 && (c == '(' || c == '['))
       first_declarator_delimiter = c;
+    if (c == ';' && local_parens == 0 && local_brackets == 0 &&
+        local_braces == 0)
+      return NULL;
     if (c == '(') local_parens++;
     else if (c == ')' && local_parens > 0) local_parens--;
     else if (c == '[') local_brackets++;
@@ -2783,23 +2793,45 @@ static char *build_prior_typedef_declarator_recovery_source(
              local_braces == 0) {
       last_top_level_comma = i;
       has_current_declarator_identifier = 0;
-    }
+      current_declarator_has_assignment = 0;
+    } else if (c == '=' && local_parens == 0 && local_brackets == 0 &&
+             local_braces == 0)
+      current_declarator_has_assignment = 1;
   }
-  if (has_typedef_keyword && last_top_level_comma == SIZE_MAX &&
+  int cursor_in_first_declarator =
+      last_top_level_comma == SIZE_MAX &&
       has_first_declarator_identifier &&
-      ((first_declarator_delimiter == '(' && local_parens > 0 &&
-        local_brackets == 0) ||
-       (first_declarator_delimiter == '[' && local_brackets > 0)))
-    return build_typedef_declaration_start_recovery_source(
-        source, declaration_start, outer_brace_count, changed,
-        source_consumed);
-  if (!has_typedef_keyword || last_top_level_comma == SIZE_MAX ||
-      !has_current_declarator_identifier)
+      !current_declarator_has_assignment &&
+      ((has_typedef_keyword &&
+        ((first_declarator_delimiter == '(' && local_parens > 0 &&
+          local_brackets == 0) ||
+         (first_declarator_delimiter == '[' && local_brackets > 0))) ||
+       (!has_typedef_keyword && brace_depth == 0 &&
+        paren_depth == 0 &&
+        first_declarator_delimiter == '[' && local_brackets > 0));
+  if (cursor_in_first_declarator)
+    return build_declaration_start_lookup_recovery_source(
+        source, declaration_start, outer_brace_count,
+        for_init_declaration, changed, source_consumed);
+  int cursor_in_later_declarator =
+      last_top_level_comma != SIZE_MAX &&
+      has_current_declarator_identifier &&
+      !current_declarator_has_assignment &&
+      (has_typedef_keyword ||
+       (paren_depth == 0 && brace_depth == 0 &&
+        first_declarator_delimiter != '(' &&
+        local_brackets > 0));
+  if (!cursor_in_later_declarator)
     return NULL;
 
-  static const char suffix[] =
+  static const char regular_suffix[] =
       ";\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
-  size_t suffix_length = sizeof(suffix) - 1;
+  static const char for_init_suffix[] =
+      ", " AG_LANGUAGE_CURSOR_MARKER "; ; ) {\n}\n";
+  const char *suffix = for_init_declaration
+                           ? for_init_suffix
+                           : regular_suffix;
+  size_t suffix_length = strlen(suffix);
   if (outer_brace_count > SIZE_MAX / 2 ||
       last_top_level_comma > SIZE_MAX - suffix_length ||
       last_top_level_comma + suffix_length >
@@ -4495,13 +4527,13 @@ static char *build_recovery_source(const char *source, size_t source_length,
   size_t source_consumed = recovery_cursor;
   if (!cursor_on_complete_macro_definition &&
       !cursor_on_complete_preprocessor_operand) {
-    char *prior_typedef_declarator_recovery =
-        build_prior_typedef_declarator_recovery_source(
+    char *prior_declarator_lookup_recovery =
+        build_prior_declarator_lookup_recovery_source(
             source, source_length, recovery_cursor, enable_trigraphs,
             changed, &source_consumed);
-    if (prior_typedef_declarator_recovery)
+    if (prior_declarator_lookup_recovery)
       return append_conditional_validation_tail(
-          prior_typedef_declarator_recovery, source, source_length,
+          prior_declarator_lookup_recovery, source, source_length,
           source_consumed, enable_trigraphs);
     char *callback_parameter_bound_recovery =
         build_direct_callback_parameter_bound_recovery_source(
