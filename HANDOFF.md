@@ -37574,3 +37574,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規4 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないmember型制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深い宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - variably modified memberはcanonical型の配列/pointer/typedef/struct/union境界まで閉じた。nested callbackや複雑なVLA式へ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1268）: anonymous aggregate memberをtagなし直接specifierへ限定した
+- 対象選定:
+  - 続き1267に隣接するVM storage/linkage境界を、typedef経由のblock `extern` pointer、static/thread-local VLA object、static/thread-local/register VM pointerで確認したが、Clang strictとag_cはすべて一致した。typedef経由flexible array memberの合法形とunion・先行member欠落・後続member・nested member・array elementの不正形も一致したため、両領域は変更していない。
+  - record memberの宣言子省略へ移り、tagなし直接`struct { int value; };`／`union { ... };`はClang/ag_cとも受理した。一方、`typedef struct { int value; } Inner; struct Outer { Inner; };`、union typedef、既存tag参照、名前付きinline tag定義の4形はClang C11 strictが拒否するのに、ag_cはanonymous memberとして受理・member昇格していた。
+  - 通常サイズのmember declarationだけを対象にし、深いtag入れ子、initializer、式、security監査系には広げていない。
+- 原因と変更:
+  - `psx_resolve_aggregate_member_declaration`はmember名がなく、解決後canonical型がstruct/unionなら一律anonymous aggregateと判定していた。そのためparserが保持していた「tagなし直接specifier」の構文identityをsemantic境界で失っていた。
+  - 共通`psx_aggregate_member_declaration_request_t`へ`has_anonymous_aggregate_specifier`を追加し、通常aggregate適用とdirect declaration-specifier解決の両entry pathから`tag_action.is_anonymous`を渡す。member名なし・構文上anonymous・canonical型がstruct/unionの3条件を満たす場合だけanonymous memberとして登録し、それ以外の宣言子なしmemberは既存E3065へ戻す。
+  - design invariantでrequestの構文フラグ、両entry pathからの伝播、resolverの三条件判定を固定した。user-facing文言のexact-match testは追加せず、診断IDだけを固定した。
+- coverage:
+  - parser unitへtypedef struct/union、tag参照、名前付きinline定義の不正4形と、tagなし直接struct/union・qualified direct structの合法対照を追加した。
+  - should_rejectへ`anonymous_member_typedef_struct`、`anonymous_member_typedef_union`、`anonymous_member_tagged_reference`、`anonymous_member_named_definition`の4 fixtureを追加し、Native/Wasm compile-fail registryへE3065で登録した。
+- 確認:
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.50秒 / user 3.01秒 / sys 0.21秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.37秒 / user 0.73秒 / sys 0.44秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.07秒 / user 42.36秒 / sys 0.93秒**。`make -q wasm-selfhost-api`もcurrentを確認した。
+  - 新規4 fixtureはhost Clang strict、Native、Wasm objectが全件拒否し、Native/WasmはすべてE3065で一致した。tagなし直接struct/unionとqualified direct structの3対照はNative/Wasm objectともstatus 0を維持した。
+  - `build/test_e2e`をwarningなしでビルドし、`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 新規4 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないmember構文制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深いtag/宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - anonymous memberのtypedef/tag/direct specifier境界は閉じた。複雑なanonymous record layoutへ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。

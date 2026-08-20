@@ -4408,6 +4408,9 @@ if (!aggregateMemberResolutionType ||
     !/\bint\s+requested_alignment\s*;/.test(
       aggregateMemberRequestType[1],
     ) ||
+    !/\bint\s+has_anonymous_aggregate_specifier\s*;/.test(
+      aggregateMemberRequestType[1],
+    ) ||
     /\bpsx_type_t\b/.test(aggregateMemberRequestType[1]) ||
     /\btarget_tag_(?:kind|name|name_len)\b/.test(
       aggregateMemberRequestType[1],
@@ -4435,6 +4438,9 @@ if (!aggregateMemberResolutionType ||
       aggregateMemberResolutionSource,
     ) ||
     !/requested_alignment\s*=\s*request->requested_alignment/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/is_anonymous_aggregate\s*=\s*!has_name\s*&&\s*request->has_anonymous_aggregate_specifier\s*&&\s*is_aggregate_kind\(type_shape\.kind\)/.test(
       aggregateMemberResolutionSource,
     ) ||
     !/ps_ctx_register_record_members_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*\s*declarations\s*,[^;]*const\s+psx_record_member_layout_t\s*\*\s*layouts/s.test(
@@ -4520,6 +4526,16 @@ if (!/has_alignment_specifier\s*=\s*declaration->specifier\.alignas_specifier_co
     )) {
   throw new Error(
     "aggregate member resolution must preserve alignment-specifier presence from both semantic entry paths",
+  );
+}
+if (!/has_anonymous_aggregate_specifier\s*=\s*declaration->specifier\.tag_action\.is_anonymous/.test(
+      declarationApplicationSource,
+    ) ||
+    !/has_anonymous_aggregate_specifier\s*=\s*declaration->specifier\.tag_action\.is_anonymous/.test(
+      declarationSpecifierResolutionSource,
+    )) {
+  throw new Error(
+    "aggregate member resolution must preserve syntactic anonymous-tag identity from both semantic entry paths",
   );
 }
 const declarationSpecifierResolutionHeader = await readFile(

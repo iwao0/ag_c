@@ -15801,6 +15801,27 @@ static void test_aggregate_member_resolution_boundary(
   expect_parse_fail(test_suite_session,
       "struct BadDuplicate { int value; long value; }; "
       "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef struct { int value; } Inner; "
+      "struct Outer { Inner; }; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef union { int integer; float real; } Inner; "
+      "struct Outer { Inner; }; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Inner { int value; }; struct Outer { struct Inner; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int main(void) { struct Outer { "
+      "struct Inner { int value; }; }; return 0; }");
+  expect_parse_ok(test_suite_session,
+      "struct Outer { struct { int value; }; "
+      "union { int integer; float real; }; }; "
+      "int main(void) { struct Outer item={7, .integer=9}; "
+      "return item.value + item.integer; }");
+  expect_parse_ok(test_suite_session,
+      "int main(void) { struct Outer { "
+      "const struct { int value; }; }; "
+      "struct Outer item={7}; return item.value; }");
 }
 
 static void test_static_assert_resolution_boundary() {
@@ -20149,6 +20170,10 @@ static void test_parse_invalid_diagnostics(
       "void probe(int count) { typedef int Row[count]; "
       "struct Item { Row *values; }; }",
       "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "typedef struct { int value; } Inner; "
+      "struct Outer { Inner; }; int main(void) { return 0; }",
+      "E3065");
   expect_parse_fail_with_message(test_suite_session,
       "int main() { struct S { int *p:1; }; return 0; }",
       "bit-field has non-integer canonical type");

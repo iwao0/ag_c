@@ -246,6 +246,8 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
               .declarator_shape = &application.shape,
               .member_name = name ? name->str : NULL,
               .member_name_len = name ? name->len : 0,
+              .has_anonymous_aggregate_specifier =
+                  declaration->specifier.tag_action.is_anonymous,
               .has_bitfield = declarator->has_bitfield,
               .bit_width = bit_width,
               .pack_alignment = declaration->pack_alignment,

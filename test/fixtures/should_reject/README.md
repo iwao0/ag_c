@@ -48,6 +48,7 @@ timeout、または`E0006`内部不変条件違反へ落ちるfixtureが1件で�
 | `_Pragma` operand制約 | `pragma_operator_invalid` |
 | `char16_t`文字定数の表現範囲 | `char16_supplementary_character`, `char16_hex_escape_out_of_range` |
 | parser/semanticの基本制約 | `parser_dot_on_scalar`, `parser_arrow_on_scalar_pointer`, `arrow_nonpointer_operand`, `parser_unknown_member`, `parser_generic_no_matching_association`, `parser_generic_duplicate_default`, `parser_struct_control_condition`, `parser_cast_target_array`, `parser_function_type_member`, `parser_incomplete_type_member`, `parser_variadic_parameter_not_last`, `parser_alignof_expression`, `parser_atomic_missing_type`, `parser_alignas_missing_parenthesis`, `parser_invalid_type_specifier_combination` |
+| anonymous struct/union member構文制約 | `anonymous_member_typedef_struct`, `anonymous_member_typedef_union`, `anonymous_member_tagged_reference`, `anonymous_member_named_definition` |
 | typedef-name classifierとordinary identifier shadow | `typedef_hidden_by_object`, `typedef_hidden_by_parameter`, `typedef_hidden_by_enumerator`, `typedef_hidden_in_for_scope` |
 | `_Generic` association型制約 | `generic_function_association_type`, `generic_void_association_type`, `generic_incomplete_association_type`, `generic_incomplete_array_association_type`, `generic_implicit_incomplete_tag_association_type`, `generic_vla_association_type` |
 | `_Generic`未選択associationの意味制約 | `generic_unselected_undefined_identifier`, `generic_unselected_incomplete_compound_literal` |

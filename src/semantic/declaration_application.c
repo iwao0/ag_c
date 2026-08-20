@@ -131,6 +131,8 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
               .member_name_len = head->identifier
                                      ? head->identifier->len
                                      : 0,
+              .has_anonymous_aggregate_specifier =
+                  declaration->specifier.tag_action.is_anonymous,
               .has_bitfield = head->has_bitfield,
               .bit_width = resolved_bit_width,
               .pack_alignment = declaration->pack_alignment,

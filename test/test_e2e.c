@@ -5530,6 +5530,22 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "parser_incomplete_type_member.c",
      "E3064"},
+    {"anonymous_member_typedef_struct_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "anonymous_member_typedef_struct.c",
+     "E3065"},
+    {"anonymous_member_typedef_union_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "anonymous_member_typedef_union.c",
+     "E3065"},
+    {"anonymous_member_tagged_reference_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "anonymous_member_tagged_reference.c",
+     "E3065"},
+    {"anonymous_member_named_definition_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "anonymous_member_named_definition.c",
+     "E3065"},
     {"zero_array_bound_rejected",
      "fixture:test/fixtures/should_reject/"
      "zero_array_bound.c",

@@ -374,6 +374,8 @@ void psx_resolve_aggregate_member_declaration(
       request->base_qual_type.type_id == PSX_TYPE_ID_INVALID ||
       !request->declarator_shape ||
       request->member_name_len < 0 || request->pack_alignment < 0 ||
+      (request->has_anonymous_aggregate_specifier != 0 &&
+       request->has_anonymous_aggregate_specifier != 1) ||
       (request->has_alignment_specifier != 0 &&
        request->has_alignment_specifier != 1) ||
       request->requested_alignment < 0 ||
@@ -402,7 +404,8 @@ void psx_resolve_aggregate_member_declaration(
           semantic_context, layout->record_id);
   if (!owner_record) return;
   int is_anonymous_aggregate =
-      !has_name && is_aggregate_kind(type_shape.kind);
+      !has_name && request->has_anonymous_aggregate_specifier &&
+      is_aggregate_kind(type_shape.kind);
   if (!has_name && !is_anonymous_aggregate && !request->has_bitfield) {
     resolution->status = PSX_AGGREGATE_MEMBER_MISSING_NAME;
     return;

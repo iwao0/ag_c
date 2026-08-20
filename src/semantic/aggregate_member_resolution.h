@@ -43,6 +43,7 @@ typedef struct {
   const psx_declarator_shape_t *declarator_shape;
   char *member_name;
   int member_name_len;
+  int has_anonymous_aggregate_specifier;
   int has_bitfield;
   int bit_width;
   int pack_alignment;
