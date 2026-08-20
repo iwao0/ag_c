@@ -8689,16 +8689,10 @@ static int preflight_direct_local_declaration(
           "'auto' or 'register' storage");
       return 0;
     }
-    if (declaration->specifier.alignas_specifier_count > 0 ||
-        declaration->specifier.type_spec.is_inline ||
-        declaration->specifier.type_spec.is_noreturn ||
-        declaration->specifier.type_spec.is_typedef) {
-      ps_diag_ctx_in(
-          ps_ctx_diagnostics(context->semantic_context),
-          declaration->diagnostic_token, "declaration-specifier",
-          "standalone tag declaration cannot use typedef, function, or alignment specifiers");
+    if (!psx_validate_parsed_standalone_tag_specifier_constraints_in_context(
+            context->semantic_context, &declaration->specifier,
+            declaration->diagnostic_token))
       return 0;
-    }
     *binding = (direct_local_declaration_binding_t){
         .syntax = syntax,
         .is_semantic_only = 1,

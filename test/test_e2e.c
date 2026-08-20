@@ -2732,6 +2732,34 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "const_function_typedef_type_name.c",
      "E3117"},
+    {"standalone_tag_const_qualifier_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "standalone_tag_const_qualifier.c",
+     "E3064"},
+    {"local_standalone_tag_volatile_qualifier_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "local_standalone_tag_volatile_qualifier.c",
+     "E3064"},
+    {"standalone_tag_restrict_qualifier_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "standalone_tag_restrict_qualifier.c",
+     "E3064"},
+    {"standalone_tag_atomic_qualifier_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "standalone_tag_atomic_qualifier.c",
+     "E3064"},
+    {"standalone_tag_storage_class_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "standalone_tag_storage_class.c",
+     "E3064"},
+    {"standalone_anonymous_struct_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "standalone_anonymous_struct.c",
+     "E3064"},
+    {"local_standalone_anonymous_union_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "local_standalone_anonymous_union.c",
+     "E3064"},
     {"variably_modified_typedef_array_member_rejected",
      "fixture:test/fixtures/should_reject/"
      "variably_modified_typedef_array_member.c",

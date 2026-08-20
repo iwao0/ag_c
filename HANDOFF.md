@@ -37642,3 +37642,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規6 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないfunction型制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、nested callback、深い宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - function typedefのCV適用はdeclaration/parameter/type-name境界まで閉じた。function型互換性やnested callbackへ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1271）: standalone tag宣言の無効specifierと宣言対象欠落を拒否した
+- 対象選定:
+  - 同一storage-class specifierの重複6形を先にClang C11 strictと照合したが、ag_cは既に共通構文検査からE3064で拒否していたため変更していない。宣言子なしの通常scalar宣言も双方が拒否し、plainな名前付きtag前方宣言とenum定義は双方が受理した。
+  - `const struct Forward;`へ移るとClang strictは無効なqualifierとして拒否する一方、ag_cは受理した。`volatile`、`restrict`、`_Atomic`、`static`/`extern`/`_Thread_local`、file/block scope、tag定義でも同じ差分を再現した。
+  - 同じstandalone-tag経路で、`struct { int value; };`とblock-scopeのanonymous unionはdeclarator・tag名・enumeratorのいずれも宣言しないためClang strictが拒否する一方、ag_cは受理していた。通常サイズのtag-only宣言に限定し、深いtag/宣言子/式、layout、security監査系には広げていない。
+- 原因と変更:
+  - standalone tag宣言は通常のdecl-specifier型形成・制約検査より前に早期returnし、typedef・function・alignment specifierだけを各entry pathで個別拒否していた。そのためCV/restrict/Atomic qualifierとstorage classが無視され、anonymous aggregateもtag-only宣言として一律適用されていた。
+  - `psx_validate_parsed_standalone_tag_specifier_constraints_in_context`へ検査を集約した。storage class、type qualifier、function/alignment specifierを拒否し、anonymous struct/union単独宣言も「宣言対象なし」として拒否する。一方、名前付きtagのforward/definitionと、enumeratorを宣言するanonymous enumは維持する。
+  - 宣言phase API、file-scope通常適用、block-scope direct Typed HIRの3経路から共通validatorを呼ぶ。design invariantでvalidatorの検査内容と全entry pathからの利用を固定し、user-facing文言のexact-match testは追加せず診断IDだけを固定した。
+- coverage:
+  - parser unitへ不正8形（const/volatile/restrict/Atomic、storage class、file/block anonymous aggregate）と、名前付きforward/definition・file/block anonymous enumの合法対照を追加した。宣言phaseにはplainなstandalone forward tagの合法対照も追加した。
+  - should_rejectへ`standalone_tag_const_qualifier`、`local_standalone_tag_volatile_qualifier`、`standalone_tag_restrict_qualifier`、`standalone_tag_atomic_qualifier`、`standalone_tag_storage_class`、`standalone_anonymous_struct`、`local_standalone_anonymous_union`を追加し、Native/Wasm compile-fail registryへすべてE3064で登録した。
+- 確認:
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.58秒 / user 3.12秒 / sys 0.21秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.42秒 / user 0.74秒 / sys 0.45秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.72秒 / user 42.57秒 / sys 1.02秒**。`make -q wasm-selfhost-api`もcurrentを確認した。
+  - 新規7 fixtureはhost Clang strict、Native、Wasm objectが全件拒否し、Native/WasmはすべてE3064で一致した。plainな名前付きtag前方宣言、名前付きtag定義、anonymous enumの3対照はClang strict・Native・Wasm objectともstatus 0を維持した。
+  - `build/test_e2e`をwarningなしでビルドし、`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 新規7 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないtag宣言制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深いtag/宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - standalone tagのspecifierと宣言対象境界はfile/block/phaseまで閉じた。anonymous aggregate layoutやtag互換性へ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。

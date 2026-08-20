@@ -83,6 +83,10 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
     token_t *diagnostic_token);
 int psx_decl_specifier_has_storage_class(
     const psx_parsed_decl_specifier_t *specifier);
+int psx_validate_parsed_standalone_tag_specifier_constraints_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_decl_specifier_t *specifier,
+    token_t *diagnostic_token);
 void psx_apply_parsed_declarator_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

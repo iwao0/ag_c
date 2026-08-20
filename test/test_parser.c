@@ -15113,6 +15113,15 @@ static void test_declaration_phase_boundary(
       types, phase_base.type_id, &phase_shape));
   ASSERT_EQ(PSX_TYPE_INTEGER, phase_shape.kind);
   psx_dispose_declaration_phase(&phase);
+
+  tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session),
+      (char *)"struct __PhaseForward");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
+  parse_test_decl_specifier_syntax(test_suite_session, &syntax);
+  psx_begin_declaration_phase(&phase, &syntax);
+  ASSERT_TRUE(apply_test_declaration_phase(test_suite_session, &phase, 1));
+  ASSERT_EQ(PSX_DECLARATION_PHASE_STANDALONE_TAG, phase.state);
+  psx_dispose_declaration_phase(&phase);
 }
 
 static void test_type_name_phase_boundary(
@@ -19965,6 +19974,28 @@ static void test_parse_invalid(
       "const int qualified_result(void) { return 7; } "
       "int main(void) { FunctionType *const pointer = 0; "
       "return qualified_result() != 7 || pointer != 0; }");
+  expect_parse_fail(test_suite_session,
+      "const struct Forward; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "volatile struct Defined { int value; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "restrict union Forward; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "_Atomic enum { KIND_ZERO }; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "static struct Forward; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct { int value; }; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int main(void) { volatile union Local; return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int main(void) { union { int value; }; return 0; }");
+  expect_parse_ok(test_suite_session,
+      "struct Forward; struct Defined { int value; }; "
+      "enum { KIND_ZERO }; int main(void) { "
+      "union Local; enum { KIND_ONE = 1 }; "
+      "return KIND_ZERO + KIND_ONE - 1; }");
   expect_parse_ok(test_suite_session,
       "struct record; typedef int reader(struct record); "
       "reader read; struct record { int value; }; "

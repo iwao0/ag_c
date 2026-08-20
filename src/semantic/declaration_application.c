@@ -441,6 +441,10 @@ int psx_apply_declaration_phase_in_contexts(
           &phase->syntax);
   if (standalone_tag &&
       phase->syntax.source == PSX_PARSED_DECL_TYPE_TAG) {
+    if (!psx_validate_parsed_standalone_tag_specifier_constraints_in_context(
+            semantic_context, &phase->syntax,
+            phase->syntax.diagnostic_token))
+      return 0;
     psx_apply_parsed_standalone_tag_in_contexts(
         semantic_context, global_registry, local_registry, &phase->syntax);
     phase->state = PSX_DECLARATION_PHASE_STANDALONE_TAG;
@@ -617,6 +621,39 @@ int psx_decl_specifier_has_storage_class(
   return type_spec->is_typedef || type_spec->is_extern ||
          type_spec->is_static || type_spec->is_auto ||
          type_spec->is_register || type_spec->is_thread_local;
+}
+
+int psx_validate_parsed_standalone_tag_specifier_constraints_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_decl_specifier_t *specifier,
+    token_t *diagnostic_token) {
+  if (!semantic_context || !specifier ||
+      specifier->source != PSX_PARSED_DECL_TYPE_TAG)
+    return 0;
+  const psx_parsed_tag_action_t *tag = &specifier->tag_action;
+  if (tag->is_anonymous && tag->kind != TK_ENUM) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "standalone anonymous struct or union declaration does not "
+        "declare a tag, identifier, or enumerator");
+    return 0;
+  }
+  const psx_type_spec_result_t *type_spec = &specifier->type_spec;
+  if (psx_decl_specifier_has_storage_class(specifier) ||
+      type_spec->is_const_qualified ||
+      type_spec->is_volatile_qualified ||
+      type_spec->is_restrict_qualified || type_spec->is_atomic ||
+      type_spec->is_inline || type_spec->is_noreturn ||
+      specifier->alignas_specifier_count > 0) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "standalone tag declaration cannot use storage-class, "
+        "type-qualifier, function, or alignment specifiers");
+    return 0;
+  }
+  return 1;
 }
 
 int psx_validate_parsed_decl_specifier_constraints_in_context(

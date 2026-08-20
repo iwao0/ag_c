@@ -86,16 +86,10 @@ static int begin_declaration(
   };
   application->declaration = declaration;
   if (declaration->is_standalone_tag) {
-    if (declaration->specifier.alignas_specifier_count > 0 ||
-        declaration->specifier.type_spec.is_inline ||
-        declaration->specifier.type_spec.is_noreturn ||
-        declaration->specifier.type_spec.is_typedef) {
-      ps_diag_ctx_in(
-          application_diagnostics(application),
-          declaration->diagnostic_token, "declaration-specifier",
-          "standalone tag declaration cannot use typedef, function, or alignment specifiers");
+    if (!psx_validate_parsed_standalone_tag_specifier_constraints_in_context(
+            application->semantic_context, &declaration->specifier,
+            declaration->diagnostic_token))
       return 0;
-    }
     psx_apply_parsed_standalone_tag_in_contexts(
         application->semantic_context, application->global_registry,
         application->local_registry,

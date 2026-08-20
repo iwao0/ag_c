@@ -9237,6 +9237,22 @@ if (!/psx_semantic_type_table_has_cv_qualified_function\s*\([^]*?shape\.kind\s*=
     "CV qualifiers on function typedefs must survive type formation and be rejected recursively at every semantic entry boundary",
   );
 }
+if (!/psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\([^]*?tag->is_anonymous\s*&&\s*tag->kind\s*!=\s*TK_ENUM[^]*?psx_decl_specifier_has_storage_class\s*\([^]*?is_const_qualified[^]*?is_volatile_qualified[^]*?is_restrict_qualified[^]*?is_atomic/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\(/.test(
+      toplevelDeclarationFrontendSource,
+    ) ||
+    !/psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    (declarationApplicationSource.match(
+      /psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\(/g,
+    )?.length ?? 0) < 2) {
+  throw new Error(
+    "standalone tag declarations must share qualifier, storage-class, and declared-entity constraints across semantic entry paths",
+  );
+}
 const semanticTypeEntry = semanticTypeIdentitySource.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*psx_semantic_type_entry_t\s*;/,
 );
