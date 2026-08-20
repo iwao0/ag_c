@@ -1805,6 +1805,15 @@ static const char declarator_array_bound_operand_hover_source[] =
 
 static const char same_typedef_declarator_hover_source[] =
     "struct SameTypedefRecord { int value; };\n"
+    "typedef int FirstFileBase;\n"
+    "typedef FirstFileBase FirstFileCopy;\n"
+    "typedef const FirstFileBase FirstFileConst;\n"
+    "typedef /* specifier gap */ FirstFileBase FirstFileComment;\n"
+    "typedef \\\n"
+    "FirstFileBase FirstFileSplice;\n"
+    "typedef FirstFileBase FirstFileFunction(void);\n"
+    "typedef FirstFileBase (*FirstFileCallback)(void);\n"
+    "typedef FirstFileBase FirstFileFirst, FirstFileSecond;\n"
     "typedef int FileAlias, FileArray[sizeof(FileAlias)];\n"
     "typedef int FileParameter, FileFunction(FileParameter);\n"
     "typedef int FilePointerParameter, "
@@ -1812,9 +1821,16 @@ static const char same_typedef_declarator_hover_source[] =
     "typedef struct SameTypedefRecord FileRecordAlias, "
     "(*FileRecordCallback)(FileRecordAlias);\n"
     "static int same_typedef_block(void) {\n"
+    "  typedef int FirstBlockBase;\n"
+    "  typedef FirstBlockBase *FirstBlockPointer;\n"
+    "  typedef FirstBlockBase (*FirstBlockCallback)(void);\n"
+    "  typedef FirstBlockBase FirstBlockShadow;\n"
     "  typedef int BlockAlias, BlockArray[sizeof(BlockAlias)];\n"
     "  typedef int BlockParameter, (*BlockCallback)(BlockParameter);\n"
-    "  { typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; "
+    "  { typedef int FirstNestedBase; "
+    "typedef FirstNestedBase FirstNestedArray[4]; "
+    "typedef FirstBlockShadow FirstBlockShadow; "
+    "typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; "
     "int nested_after; }\n"
     "  int block_after;\n"
     "  return 0;\n"
@@ -9977,18 +9993,44 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
     const char *fragment;
     const char *name;
     const char *current_declarator;
+    const char *later_declarator;
     int scope_depth;
+    int check_boundaries;
   } cases[] = {
-      {"FileArray[sizeof(FileAlias)]", "FileAlias", "FileArray", 0},
-      {"FileFunction(FileParameter)", "FileParameter", "FileFunction", 0},
+      {"typedef FirstFileBase FirstFileCopy", "FirstFileBase",
+       "FirstFileCopy", NULL, 0, 1},
+      {"typedef const FirstFileBase FirstFileConst", "FirstFileBase",
+       "FirstFileConst", NULL, 0, 0},
+      {"typedef /* specifier gap */ FirstFileBase FirstFileComment",
+       "FirstFileBase", "FirstFileComment", NULL, 0, 0},
+      {"typedef \\\nFirstFileBase FirstFileSplice", "FirstFileBase",
+       "FirstFileSplice", NULL, 0, 1},
+      {"typedef FirstFileBase FirstFileFunction", "FirstFileBase",
+       "FirstFileFunction", NULL, 0, 0},
+      {"typedef FirstFileBase (*FirstFileCallback", "FirstFileBase",
+       "FirstFileCallback", NULL, 0, 1},
+      {"typedef FirstFileBase FirstFileFirst", "FirstFileBase",
+       "FirstFileFirst", "FirstFileSecond", 0, 0},
+      {"typedef FirstBlockBase *FirstBlockPointer", "FirstBlockBase",
+       "FirstBlockPointer", NULL, 1, 0},
+      {"typedef FirstBlockBase (*FirstBlockCallback", "FirstBlockBase",
+       "FirstBlockCallback", NULL, 1, 1},
+      {"typedef FirstNestedBase FirstNestedArray", "FirstNestedBase",
+       "FirstNestedArray", NULL, 2, 1},
+      {"FileArray[sizeof(FileAlias)]", "FileAlias", "FileArray", NULL, 0,
+       1},
+      {"FileFunction(FileParameter)", "FileParameter", "FileFunction",
+       NULL, 0, 1},
       {"(*FileCallback)(FilePointerParameter)", "FilePointerParameter",
-       "FileCallback", 0},
+       "FileCallback", NULL, 0, 1},
       {"(*FileRecordCallback)(FileRecordAlias)", "FileRecordAlias",
-       "FileRecordCallback", 0},
-      {"BlockArray[sizeof(BlockAlias)]", "BlockAlias", "BlockArray", 1},
+       "FileRecordCallback", NULL, 0, 1},
+      {"BlockArray[sizeof(BlockAlias)]", "BlockAlias", "BlockArray", NULL,
+       1, 1},
       {"(*BlockCallback)(BlockParameter)", "BlockParameter",
-       "BlockCallback", 1},
-      {"NestedArray[sizeof(NestedAlias)]", "NestedAlias", "NestedArray", 2},
+       "BlockCallback", NULL, 1, 1},
+      {"NestedArray[sizeof(NestedAlias)]", "NestedAlias", "NestedArray",
+       NULL, 2, 1},
   };
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "same typedef declarator session");
@@ -10008,9 +10050,14 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
       CHECK(use && declaration && use != declaration,
             "same typedef declarator anchors");
       size_t name_length = strlen(cases[case_index].name);
-      size_t deltas[] = {0, name_length / 2, name_length};
+      size_t deltas[] = {name_length / 2, 0, name_length};
+      size_t delta_count = cases[case_index].check_boundaries ? 3 : 1;
+      if (cases[case_index].check_boundaries) {
+        deltas[0] = 0;
+        deltas[1] = name_length / 2;
+      }
       for (size_t delta_index = 0;
-           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+           delta_index < delta_count; delta_index++) {
         ag_compilation_session_t *analysis_session = session;
         if (fresh_session) {
           analysis_session = ag_compilation_session_create(&target);
@@ -10044,6 +10091,11 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
                   &snapshot, cases[case_index].current_declarator,
                   AG_LANGUAGE_SYMBOL_TYPEDEF),
               "current typedef declarator remains invisible");
+        if (cases[case_index].later_declarator)
+          CHECK(!find_symbol(
+                    &snapshot, cases[case_index].later_declarator,
+                    AG_LANGUAGE_SYMBOL_TYPEDEF),
+                "later typedef declarator remains invisible");
         if (cases[case_index].scope_depth >= 2)
           CHECK(!find_symbol(
                     &snapshot, "nested_after", AG_LANGUAGE_SYMBOL_OBJECT),
@@ -10059,6 +10111,74 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
         if (fresh_session)
           ag_compilation_session_destroy(analysis_session);
       }
+    }
+  }
+  const char *shadow_fragment = strstr(
+      same_typedef_declarator_hover_source,
+      "typedef FirstBlockShadow FirstBlockShadow");
+  const char *shadow_use = shadow_fragment
+                               ? strstr(shadow_fragment, "FirstBlockShadow")
+                               : NULL;
+  const char *shadow_current = shadow_use
+                                   ? strstr(shadow_use +
+                                                strlen("FirstBlockShadow"),
+                                            "FirstBlockShadow")
+                                   : NULL;
+  const char *shadow_declaration = strstr(
+      same_typedef_declarator_hover_source, "FirstBlockShadow");
+  CHECK(shadow_use && shadow_current && shadow_declaration &&
+            shadow_use != shadow_declaration,
+        "first typedef shadow anchors");
+  size_t shadow_length = strlen("FirstBlockShadow");
+  size_t shadow_deltas[] = {0, shadow_length / 2, shadow_length};
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t delta_index = 0;
+         delta_index < sizeof(shadow_deltas) / sizeof(shadow_deltas[0]);
+         delta_index++) {
+      ag_compilation_session_t *analysis_session = session;
+      if (fresh_session) {
+        analysis_session = ag_compilation_session_create(&target);
+        CHECK(analysis_session != NULL,
+              "fresh first typedef shadow session");
+      }
+      CHECK(analyze_named(
+                analysis_session, "same-typedef-declarator-hover.c",
+                same_typedef_declarator_hover_source,
+                (size_t)(shadow_use -
+                         same_typedef_declarator_hover_source) +
+                    shadow_deltas[delta_index],
+                (header_bundle_t){0}, defaults, &snapshot, &error),
+            "first typedef shadow analysis");
+      const ag_language_symbol_t *shadow_hover = hover_symbol(&snapshot);
+      const ag_language_symbol_t *shadow_completion = find_symbol(
+          &snapshot, "FirstBlockShadow", AG_LANGUAGE_SYMBOL_TYPEDEF);
+      CHECK(shadow_hover && shadow_completion && !snapshot.partial &&
+                snapshot.diagnostic_count == 0 &&
+                shadow_hover->kind == AG_LANGUAGE_SYMBOL_TYPEDEF &&
+                strcmp(shadow_hover->name, "FirstBlockShadow") == 0 &&
+                shadow_hover->declaration.start.offset ==
+                    (int)(shadow_declaration -
+                          same_typedef_declarator_hover_source) &&
+                shadow_hover->declaration.end.offset ==
+                    (int)(shadow_declaration -
+                          same_typedef_declarator_hover_source +
+                          shadow_length) &&
+                same_range(&shadow_hover->declaration,
+                           &shadow_completion->declaration) &&
+                shadow_hover->declaration.start.offset !=
+                    (int)(shadow_current -
+                          same_typedef_declarator_hover_source),
+            "first typedef shadow resolves outer declaration");
+      CHECK(!find_symbol(
+                  &snapshot, "nested_after", AG_LANGUAGE_SYMBOL_OBJECT) &&
+                !find_symbol(
+                    &snapshot, "block_after", AG_LANGUAGE_SYMBOL_OBJECT) &&
+                !find_symbol(
+                    &snapshot, "file_after", AG_LANGUAGE_SYMBOL_OBJECT),
+            "first typedef shadow later objects remain invisible");
+      ag_language_analysis_snapshot_dispose(&snapshot);
+      if (fresh_session)
+        ag_compilation_session_destroy(analysis_session);
     }
   }
   const char *current_declaration = strstr(

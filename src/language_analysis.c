@@ -2464,6 +2464,76 @@ static int object_declaration_prefix(
   return 1;
 }
 
+static int analysis_typedef_specifier_before_first_declarator(
+    const char *source, size_t length, size_t name_start, size_t name_end,
+    size_t declaration_start, size_t outer_brace_count,
+    int enable_trigraphs) {
+  size_t scan = declaration_start;
+  int has_typedef_keyword = 0;
+  while (scan < name_start) {
+    scan = skip_analysis_space_and_comments_mode(
+        source, name_start, scan, enable_trigraphs);
+    if (scan >= name_start) break;
+    if (!is_identifier_byte((unsigned char)source[scan])) return 0;
+    size_t word_start = scan;
+    while (scan < name_start &&
+           is_identifier_byte((unsigned char)source[scan]))
+      scan++;
+    size_t word_length = scan - word_start;
+    if (analysis_word_is(
+            source, word_start, word_length, "typedef")) {
+      if (has_typedef_keyword) return 0;
+      has_typedef_keyword = 1;
+    } else if (!analysis_declaration_modifier_word(
+                   source, word_start, word_length)) {
+      return 0;
+    }
+  }
+  if (!has_typedef_keyword) return 0;
+
+  scan = name_end;
+  while (scan < length) {
+    scan = skip_analysis_space_and_comments_mode(
+        source, length, scan, enable_trigraphs);
+    if (scan >= length) return 0;
+    char c = source[scan];
+    if (c == ';' || c == ',' || c == '=' || c == '[' || c == '{' ||
+        c == '}')
+      return 0;
+    if (c == '*' || c == '(') {
+      scan++;
+      continue;
+    }
+    if (!is_identifier_byte((unsigned char)c)) return 0;
+    size_t candidate_start = scan;
+    while (scan < length &&
+           is_identifier_byte((unsigned char)source[scan]))
+      scan++;
+    size_t candidate_length = scan - candidate_start;
+    if (analysis_declaration_modifier_word(
+            source, candidate_start, candidate_length))
+      continue;
+    size_t candidate_outer_brace_count = 0;
+    size_t candidate_declaration_start = 0;
+    int candidate_paren_depth = 0;
+    int candidate_bracket_depth = 0;
+    int candidate_brace_depth = 0;
+    int candidate_definite_declaration = 0;
+    int candidate_for_init_declaration = 0;
+    return object_declaration_prefix(
+               source, candidate_start, &candidate_outer_brace_count,
+               &candidate_paren_depth, &candidate_bracket_depth,
+               &candidate_brace_depth, &candidate_definite_declaration,
+               &candidate_for_init_declaration,
+               &candidate_declaration_start) &&
+           candidate_definite_declaration &&
+           !candidate_for_init_declaration &&
+           candidate_declaration_start == declaration_start &&
+           candidate_outer_brace_count == outer_brace_count;
+  }
+  return 0;
+}
+
 static char *build_prior_typedef_declarator_recovery_source(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs, int *changed, size_t *source_consumed) {
@@ -2483,8 +2553,39 @@ static char *build_prior_typedef_declarator_recovery_source(
           source, name_start, &outer_brace_count, &paren_depth,
           &bracket_depth, &brace_depth, &definite_declaration,
           &for_init_declaration, &declaration_start) ||
-      !definite_declaration || for_init_declaration)
+      for_init_declaration)
     return NULL;
+
+  if (!definite_declaration) {
+    if (!analysis_typedef_specifier_before_first_declarator(
+            source, length, name_start, name_start + name_length,
+            declaration_start, outer_brace_count, enable_trigraphs))
+      return NULL;
+    static const char marker[] =
+        "int " AG_LANGUAGE_CURSOR_MARKER ";\n";
+    size_t marker_length = sizeof(marker) - 1;
+    if (outer_brace_count > SIZE_MAX / 2 ||
+        declaration_start > SIZE_MAX - marker_length ||
+        declaration_start + marker_length >
+            SIZE_MAX - outer_brace_count * 2)
+      return NULL;
+    size_t result_length = declaration_start + marker_length +
+                           outer_brace_count * 2;
+    char *result = malloc(result_length + 1);
+    if (!result) return NULL;
+    memcpy(result, source, declaration_start);
+    size_t output = declaration_start;
+    memcpy(result + output, marker, marker_length);
+    output += marker_length;
+    for (size_t i = 0; i < outer_brace_count; i++) {
+      result[output++] = '}';
+      result[output++] = '\n';
+    }
+    result[output] = '\0';
+    if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+    if (source_consumed) *source_consumed = declaration_start;
+    return result;
+  }
 
   size_t last_top_level_comma = SIZE_MAX;
   int has_typedef_keyword = 0;

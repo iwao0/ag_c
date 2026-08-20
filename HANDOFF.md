@@ -36751,3 +36751,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。commaのない単一typedef宣言子、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - 今回の同一typedef後続宣言子は再探索せず、commaのない単一typedef宣言子のlookup pointか、別の通常サイズ・完全sourceにある浅い境界を小型probeから調べる。全Wasm integrationを反復せず、Native約7秒と0.36秒の専用焦点gateを使う。
+
+### このセッション（続き1236）: 最初のtypedef宣言子より前のlookup pointを回復した
+- 対象選定:
+  - 続き1235で対象外にした`typedef PriorAlias PriorCopy;`を起点に、通常サイズの完全sourceでplain/qualified/pointer/array/function/function-pointer、複数宣言子、file/block/nested scopeを小型Wasm probeへ並べた。
+  - 全形で先行typedefのhover自体はdiagnostics空・`partial:false`だった一方、最初の現在宣言子がpoint of declarationより前からcompletionへ公開されていた。
+  - nested blockの`typedef BlockShadow BlockShadow;`では、宣言指定子側の先頭`BlockShadow`も外側typedefではなく、まだ宣言点に達していない内側typedefへ誤解決していた。
+  - 比較した通常object・function・function-pointer object宣言の型指定子は現在名を公開せず既存経路でgreenだったため、問題を`typedef` storage classへ限定した。
+- 原因:
+  - 既存のgeneric recoveryは現在のtypedef宣言を完結してからsynthetic markerを置くため、最初の宣言子のpoint of declarationを越えたlookup pointを使っていた。
+  - completionから現在名だけを後処理で除く方法では、同名shadowingで外側typedefがlookup結果から既に失われており、正しいhoverを復元できない。
+- 変更:
+  - 選択aliasより前の現在宣言prefixが`typedef`とqualifier/comment/LF spliceだけで構成されることを確認し、選択alias直後の浅いdeclarator候補を既存`object_declaration_prefix()`でも同じ宣言・scopeのtypedefとして確定する反復classifierを追加した。
+  - 一致した場合は現在typedef宣言全体を回復sourceから除き、宣言直前へmarkerを置いて外側blockだけを閉じる。これにより先行aliasと外側shadow先は見える一方、現在/後続typedef宣言子と後続nested/block/file objectは見えない。
+  - 選択位置が宣言名自身、tag/`_Atomic`型指定子、attribute、宣言子内部、または浅いclassifierで確定できない場合は辞退し、既存経路を維持する。
+  - 既存のsame-typedef fixture/Make targetへplain/qualified/comment/LF splice/function/function-pointer/複数宣言子、file/block/nested、同名shadowを統合し、新しいtargetは増やさなかった。
+- テスト時間の改善:
+  - 拡張した`make test-wasm-language-analysis-same-typedef-declarators`は、Native snapshot parity、代表境界、fresh instance、runtime manifestを含めて**real 0.62秒 / user 0.71秒 / sys 0.13秒**、JS本体計測は**0.46秒**だった。
+  - prototype bound、declarator array-bound、initializer operandの隣接3 targetは`make -j3`で並列実行し、**real 1.83秒 / user 5.15秒 / sys 0.65秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 6.22秒 / user 4.32秒 / sys 1.47秒**。追加形を代表的な名前境界、再利用/fresh Native sessionで確認し、同名shadowは外側宣言rangeへ戻ることを固定した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 45.42秒 / user 42.77秒 / sys 1.37秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-same-typedef-declarators` = 成功、**real 0.62秒 / user 0.71秒 / sys 0.13秒**。
+  - 更新後の小型Wasm probeでは単純alias、qualifier、pointer、array、function、function pointer、複数宣言子、file/block/nestedの全形で正しい先行typedef hoverを返し、現在宣言子は非可視になった。同名shadowも外側typedefの宣言rangeへ戻った。
+  - 代表sourceは`clang -std=c11 -pedantic-errors -fsyntax-only`と`./build/ag_c`で成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 3.26秒 / user 2.99秒 / sys 0.22秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、並列build込み**real 3.29秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体を0.62秒のfresh instance・Native parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行しない。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。tag/`_Atomic`型指定子、attribute、宣言子内部、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 最初のtypedef宣言子内部にある先行alias参照を小型probeで確認したところ、`typedef int (*Callback)(Parameter);`と`typedef int Array[sizeof(Count)];`では正しいalias hoverを返す一方、現在の`Callback`/`Array`がまだ早期公開されている。次はこの2形を起点に、通常サイズ・完全sourceの浅い直接宣言子だけを分類し、Native約7秒と0.62秒の既存焦点gateを使う。

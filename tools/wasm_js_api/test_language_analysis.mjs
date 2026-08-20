@@ -2179,20 +2179,52 @@ if (languageAnalysisFocus === "local-record-static-asserts") {
 const sameTypedefDeclaratorHoverSource = {
   name: "same-typedef-declarator-hover.c",
   source: "struct SameTypedefRecord { int value; };\n" +
+    "typedef int FirstFileBase;\n" +
+    "typedef FirstFileBase FirstFileCopy;\n" +
+    "typedef const FirstFileBase FirstFileConst;\n" +
+    "typedef /* specifier gap */ FirstFileBase FirstFileComment;\n" +
+    "typedef \\\nFirstFileBase FirstFileSplice;\n" +
+    "typedef FirstFileBase FirstFileFunction(void);\n" +
+    "typedef FirstFileBase (*FirstFileCallback)(void);\n" +
+    "typedef FirstFileBase FirstFileFirst, FirstFileSecond;\n" +
     "typedef int FileAlias, FileArray[sizeof(FileAlias)];\n" +
     "typedef int FileParameter, FileFunction(FileParameter);\n" +
     "typedef int FilePointerParameter, (*FileCallback)(FilePointerParameter);\n" +
     "typedef struct SameTypedefRecord FileRecordAlias, (*FileRecordCallback)(FileRecordAlias);\n" +
     "static int same_typedef_block(void) {\n" +
+    "  typedef int FirstBlockBase;\n" +
+    "  typedef FirstBlockBase *FirstBlockPointer;\n" +
+    "  typedef FirstBlockBase (*FirstBlockCallback)(void);\n" +
+    "  typedef FirstBlockBase FirstBlockShadow;\n" +
     "  typedef int BlockAlias, BlockArray[sizeof(BlockAlias)];\n" +
     "  typedef int BlockParameter, (*BlockCallback)(BlockParameter);\n" +
-    "  { typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
+    "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
     "}\n" +
     "int file_after;\n",
 };
 const sameTypedefDeclaratorCases = [
+  ["typedef FirstFileBase FirstFileCopy", "FirstFileBase", "FirstFileCopy",
+    0, true],
+  ["typedef const FirstFileBase FirstFileConst", "FirstFileBase",
+    "FirstFileConst", 0, false],
+  ["typedef /* specifier gap */ FirstFileBase FirstFileComment",
+    "FirstFileBase", "FirstFileComment", 0, false],
+  ["typedef \\\nFirstFileBase FirstFileSplice", "FirstFileBase",
+    "FirstFileSplice", 0, true],
+  ["typedef FirstFileBase FirstFileFunction", "FirstFileBase",
+    "FirstFileFunction", 0, false],
+  ["typedef FirstFileBase (*FirstFileCallback", "FirstFileBase",
+    "FirstFileCallback", 0, true],
+  ["typedef FirstFileBase FirstFileFirst", "FirstFileBase", "FirstFileFirst",
+    0, false, "FirstFileSecond"],
+  ["typedef FirstBlockBase *FirstBlockPointer", "FirstBlockBase",
+    "FirstBlockPointer", 1, false],
+  ["typedef FirstBlockBase (*FirstBlockCallback", "FirstBlockBase",
+    "FirstBlockCallback", 1, true],
+  ["typedef FirstNestedBase FirstNestedArray", "FirstNestedBase",
+    "FirstNestedArray", 2, true],
   ["FileArray[sizeof(FileAlias)]", "FileAlias", "FileArray", 0, true],
   ["FileFunction(FileParameter)", "FileParameter", "FileFunction", 0,
     false],
@@ -2208,7 +2240,7 @@ const sameTypedefDeclaratorCases = [
 ];
 if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarators") {
   for (const [fragmentText, name, currentDeclarator, scopeDepth,
-    checkBoundaries] of sameTypedefDeclaratorCases) {
+    checkBoundaries, laterDeclarator] of sameTypedefDeclaratorCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
       fragmentText,
     );
@@ -2245,6 +2277,9 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
         `${name} same typedef declarator declaration`);
       assert.equal(symbol(result, currentDeclarator, "typedef"), undefined,
         `${currentDeclarator} current typedef declarator hidden`);
+      if (laterDeclarator)
+        assert.equal(symbol(result, laterDeclarator, "typedef"), undefined,
+          `${laterDeclarator} later typedef declarator hidden`);
       if (scopeDepth >= 2)
         assert.equal(symbol(result, "nested_after", "object"), undefined,
           "nested later object hidden");
@@ -2260,10 +2295,64 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       )), `native and Wasm same typedef declarator differ for ${name}`);
     }
   }
+  const shadowFragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+    "typedef FirstBlockShadow FirstBlockShadow",
+  );
+  const shadowUseIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+    "FirstBlockShadow", shadowFragmentIndex,
+  );
+  const shadowCurrentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+    "FirstBlockShadow", shadowUseIndex + "FirstBlockShadow".length,
+  );
+  const shadowDeclarationIndex =
+    sameTypedefDeclaratorHoverSource.source.indexOf("FirstBlockShadow");
+  assert.ok(shadowFragmentIndex >= 0 && shadowUseIndex >= 0 &&
+    shadowCurrentIndex > shadowUseIndex &&
+    shadowDeclarationIndex < shadowUseIndex,
+  "missing first typedef shadow anchors");
+  const shadowNameBytes = Buffer.byteLength("FirstBlockShadow");
+  for (const delta of [0, Math.floor(shadowNameBytes / 2), shadowNameBytes]) {
+    const byteOffset = byteOffsetForIndex(
+      sameTypedefDeclaratorHoverSource.source, shadowUseIndex,
+    ) + delta;
+    const result = compiler.analyzeSource(
+      sameTypedefDeclaratorHoverSource,
+      { cursor: {
+        sourceName: sameTypedefDeclaratorHoverSource.name,
+        byteOffset,
+      } },
+    );
+    const shadowSymbol = symbol(result, "FirstBlockShadow", "typedef");
+    assert.equal(result.partial, false, "first typedef shadow partial");
+    assert.deepStrictEqual(result.diagnostics, [],
+      "first typedef shadow diagnostics");
+    assert.equal(result.hover?.name, "FirstBlockShadow");
+    assert.equal(result.hover?.kind, "typedef");
+    assert.equal(result.hover?.declaration.start.offset,
+      byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source, shadowDeclarationIndex,
+      ), "first typedef shadow resolves outer declaration");
+    assert.deepStrictEqual(result.hover?.declaration,
+      shadowSymbol?.declaration);
+    assert.notEqual(result.hover?.declaration.start.offset,
+      byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source, shadowCurrentIndex,
+      ), "current shadowing typedef remains invisible");
+    assert.equal(symbol(result, "nested_after", "object"), undefined);
+    assert.equal(symbol(result, "block_after", "object"), undefined);
+    assert.equal(symbol(result, "file_after", "object"), undefined);
+    assert.deepStrictEqual(result, JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--same-typedef-declarator-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    )), "native and Wasm first typedef shadow differ");
+  }
   for (const [fragmentText, name, currentDeclarator] of [
     sameTypedefDeclaratorCases[0],
-    sameTypedefDeclaratorCases[5],
-    sameTypedefDeclaratorCases[6],
+    sameTypedefDeclaratorCases[3],
+    sameTypedefDeclaratorCases[8],
+    sameTypedefDeclaratorCases[9],
+    sameTypedefDeclaratorCases[10],
   ]) {
     const freshCompiler = await createCompiler(wasmModule);
     try {
@@ -2293,6 +2382,30 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
     } finally {
       freshCompiler.dispose();
     }
+  }
+  const freshShadowCompiler = await createCompiler(wasmModule);
+  try {
+    const byteOffset = byteOffsetForIndex(
+      sameTypedefDeclaratorHoverSource.source, shadowUseIndex,
+    ) + Math.floor(shadowNameBytes / 2);
+    const result = freshShadowCompiler.analyzeSource(
+      sameTypedefDeclaratorHoverSource,
+      { cursor: {
+        sourceName: sameTypedefDeclaratorHoverSource.name,
+        byteOffset,
+      } },
+    );
+    assert.equal(result.partial, false, "fresh first typedef shadow partial");
+    assert.deepStrictEqual(result.diagnostics, [],
+      "fresh first typedef shadow diagnostics");
+    assert.equal(result.hover?.name, "FirstBlockShadow");
+    assert.equal(result.hover?.kind, "typedef");
+    assert.equal(result.hover?.declaration.start.offset,
+      byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source, shadowDeclarationIndex,
+      ));
+  } finally {
+    freshShadowCompiler.dispose();
   }
   reportTestTiming("same typedef declarators");
 }
