@@ -2029,6 +2029,9 @@ static int analysis_declaration_modifier_word(
   return 0;
 }
 
+static int analysis_type_name_qualifier_word(
+    const char *source, size_t start, size_t length);
+
 static int analysis_delimited_tail_end_mode(
     const char *source, size_t source_length, size_t start,
     char terminator, int allow_top_level_comma, int enable_trigraphs,
@@ -2474,6 +2477,7 @@ static int analysis_typedef_specifier_before_first_declarator(
   } selected_specifier_mode = ANALYSIS_TYPEDEF_SPECIFIER_ALIAS;
   size_t scan = declaration_start;
   int has_typedef_keyword = 0;
+  int atomic_qualifier_before_name = 0;
   while (scan < name_start) {
     scan = skip_analysis_space_and_comments_mode(
         source, name_start, scan, enable_trigraphs);
@@ -2498,6 +2502,19 @@ static int analysis_typedef_specifier_before_first_declarator(
       if (scan >= name_start || source[scan] != '(') return 0;
       scan = skip_analysis_space_and_comments_mode(
           source, name_start, scan + 1, enable_trigraphs);
+      while (scan < name_start) {
+        if (!is_identifier_byte((unsigned char)source[scan])) return 0;
+        size_t qualifier_start = scan;
+        while (scan < name_start &&
+               is_identifier_byte((unsigned char)source[scan]))
+          scan++;
+        if (!analysis_type_name_qualifier_word(
+                source, qualifier_start, scan - qualifier_start))
+          return 0;
+        atomic_qualifier_before_name = 1;
+        scan = skip_analysis_space_and_comments_mode(
+            source, name_start, scan, enable_trigraphs);
+      }
       if (scan != name_start) return 0;
       selected_specifier_mode = ANALYSIS_TYPEDEF_SPECIFIER_ATOMIC;
       break;
@@ -2509,8 +2526,15 @@ static int analysis_typedef_specifier_before_first_declarator(
 
   scan = name_end;
   if (selected_specifier_mode == ANALYSIS_TYPEDEF_SPECIFIER_ATOMIC) {
-    scan = skip_analysis_space_and_comments_mode(
-        source, length, scan, enable_trigraphs);
+    size_t pointer_count = 0;
+    while (1) {
+      scan = skip_analysis_space_and_comments_mode(
+          source, length, scan, enable_trigraphs);
+      if (scan >= length || source[scan] != '*') break;
+      pointer_count++;
+      scan++;
+    }
+    if (atomic_qualifier_before_name && pointer_count == 0) return 0;
     if (scan >= length || source[scan] != ')') return 0;
     scan++;
   }
