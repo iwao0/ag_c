@@ -2011,6 +2011,22 @@ static const char same_typedef_declarator_hover_source[] =
     "typedef int ExternObjectParenthesizedBothAllRepeatedCvrDoublePointerType;\n"
     "typedef int ExternObjectParenthesizedDoublePointerRepeatedCvrCommentType;\n"
     "typedef int ExternObjectParenthesizedDoublePointerRepeatedCvrSpliceType;\n"
+    "typedef int ExternObjectParenthesizedRepeatedAtomicPointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterAtomicDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedInnerAtomicDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedBothAtomicDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterConstAtomicDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterAtomicConstDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedInnerVolatileAtomicDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedInnerAtomicVolatileDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterAtomicInnerCvrDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterCvrInnerAtomicDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedBothAtomicCvDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterRepeatedAtomicDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedInnerRepeatedAtomicDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedBothRepeatedAtomicDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedAtomicDoublePointerCommentType;\n"
+    "typedef int ExternObjectParenthesizedAtomicDoublePointerSpliceType;\n"
     "static int same_typedef_block(void) {\n"
     "  typedef int FirstBlockBase;\n"
     "  typedef int FirstBlockAtomicBase;\n"
@@ -2331,6 +2347,44 @@ static const char same_typedef_declarator_hover_source[] =
     "  { extern ExternObjectParenthesizedDoublePointerRepeatedCvrSpliceType "
     "(* restrict \\\nrestrict * const \\\nconst "
     "ExternObjectParenthesizedDoublePointerRepeatedCvrSpliceType); }\n"
+    "  { extern ExternObjectParenthesizedRepeatedAtomicPointerType "
+    "(* _Atomic _Atomic ExternObjectParenthesizedRepeatedAtomicPointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterAtomicDoublePointerType "
+    "(* _Atomic *ExternObjectParenthesizedOuterAtomicDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedInnerAtomicDoublePointerType "
+    "(** _Atomic ExternObjectParenthesizedInnerAtomicDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedBothAtomicDoublePointerType "
+    "(* _Atomic * _Atomic ExternObjectParenthesizedBothAtomicDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterConstAtomicDoublePointerType "
+    "(* const _Atomic *ExternObjectParenthesizedOuterConstAtomicDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterAtomicConstDoublePointerType "
+    "(* _Atomic const *ExternObjectParenthesizedOuterAtomicConstDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedInnerVolatileAtomicDoublePointerType "
+    "(** volatile _Atomic ExternObjectParenthesizedInnerVolatileAtomicDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedInnerAtomicVolatileDoublePointerType "
+    "(** _Atomic volatile ExternObjectParenthesizedInnerAtomicVolatileDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterAtomicInnerCvrDoublePointerType "
+    "(* _Atomic * const volatile restrict "
+    "ExternObjectParenthesizedOuterAtomicInnerCvrDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterCvrInnerAtomicDoublePointerType "
+    "(* const volatile restrict * _Atomic "
+    "ExternObjectParenthesizedOuterCvrInnerAtomicDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedBothAtomicCvDoublePointerType "
+    "(* const _Atomic volatile * volatile _Atomic const "
+    "ExternObjectParenthesizedBothAtomicCvDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterRepeatedAtomicDoublePointerType "
+    "(* _Atomic _Atomic *ExternObjectParenthesizedOuterRepeatedAtomicDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedInnerRepeatedAtomicDoublePointerType "
+    "(** _Atomic _Atomic ExternObjectParenthesizedInnerRepeatedAtomicDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedBothRepeatedAtomicDoublePointerType "
+    "(* _Atomic _Atomic * _Atomic _Atomic "
+    "ExternObjectParenthesizedBothRepeatedAtomicDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedAtomicDoublePointerCommentType "
+    "(* /* outer */ _Atomic * const /* inner */ _Atomic "
+    "ExternObjectParenthesizedAtomicDoublePointerCommentType); }\n"
+    "  { extern ExternObjectParenthesizedAtomicDoublePointerSpliceType "
+    "(* _Atomic \\\n* volatile \\\n_Atomic "
+    "ExternObjectParenthesizedAtomicDoublePointerSpliceType); }\n"
     "  { typedef int FirstNestedBase; "
     "typedef FirstNestedBase FirstNestedArray[4]; "
     "typedef FirstBlockShadow FirstBlockShadow; "
@@ -2490,6 +2544,16 @@ static const char
     "  return 0;\n"
     "}\n";
 
+static const char
+    same_block_parenthesized_atomic_double_pointer_extern_typedef_conflict_source[] =
+    "int same_block_parenthesized_atomic_double_pointer_extern_typedef_conflict(void) {\n"
+    "  typedef int SameBlockParenthesizedAtomicDoublePointerExternType;\n"
+    "  extern SameBlockParenthesizedAtomicDoublePointerExternType "
+    "(* const _Atomic * volatile _Atomic "
+    "SameBlockParenthesizedAtomicDoublePointerExternType);\n"
+    "  return 0;\n"
+    "}\n";
+
 static const char outer_object_extern_typedef_conflict_source[] =
     "typedef int OuterObjectExternType;\n"
     "int outer_object_extern_typedef_conflict(void) {\n"
@@ -2573,6 +2637,24 @@ static const char atomic_restrict_parenthesized_extern_typedef_source[] =
     "int probe(void) {\n"
     "  { extern AtomicRestrictParenthesizedType "
     "(* _Atomic restrict AtomicRestrictParenthesizedType); }\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char
+    outer_atomic_restrict_double_pointer_extern_typedef_source[] =
+    "typedef int OuterAtomicRestrictDoublePointerType;\n"
+    "int probe(void) {\n"
+    "  { extern OuterAtomicRestrictDoublePointerType "
+    "(* _Atomic restrict *OuterAtomicRestrictDoublePointerType); }\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char
+    inner_atomic_restrict_double_pointer_extern_typedef_source[] =
+    "typedef int InnerAtomicRestrictDoublePointerType;\n"
+    "int probe(void) {\n"
+    "  { extern InnerAtomicRestrictDoublePointerType "
+    "(** _Atomic restrict InnerAtomicRestrictDoublePointerType); }\n"
     "  return 0;\n"
     "}\n";
 
@@ -4785,6 +4867,7 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       same_block_parenthesized_single_level_all_cvr_double_pointer_extern_typedef_conflict_source,
       same_block_parenthesized_both_level_cvr_list_double_pointer_extern_typedef_conflict_source,
       same_block_parenthesized_repeated_cvr_double_pointer_extern_typedef_conflict_source,
+      same_block_parenthesized_atomic_double_pointer_extern_typedef_conflict_source,
   };
   static const char *source_names[] = {
       "same-block-extern-typedef-conflict.c",
@@ -4807,6 +4890,7 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       "same-block-parenthesized-single-level-all-cvr-double-pointer-extern-typedef-conflict.c",
       "same-block-parenthesized-both-level-cvr-list-double-pointer-extern-typedef-conflict.c",
       "same-block-parenthesized-repeated-cvr-double-pointer-extern-typedef-conflict.c",
+      "same-block-parenthesized-atomic-double-pointer-extern-typedef-conflict.c",
   };
   char *variant_end = NULL;
   unsigned long variant = strtoul(variant_text, &variant_end, 10);
@@ -4834,6 +4918,8 @@ static int print_extern_typedef_semantic_type_parity_snapshot(
       void_decimal_array_extern_typedef_source,
       function_restrict_parenthesized_extern_typedef_source,
       atomic_restrict_parenthesized_extern_typedef_source,
+      outer_atomic_restrict_double_pointer_extern_typedef_source,
+      inner_atomic_restrict_double_pointer_extern_typedef_source,
   };
   static const char *source_names[] = {
       "incomplete-direct-extern-typedef.c",
@@ -4843,6 +4929,8 @@ static int print_extern_typedef_semantic_type_parity_snapshot(
       "void-decimal-array-extern-typedef.c",
       "function-restrict-parenthesized-extern-typedef.c",
       "atomic-restrict-parenthesized-extern-typedef.c",
+      "outer-atomic-restrict-double-pointer-extern-typedef.c",
+      "inner-atomic-restrict-double-pointer-extern-typedef.c",
   };
   char *variant_end = NULL;
   unsigned long variant = strtoul(variant_text, &variant_end, 10);
@@ -11608,6 +11696,70 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "(* restrict \\\nrestrict * const \\\nconst "
        "ExternObjectParenthesizedDoublePointerRepeatedCvrSpliceType)",
        "ExternObjectParenthesizedDoublePointerRepeatedCvrSpliceType", 1},
+      {"extern ExternObjectParenthesizedRepeatedAtomicPointerType "
+       "(* _Atomic _Atomic "
+       "ExternObjectParenthesizedRepeatedAtomicPointerType)",
+       "ExternObjectParenthesizedRepeatedAtomicPointerType", 1},
+      {"extern ExternObjectParenthesizedOuterAtomicDoublePointerType "
+       "(* _Atomic *"
+       "ExternObjectParenthesizedOuterAtomicDoublePointerType)",
+       "ExternObjectParenthesizedOuterAtomicDoublePointerType", 1},
+      {"extern ExternObjectParenthesizedInnerAtomicDoublePointerType "
+       "(** _Atomic "
+       "ExternObjectParenthesizedInnerAtomicDoublePointerType)",
+       "ExternObjectParenthesizedInnerAtomicDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedBothAtomicDoublePointerType "
+       "(* _Atomic * _Atomic "
+       "ExternObjectParenthesizedBothAtomicDoublePointerType)",
+       "ExternObjectParenthesizedBothAtomicDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedOuterConstAtomicDoublePointerType "
+       "(* const _Atomic *"
+       "ExternObjectParenthesizedOuterConstAtomicDoublePointerType)",
+       "ExternObjectParenthesizedOuterConstAtomicDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedOuterAtomicConstDoublePointerType "
+       "(* _Atomic const *"
+       "ExternObjectParenthesizedOuterAtomicConstDoublePointerType)",
+       "ExternObjectParenthesizedOuterAtomicConstDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedInnerVolatileAtomicDoublePointerType "
+       "(** volatile _Atomic "
+       "ExternObjectParenthesizedInnerVolatileAtomicDoublePointerType)",
+       "ExternObjectParenthesizedInnerVolatileAtomicDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedInnerAtomicVolatileDoublePointerType "
+       "(** _Atomic volatile "
+       "ExternObjectParenthesizedInnerAtomicVolatileDoublePointerType)",
+       "ExternObjectParenthesizedInnerAtomicVolatileDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedOuterAtomicInnerCvrDoublePointerType "
+       "(* _Atomic * const volatile restrict "
+       "ExternObjectParenthesizedOuterAtomicInnerCvrDoublePointerType)",
+       "ExternObjectParenthesizedOuterAtomicInnerCvrDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedOuterCvrInnerAtomicDoublePointerType "
+       "(* const volatile restrict * _Atomic "
+       "ExternObjectParenthesizedOuterCvrInnerAtomicDoublePointerType)",
+       "ExternObjectParenthesizedOuterCvrInnerAtomicDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedBothAtomicCvDoublePointerType "
+       "(* const _Atomic volatile * volatile _Atomic const "
+       "ExternObjectParenthesizedBothAtomicCvDoublePointerType)",
+       "ExternObjectParenthesizedBothAtomicCvDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedOuterRepeatedAtomicDoublePointerType "
+       "(* _Atomic _Atomic *"
+       "ExternObjectParenthesizedOuterRepeatedAtomicDoublePointerType)",
+       "ExternObjectParenthesizedOuterRepeatedAtomicDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedInnerRepeatedAtomicDoublePointerType "
+       "(** _Atomic _Atomic "
+       "ExternObjectParenthesizedInnerRepeatedAtomicDoublePointerType)",
+       "ExternObjectParenthesizedInnerRepeatedAtomicDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedBothRepeatedAtomicDoublePointerType "
+       "(* _Atomic _Atomic * _Atomic _Atomic "
+       "ExternObjectParenthesizedBothRepeatedAtomicDoublePointerType)",
+       "ExternObjectParenthesizedBothRepeatedAtomicDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedAtomicDoublePointerCommentType "
+       "(* /* outer */ _Atomic * const /* inner */ _Atomic "
+       "ExternObjectParenthesizedAtomicDoublePointerCommentType)",
+       "ExternObjectParenthesizedAtomicDoublePointerCommentType", 0},
+      {"extern ExternObjectParenthesizedAtomicDoublePointerSpliceType "
+       "(* _Atomic \\\n* volatile \\\n_Atomic "
+       "ExternObjectParenthesizedAtomicDoublePointerSpliceType)",
+       "ExternObjectParenthesizedAtomicDoublePointerSpliceType", 1},
   };
   for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
     for (size_t case_index = 0;
@@ -11792,6 +11944,12 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "(* const const * volatile volatile "
        "SameBlockParenthesizedRepeatedCvrDoublePointerExternType)",
        "SameBlockParenthesizedRepeatedCvrDoublePointerExternType"},
+      {"same-block-parenthesized-atomic-double-pointer-extern-typedef-conflict.c",
+       same_block_parenthesized_atomic_double_pointer_extern_typedef_conflict_source,
+       "extern SameBlockParenthesizedAtomicDoublePointerExternType "
+       "(* const _Atomic * volatile _Atomic "
+       "SameBlockParenthesizedAtomicDoublePointerExternType)",
+       "SameBlockParenthesizedAtomicDoublePointerExternType"},
   };
   for (size_t conflict_index = 0;
        conflict_index < sizeof(extern_typedef_conflicts) /
@@ -11858,6 +12016,16 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "extern AtomicRestrictParenthesizedType "
        "(* _Atomic restrict AtomicRestrictParenthesizedType)",
        "AtomicRestrictParenthesizedType", 0},
+      {"outer-atomic-restrict-double-pointer-extern-typedef.c",
+       outer_atomic_restrict_double_pointer_extern_typedef_source,
+       "extern OuterAtomicRestrictDoublePointerType "
+       "(* _Atomic restrict *OuterAtomicRestrictDoublePointerType)",
+       "OuterAtomicRestrictDoublePointerType", 0},
+      {"inner-atomic-restrict-double-pointer-extern-typedef.c",
+       inner_atomic_restrict_double_pointer_extern_typedef_source,
+       "extern InnerAtomicRestrictDoublePointerType "
+       "(** _Atomic restrict InnerAtomicRestrictDoublePointerType)",
+       "InnerAtomicRestrictDoublePointerType", 0},
   };
   for (size_t semantic_index = 0;
        semantic_index < sizeof(extern_typedef_semantic_types) /

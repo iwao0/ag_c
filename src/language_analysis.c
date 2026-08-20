@@ -3287,8 +3287,9 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   int has_parenthesized_declarator = 0;
   int has_parenthesized_pointer = 0;
   int has_parenthesized_pointer_qualifier = 0;
-  int has_parenthesized_restrict_pointer_qualifier = 0;
   int has_parenthesized_atomic_pointer_qualifier = 0;
+  int parenthesized_pointer_has_restrict[2] = {0, 0};
+  int parenthesized_pointer_has_atomic[2] = {0, 0};
   size_t declarator_pointer_count = 0;
   while (scan < length) {
     scan = skip_analysis_space_and_comments_mode(
@@ -3306,9 +3307,6 @@ static char *build_file_typedef_block_extern_type_recovery_source(
           declarator_pointer_count > 2)
         return NULL;
       if (has_parenthesized_declarator) {
-        if (declarator_pointer_count == 2 &&
-            has_parenthesized_atomic_pointer_qualifier)
-          return NULL;
         has_parenthesized_pointer = 1;
       }
       scan++;
@@ -3324,10 +3322,13 @@ static char *build_file_typedef_block_extern_type_recovery_source(
             source, word_start, word_length, "_Atomic")) {
       if (!has_parenthesized_declarator ||
           !has_parenthesized_pointer ||
-          declarator_pointer_count > 1 ||
-          has_parenthesized_restrict_pointer_qualifier ||
-          has_parenthesized_atomic_pointer_qualifier)
+          declarator_pointer_count == 0 ||
+          declarator_pointer_count > 2)
         return NULL;
+      size_t pointer_index = declarator_pointer_count - 1;
+      if (parenthesized_pointer_has_restrict[pointer_index])
+        return NULL;
+      parenthesized_pointer_has_atomic[pointer_index] = 1;
       has_parenthesized_atomic_pointer_qualifier = 1;
       continue;
     }
@@ -3342,15 +3343,15 @@ static char *build_file_typedef_block_extern_type_recovery_source(
             source, word_start, word_length, "volatile");
         int is_restrict = analysis_word_is(
             source, word_start, word_length, "restrict");
-        if (declarator_pointer_count > 1) {
-          if ((!is_const && !is_volatile && !is_restrict) ||
-              has_parenthesized_atomic_pointer_qualifier)
-            return NULL;
-        }
+        if (declarator_pointer_count == 0 ||
+            declarator_pointer_count > 2 ||
+            (!is_const && !is_volatile && !is_restrict))
+          return NULL;
         if (is_restrict) {
-          if (has_parenthesized_atomic_pointer_qualifier)
+          size_t pointer_index = declarator_pointer_count - 1;
+          if (parenthesized_pointer_has_atomic[pointer_index])
             return NULL;
-          has_parenthesized_restrict_pointer_qualifier = 1;
+          parenthesized_pointer_has_restrict[pointer_index] = 1;
         }
         has_parenthesized_pointer_qualifier = 1;
       }

@@ -37505,3 +37505,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `_Atomic`付き2段pointer、3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - Clang strictとag_c本体が受理する`extern T (* _Atomic *T);`と`extern T (** _Atomic T);`は既存小型Wasm probeでE3088・`partial:true`を残す。次は2段pointerの片段に単一`_Atomic` qualifierを置く浅い2形を、重複`_Atomic`と`_Atomic restrict`の拒否を維持して扱えるか調べる。
+
+### このセッション（続き1265）: parenthesized block extern同名objectのpointer段別`_Atomic` listを回復した
+- 対象選定:
+  - 続き1264の候補を、2段pointerの1段目/2段目/両段への単一`_Atomic`、同段CVの前後順、他段のCVR list、両段atomic+CV、1段目/2段目/両段の重複`_Atomic`、comment、LF spliceの15形へ広げた。さらに1段pointerの重複`_Atomic` 1形も確認した。Clang C11 strictとag_c本体は全形を受理し、重複`_Atomic`だけClangが警告したが、language analysisはE3088・`partial:true`を残していた。
+  - 同じpointer段の`_Atomic restrict`はClang strictが拒否し、3段pointerはこの回復経路の上限外なので、両者をnegative境界とした。括弧1組・pointer 2個以下・同名identifier・`;`直結を維持し、二重括弧、suffix付き複合宣言子、深い式、security監査系には広げていない。
+- 変更:
+  - `build_file_typedef_block_extern_type_recovery_source`のglobalなatomic/restrict状態をpointer段別の2要素状態へ分けた。各段で1個以上の`_Atomic`と任意個の`const`・`volatile`を任意順に許し、他段のCVR-only listとは独立に解析する。
+  - C11では同一qualifierの反復が同じ修飾として有効なので重複`_Atomic`も許す。一方、同じ段で`restrict`を先に見た後の`_Atomic`と、`_Atomic`を見た後の`restrict`は双方とも即時に回復対象外へ戻す。3個目の`*`上限、active brace path、same-block shadow、`;`直結条件は維持した。
+  - same-typedef Native/Wasm共通fixtureへ1段pointer 1形と2段pointer 15形を統合した。全128形の中央cursor Native/Wasm parity、Native側の全形の名前端点・shared/fresh session、21カテゴリ代表のWasm名前端点・第2compiler instanceを維持した。
+  - 同一block typedefを両段atomic+CV付き2段pointerのparenthesized `extern`で再利用する不正shadowを追加した。さらに外段/内段の`_Atomic restrict` 2形をNative/Wasm semantic negativeへ加え、E3088・partialとsnapshot parityを維持した。
+- テスト時間:
+  - 短縮済み`make test-wasm-language-analysis-same-typedef-declarators`へ統合した。全128形の中央cursorと21カテゴリ代表を含む焦点gateは、内部**26.91秒**、**real 27.10秒 / user 27.21秒 / sys 0.59秒**で成功した。
+  - prototype bound、declarator array bound、local member array boundの隣接3 targetだけを`make -j3`で並列実行し、**real 6.98秒 / user 10.19秒 / sys 0.81秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.53秒 / user 11.50秒 / sys 1.57秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.48秒 / user 42.61秒 / sys 1.15秒**。更新後の焦点Wasm gateで追加16形、shadow境界、`_Atomic restrict` 2形を確認した。
+  - 小型Wasm probeでは片段/両段atomic、CV併用、他段CVR、重複atomicがdiagnostics空・`partial:false`になり、同段`_Atomic restrict`と3段pointerはE3088・partialのままだった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.74秒 / user 3.17秒 / sys 0.37秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.45秒 / user 0.82秒 / sys 0.51秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 27.10秒のNative parity付き焦点gateで同じJS本体を確認できるため、1354秒規模の`make test-wasm-js-api`は実行しない。code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eも反復しない。
+  - 3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - language analysisは同段`_Atomic restrict`を回復せずClang strictと整合したが、ag_c本体は`extern T (* _Atomic restrict *T);`と`extern T (** _Atomic restrict T);`を現在受理してしまう。次はparser/semantic側でatomic-qualified pointerへの`restrict`を拒否し、1段/2段とqualifier順序をNative/Wasm compile-failで固定する。
