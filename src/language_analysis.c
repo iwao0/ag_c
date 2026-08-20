@@ -3279,6 +3279,14 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   size_t candidate_end = candidate_start + selected_length;
   size_t declaration_end = skip_analysis_space_and_comments_mode(
       source, length, candidate_end, enable_trigraphs);
+  if (declaration_end < length && source[declaration_end] == '[') {
+    declaration_end = skip_analysis_space_and_comments_mode(
+        source, length, declaration_end + 1, enable_trigraphs);
+    if (declaration_end >= length || source[declaration_end] != ']')
+      return NULL;
+    declaration_end = skip_analysis_space_and_comments_mode(
+        source, length, declaration_end + 1, enable_trigraphs);
+  }
   if (declaration_end >= length || source[declaration_end] != ';')
     return NULL;
 

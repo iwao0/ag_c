@@ -37053,3 +37053,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - header/macro由来typedef、block-local outer typedef、array suffix、括弧付き・function/複合declarator、attribute、initializer、複合式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - 更新後の小型Wasm probeでは`extern T T[];`、`extern T (T);`、`extern T (*T)[4];`の先頭型名は正しい外側typedef rangeを返す一方、いずれもE3088・`partial:true`が残る。今回のdirect `;`境界とshadow分類は再探索せず、次は不完全配列suffix `extern T T[];`だけを通常サイズの浅い宣言として扱えるか調べる。括弧付き・pointer-to-arrayは複合declaratorとして後回しにする。
+
+### このセッション（続き1246）: block extern同名objectの空配列suffixを回復した
+- 対象選定:
+  - 続き1245の浅い次候補`typedef int T; { extern T T[]; }`はClang C11 strictとNative ag_c core compilerの両方で有効だったが、language analysisでは先頭型名のhover rangeが正しい一方、E3088・`partial:true`を残した。
+  - 続き1245のfile-scope typedef判定とshadow拒否は再探索せず、直接同名objectの後ろに空の`[]`が1組だけ続く不完全配列へ限定した。bound式、多次元、括弧付き・pointer-to-array、深い宣言子、深い式、security監査系には入っていない。
+- 変更:
+  - `build_file_typedef_block_extern_type_recovery_source`で同名宣言子直後の空白/comment/LF/CRLF spliceを飛ばし、`;`の代わりに空の`[`・`]`が1組だけあれば、その後の`;`までを同じ直接宣言として認める。bracket内にcommentまたは行継続だけがある形も空として扱う。
+  - `[`内にtokenがあるbound付き配列、2組目の`[`がある多次元配列、宣言名を括弧で囲む形、pointer-to-arrayは一致せず、従来のgeneric recoveryへ残す。
+  - same-typedef Native/Wasm共通fixtureへ直接空配列、pointer要素の空配列、bracket内comment、bracket内LF spliceの4形を追加した。続き1245のdirect 5形とinvalid shadow 5境界も同じgate内で維持する。
+- テスト時間の改善:
+  - 新targetは追加せず、既存`make test-wasm-language-analysis-same-typedef-declarators`へ統合し、Native snapshot parity・名前境界・再利用/fresh instance込みで**real 4.39秒 / user 4.77秒 / sys 0.29秒**だった。
+  - prototype bound、declarator array bound、local member array boundの隣接3 targetだけを`make -j3`で並列実行し、**real 6.77秒 / user 9.74秒 / sys 0.68秒**だった。
+- 確認:
+  - `clang -std=c11 -pedantic-errors -Wall -Wextra -fsyntax-only`とNative ag_c core compilerで直接空配列sourceを受理した。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 6.71秒 / user 4.98秒 / sys 1.48秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.96秒 / user 42.59秒 / sys 1.21秒**。更新後のsame-typedef焦点Wasm gateで空配列4形は外側typedefの正確なrange、diagnostics空・`partial:false`、現在object非可視、Native snapshot一致を確認した。
+  - 小型Wasm probeでは空の`[]`だけが完全解析へ変わり、`[4]`、`[][4]`、括弧付き、pointer-to-arrayはE3088・partialのままで専用回復に一致しない。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.44秒 / user 3.11秒 / sys 0.24秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.30秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 4.39秒のNative parity付き焦点gateで同じJS本体を確認できるため、1354秒規模の`make test-wasm-js-api`は実行しない。code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eも反復しない。
+  - bound式、多次元array、括弧付き・function/pointer-to-array declarator、attribute、initializer、複合式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - 小型Wasm probeで`extern T T[4];`も同じE3088・`partial:true`を残す。空配列とshadow分類は再探索せず、次は式解析へ広げない正の10進整数literal bound 1個だけを通常サイズの浅いsuffixとして扱えるか調べる。macro/enum/演算式、zero/negative/overflow、多次元は対象外とする。

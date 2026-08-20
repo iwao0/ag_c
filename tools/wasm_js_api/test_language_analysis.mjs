@@ -2366,6 +2366,10 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int ExternObjectPointerType;\n" +
     "typedef int ExternObjectCommentType;\n" +
     "typedef int ExternObjectSpliceType;\n" +
+    "typedef int ExternObjectArrayType;\n" +
+    "typedef int ExternObjectPointerArrayType;\n" +
+    "typedef int ExternObjectCommentArrayType;\n" +
+    "typedef int ExternObjectSpliceArrayType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2390,6 +2394,10 @@ const sameTypedefDeclaratorHoverSource = {
     "  { extern ExternObjectPointerType *ExternObjectPointerType; }\n" +
     "  { extern /* before type */ ExternObjectCommentType /* before object */ ExternObjectCommentType; }\n" +
     "  { extern ExternObjectSpliceType \\\nExternObjectSpliceType; }\n" +
+    "  { extern ExternObjectArrayType ExternObjectArrayType[]; }\n" +
+    "  { extern ExternObjectPointerArrayType *ExternObjectPointerArrayType[]; }\n" +
+    "  { extern ExternObjectCommentArrayType ExternObjectCommentArrayType[/* empty bound */]; }\n" +
+    "  { extern ExternObjectSpliceArrayType ExternObjectSpliceArrayType[\\\n]; }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
@@ -2593,6 +2601,14 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "ExternObjectCommentType", false],
     ["extern ExternObjectSpliceType \\\nExternObjectSpliceType",
       "ExternObjectSpliceType", true],
+    ["extern ExternObjectArrayType ExternObjectArrayType[]",
+      "ExternObjectArrayType", true],
+    ["extern ExternObjectPointerArrayType *ExternObjectPointerArrayType[]",
+      "ExternObjectPointerArrayType", false],
+    ["extern ExternObjectCommentArrayType ExternObjectCommentArrayType[/* empty bound */]",
+      "ExternObjectCommentArrayType", false],
+    ["extern ExternObjectSpliceArrayType ExternObjectSpliceArrayType[\\\n]",
+      "ExternObjectSpliceArrayType", true],
   ];
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(

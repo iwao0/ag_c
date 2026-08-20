@@ -1904,6 +1904,10 @@ static const char same_typedef_declarator_hover_source[] =
     "typedef int ExternObjectPointerType;\n"
     "typedef int ExternObjectCommentType;\n"
     "typedef int ExternObjectSpliceType;\n"
+    "typedef int ExternObjectArrayType;\n"
+    "typedef int ExternObjectPointerArrayType;\n"
+    "typedef int ExternObjectCommentArrayType;\n"
+    "typedef int ExternObjectSpliceArrayType;\n"
     "static int same_typedef_block(void) {\n"
     "  typedef int FirstBlockBase;\n"
     "  typedef int FirstBlockAtomicBase;\n"
@@ -1933,6 +1937,14 @@ static const char same_typedef_declarator_hover_source[] =
     "/* before object */ ExternObjectCommentType; }\n"
     "  { extern ExternObjectSpliceType \\\n"
     "ExternObjectSpliceType; }\n"
+    "  { extern ExternObjectArrayType ExternObjectArrayType[]; }\n"
+    "  { extern ExternObjectPointerArrayType "
+    "*ExternObjectPointerArrayType[]; }\n"
+    "  { extern ExternObjectCommentArrayType "
+    "ExternObjectCommentArrayType[/* empty bound */]; }\n"
+    "  { extern ExternObjectSpliceArrayType "
+    "ExternObjectSpliceArrayType[\\\n"
+    "]; }\n"
     "  { typedef int FirstNestedBase; "
     "typedef FirstNestedBase FirstNestedArray[4]; "
     "typedef FirstBlockShadow FirstBlockShadow; "
@@ -10531,6 +10543,17 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "ExternObjectCommentType", 0},
       {"extern ExternObjectSpliceType \\\nExternObjectSpliceType",
        "ExternObjectSpliceType", 1},
+      {"extern ExternObjectArrayType ExternObjectArrayType[]",
+       "ExternObjectArrayType", 1},
+      {"extern ExternObjectPointerArrayType "
+       "*ExternObjectPointerArrayType[]",
+       "ExternObjectPointerArrayType", 0},
+      {"extern ExternObjectCommentArrayType "
+       "ExternObjectCommentArrayType[/* empty bound */]",
+       "ExternObjectCommentArrayType", 0},
+      {"extern ExternObjectSpliceArrayType "
+       "ExternObjectSpliceArrayType[\\\n]",
+       "ExternObjectSpliceArrayType", 1},
   };
   for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
     for (size_t case_index = 0;
