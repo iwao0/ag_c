@@ -2113,6 +2113,38 @@ static int object_declarator_end(
   return 0;
 }
 
+static int analysis_complete_direct_object_initializer_operand(
+    const char *source, size_t length,
+    size_t candidate_start, size_t candidate_end,
+    const analysis_identifier_span_t *identifier, int enable_trigraphs,
+    size_t *initializer_end) {
+  if (!source || !identifier || identifier->logical_length == 0 ||
+      candidate_start == SIZE_MAX || candidate_end <= candidate_start ||
+      candidate_end >= identifier->start || identifier->start >= length)
+    return 0;
+  size_t outer_brace_count = 0;
+  int declarator_paren_depth = 0;
+  int declarator_bracket_depth = 0;
+  int declarator_brace_depth = 0;
+  if (!object_declaration_prefix(
+          source, candidate_start, &outer_brace_count,
+          &declarator_paren_depth, &declarator_bracket_depth,
+          &declarator_brace_depth, NULL, NULL))
+    return 0;
+  size_t declarator_end = 0;
+  if (!object_declarator_end(
+          source, length, candidate_end, declarator_paren_depth,
+          declarator_bracket_depth, declarator_brace_depth,
+          &declarator_end) ||
+      declarator_end < identifier->end ||
+      (source[declarator_end] != ';' && source[declarator_end] != ',') ||
+      skip_analysis_space_and_comments_mode(
+          source, length, identifier->end, enable_trigraphs) != declarator_end)
+    return 0;
+  if (initializer_end) *initializer_end = declarator_end;
+  return 1;
+}
+
 static int analysis_old_style_identifier_list_at(
     const char *source, size_t length, size_t open) {
   if (!source || open >= length || source[open] != '(') return 0;
@@ -3130,19 +3162,19 @@ static int analysis_parenthesized_range_is_type_name_mode(
 }
 
 typedef enum {
-  ANALYSIS_TYPE_NAME_ARRAY_BOUND_NONE = 0,
-  ANALYSIS_TYPE_NAME_ARRAY_BOUND_PARENTHESIZED,
-  ANALYSIS_TYPE_NAME_ARRAY_BOUND_GENERIC_ASSOCIATION,
-} analysis_type_name_array_bound_kind_t;
+  ANALYSIS_TYPE_NAME_TAIL_NONE = 0,
+  ANALYSIS_TYPE_NAME_TAIL_PARENTHESIZED,
+  ANALYSIS_TYPE_NAME_TAIL_GENERIC_ASSOCIATION,
+} analysis_type_name_tail_kind_t;
 
 typedef struct {
-  analysis_type_name_array_bound_kind_t kind;
+  analysis_type_name_tail_kind_t kind;
   size_t context_frame;
   size_t tail_end;
   int preserve_statement;
   int append_cast_operand;
   int append_compound_literal;
-} analysis_type_name_array_bound_tail_t;
+} analysis_type_name_tail_t;
 
 static int analysis_cast_operand_starts_at_mode(
     const char *source, size_t source_length, size_t start,
@@ -3308,14 +3340,49 @@ static char *build_compound_literal_initializer_recovery_source(
   return result;
 }
 
-static analysis_type_name_array_bound_tail_t
-analysis_complete_type_name_array_bound_tail(
+static analysis_type_name_tail_t analysis_complete_type_name_tail(
     const char *source, size_t source_length,
     const recovery_delimiter_t *stack, size_t stack_count,
     const analysis_identifier_span_t *identifier, int enable_trigraphs) {
-  analysis_type_name_array_bound_tail_t tail = {0};
+  analysis_type_name_tail_t tail = {0};
   if (!source || !stack || !identifier || identifier->logical_length == 0)
     return tail;
+  for (size_t i = stack_count; i > 0; i--) {
+    const recovery_delimiter_t *context = &stack[i - 1];
+    if (context->open != '(' || context->is_for_control ||
+        context->is_postfix_parenthesized || context->requires_type_name ||
+        context->is_sizeof_context || context->is_generic_selection)
+      continue;
+    int cursor_in_nested_array_bound = 0;
+    for (size_t nested = i; nested < stack_count; nested++)
+      if (stack[nested].open == '[') {
+        cursor_in_nested_array_bound = 1;
+        break;
+      }
+    if (cursor_in_nested_array_bound) continue;
+    size_t type_name_end = 0;
+    if (!analysis_delimited_tail_end_mode(
+            source, source_length, context->open_offset + 1, ')', 1,
+            enable_trigraphs, &type_name_end) ||
+        identifier->end > type_name_end ||
+        !analysis_parenthesized_range_is_type_name_mode(
+            source, source_length, context->open_offset + 1,
+            type_name_end, enable_trigraphs, NULL))
+      continue;
+    size_t after_type = skip_analysis_space_and_comments_mode(
+        source, source_length, type_name_end + 1, enable_trigraphs);
+    size_t compound_end = 0;
+    if (after_type >= source_length || source[after_type] != '{' ||
+        !analysis_delimited_tail_end_mode(
+            source, source_length, after_type + 1, '}', 1,
+            enable_trigraphs, &compound_end))
+      continue;
+    tail.kind = ANALYSIS_TYPE_NAME_TAIL_PARENTHESIZED;
+    tail.context_frame = i - 1;
+    tail.tail_end = type_name_end;
+    tail.append_compound_literal = 1;
+    return tail;
+  }
   size_t array_frame = SIZE_MAX;
   size_t array_end = 0;
   for (size_t i = stack_count; i > 0; i--) {
@@ -3345,7 +3412,7 @@ analysis_complete_type_name_array_bound_tail(
               source, source_length, context->generic_association_start,
               association_end, enable_trigraphs, NULL))
         continue;
-      tail.kind = ANALYSIS_TYPE_NAME_ARRAY_BOUND_GENERIC_ASSOCIATION;
+      tail.kind = ANALYSIS_TYPE_NAME_TAIL_GENERIC_ASSOCIATION;
       tail.context_frame = i - 1;
       tail.tail_end = association_end;
       return tail;
@@ -3382,7 +3449,7 @@ analysis_complete_type_name_array_bound_tail(
             source, source_length, stack, i - 1, type_name_end + 1,
             append_compound_literal, enable_trigraphs, 0,
             &statement_end, NULL);
-    tail.kind = ANALYSIS_TYPE_NAME_ARRAY_BOUND_PARENTHESIZED;
+    tail.kind = ANALYSIS_TYPE_NAME_TAIL_PARENTHESIZED;
     tail.context_frame = i - 1;
     tail.tail_end = preserve_statement ? statement_end : type_name_end;
     tail.preserve_statement = preserve_statement;
@@ -3570,6 +3637,10 @@ static char *build_recovery_source(const char *source, size_t source_length,
   size_t last_closed_parenthesized_end = 0;
   int last_closed_parenthesized_is_type_name = 0;
   int last_closed_parenthesized_is_definite_type_name = 0;
+  size_t last_declarator_identifier_start = SIZE_MAX;
+  size_t last_declarator_identifier_end = 0;
+  size_t direct_initializer_candidate_start = SIZE_MAX;
+  size_t direct_initializer_candidate_end = 0;
   for (size_t i = 0; i < recovery_cursor; i++) {
     size_t splice_size = analysis_line_splice_size_mode(
         result, recovery_cursor, i, enable_trigraphs);
@@ -3652,6 +3723,11 @@ static char *build_recovery_source(const char *source, size_t source_length,
     int opens_postfix_parenthesized = 0;
     int opens_compound_literal = 0;
     int current_identifier_is_default = 0;
+    int at_direct_initializer_level =
+        stack_count == 0 || stack[stack_count - 1].open == '{' ||
+        (stack[stack_count - 1].open == '(' &&
+         stack[stack_count - 1].is_for_control &&
+         stack[stack_count - 1].for_separator_count == 0);
     if (is_identifier_byte((unsigned char)c)) {
       if (i == 0 ||
           !is_identifier_byte((unsigned char)result[i - 1])) {
@@ -3659,6 +3735,11 @@ static char *build_recovery_source(const char *source, size_t source_length,
         while (identifier_end < recovery_cursor &&
                is_identifier_byte((unsigned char)result[identifier_end]))
           identifier_end++;
+        if (at_direct_initializer_level &&
+            direct_initializer_candidate_start == SIZE_MAX) {
+          last_declarator_identifier_start = i;
+          last_declarator_identifier_end = identifier_end;
+        }
         previous_token_is_for = identifier_end - i == strlen("for") &&
                                 memcmp(result + i, "for", strlen("for")) == 0;
         previous_token_is_do = identifier_end - i == strlen("do") &&
@@ -3777,6 +3858,25 @@ static char *build_recovery_source(const char *source, size_t source_length,
       previous_token_is_tag_keyword = 0;
       previous_token_ends_expression = 0;
       if (c == '{') simple_do_statement_active = 0;
+    }
+    if (at_direct_initializer_level && c == '=' &&
+        direct_initializer_candidate_start == SIZE_MAX && next != '=' &&
+        (i == 0 || (result[i - 1] != '=' && result[i - 1] != '!' &&
+                    result[i - 1] != '<' && result[i - 1] != '>' &&
+                    result[i - 1] != '+' && result[i - 1] != '-' &&
+                    result[i - 1] != '*' && result[i - 1] != '/' &&
+                    result[i - 1] != '%' && result[i - 1] != '&' &&
+                    result[i - 1] != '|' && result[i - 1] != '^'))) {
+      direct_initializer_candidate_start =
+          last_declarator_identifier_start;
+      direct_initializer_candidate_end = last_declarator_identifier_end;
+    }
+    if (at_direct_initializer_level &&
+        (c == ';' || c == ',' || c == '{' || c == '}')) {
+      last_declarator_identifier_start = SIZE_MAX;
+      last_declarator_identifier_end = 0;
+      direct_initializer_candidate_start = SIZE_MAX;
+      direct_initializer_candidate_end = 0;
     }
     if (c == '(' || c == '[' || c == '{') {
       stack[stack_count++] = (recovery_delimiter_t){
@@ -3967,10 +4067,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
       break;
     }
   }
-  analysis_type_name_array_bound_tail_t type_name_array_bound_tail = {0};
+  analysis_type_name_tail_t type_name_tail = {0};
   if (has_complete_identifier)
-    type_name_array_bound_tail =
-        analysis_complete_type_name_array_bound_tail(
+    type_name_tail = analysis_complete_type_name_tail(
             source, source_length, stack, stack_count,
             &cursor_identifier, enable_trigraphs);
   int cursor_after_complete_type_name_cast = 0;
@@ -3983,6 +4082,14 @@ static char *build_recovery_source(const char *source, size_t source_length,
     cursor_after_complete_type_name_cast =
         after_cast == cursor_identifier.start;
   }
+  size_t direct_initializer_end = 0;
+  int cursor_on_complete_direct_initializer_operand =
+      has_complete_identifier &&
+      analysis_complete_direct_object_initializer_operand(
+          source, source_length, direct_initializer_candidate_start,
+          direct_initializer_candidate_end, &cursor_identifier,
+          enable_trigraphs,
+          &direct_initializer_end);
   int cursor_on_complete_tag_name =
       has_complete_identifier && previous_token_is_tag_keyword;
   size_t cursor_tag_tail_end = cursor_name_end;
@@ -4041,17 +4148,16 @@ static char *build_recovery_source(const char *source, size_t source_length,
     recovery_tail_consumed = complete_offsetof_end + 1;
     stack_count = complete_offsetof_frame;
     last_significant = ')';
-  } else if (type_name_array_bound_tail.kind !=
-      ANALYSIS_TYPE_NAME_ARRAY_BOUND_NONE) {
+  } else if (type_name_tail.kind != ANALYSIS_TYPE_NAME_TAIL_NONE) {
     APPEND_BYTES(
         source + cursor_identifier.start,
-        type_name_array_bound_tail.tail_end + 1 - cursor_identifier.start);
-    recovery_tail_consumed = type_name_array_bound_tail.tail_end + 1;
-    if (type_name_array_bound_tail.kind ==
-        ANALYSIS_TYPE_NAME_ARRAY_BOUND_GENERIC_ASSOCIATION) {
-      stack_count = type_name_array_bound_tail.context_frame + 1;
+        type_name_tail.tail_end + 1 - cursor_identifier.start);
+    recovery_tail_consumed = type_name_tail.tail_end + 1;
+    if (type_name_tail.kind ==
+        ANALYSIS_TYPE_NAME_TAIL_GENERIC_ASSOCIATION) {
+      stack_count = type_name_tail.context_frame + 1;
       recovery_delimiter_t *generic =
-          &stack[type_name_array_bound_tail.context_frame];
+          &stack[type_name_tail.context_frame];
       generic->generic_association_has_colon = 1;
       APPEND_LITERAL(" 0");
       if (!generic->generic_has_default_association) {
@@ -4059,20 +4165,23 @@ static char *build_recovery_source(const char *source, size_t source_length,
         generic->generic_has_default_association = 1;
       }
     } else {
-      if (type_name_array_bound_tail.preserve_statement) {
+      if (type_name_tail.preserve_statement) {
         size_t outer_brace_count = 0;
         for (size_t i = 0;
-             i < type_name_array_bound_tail.context_frame; i++)
+             i < type_name_tail.context_frame; i++)
           if (stack[i].open == '{')
             stack[outer_brace_count++] = stack[i];
         stack_count = outer_brace_count;
         last_significant = ';';
       } else {
-        stack_count = type_name_array_bound_tail.context_frame;
-        if (type_name_array_bound_tail.append_compound_literal)
+        stack_count = type_name_tail.context_frame;
+        if (type_name_tail.append_compound_literal) {
           APPEND_LITERAL("{ 0 }");
-        else if (type_name_array_bound_tail.append_cast_operand)
+          cursor_tag_compound_literal = 0;
+        } else if (type_name_tail.append_cast_operand) {
           APPEND_LITERAL("0");
+          cursor_tag_cast_operand = 0;
+        }
       }
     }
   } else if (cursor_on_complete_member_access) {
@@ -4080,6 +4189,11 @@ static char *build_recovery_source(const char *source, size_t source_length,
       APPEND_BYTES(source + recovery_cursor,
                    cursor_name_end - recovery_cursor);
     APPEND_LITERAL(", 0");
+  } else if (cursor_on_complete_direct_initializer_operand) {
+    APPEND_BYTES(source + cursor_identifier.start,
+                 cursor_identifier.end - cursor_identifier.start);
+    recovery_tail_consumed = direct_initializer_end + 1;
+    last_significant = 'x';
   } else if (cursor_on_complete_tag_name) {
     APPEND_BYTES(source + cursor_identifier.start,
                  cursor_identifier.end - cursor_identifier.start);

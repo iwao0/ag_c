@@ -892,6 +892,158 @@ if (languageAnalysisFocus === "offsetof-types") {
   process.exit(0);
 }
 
+const initializerOperandHoverSource = {
+  name: "initializer-operand-hover.c",
+  source: "struct InitializerRecord { int member; };\n" +
+    "union InitializerUnion { int member; long other; };\n" +
+    "typedef struct InitializerRecord InitializerType;\n" +
+    "typedef union InitializerUnion InitializerUnionType;\n" +
+    "int initializer_file_size = sizeof((InitializerType){ .member = 1 });\n" +
+    "enum { INITIALIZER_ENUM_SIZE = sizeof((InitializerType){ .member = 2 }) };\n" +
+    "int initializer_sink(InitializerType value);\n" +
+    "int initializer_hover(InitializerType initializer_parameter) {\n" +
+    "  InitializerType initializer_before = initializer_parameter;\n" +
+    "  InitializerType initializer_compound = (InitializerType){ .member = 3 };\n" +
+    "  InitializerType initializer_qualified = (const InitializerType){ .member = 4 };\n" +
+    "  InitializerType initializer_tag = (struct InitializerRecord){ .member = 5 };\n" +
+    "  InitializerUnionType initializer_union = (InitializerUnionType){ .member = 6 };\n" +
+    "  InitializerType initializer_comment = (/* type */ InitializerType /* tail */){ .member = 7 };\n" +
+    "  InitializerType initializer_lf = (\\\nInitializerType){ .member = 8 };\n" +
+    "  InitializerType initializer_crlf = (\\\r\nInitializerType){ .member = 9 };\r\n" +
+    "  int initializer_argument = initializer_sink((InitializerType){ .member = 10 });\n" +
+    "  InitializerType initializer_parameter_copy = initializer_parameter;\n" +
+    "  InitializerType initializer_local_copy = initializer_compound;\n" +
+    "  InitializerType initializer_comment_copy = initializer_compound /* tail */;\n" +
+    "  for (InitializerType initializer_loop = initializer_compound; initializer_loop.member; ) { break; }\n" +
+    "  int initializer_scalar = 1;\n" +
+    "  int initializer_scalar_copy = initializer_scalar;\n" +
+    "  int initializer_after;\n" +
+    "  return initializer_argument + initializer_parameter_copy.member +\n" +
+    "         initializer_local_copy.member + initializer_comment_copy.member +\n" +
+    "         initializer_scalar_copy;\n" +
+    "}\n" +
+    "int initializer_file_after;\n",
+};
+const initializerOperandHoverCases = [
+  {
+    fragment: "sizeof((InitializerType", name: "InitializerType",
+    kind: "typedef", checkBoundaries: true,
+  },
+  {
+    fragment: "initializer_compound = (InitializerType",
+    name: "InitializerType", kind: "typedef", checkBoundaries: true,
+  },
+  {
+    fragment: "initializer_qualified = (const InitializerType",
+    name: "InitializerType", kind: "typedef",
+  },
+  {
+    fragment: "initializer_tag = (struct InitializerRecord",
+    name: "InitializerRecord", kind: "tag", checkBoundaries: true,
+  },
+  {
+    fragment: "initializer_union = (InitializerUnionType",
+    name: "InitializerUnionType", kind: "typedef",
+  },
+  {
+    fragment: "(/* type */ InitializerType",
+    name: "InitializerType", kind: "typedef",
+  },
+  {
+    fragment: "initializer_lf = (\\\nInitializerType",
+    name: "InitializerType", kind: "typedef",
+  },
+  {
+    fragment: "initializer_crlf = (\\\r\nInitializerType",
+    name: "InitializerType", kind: "typedef",
+  },
+  {
+    fragment: "initializer_sink((InitializerType",
+    name: "InitializerType", kind: "typedef",
+  },
+  {
+    fragment: "copy = initializer_parameter",
+    name: "initializer_parameter", kind: "parameter", checkBoundaries: true,
+  },
+  {
+    fragment: "initializer_local_copy = initializer_compound",
+    name: "initializer_compound", kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "initializer_comment_copy = initializer_compound",
+    name: "initializer_compound", kind: "object",
+  },
+  {
+    fragment: "initializer_loop = initializer_compound",
+    name: "initializer_compound", kind: "object",
+  },
+  {
+    fragment: "copy = initializer_scalar",
+    name: "initializer_scalar", kind: "object",
+  },
+];
+if (!languageAnalysisFocus || languageAnalysisFocus === "initializer-operands") {
+  for (const initializerCase of initializerOperandHoverCases) {
+    const fragmentIndex = initializerOperandHoverSource.source.indexOf(
+      initializerCase.fragment,
+    );
+    const useIndex = initializerOperandHoverSource.source.indexOf(
+      initializerCase.name, fragmentIndex,
+    );
+    const declarationIndex = initializerOperandHoverSource.source.indexOf(
+      initializerCase.name,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${initializerCase.name} initializer operand anchor`);
+    const nameBytes = Buffer.byteLength(initializerCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = initializerCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        initializerOperandHoverSource.source.slice(0, useIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(initializerOperandHoverSource, {
+        cursor: {
+          sourceName: initializerOperandHoverSource.name, byteOffset,
+        },
+      });
+      assert.equal(wasmResult.partial, false,
+        `${initializerCase.name} initializer operand partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${initializerCase.name} initializer operand diagnostics`);
+      assert.equal(wasmResult.hover?.name, initializerCase.name,
+        `${initializerCase.name} initializer operand hover name`);
+      assert.equal(wasmResult.hover?.kind, initializerCase.kind,
+        `${initializerCase.name} initializer operand hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        initializerOperandHoverSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.equal(symbol(
+        wasmResult, "initializer_after", "object",
+      ), undefined, `${initializerCase.name} later local object hidden`);
+      assert.equal(symbol(
+        wasmResult, "initializer_file_after", "object",
+      ), undefined, `${initializerCase.name} later file object hidden`);
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--initializer-operand-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${initializerCase.name} initializer operand differ`);
+    }
+  }
+  reportTestTiming("initializer operands");
+}
+if (languageAnalysisFocus === "initializer-operands") {
+  compiler.dispose();
+  console.log("wasm language analysis initializer operand tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",

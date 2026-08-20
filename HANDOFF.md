@@ -36248,3 +36248,43 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同じvalid source probeで残ったlocal compound literal型名`(QueryType){...}`とcopy initializer operand`query_copy = query_compound`の
     `partial:true` / rejection 38を、initializerのlookup pointとrecovery終端だけに限定して切り分ける。開発中はNative約6秒と小型focusを使い、
     修正後に関連initializer batchの全Wasm integrationを一度だけ実行する。
+
+### このセッション（続き1221）: aggregate initializer operandのpartial解析を回復した
+- 対象選定:
+  - 続き1220の通常サイズ・完全valid C probeで残った2形を切り分けた。local compound literal型名
+    `QueryType value = (QueryType){...}`と直接copy operand`QueryType copy = value`はいずれも正しいhoverを返していたが、
+    `partial:true`と`AGC_PARTIAL_SEMANTIC` rejection 38を同時に返していた。
+  - 続き1220で修正した`offsetof` 2形と今回のinitializer 2形を含め、元の26形はすべてdiagnosticsなし・`partial:false`になった。
+- 原因:
+  - 汎用recoveryがcursor上の完全な識別子を除き、式位置へ整数`0`を補っていた。aggregate initializerでは
+    `QueryType value = (0)`または`QueryType copy = 0`相当となり、direct semantic resolutionがaggregateとintの代入型不一致をrejection 38にした。
+- 変更:
+  - 対応`)`と`}`が元sourceにあるcompound literal型名だけを既存type-name/delimiter scannerで認識し、typedef/tag名を原文で保持して最小`{0}`へ閉じる。
+    array-bound cursorは既存のpostfix保持経路を優先し、tag名用のcompound/cast suffixを同時に二重付加しないよう状態を消す。
+  - 既存のcomment・quote・preprocessor・LF/CRLF splice対応反復scannerで、file/block scopeと`for`第1節の宣言levelにある最初の単純`=`と
+    直前identifierだけを記録する。選択識別子がobject declaratorの完全なinitializer内にあり、後ろが空白/commentから`,`または`;`へ直結する
+    直接operandの場合だけ、整数placeholderではなく元識別子を保持する。型推論、式評価、再帰探索は追加しない。
+  - typedef/qualified/tag/union compound literal、file `sizeof`、comment、LF/CRLF splice、外側call、parameter/local/scalarのcopy、`for` initializerの
+    14形を専用sourceへまとめた。後続local/file objectはlookup対象に入れない。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=initializer-operands`と`make test-wasm-language-analysis-initializer-operands`を追加した。全14形の中央と代表5形の
+    名前先頭・末尾、runtime manifest、Native snapshot parityを含む最終実測は**real 0.69秒 / user 1.08秒 / sys 0.13秒**だった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = compile warningなし、
+    **language analysis tests passed (65 scenarios)**。14形すべてを名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.65秒 / user 42.06秒 / sys 0.92秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-initializer-operands` = 成功、
+    **real 0.69秒 / user 1.08秒 / sys 0.13秒**。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `AGC_LANGUAGE_ANALYSIS_TIMING=1 /usr/bin/time -p make test-wasm-js-api` = language-analysis、smoke、package exportsすべて成功、
+    **real 1354.54秒 / user 1350.43秒 / sys 7.61秒**。続き1220との関連initializer/type-query batch末尾の全統合gateとして一度だけ実施した。
+    新規`offsetof`区間まで2.42秒、initializer区間まで3.51秒で、既存declarator/member hover区間が1210.41秒までを占めた。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。不完全compound literal、
+    typedef aggregate copyを含む複数declarator、複合initializer式、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回greenになった26 initializer/type-query文脈は再探索せず、通常サイズの完全sourceで未固定の浅いexpression statementまたはreturn operandの
+    aggregate lookup境界を小型probeから探す。開発中はNative約6秒と0.7秒のinitializer焦点gateを使い、全Wasm integrationは次の関連batch末尾まで
+    繰り返さない。

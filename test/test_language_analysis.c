@@ -464,6 +464,36 @@ static const char offsetof_type_hover_source[] =
     "  return offset_local_typedef + offset_local_tag + offset_argument;\n"
     "}\n"
     "int offset_file_after;\n";
+static const char initializer_operand_hover_source[] =
+    "struct InitializerRecord { int member; };\n"
+    "union InitializerUnion { int member; long other; };\n"
+    "typedef struct InitializerRecord InitializerType;\n"
+    "typedef union InitializerUnion InitializerUnionType;\n"
+    "int initializer_file_size = sizeof((InitializerType){ .member = 1 });\n"
+    "enum { INITIALIZER_ENUM_SIZE = sizeof((InitializerType){ .member = 2 }) };\n"
+    "int initializer_sink(InitializerType value);\n"
+    "int initializer_hover(InitializerType initializer_parameter) {\n"
+    "  InitializerType initializer_before = initializer_parameter;\n"
+    "  InitializerType initializer_compound = (InitializerType){ .member = 3 };\n"
+    "  InitializerType initializer_qualified = (const InitializerType){ .member = 4 };\n"
+    "  InitializerType initializer_tag = (struct InitializerRecord){ .member = 5 };\n"
+    "  InitializerUnionType initializer_union = (InitializerUnionType){ .member = 6 };\n"
+    "  InitializerType initializer_comment = (/* type */ InitializerType /* tail */){ .member = 7 };\n"
+    "  InitializerType initializer_lf = (\\\nInitializerType){ .member = 8 };\n"
+    "  InitializerType initializer_crlf = (\\\r\nInitializerType){ .member = 9 };\r\n"
+    "  int initializer_argument = initializer_sink((InitializerType){ .member = 10 });\n"
+    "  InitializerType initializer_parameter_copy = initializer_parameter;\n"
+    "  InitializerType initializer_local_copy = initializer_compound;\n"
+    "  InitializerType initializer_comment_copy = initializer_compound /* tail */;\n"
+    "  for (InitializerType initializer_loop = initializer_compound; initializer_loop.member; ) { break; }\n"
+    "  int initializer_scalar = 1;\n"
+    "  int initializer_scalar_copy = initializer_scalar;\n"
+    "  int initializer_after;\n"
+    "  return initializer_argument + initializer_parameter_copy.member +\n"
+    "         initializer_local_copy.member + initializer_comment_copy.member +\n"
+    "         initializer_scalar_copy;\n"
+    "}\n"
+    "int initializer_file_after;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -3133,6 +3163,19 @@ static int print_offsetof_type_hover_parity_snapshot(
     return 1;
   return print_macro_definition_source_snapshot(
       "offsetof-type-hover.c", offsetof_type_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_initializer_operand_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(initializer_operand_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "initializer-operand-hover.c", initializer_operand_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -10264,6 +10307,108 @@ static int test_offsetof_type_hover(ag_target_info_t target) {
   return 0;
 }
 
+static int test_initializer_operand_hover(ag_target_info_t target) {
+  static const struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+  } cases[] = {
+      {"sizeof((InitializerType", "InitializerType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"initializer_compound = (InitializerType", "InitializerType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"initializer_qualified = (const InitializerType", "InitializerType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"initializer_tag = (struct InitializerRecord", "InitializerRecord",
+       AG_LANGUAGE_SYMBOL_TAG},
+      {"initializer_union = (InitializerUnionType", "InitializerUnionType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"(/* type */ InitializerType", "InitializerType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"initializer_lf = (\\\nInitializerType", "InitializerType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"initializer_crlf = (\\\r\nInitializerType", "InitializerType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"initializer_sink((InitializerType", "InitializerType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"copy = initializer_parameter",
+       "initializer_parameter", AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"initializer_local_copy = initializer_compound",
+       "initializer_compound", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"initializer_comment_copy = initializer_compound",
+       "initializer_compound", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"initializer_loop = initializer_compound",
+       "initializer_compound", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"copy = initializer_scalar",
+       "initializer_scalar", AG_LANGUAGE_SYMBOL_OBJECT},
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "initializer operand hover session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          initializer_operand_hover_source, cases[case_index].fragment);
+      const char *use = fragment ? strstr(fragment, cases[case_index].name)
+                                 : NULL;
+      const char *declaration = strstr(
+          initializer_operand_hover_source, cases[case_index].name);
+      CHECK(use && declaration, "initializer operand hover anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]);
+           delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "initializer operand hover fresh session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "initializer-operand-hover.c",
+                  initializer_operand_hover_source,
+                  (size_t)(use - initializer_operand_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "initializer operand hover analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover && completion &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "initializer-operand-hover.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration - initializer_operand_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration - initializer_operand_hover_source) +
+                          (int)name_length &&
+                  same_range(&hover->declaration,
+                             &completion->declaration) &&
+                  !find_symbol(&snapshot, "initializer_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "initializer_file_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT),
+              "initializer operand hover snapshot");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -11883,6 +12028,9 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--offsetof-type-hover-parity-json") == 0)
     return print_offsetof_type_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--initializer-operand-hover-parity-json") == 0)
+    return print_initializer_operand_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -12042,6 +12190,8 @@ int main(int argc, char **argv) {
         "do body hover scenarios");
   CHECK(test_offsetof_type_hover(target) == 0,
         "offsetof type hover scenarios");
+  CHECK(test_initializer_operand_hover(target) == 0,
+        "initializer operand hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -15142,6 +15292,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (64 scenarios)");
+  puts("language analysis tests passed (65 scenarios)");
   return 0;
 }
