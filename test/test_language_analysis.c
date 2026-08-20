@@ -346,6 +346,22 @@ static const char inline_tag_object_source[] =
     "typedef enum { INLINE_TYPEDEF_VALUE = 4 } InlineEnumTypedef;\n"
     "struct { int first; /* } */ int second; } inline_commented_record;\n"
     "int inline_after_file;\n";
+static const char for_init_declaration_hover_source[] =
+    "typedef int ForInitType;\n"
+    "int for_init_hover(int for_limit) {\n"
+    "  int for_before = for_limit;\n"
+    "  for (int loop_plain = 0; loop_plain < for_limit; loop_plain++) {}\n"
+    "  for (int loop_uninitialized; for_before; ) { break; }\n"
+    "  for (int loop_first = 0, *loop_second = &loop_first; loop_first < for_limit; loop_first++) {}\n"
+    "  for (ForInitType loop_typedef = 0; loop_typedef < for_limit; loop_typedef++) {}\n"
+    "  for (struct { int value; } loop_record = { 0 }; loop_record.value < for_limit; loop_record.value++) {}\n"
+    "  for (int (*loop_callback)(int) = 0; loop_callback; ) {}\n"
+    "  for (int (loop_parenthesized) = 0; loop_parenthesized < for_limit; loop_parenthesized++) {}\n"
+    "  for /* keyword gap */ (int loop_commented /* name gap */ = 0; loop_commented < for_limit; loop_commented++) {}\n"
+    "  int for_after = for_before;\n"
+    "  return for_after;\n"
+    "}\n"
+    "int for_file_after;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -2949,6 +2965,19 @@ static int print_inline_tag_object_parity_snapshot(
     return 1;
   return print_macro_definition_source_snapshot(
       "inline-tag-object.c", inline_tag_object_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_for_init_declaration_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(for_init_declaration_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "for-init-hover.c", for_init_declaration_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -9462,6 +9491,132 @@ static int test_inline_tag_object_hover(ag_target_info_t target) {
   return 0;
 }
 
+static int test_for_init_declaration_hover(ag_target_info_t target) {
+  static const char *const names[] = {
+      "loop_plain",
+      "loop_uninitialized",
+      "loop_first",
+      "loop_second",
+      "loop_typedef",
+      "loop_record",
+      "loop_callback",
+      "loop_parenthesized",
+      "loop_commented",
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "for init declaration session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  const char *for_limit = strstr(
+      for_init_declaration_hover_source, "for_limit");
+  const char *for_before = strstr(
+      for_init_declaration_hover_source, "for_before");
+  CHECK(for_limit && for_before, "for init lookup anchors");
+  for (size_t case_index = 0;
+       case_index < sizeof(names) / sizeof(names[0]); case_index++) {
+    const char *declaration = strstr(
+        for_init_declaration_hover_source, names[case_index]);
+    CHECK(declaration != NULL, "for init declaration anchor");
+    size_t name_length = strlen(names[case_index]);
+    size_t deltas[] = {0, name_length / 2, name_length};
+    for (size_t delta_index = 0;
+         delta_index < sizeof(deltas) / sizeof(deltas[0]);
+         delta_index++) {
+      for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+        ag_compilation_session_t *analysis_session =
+            fresh_session ? ag_compilation_session_create(&target) : session;
+        CHECK(analysis_session != NULL,
+              "for init declaration fresh session");
+        CHECK(analyze_named(
+                  analysis_session, "for-init-hover.c",
+                  for_init_declaration_hover_source,
+                  (size_t)(declaration -
+                           for_init_declaration_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "for init declaration analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover &&
+                  strcmp(hover->name, names[case_index]) == 0 &&
+                  hover->kind == AG_LANGUAGE_SYMBOL_OBJECT &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "for-init-hover.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            for_init_declaration_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            for_init_declaration_hover_source) +
+                          (int)name_length &&
+                  find_symbol(&snapshot, "for_limit",
+                              AG_LANGUAGE_SYMBOL_PARAMETER) &&
+                  find_symbol(&snapshot, "for_before",
+                              AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "for_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "for_file_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT),
+              "for init declaration snapshot");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  static const struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+  } neighboring_uses[] = {
+      {"for (ForInitType", "ForInitType", AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"loop_plain < for_limit", "loop_plain",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(neighboring_uses) /
+                        sizeof(neighboring_uses[0]);
+       case_index++) {
+    const char *fragment = strstr(
+        for_init_declaration_hover_source,
+        neighboring_uses[case_index].fragment);
+    const char *use = fragment ? strstr(
+        fragment, neighboring_uses[case_index].name) : NULL;
+    const char *declaration = strstr(
+        for_init_declaration_hover_source,
+        neighboring_uses[case_index].name);
+    CHECK(use && declaration, "for init neighboring use anchors");
+    CHECK(analyze_named(
+              session, "for-init-hover.c",
+              for_init_declaration_hover_source,
+              (size_t)(use - for_init_declaration_hover_source) +
+                  strlen(neighboring_uses[case_index].name) / 2,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "for init neighboring use analysis");
+    const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+    CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+              hover &&
+              strcmp(hover->name,
+                     neighboring_uses[case_index].name) == 0 &&
+              hover->kind == neighboring_uses[case_index].kind &&
+              hover->declaration.start.offset ==
+                  (int)(declaration -
+                        for_init_declaration_hover_source) &&
+              hover->declaration.end.offset ==
+                  (int)(declaration -
+                        for_init_declaration_hover_source) +
+                      (int)strlen(neighboring_uses[case_index].name),
+          "for init neighboring use snapshot");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -11066,6 +11221,9 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--inline-tag-object-parity-json") == 0)
     return print_inline_tag_object_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--for-init-declaration-parity-json") == 0)
+    return print_for_init_declaration_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -11215,6 +11373,8 @@ int main(int argc, char **argv) {
         "declarator array bound operand hover scenarios");
   CHECK(test_inline_tag_object_hover(target) == 0,
         "inline tag object hover scenarios");
+  CHECK(test_for_init_declaration_hover(target) == 0,
+        "for init declaration hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -14315,6 +14475,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (59 scenarios)");
+  puts("language analysis tests passed (60 scenarios)");
   return 0;
 }

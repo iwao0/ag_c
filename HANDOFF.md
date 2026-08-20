@@ -36059,3 +36059,45 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 今回greenだった39宣言形は再探索せず、通常サイズの完全sourceで未固定のdeclaration specifierまたはlookup-point境界を小さいprobeから探す。
     開発中はNative約6秒と0.5秒のinline-tag焦点gateを使い、全Wasmは関連declaration batch末尾に一度だけ実行する。
+
+### このセッション（続き1216）: `for`初期宣言のobject宣言位置hoverを回復した
+- 対象選定:
+  - 通常サイズの完全なvalid C 40宣言・lookup-point形を小さいWasm probeで確認した。storage class、qualifier、Atomic、pointer/array/function
+    declarator、typedef、parameter、self initializer、shadow、enum/tag、`for`を含む35形はgreenだった。
+  - 失敗5形から、自己配列bound 2形は宣言点より前の自己参照で無効、label addressはGNU拡張なので対象外とした。標準C11の実問題は、先行parameterを
+    後続parameterの配列boundからhoverするとnullになる形と、`for (int loop_index = 0; ...)`の宣言名が解析例外になる形の2件だった。今回は後者だけを
+    修正し、深い宣言子・制御入れ子、巨大入力、fuzz、資源stress、security監査系には広げなかった。
+- 原因:
+  - `object_declaration_prefix()`は現在blockの`{`直後からcursorまでを宣言prefixとして調べ、`for`を非宣言keywordとして検出するためobject回復へ
+    入らなかった。後続の汎用回復はcursor識別子をelideし、`for (int = 0; ...)`相当の不正な一時sourceを解析して構造化snapshotを返せなかった。
+  - function-pointer objectはfunction宣言回復がobject回復より先に候補になるため、`for`初期宣言であることを共有しないと同じ不正な閉じ方へ進んだ。
+- 変更:
+  - inline tag対応済みの既存反復scannerへ、通常の`for` keyword、直後の`(`、その括弧depthにある`;`数だけを追加した。第1`;`より前では宣言開始を
+    `(`直後へ置き、既存のtype/modifier/declarator判定を再利用する。comment・quote・preprocessor lineを除外し、条件式を評価せず再帰探索もしない。
+  - object回復は選択中の宣言子を元sourceの`,`または`;`まで保持し、残りの条件・反復節を空にしてloop body内へmarkerを置く。function宣言回復は
+    `for`初期宣言をobject経路へ譲るため、function-pointer objectの正確な型も維持する。
+  - 小型の`for-init-hover.c`へ通常/initializerなし、複数宣言子の第1・第2、typedef型、inline anonymous record、function pointer、括弧付き宣言子、
+    comment gapの9形をまとめた。正確なobject kind/type/signature/declaration range、先行parameter/object可視、後続local/file object非可視、
+    diagnostics空・`partial:false`をNative/Wasm snapshot parityで固定した。隣接するtypedef名とloop条件内object使用も専用回復へ過剰適用しない。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=for-init`と`make test-wasm-language-analysis-for-init`を追加した。同じJSテスト本体で全9形中央、代表3形の
+    先頭・末尾、隣接使用2形を検査し、最初のWasm解析はfresh、後続は同一instanceを再利用する。最終実測は
+    **real 0.59秒 / user 0.64秒 / sys 0.17秒**で、直近の全Wasm declarator/member hover区間約316秒を開発反復で回避できる。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (60 scenarios)**。
+    9形すべての名前先頭・中央・末尾を同一/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.87秒 / user 41.93秒 / sys 1.00秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-for-init` = runtime manifestとNative/Wasm snapshot parityを含めて成功、
+    **real 0.59秒 / user 0.64秒 / sys 0.17秒**。拡張probeの9形×3位置も全27件greenだった。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 直前の続き1214で1542秒の全Wasm integrationが成功し、その後のdeclaration小増分は同じJS本体の0.5秒/0.6秒焦点gateで確認しているため、
+    `make test-wasm-js-api`は次のparameter-bound増分を含む関連declaration batch末尾へまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。深い宣言子・制御入れ子、巨大入力、fuzz、
+    資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 同じ40形probeで残った`int function(int count, int values[count]);`の`count`使用位置hoverがdiagnostics空・`partial:false`でもnullになる問題を、
+    prototype-scopeの先行parameter lookup pointだけに限定して切り分ける。開発中はNative約5秒と小型focusを使い、修正後に関連declaration batchの
+    全Wasm integrationを一度だけ実行する。

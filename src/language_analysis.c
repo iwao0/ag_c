@@ -1826,8 +1826,9 @@ static int analysis_case_label_end_mode(
 static int object_declaration_prefix(
     const char *source, size_t name_start, size_t *outer_brace_count,
     int *paren_depth, int *bracket_depth, int *brace_depth,
-    int *definite_declaration) {
+    int *definite_declaration, int *for_init_declaration) {
   if (definite_declaration) *definite_declaration = 0;
+  if (for_init_declaration) *for_init_declaration = 0;
   size_t start = 0;
   size_t open_braces = 0;
   int parens = 0;
@@ -1840,6 +1841,9 @@ static int object_declaration_prefix(
   int preprocessor_line = 0;
   int tag_specifier_state = 0;
   size_t tag_body_depth = 0;
+  int previous_token_is_for = 0;
+  int for_paren_depth = 0;
+  size_t for_separator_count = 0;
   for (size_t i = 0; i < name_start; i++) {
     char c = source[i];
     char next = i + 1 < name_start ? source[i + 1] : 0;
@@ -1877,6 +1881,7 @@ static int object_declaration_prefix(
     if (c == '\'' || c == '"') {
       quote = c;
       at_line_start = 0;
+      previous_token_is_for = 0;
       continue;
     }
     if (c == '\n') {
@@ -1903,6 +1908,8 @@ static int object_declaration_prefix(
              is_identifier_byte((unsigned char)source[i + 1]))
         i++;
       size_t word_length = i + 1 - word_start;
+      previous_token_is_for = analysis_word_is(
+          source, word_start, word_length, "for");
       if (analysis_word_is(source, word_start, word_length, "struct") ||
           analysis_word_is(source, word_start, word_length, "union") ||
           analysis_word_is(source, word_start, word_length, "enum")) {
@@ -1917,12 +1924,24 @@ static int object_declaration_prefix(
     if (c == '{' && tag_specifier_state != 0) {
       tag_body_depth = 1;
       tag_specifier_state = 0;
+      previous_token_is_for = 0;
       continue;
     }
-    if (!isspace((unsigned char)c)) tag_specifier_state = 0;
+    int opens_for_control = c == '(' && previous_token_is_for &&
+                            parens == 0 && brackets == 0;
+    if (!isspace((unsigned char)c)) {
+      tag_specifier_state = 0;
+      previous_token_is_for = 0;
+    }
     if (c == '(') {
       parens++;
+      if (opens_for_control) {
+        start = i + 1;
+        for_paren_depth = parens;
+        for_separator_count = 0;
+      }
     } else if (c == ')' && parens > 0) {
+      if (for_paren_depth == parens) for_paren_depth = 0;
       parens--;
     } else if (c == '[') {
       brackets++;
@@ -1934,8 +1953,11 @@ static int object_declaration_prefix(
     } else if (c == '}' && parens == 0 && brackets == 0) {
       if (open_braces > 0) open_braces--;
       start = i + 1;
-    } else if (c == ';' && parens == 0 && brackets == 0) {
-      start = i + 1;
+    } else if (c == ';') {
+      if (for_paren_depth > 0 && parens == for_paren_depth &&
+          brackets == 0)
+        for_separator_count++;
+      if (parens == 0 && brackets == 0) start = i + 1;
     }
   }
 
@@ -2029,6 +2051,9 @@ static int object_declaration_prefix(
   *brace_depth = local_braces;
   if (definite_declaration)
     *definite_declaration = has_type || has_typedef_declarator_prefix;
+  if (for_init_declaration)
+    *for_init_declaration = for_paren_depth > 0 &&
+                            for_separator_count == 0;
   return 1;
 }
 
@@ -2593,9 +2618,12 @@ static char *build_function_declaration_recovery_source(
   int paren_depth = 0;
   int bracket_depth = 0;
   int brace_depth = 0;
+  int for_init_declaration = 0;
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
-          &bracket_depth, &brace_depth, NULL) ||
+          &bracket_depth, &brace_depth, NULL,
+          &for_init_declaration) ||
+      for_init_declaration ||
       brace_depth != 0 || (paren_depth == 0 && bracket_depth != 0))
     return NULL;
   size_t declaration_end = 0;
@@ -2644,9 +2672,11 @@ static char *build_object_declaration_recovery_source(
   int paren_depth = 0;
   int bracket_depth = 0;
   int brace_depth = 0;
+  int for_init_declaration = 0;
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
-          &bracket_depth, &brace_depth, NULL) ||
+          &bracket_depth, &brace_depth, NULL,
+          &for_init_declaration) ||
       bracket_depth != 0)
     return NULL;
   size_t after_name = skip_analysis_space_and_comments(
@@ -2659,17 +2689,23 @@ static char *build_object_declaration_recovery_source(
           source, length, name_end, paren_depth, bracket_depth,
           brace_depth, &declarator_end))
     return NULL;
-  static const char suffix[] =
+  static const char regular_suffix[] =
       ";\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  static const char for_init_suffix[] =
+      "; ; ) {\nint " AG_LANGUAGE_CURSOR_MARKER ";\n}\n";
+  const char *suffix = for_init_declaration
+                           ? for_init_suffix
+                           : regular_suffix;
+  size_t suffix_length = strlen(suffix);
   size_t declarator_length = declarator_end - name_start;
   if (name_start > SIZE_MAX - declarator_length ||
       outer_brace_count > SIZE_MAX / 2 ||
-      name_start + declarator_length > SIZE_MAX - sizeof(suffix) ||
-      name_start + declarator_length + sizeof(suffix) >
+      name_start + declarator_length > SIZE_MAX - suffix_length - 1 ||
+      name_start + declarator_length + suffix_length + 1 >
           SIZE_MAX - outer_brace_count * 2)
     return NULL;
   size_t result_length =
-      name_start + declarator_length + sizeof(suffix) - 1 +
+      name_start + declarator_length + suffix_length +
       outer_brace_count * 2;
   char *result = malloc(result_length + 1);
   if (!result) return NULL;
@@ -2677,8 +2713,8 @@ static char *build_object_declaration_recovery_source(
   memcpy(
       result + name_start, source + name_start, declarator_length);
   size_t output = name_start + declarator_length;
-  memcpy(result + output, suffix, sizeof(suffix) - 1);
-  output += sizeof(suffix) - 1;
+  memcpy(result + output, suffix, suffix_length);
+  output += suffix_length;
   for (size_t i = 0; i < outer_brace_count; i++) {
     result[output++] = '}';
     result[output++] = '\n';
@@ -2705,7 +2741,8 @@ static char *build_declarator_array_bound_recovery_source(
   int definite_declaration = 0;
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
-          &bracket_depth, &brace_depth, &definite_declaration) ||
+          &bracket_depth, &brace_depth, &definite_declaration,
+          NULL) ||
       !definite_declaration || bracket_depth == 0)
     return NULL;
   size_t record_open = 0;

@@ -68,7 +68,7 @@ const inlineTagObjectCases = [
   { name: "InlineEnumTypedef", kind: "typedef" },
   { name: "inline_commented_record", kind: "object" },
 ];
-if (languageAnalysisFocus !== "macros") {
+if (!languageAnalysisFocus || languageAnalysisFocus === "inline-tags") {
   for (const inlineCase of inlineTagObjectCases) {
     const declarationIndex = inlineTagObjectSource.source.indexOf(
       inlineCase.name,
@@ -118,6 +118,134 @@ if (languageAnalysisFocus !== "macros") {
 if (languageAnalysisFocus === "inline-tags") {
   compiler.dispose();
   console.log("wasm language analysis inline tag tests passed");
+  process.exit(0);
+}
+
+const forInitDeclarationSource = {
+  name: "for-init-hover.c",
+  source: "typedef int ForInitType;\n" +
+    "int for_init_hover(int for_limit) {\n" +
+    "  int for_before = for_limit;\n" +
+    "  for (int loop_plain = 0; loop_plain < for_limit; loop_plain++) {}\n" +
+    "  for (int loop_uninitialized; for_before; ) { break; }\n" +
+    "  for (int loop_first = 0, *loop_second = &loop_first; loop_first < for_limit; loop_first++) {}\n" +
+    "  for (ForInitType loop_typedef = 0; loop_typedef < for_limit; loop_typedef++) {}\n" +
+    "  for (struct { int value; } loop_record = { 0 }; loop_record.value < for_limit; loop_record.value++) {}\n" +
+    "  for (int (*loop_callback)(int) = 0; loop_callback; ) {}\n" +
+    "  for (int (loop_parenthesized) = 0; loop_parenthesized < for_limit; loop_parenthesized++) {}\n" +
+    "  for /* keyword gap */ (int loop_commented /* name gap */ = 0; loop_commented < for_limit; loop_commented++) {}\n" +
+    "  int for_after = for_before;\n" +
+    "  return for_after;\n" +
+    "}\n" +
+    "int for_file_after;\n",
+};
+const forInitDeclarationCases = [
+  { name: "loop_plain", checkBoundaries: true },
+  { name: "loop_uninitialized" },
+  { name: "loop_first" },
+  { name: "loop_second", checkBoundaries: true },
+  { name: "loop_typedef" },
+  { name: "loop_record", checkBoundaries: true },
+  { name: "loop_callback" },
+  { name: "loop_parenthesized" },
+  { name: "loop_commented" },
+];
+if (!languageAnalysisFocus || languageAnalysisFocus === "for-init") {
+  for (const forCase of forInitDeclarationCases) {
+    const declarationIndex = forInitDeclarationSource.source.indexOf(
+      forCase.name,
+    );
+    assert.notEqual(declarationIndex, -1,
+      `missing ${forCase.name} for init declaration`);
+    const nameBytes = Buffer.byteLength(forCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = forCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        forInitDeclarationSource.source.slice(0, declarationIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(forInitDeclarationSource, {
+        cursor: { sourceName: forInitDeclarationSource.name, byteOffset },
+      });
+      assert.equal(wasmResult.partial, false,
+        `${forCase.name} for init partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${forCase.name} for init diagnostics`);
+      assert.equal(wasmResult.hover?.name, forCase.name,
+        `${forCase.name} for init hover name`);
+      assert.equal(wasmResult.hover?.kind, "object",
+        `${forCase.name} for init hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        forInitDeclarationSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.ok(symbol(wasmResult, "for_limit", "parameter"),
+        `${forCase.name} prior parameter visible`);
+      assert.ok(symbol(wasmResult, "for_before", "object"),
+        `${forCase.name} prior object visible`);
+      assert.equal(symbol(wasmResult, "for_after", "object"), undefined,
+        `${forCase.name} later local hidden`);
+      assert.equal(symbol(wasmResult, "for_file_after", "object"), undefined,
+        `${forCase.name} later file object hidden`);
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--for-init-declaration-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${forCase.name} for init differ`);
+    }
+  }
+  const neighboringUses = [
+    { fragment: "for (ForInitType", name: "ForInitType", kind: "typedef" },
+    {
+      fragment: "loop_plain < for_limit",
+      name: "loop_plain", kind: "object",
+    },
+  ];
+  for (const useCase of neighboringUses) {
+    const fragmentIndex = forInitDeclarationSource.source.indexOf(
+      useCase.fragment,
+    );
+    const useIndex = forInitDeclarationSource.source.indexOf(
+      useCase.name, fragmentIndex,
+    );
+    const declarationIndex = forInitDeclarationSource.source.indexOf(
+      useCase.name,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${useCase.name} neighboring for init use`);
+    const byteOffset = Buffer.byteLength(
+      forInitDeclarationSource.source.slice(0, useIndex),
+    ) + Math.floor(Buffer.byteLength(useCase.name) / 2);
+    const wasmResult = compiler.analyzeSource(forInitDeclarationSource, {
+      cursor: { sourceName: forInitDeclarationSource.name, byteOffset },
+    });
+    assert.equal(wasmResult.partial, false,
+      `${useCase.name} neighboring for init partial`);
+    assert.deepStrictEqual(wasmResult.diagnostics, [],
+      `${useCase.name} neighboring for init diagnostics`);
+    assert.equal(wasmResult.hover?.name, useCase.name,
+      `${useCase.name} neighboring for init hover name`);
+    assert.equal(wasmResult.hover?.kind, useCase.kind,
+      `${useCase.name} neighboring for init hover kind`);
+    assert.equal(wasmResult.hover.declaration.start.offset,
+      declarationIndex);
+    assert.equal(wasmResult.hover.declaration.end.offset,
+      declarationIndex + Buffer.byteLength(useCase.name));
+    assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--for-init-declaration-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    )), `native and Wasm ${useCase.name} neighboring for init differ`);
+  }
+  reportTestTiming("for init declarations");
+}
+if (languageAnalysisFocus === "for-init") {
+  compiler.dispose();
+  console.log("wasm language analysis for init tests passed");
   process.exit(0);
 }
 
