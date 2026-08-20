@@ -575,7 +575,7 @@ static int resolve_parsed_alignas_type_name(
       .scope_seq = alignas->scope_seq,
       .declaration_seq = alignas->declaration_seq,
   };
-  if (!psx_resolve_type_name_qual_type_in_contexts(
+  if (!psx_resolve_runtime_type_name_qual_type_in_contexts(
           semantic_context, global_registry, local_registry,
           &type_name, &qual_type)) {
     ps_diag_ctx_in(

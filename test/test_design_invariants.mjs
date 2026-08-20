@@ -8760,7 +8760,7 @@ if (/\bpsx_ctx_get_type_info\s*\(/.test(tagContextSource) ||
     !/\bag_data_layout_scalar_size\s*\(/.test(tagContextSource) ||
     !/\bag_data_layout_scalar_alignment\s*\(/.test(tagContextSource) ||
     !/\bpsx_ctx_find_typedef_layout_in\s*\(/.test(tagContextSource) ||
-    !/resolve_parsed_alignas_type_name\s*\([^]*?psx_semantic_type_is_complete_object_in\s*\([^]*?psx_qual_type_layout_alignof\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
+    !/resolve_parsed_alignas_type_name\s*\([^]*?psx_resolve_runtime_type_name_qual_type_in_contexts\s*\([^]*?psx_semantic_type_is_complete_object_in\s*\([^]*?psx_qual_type_layout_alignof\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
       declarationApplicationSource,
     ) ||
     !/resolve_parsed_alignas_expression\s*\([^]*?psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
@@ -11996,6 +11996,9 @@ if (!/control->init->kind\s*==\s*ND_LOCAL_DECLARATION/.test(
 const typeNameQualTypeValueAdapter = typeNameResolutionSource.match(
   /int\s+psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?\n\}/,
 );
+const runtimeTypeNameQualTypeAdapter = typeNameResolutionSource.match(
+  /int\s+psx_resolve_runtime_type_name_qual_type_in_contexts\s*\([^]*?\n\}/,
+);
 const typeNameBaseQualTypeCore = typeNameResolutionSource.match(
   /int\s+psx_resolve_type_name_base_in_contexts\s*\([^]*?\n\}/,
 );
@@ -12005,7 +12008,11 @@ if (!/\bpsx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
     !/\bpsx_resolve_type_name_base_in_contexts\s*\(/.test(
       typeNameResolutionHeader,
     ) ||
+    !/\bpsx_resolve_runtime_type_name_qual_type_in_contexts\s*\(/.test(
+      typeNameResolutionHeader,
+    ) ||
     !typeNameQualTypeValueAdapter ||
+    !runtimeTypeNameQualTypeAdapter ||
     !/psx_type_name_base_resolution_t\s+base\s*=\s*\{0\}/.test(
       typeNameQualTypeValueAdapter[0],
     ) ||
@@ -12018,6 +12025,21 @@ if (!/\bpsx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
     ) ||
     !/psx_apply_parsed_declarator_qual_type_in_contexts\s*\(/.test(
       typeNameQualTypeValueAdapter[0],
+    ) ||
+    !/psx_resolve_type_name_base_in_contexts\s*\(/.test(
+      runtimeTypeNameQualTypeAdapter[0],
+    ) ||
+    !/psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts\s*\(/.test(
+      runtimeTypeNameQualTypeAdapter[0],
+    ) ||
+    !/psx_apply_runtime_declarator_qual_type_in_context\s*\(/.test(
+      runtimeTypeNameQualTypeAdapter[0],
+    ) ||
+    !/validate_resolved_type_name_qual_type\s*\(/.test(
+      typeNameQualTypeValueAdapter[0],
+    ) ||
+    !/validate_resolved_type_name_qual_type\s*\(/.test(
+      runtimeTypeNameQualTypeAdapter[0],
     ) ||
     /psx_resolve_bound_type_name_ref_in_contexts\s*\(|psx_build_decl_type\s*\(|ps_type_clone_in\s*\(/.test(
       typeNameQualTypeValueAdapter[0],
@@ -12868,7 +12890,7 @@ if (!/psx_resolve_syntax_function_direct_to_typed_hir_in_contexts\s*\(/.test(
     !/psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
       declarationApplicationSource,
     ) ||
-    !/psx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
+    !/psx_resolve_runtime_type_name_qual_type_in_contexts\s*\(/.test(
       declarationApplicationSource,
     ) ||
     !/psx_apply_resolved_runtime_parsed_declarator_in_contexts\s*\(/.test(

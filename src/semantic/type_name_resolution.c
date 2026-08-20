@@ -106,27 +106,13 @@ int psx_resolve_type_name_base_in_contexts(
   return 1;
 }
 
-int psx_resolve_type_name_qual_type_in_contexts(
+static int validate_resolved_type_name_qual_type(
     psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
     const psx_type_name_ref_t *type_name,
-    psx_qual_type_t *qual_type) {
-  if (qual_type)
-    *qual_type = (psx_qual_type_t){
-        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  if (!semantic_context || !global_registry || !local_registry ||
-      !type_name || !type_name->syntax || !qual_type)
+    psx_qual_type_t resolved, psx_qual_type_t *qual_type) {
+  if (!semantic_context || !type_name || !type_name->syntax ||
+      !qual_type)
     return 0;
-  psx_type_name_base_resolution_t base = {0};
-  if (!psx_resolve_type_name_base_in_contexts(
-          semantic_context, global_registry, local_registry,
-          type_name, &base))
-    return 0;
-  psx_qual_type_t resolved =
-      psx_apply_parsed_declarator_qual_type_in_contexts(
-          semantic_context, global_registry, local_registry,
-          base.base_qual_type, &type_name->syntax->declarator);
   if (resolved.type_id == PSX_TYPE_ID_INVALID)
     return 0;
   if (psx_semantic_type_table_has_cv_qualified_function(
@@ -175,4 +161,58 @@ int psx_resolve_type_name_qual_type_in_contexts(
   }
   *qual_type = resolved;
   return 1;
+}
+
+int psx_resolve_type_name_qual_type_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const psx_type_name_ref_t *type_name,
+    psx_qual_type_t *qual_type) {
+  if (qual_type)
+    *qual_type = (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!semantic_context || !global_registry || !local_registry ||
+      !type_name || !type_name->syntax || !qual_type)
+    return 0;
+  psx_type_name_base_resolution_t base = {0};
+  if (!psx_resolve_type_name_base_in_contexts(
+          semantic_context, global_registry, local_registry,
+          type_name, &base))
+    return 0;
+  psx_qual_type_t resolved =
+      psx_apply_parsed_declarator_qual_type_in_contexts(
+          semantic_context, global_registry, local_registry,
+          base.base_qual_type, &type_name->syntax->declarator);
+  return validate_resolved_type_name_qual_type(
+      semantic_context, type_name, resolved, qual_type);
+}
+
+int psx_resolve_runtime_type_name_qual_type_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const psx_type_name_ref_t *type_name,
+    psx_qual_type_t *qual_type) {
+  if (qual_type)
+    *qual_type = (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!semantic_context || !global_registry || !local_registry ||
+      !type_name || !type_name->syntax || !qual_type)
+    return 0;
+  psx_type_name_base_resolution_t base = {0};
+  if (!psx_resolve_type_name_base_in_contexts(
+          semantic_context, global_registry, local_registry,
+          type_name, &base))
+    return 0;
+  psx_runtime_declarator_application_t application;
+  psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts(
+      semantic_context, global_registry, local_registry,
+      &type_name->syntax->declarator, &application, -1,
+      type_name_lookup_point(type_name));
+  psx_qual_type_t resolved =
+      psx_apply_runtime_declarator_qual_type_in_context(
+          semantic_context, base.base_qual_type, &application);
+  return validate_resolved_type_name_qual_type(
+      semantic_context, type_name, resolved, qual_type);
 }

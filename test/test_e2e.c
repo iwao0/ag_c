@@ -1584,6 +1584,7 @@ static const test_case_t test_cases[] = {
     {"probes", "restrict_object_pointer_types", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/restrict_object_pointer_types.c", 0, 0},
     {"probes", "alignas_global_static_storage", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignas_global_static_storage.c", 0, 0},
     {"probes", "alignas_redeclaration_consistency", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignas_redeclaration_consistency.c", 0, 0},
+    {"probes", "alignas_direct_vla_type_name", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignas_direct_vla_type_name.c", 0, 0},
     {"probes", "dynamic_alignas_specifiers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/dynamic_alignas_specifiers.c", 0, 0},
     {"probes", "dynamic_syntax_list_capacities", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/dynamic_syntax_list_capacities.c", 0, 0},
     {"probes", "goto_vla_scope_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/goto_vla_scope_constraints.c", 0, 0},

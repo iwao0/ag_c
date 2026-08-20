@@ -37734,3 +37734,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規2 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないalignment type-name制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深い式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - `_Alignas(int[count])`と`_Alignas(int (*)[count])`の直接VLA type-nameはClang strictが受理する一方、ag_cはarray boundをICEとして解決しようとしてE3064にする。VLA typedef経由は既に受理するため、次に進めるならalignment専用のscope-aware runtime-bound type-name解決を小型identifier boundに限定して検討する。
+
+### このセッション（続き1275）: `_Alignas`の直接VLA type-nameをscope-awareに解決した
+- 対象選定:
+  - 続き1274で切り分けた`_Alignas(int[count])`と`_Alignas(int (*)[count])`を、function parameterの小型identifier boundでClang C11 strictと再照合した。Clangは両方を受理する一方、ag_cは通常type-nameのarray boundを整数定数式として解決し、E3064で過剰拒否していた。
+  - alignment算出時のbound非評価も、`_Alignas(int[(effect++, count)])`という一段のcomma式だけで確認した。Clangでは`effect`が0のままであり、ag_cのNative/WATも同じ結果になった。深い式、複雑な宣言子、巨大入力、security監査系には広げていない。
+- 原因と変更:
+  - `resolve_parsed_alignas_type_name`は宣言位置の`scope_seq`/`declaration_seq`をtype-name refへ保持していたが、呼び先の通常resolverが`psx_apply_parsed_declarator_qual_type_in_contexts`を使うため、direct VLA boundを現在scopeのruntime式として型付けできなかった。
+  - `psx_resolve_runtime_type_name_qual_type_in_contexts`を追加し、既存のscope-aware `psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts`で直接declaratorを適用する。`_Alignas`だけをこの経路へ切り替え、登録したbound Typed HIRはalignment指定からruntime planへ渡さないため実行しない。
+  - 通常resolverとruntime resolverは、CV付きfunction、invalid restrict、Atomic、不完全array element、flexible array elementの既存canonical検査を`validate_resolved_type_name_qual_type`で共有する。不完全配列type-nameの完全object検査は引き続きlayout照会前に行う。
+  - design invariantで`_Alignas`がruntime type-name resolver、完全object検査、DataLayoutの順に進むことと、両resolverが共通validationを使うことを固定した。
+- coverage:
+  - parser unitへ直接VLA、pointer-to-VLAの合法2形と、未定義bound identifierをE3066で拒否する対照を追加した。
+  - `alignas_direct_vla_type_name` fixtureをNative/Wasm E2E一覧へ登録した。直接VLA、pointer-to-VLAの実アドレスalignment、comma式boundの非評価、値保持を同じ正本で検査する。
+  - 既存`alignas_incomplete_array_type`と`alignas_incomplete_array_typedef`もNative/Wasm objectで直接再確認し、両方がE3064を維持した。
+- 確認:
+  - host Clang strictとag_c Native実行、WATの`wasm-interp`実行、Wasm object compile/validateが新規fixtureですべて成功した。WATは`main() => i32:0`で、boundの`effect++`が実行されないことを確認した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.85秒 / user 3.05秒 / sys 0.26秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.18秒 / user 0.75秒 / sys 0.46秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.32秒 / user 11.54秒 / sys 1.56秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 45.43秒 / user 42.83秒 / sys 1.25秒**。`make -q wasm-selfhost-api`もcurrentを確認した。`build/test_e2e`のwarningなしビルドと`git diff --check`も成功した。
+- 未実施:
+  - 新規fixtureをClang/Native/WAT/Wasm objectで直接実行し、既存negative 2件もNative/Wasmで再確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - `_Alignas`の直接VLA、typedef VLA、不完全配列境界は閉じた。次は複雑なVLA式へ広げず、通常サイズの別の宣言・型制約をClang strictとの差分probeから選ぶ。

@@ -15150,6 +15150,19 @@ static void test_declaration_phase_boundary(
       test_suite_session,
       "void alignas_vla_typedef(int count) { "
       "typedef int Row[count]; _Alignas(Row) int value; (void)value; }");
+  expect_parse_ok(
+      test_suite_session,
+      "void alignas_direct_vla(int count) { "
+      "_Alignas(int[count]) int value; (void)value; }");
+  expect_parse_ok(
+      test_suite_session,
+      "void alignas_pointer_to_vla(int count) { "
+      "_Alignas(int (*)[count]) int value; (void)value; }");
+  expect_parse_fail_with_message(
+      test_suite_session,
+      "void alignas_unknown_vla_bound(void) { "
+      "_Alignas(int[missing]) int value; (void)value; }",
+      "E3066");
 }
 
 static void test_type_name_phase_boundary(
