@@ -1217,11 +1217,12 @@ const simpleRemainingCallArgumentSource = {
     "int simple_take_scalars(int first, int second);\n" +
     "int simple_take_string(SimpleCallType value, const char *text);\n" +
     "int simple_take_double(SimpleCallType value, double number);\n" +
+    "int simple_take_pointer(SimpleCallType value, const int *pointer);\n" +
     "int simple_take_union(union SimpleCallUnion value, int number);\n" +
     "int simple_take_two_items(SimpleCallType first, SimpleCallType second);\n" +
     "int simple_take_four(SimpleCallType first, int second, int third, int fourth);\n" +
     "int simple_wrap_scalar(int value);\n" +
-    "int simple_remaining_call_arguments(SimpleCallType simple_parameter, union SimpleCallUnion simple_union_parameter, int simple_scalar_parameter) {\n" +
+    "int simple_remaining_call_arguments(SimpleCallType simple_parameter, union SimpleCallUnion simple_union_parameter, int simple_scalar_parameter, SimpleCallType *simple_item_pointer, int *simple_scalar_pointer) {\n" +
     "  SimpleCallType simple_local = simple_parameter;\n" +
     "  int simple_aggregate_first = simple_take_pair(simple_local, 1);\n" +
     "  int simple_aggregate_middle = simple_take_three(1, simple_local, 2);\n" +
@@ -1243,6 +1244,15 @@ const simpleRemainingCallArgumentSource = {
     "  int simple_exponent = simple_take_double(simple_local, 1e3);\n" +
     "  int simple_negative = simple_take_pair(simple_local, -1);\n" +
     "  int simple_positive = simple_take_pair(simple_local, +1);\n" +
+    "  int simple_address = simple_take_pointer(simple_local, &simple_scalar_parameter);\n" +
+    "  int simple_dereference = simple_take_scalars(simple_scalar_parameter, *simple_scalar_pointer);\n" +
+    "  int simple_sizeof = simple_take_pair(simple_local, sizeof simple_scalar_parameter);\n" +
+    "  int simple_member = simple_take_pair(simple_local, simple_local.member);\n" +
+    "  int simple_pointer_member = simple_take_pair(simple_local, simple_item_pointer->member);\n" +
+    "  int simple_logical_not = simple_take_pair(simple_local, !simple_scalar_parameter);\n" +
+    "  int simple_bitwise_not = simple_take_pair(simple_local, ~simple_scalar_parameter);\n" +
+    "  int simple_unary_plus = simple_take_pair(simple_local, +simple_scalar_parameter);\n" +
+    "  int simple_unary_minus = simple_take_pair(simple_local, -simple_scalar_parameter);\n" +
     "  return simple_take_pair(simple_local, 3);\n" +
     "  int simple_after;\n" +
     "}\n" +
@@ -1327,6 +1337,42 @@ const simpleRemainingCallArgumentCases = [
   },
   {
     fragment: "simple_take_pair(simple_local, +1)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_pointer(simple_local, &simple_scalar_parameter)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_scalars(simple_scalar_parameter, *simple_scalar_pointer)",
+    name: "simple_scalar_parameter", kind: "parameter",
+  },
+  {
+    fragment: "simple_take_pair(simple_local, sizeof simple_scalar_parameter)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_pair(simple_local, simple_local.member)",
+    name: "simple_local", kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "simple_take_pair(simple_local, simple_item_pointer->member)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_pair(simple_local, !simple_scalar_parameter)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_pair(simple_local, ~simple_scalar_parameter)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_pair(simple_local, +simple_scalar_parameter)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_pair(simple_local, -simple_scalar_parameter)",
     name: "simple_local", kind: "object",
   },
   {

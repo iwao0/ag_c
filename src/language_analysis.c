@@ -3048,7 +3048,7 @@ static int analysis_complete_direct_expression_operand_tail(
   return 1;
 }
 
-static int analysis_simple_call_argument_token_end(
+static int analysis_simple_call_primary_token_end(
     const char *source, size_t limit, size_t start, int enable_trigraphs,
     size_t *token_end) {
   if (!source || start >= limit) return 0;
@@ -3087,8 +3087,6 @@ static int analysis_simple_call_argument_token_end(
     }
     return 0;
   }
-  if (source[cursor] == '+' || source[cursor] == '-') cursor++;
-  if (cursor >= limit) return 0;
   if (isdigit((unsigned char)source[cursor]) ||
       (source[cursor] == '.' && cursor + 1 < limit &&
        isdigit((unsigned char)source[cursor + 1]))) {
@@ -3118,6 +3116,52 @@ static int analysis_simple_call_argument_token_end(
   while (cursor < limit &&
          is_identifier_byte((unsigned char)source[cursor]))
     cursor++;
+  if (token_end) *token_end = cursor;
+  return 1;
+}
+
+static int analysis_simple_call_argument_token_end(
+    const char *source, size_t limit, size_t start, int enable_trigraphs,
+    size_t *token_end) {
+  if (!source || start >= limit) return 0;
+  size_t cursor = start;
+  if (limit - cursor >= strlen("sizeof") &&
+      memcmp(source + cursor, "sizeof", strlen("sizeof")) == 0 &&
+      (cursor + strlen("sizeof") == limit ||
+       !is_identifier_byte(
+           (unsigned char)source[cursor + strlen("sizeof")]))) {
+    cursor += strlen("sizeof");
+    cursor = skip_analysis_space_and_comments_mode(
+        source, limit, cursor, enable_trigraphs);
+  } else if (source[cursor] == '&' || source[cursor] == '*' ||
+             source[cursor] == '!' || source[cursor] == '~' ||
+             source[cursor] == '+' || source[cursor] == '-') {
+    cursor = skip_analysis_space_and_comments_mode(
+        source, limit, cursor + 1, enable_trigraphs);
+  }
+  if (!analysis_simple_call_primary_token_end(
+          source, limit, cursor, enable_trigraphs, &cursor))
+    return 0;
+  size_t suffix = skip_analysis_space_and_comments_mode(
+      source, limit, cursor, enable_trigraphs);
+  size_t operator_length = 0;
+  if (suffix < limit && source[suffix] == '.') {
+    operator_length = 1;
+  } else if (suffix + 1 < limit && source[suffix] == '-' &&
+             source[suffix + 1] == '>') {
+    operator_length = 2;
+  }
+  if (operator_length) {
+    cursor = skip_analysis_space_and_comments_mode(
+        source, limit, suffix + operator_length, enable_trigraphs);
+    if (cursor >= limit ||
+        !is_identifier_start_byte((unsigned char)source[cursor]))
+      return 0;
+    cursor++;
+    while (cursor < limit &&
+           is_identifier_byte((unsigned char)source[cursor]))
+      cursor++;
+  }
   if (token_end) *token_end = cursor;
   return 1;
 }
