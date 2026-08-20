@@ -2370,6 +2370,10 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int ExternObjectPointerArrayType;\n" +
     "typedef int ExternObjectCommentArrayType;\n" +
     "typedef int ExternObjectSpliceArrayType;\n" +
+    "typedef int ExternObjectDecimalArrayType;\n" +
+    "typedef int ExternObjectPointerDecimalArrayType;\n" +
+    "typedef int ExternObjectCommentDecimalArrayType;\n" +
+    "typedef int ExternObjectSpliceDecimalArrayType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2398,6 +2402,10 @@ const sameTypedefDeclaratorHoverSource = {
     "  { extern ExternObjectPointerArrayType *ExternObjectPointerArrayType[]; }\n" +
     "  { extern ExternObjectCommentArrayType ExternObjectCommentArrayType[/* empty bound */]; }\n" +
     "  { extern ExternObjectSpliceArrayType ExternObjectSpliceArrayType[\\\n]; }\n" +
+    "  { extern ExternObjectDecimalArrayType ExternObjectDecimalArrayType[4]; }\n" +
+    "  { extern ExternObjectPointerDecimalArrayType *ExternObjectPointerDecimalArrayType[16]; }\n" +
+    "  { extern ExternObjectCommentDecimalArrayType ExternObjectCommentDecimalArrayType[/* before bound */ 8 /* after bound */]; }\n" +
+    "  { extern ExternObjectSpliceDecimalArrayType ExternObjectSpliceDecimalArrayType[\\\n32]; }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
@@ -2450,6 +2458,54 @@ const externTypedefShadowConflictSources = [
       "  return 0;\n" +
       "}\n",
   }, "ForInitExternType"],
+];
+const externTypedefSemanticTypeSources = [
+  [{
+    name: "incomplete-direct-extern-typedef.c",
+    source: "typedef struct IncompleteDirectRecord IncompleteDirectType;\n" +
+      "int probe(void) {\n" +
+      "  { extern IncompleteDirectType IncompleteDirectType; }\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "extern IncompleteDirectType IncompleteDirectType",
+  "IncompleteDirectType", true],
+  [{
+    name: "incomplete-array-extern-typedef.c",
+    source: "typedef struct IncompleteArrayRecord IncompleteArrayType;\n" +
+      "int probe(void) {\n" +
+      "  { extern IncompleteArrayType IncompleteArrayType[]; }\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "extern IncompleteArrayType IncompleteArrayType[]",
+  "IncompleteArrayType", false],
+  [{
+    name: "incomplete-decimal-array-extern-typedef.c",
+    source: "typedef struct IncompleteDecimalArrayRecord " +
+      "IncompleteDecimalArrayType;\n" +
+      "int probe(void) {\n" +
+      "  { extern IncompleteDecimalArrayType " +
+      "IncompleteDecimalArrayType[4]; }\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "extern IncompleteDecimalArrayType IncompleteDecimalArrayType[4]",
+  "IncompleteDecimalArrayType", false],
+  [{
+    name: "void-array-extern-typedef.c",
+    source: "typedef void VoidArrayType;\n" +
+      "int probe(void) {\n" +
+      "  { extern VoidArrayType VoidArrayType[]; }\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "extern VoidArrayType VoidArrayType[]", "VoidArrayType", false],
+  [{
+    name: "void-decimal-array-extern-typedef.c",
+    source: "typedef void VoidDecimalArrayType;\n" +
+      "int probe(void) {\n" +
+      "  { extern VoidDecimalArrayType VoidDecimalArrayType[4]; }\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "extern VoidDecimalArrayType VoidDecimalArrayType[4]",
+  "VoidDecimalArrayType", false],
 ];
 const sameTypedefDeclaratorCases = [
   ["typedef FirstFileBase FirstFileCopy", "FirstFileBase", "FirstFileCopy",
@@ -2609,6 +2665,14 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "ExternObjectCommentArrayType", false],
     ["extern ExternObjectSpliceArrayType ExternObjectSpliceArrayType[\\\n]",
       "ExternObjectSpliceArrayType", true],
+    ["extern ExternObjectDecimalArrayType ExternObjectDecimalArrayType[4]",
+      "ExternObjectDecimalArrayType", true],
+    ["extern ExternObjectPointerDecimalArrayType *ExternObjectPointerDecimalArrayType[16]",
+      "ExternObjectPointerDecimalArrayType", false],
+    ["extern ExternObjectCommentDecimalArrayType ExternObjectCommentDecimalArrayType[/* before bound */ 8 /* after bound */]",
+      "ExternObjectCommentDecimalArrayType", false],
+    ["extern ExternObjectSpliceDecimalArrayType ExternObjectSpliceDecimalArrayType[\\\n32]",
+      "ExternObjectSpliceDecimalArrayType", true],
   ];
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
@@ -2725,6 +2789,61 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
         String(conflictIndex), String(conflictByteOffset)],
       { encoding: "utf8" },
     )), `native and Wasm extern typedef shadow conflict differ for ${conflictName}`);
+  }
+  for (let semanticIndex = 0;
+    semanticIndex < externTypedefSemanticTypeSources.length;
+    semanticIndex++) {
+    const [semanticSource, fragmentText, name, valid] =
+      externTypedefSemanticTypeSources[semanticIndex];
+    const fragmentIndex = semanticSource.source.indexOf(fragmentText);
+    const useIndex = semanticSource.source.indexOf(name, fragmentIndex);
+    const declarationIndex = semanticSource.source.indexOf(name);
+    assert.ok(fragmentIndex >= 0 && useIndex > declarationIndex,
+      `missing extern typedef semantic type anchor for ${name}`);
+    const byteOffset = byteOffsetForIndex(semanticSource.source, useIndex) +
+      Math.floor(Buffer.byteLength(name) / 2);
+    const nativeResult = JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--extern-typedef-semantic-type-parity-json",
+        String(semanticIndex), String(byteOffset)],
+      { encoding: "utf8" },
+    ));
+    if (valid) {
+      const result = compiler.analyzeSource(
+        semanticSource,
+        { cursor: { sourceName: semanticSource.name, byteOffset } },
+      );
+      assert.equal(result.partial, false,
+        `${name} valid extern typedef semantic type partial`);
+      assert.deepStrictEqual(result.diagnostics, [],
+        `${name} valid extern typedef semantic type diagnostics`);
+      assert.equal(result.hover?.name, name);
+      assert.equal(result.hover?.kind, "typedef");
+      assert.equal(result.hover?.declaration.start.offset,
+        byteOffsetForIndex(semanticSource.source, declarationIndex));
+      assert.equal(symbol(result, name, "object"), undefined);
+      assert.deepStrictEqual(result, nativeResult,
+        `native and Wasm extern typedef semantic type differ for ${name}`);
+    } else {
+      assert.equal(nativeResult.partial, true,
+        `${name} invalid Native extern typedef semantic type remains partial`);
+      const invalidCompiler = await createCompiler(wasmModule);
+      try {
+        assert.throws(
+          () => invalidCompiler.analyzeSource(
+            semanticSource,
+            { cursor: { sourceName: semanticSource.name, byteOffset } },
+          ),
+          (error) => error?.name === "AgcLanguageAnalysisError" &&
+            Array.isArray(error.diagnostics) &&
+            error.diagnostics.some((diagnostic) =>
+              diagnostic.severity === "error" && diagnostic.code === "E3064"),
+          `${name} invalid Wasm extern typedef semantic type remains diagnosed`,
+        );
+      } finally {
+        invalidCompiler.dispose();
+      }
+    }
   }
   const shadowFragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
     "typedef FirstBlockShadow FirstBlockShadow",

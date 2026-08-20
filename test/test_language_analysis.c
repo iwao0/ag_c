@@ -1908,6 +1908,10 @@ static const char same_typedef_declarator_hover_source[] =
     "typedef int ExternObjectPointerArrayType;\n"
     "typedef int ExternObjectCommentArrayType;\n"
     "typedef int ExternObjectSpliceArrayType;\n"
+    "typedef int ExternObjectDecimalArrayType;\n"
+    "typedef int ExternObjectPointerDecimalArrayType;\n"
+    "typedef int ExternObjectCommentDecimalArrayType;\n"
+    "typedef int ExternObjectSpliceDecimalArrayType;\n"
     "static int same_typedef_block(void) {\n"
     "  typedef int FirstBlockBase;\n"
     "  typedef int FirstBlockAtomicBase;\n"
@@ -1945,6 +1949,16 @@ static const char same_typedef_declarator_hover_source[] =
     "  { extern ExternObjectSpliceArrayType "
     "ExternObjectSpliceArrayType[\\\n"
     "]; }\n"
+    "  { extern ExternObjectDecimalArrayType "
+    "ExternObjectDecimalArrayType[4]; }\n"
+    "  { extern ExternObjectPointerDecimalArrayType "
+    "*ExternObjectPointerDecimalArrayType[16]; }\n"
+    "  { extern ExternObjectCommentDecimalArrayType "
+    "ExternObjectCommentDecimalArrayType[/* before bound */ 8 "
+    "/* after bound */]; }\n"
+    "  { extern ExternObjectSpliceDecimalArrayType "
+    "ExternObjectSpliceDecimalArrayType[\\\n"
+    "32]; }\n"
     "  { typedef int FirstNestedBase; "
     "typedef FirstNestedBase FirstNestedArray[4]; "
     "typedef FirstBlockShadow FirstBlockShadow; "
@@ -2000,6 +2014,43 @@ static const char for_init_extern_typedef_conflict_source[] =
     "ForInitExternType++) {\n"
     "    { extern ForInitExternType ForInitExternType; }\n"
     "  }\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char incomplete_direct_extern_typedef_source[] =
+    "typedef struct IncompleteDirectRecord IncompleteDirectType;\n"
+    "int probe(void) {\n"
+    "  { extern IncompleteDirectType IncompleteDirectType; }\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char incomplete_array_extern_typedef_source[] =
+    "typedef struct IncompleteArrayRecord IncompleteArrayType;\n"
+    "int probe(void) {\n"
+    "  { extern IncompleteArrayType IncompleteArrayType[]; }\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char incomplete_decimal_array_extern_typedef_source[] =
+    "typedef struct IncompleteDecimalArrayRecord "
+    "IncompleteDecimalArrayType;\n"
+    "int probe(void) {\n"
+    "  { extern IncompleteDecimalArrayType "
+    "IncompleteDecimalArrayType[4]; }\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char void_array_extern_typedef_source[] =
+    "typedef void VoidArrayType;\n"
+    "int probe(void) {\n"
+    "  { extern VoidArrayType VoidArrayType[]; }\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char void_decimal_array_extern_typedef_source[] =
+    "typedef void VoidDecimalArrayType;\n"
+    "int probe(void) {\n"
+    "  { extern VoidDecimalArrayType VoidDecimalArrayType[4]; }\n"
     "  return 0;\n"
     "}\n";
 
@@ -4191,6 +4242,38 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       "parameter-extern-typedef-conflict.c",
       "outer-enum-extern-typedef-conflict.c",
       "for-init-extern-typedef-conflict.c",
+  };
+  char *variant_end = NULL;
+  unsigned long variant = strtoul(variant_text, &variant_end, 10);
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  if (!variant_text[0] || !variant_end || *variant_end != '\0' ||
+      variant >= sizeof(sources) / sizeof(sources[0]) ||
+      !cursor_text[0] || !end || *end != '\0')
+    return 1;
+  size_t source_length = strlen(sources[variant]);
+  if (parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      source_names[variant], sources[variant], (size_t)parsed_cursor,
+      (header_bundle_t){0});
+}
+
+static int print_extern_typedef_semantic_type_parity_snapshot(
+    const char *variant_text, const char *cursor_text) {
+  static const char *sources[] = {
+      incomplete_direct_extern_typedef_source,
+      incomplete_array_extern_typedef_source,
+      incomplete_decimal_array_extern_typedef_source,
+      void_array_extern_typedef_source,
+      void_decimal_array_extern_typedef_source,
+  };
+  static const char *source_names[] = {
+      "incomplete-direct-extern-typedef.c",
+      "incomplete-array-extern-typedef.c",
+      "incomplete-decimal-array-extern-typedef.c",
+      "void-array-extern-typedef.c",
+      "void-decimal-array-extern-typedef.c",
   };
   char *variant_end = NULL;
   unsigned long variant = strtoul(variant_text, &variant_end, 10);
@@ -10554,6 +10637,19 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
       {"extern ExternObjectSpliceArrayType "
        "ExternObjectSpliceArrayType[\\\n]",
        "ExternObjectSpliceArrayType", 1},
+      {"extern ExternObjectDecimalArrayType "
+       "ExternObjectDecimalArrayType[4]",
+       "ExternObjectDecimalArrayType", 1},
+      {"extern ExternObjectPointerDecimalArrayType "
+       "*ExternObjectPointerDecimalArrayType[16]",
+       "ExternObjectPointerDecimalArrayType", 0},
+      {"extern ExternObjectCommentDecimalArrayType "
+       "ExternObjectCommentDecimalArrayType[/* before bound */ 8 "
+       "/* after bound */]",
+       "ExternObjectCommentDecimalArrayType", 0},
+      {"extern ExternObjectSpliceDecimalArrayType "
+       "ExternObjectSpliceDecimalArrayType[\\\n32]",
+       "ExternObjectSpliceDecimalArrayType", 1},
   };
   for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
     for (size_t case_index = 0;
@@ -10683,6 +10779,87 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
           "extern typedef shadow conflict analysis");
     CHECK(snapshot.partial && snapshot.diagnostic_count > 0,
           "extern typedef shadow conflict remains invalid");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  static const struct {
+    const char *source_name;
+    const char *source;
+    const char *fragment;
+    const char *name;
+    int valid;
+  } extern_typedef_semantic_types[] = {
+      {"incomplete-direct-extern-typedef.c",
+       incomplete_direct_extern_typedef_source,
+       "extern IncompleteDirectType IncompleteDirectType",
+       "IncompleteDirectType", 1},
+      {"incomplete-array-extern-typedef.c",
+       incomplete_array_extern_typedef_source,
+       "extern IncompleteArrayType IncompleteArrayType[]",
+       "IncompleteArrayType", 0},
+      {"incomplete-decimal-array-extern-typedef.c",
+       incomplete_decimal_array_extern_typedef_source,
+       "extern IncompleteDecimalArrayType IncompleteDecimalArrayType[4]",
+       "IncompleteDecimalArrayType", 0},
+      {"void-array-extern-typedef.c",
+       void_array_extern_typedef_source,
+       "extern VoidArrayType VoidArrayType[]",
+       "VoidArrayType", 0},
+      {"void-decimal-array-extern-typedef.c",
+       void_decimal_array_extern_typedef_source,
+       "extern VoidDecimalArrayType VoidDecimalArrayType[4]",
+       "VoidDecimalArrayType", 0},
+  };
+  for (size_t semantic_index = 0;
+       semantic_index < sizeof(extern_typedef_semantic_types) /
+                            sizeof(extern_typedef_semantic_types[0]);
+       semantic_index++) {
+    const char *semantic_fragment = strstr(
+        extern_typedef_semantic_types[semantic_index].source,
+        extern_typedef_semantic_types[semantic_index].fragment);
+    const char *semantic_use =
+        semantic_fragment
+            ? strstr(
+                  semantic_fragment,
+                  extern_typedef_semantic_types[semantic_index].name)
+            : NULL;
+    const char *semantic_declaration = strstr(
+        extern_typedef_semantic_types[semantic_index].source,
+        extern_typedef_semantic_types[semantic_index].name);
+    CHECK(semantic_use && semantic_declaration &&
+              semantic_use != semantic_declaration,
+          "extern typedef semantic type anchor");
+    CHECK(analyze_named(
+              session,
+              extern_typedef_semantic_types[semantic_index].source_name,
+              extern_typedef_semantic_types[semantic_index].source,
+              (size_t)(semantic_use -
+                       extern_typedef_semantic_types[semantic_index].source) +
+                  strlen(extern_typedef_semantic_types[semantic_index].name) /
+                      2,
+              (header_bundle_t){0}, defaults, &snapshot, &error),
+          "extern typedef semantic type analysis");
+    if (extern_typedef_semantic_types[semantic_index].valid) {
+      const ag_language_symbol_t *semantic_hover = hover_symbol(&snapshot);
+      CHECK(semantic_hover && !snapshot.partial &&
+                snapshot.diagnostic_count == 0 &&
+                semantic_hover->kind == AG_LANGUAGE_SYMBOL_TYPEDEF &&
+                strcmp(
+                    semantic_hover->name,
+                    extern_typedef_semantic_types[semantic_index].name) ==
+                    0 &&
+                semantic_hover->declaration.start.offset ==
+                    (int)(semantic_declaration -
+                          extern_typedef_semantic_types[semantic_index]
+                              .source) &&
+                !find_symbol(
+                    &snapshot,
+                    extern_typedef_semantic_types[semantic_index].name,
+                    AG_LANGUAGE_SYMBOL_OBJECT),
+            "valid extern typedef semantic type lookup");
+    } else {
+      CHECK(snapshot.partial,
+            "invalid extern typedef semantic type remains partial");
+    }
     ag_language_analysis_snapshot_dispose(&snapshot);
   }
   const char *current_declaration_fragment = strstr(
@@ -14036,6 +14213,11 @@ int main(int argc, char **argv) {
       strcmp(argv[1],
              "--extern-typedef-shadow-conflict-parity-json") == 0)
     return print_extern_typedef_shadow_conflict_parity_snapshot(
+        argv[2], argv[3]);
+  if (argc == 4 &&
+      strcmp(argv[1],
+             "--extern-typedef-semantic-type-parity-json") == 0)
+    return print_extern_typedef_semantic_type_parity_snapshot(
         argv[2], argv[3]);
   if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-project-parity-json") == 0)

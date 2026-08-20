@@ -1163,6 +1163,7 @@ typedef enum {
   AG_LANGUAGE_RECOVERY_INCOMPLETE_SOURCE = 1 << 3,
   AG_LANGUAGE_RECOVERY_AMBIGUOUS_EOF_IDENTIFIER = 1 << 4,
   AG_LANGUAGE_RECOVERY_ENUM_CALL_ELIDED = 1 << 5,
+  AG_LANGUAGE_RECOVERY_BLOCK_EXTERN_DECLARATION_RETAINED = 1 << 6,
 } ag_language_recovery_flags_t;
 
 static char analysis_last_significant_between(
@@ -2643,6 +2644,38 @@ static char *build_declaration_start_lookup_recovery_source(
   return result;
 }
 
+static char *build_retained_declaration_lookup_recovery_source(
+    const char *source, size_t declaration_end,
+    size_t outer_brace_count, int *changed,
+    size_t *source_consumed) {
+  static const char marker[] =
+      "\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  size_t marker_length = strlen(marker);
+  if (!source || outer_brace_count > SIZE_MAX / 2 ||
+      declaration_end > SIZE_MAX - marker_length ||
+      declaration_end + marker_length >
+          SIZE_MAX - outer_brace_count * 2)
+    return NULL;
+  size_t result_length = declaration_end + marker_length +
+                         outer_brace_count * 2;
+  char *result = malloc(result_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, declaration_end);
+  size_t output = declaration_end;
+  memcpy(result + output, marker, marker_length);
+  output += marker_length;
+  for (size_t i = 0; i < outer_brace_count; i++) {
+    result[output++] = '}';
+    result[output++] = '\n';
+  }
+  result[output] = '\0';
+  if (changed)
+    *changed = AG_LANGUAGE_RECOVERY_CHANGED |
+               AG_LANGUAGE_RECOVERY_BLOCK_EXTERN_DECLARATION_RETAINED;
+  if (source_consumed) *source_consumed = declaration_end;
+  return result;
+}
+
 static char *build_prior_declarator_lookup_recovery_source(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs, int *changed, size_t *source_consumed) {
@@ -3279,11 +3312,26 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   size_t candidate_end = candidate_start + selected_length;
   size_t declaration_end = skip_analysis_space_and_comments_mode(
       source, length, candidate_end, enable_trigraphs);
+  int has_array_suffix = 0;
   if (declaration_end < length && source[declaration_end] == '[') {
+    has_array_suffix = 1;
     declaration_end = skip_analysis_space_and_comments_mode(
         source, length, declaration_end + 1, enable_trigraphs);
-    if (declaration_end >= length || source[declaration_end] != ']')
-      return NULL;
+    if (declaration_end >= length) return NULL;
+    if (source[declaration_end] != ']') {
+      if (source[declaration_end] < '1' ||
+          source[declaration_end] > '9')
+        return NULL;
+      do {
+        declaration_end++;
+      } while (declaration_end < length &&
+               source[declaration_end] >= '0' &&
+               source[declaration_end] <= '9');
+      declaration_end = skip_analysis_space_and_comments_mode(
+          source, length, declaration_end, enable_trigraphs);
+      if (declaration_end >= length || source[declaration_end] != ']')
+        return NULL;
+    }
     declaration_end = skip_analysis_space_and_comments_mode(
         source, length, declaration_end + 1, enable_trigraphs);
   }
@@ -3351,6 +3399,10 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   free(current_path);
   if (visible != ANALYSIS_VISIBLE_DIRECT_DECLARATION_FILE_TYPEDEF)
     return NULL;
+  if (has_array_suffix)
+    return build_retained_declaration_lookup_recovery_source(
+        source, declaration_end + 1, outer_brace_count,
+        changed, source_consumed);
   return build_declaration_start_lookup_recovery_source(
       source, declaration_start, outer_brace_count, 0,
       changed, source_consumed);
@@ -7732,6 +7784,44 @@ ordinary_scoped_declaration_at_cursor(
   return NULL;
 }
 
+static int retained_block_extern_lookup_point(
+    const psx_scope_graph_t *scope_graph,
+    const ag_language_analysis_request_t *request,
+    psx_scope_lookup_point_t *point) {
+  if (!scope_graph || !request || !request->source ||
+      !request->source_name || !point)
+    return 0;
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(
+      request->source, request->source_length,
+      request->cursor_byte_offset, &name, &name_length);
+  if (!name || name_length == 0 || name_length > INT_MAX)
+    return 0;
+  size_t declaration_count =
+      psx_scope_graph_declaration_count(scope_graph);
+  /* The retained declaration validates its array suffix, but the selected
+   * type name is looked up immediately before its linkage alias exists. */
+  for (size_t i = declaration_count; i > 0; i--) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(scope_graph, i - 1);
+    if (!declaration || declaration->kind != PSX_DECL_LINKAGE_ALIAS ||
+        declaration->scope_id == PSX_SCOPE_ID_TRANSLATION_UNIT ||
+        declaration->name_space != PSX_NAMESPACE_ORDINARY ||
+        !declaration->name ||
+        declaration->name_len != (int)name_length ||
+        memcmp(declaration->name, name, name_length) != 0 ||
+        !declaration->source_name ||
+        strcmp(declaration->source_name, request->source_name) != 0 ||
+        declaration->declaration_order == 0)
+      continue;
+    *point = (psx_scope_lookup_point_t){
+        declaration->scope_id, declaration->declaration_order - 1};
+    return 1;
+  }
+  return 0;
+}
+
 static const psx_scope_declaration_t *tag_declaration_at_cursor(
     const psx_scope_graph_t *scope_graph,
     const ag_language_analysis_request_t *request) {
@@ -8803,6 +8893,10 @@ int ag_language_analyze_source(
   } else {
     point = psx_scope_graph_capture_lookup_point(scope_graph);
   }
+  if (recovery_changed &
+      AG_LANGUAGE_RECOVERY_BLOCK_EXTERN_DECLARATION_RETAINED)
+    (void)retained_block_extern_lookup_point(
+        scope_graph, request, &point);
   const psx_scope_declaration_t *cursor_ordinary_declaration =
       ordinary_scoped_declaration_at_cursor(scope_graph, request);
   const psx_scope_declaration_t *cursor_scoped_declaration =

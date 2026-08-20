@@ -37077,3 +37077,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - bound式、多次元array、括弧付き・function/pointer-to-array declarator、attribute、initializer、複合式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - 小型Wasm probeで`extern T T[4];`も同じE3088・`partial:true`を残す。空配列とshadow分類は再探索せず、次は式解析へ広げない正の10進整数literal bound 1個だけを通常サイズの浅いsuffixとして扱えるか調べる。macro/enum/演算式、zero/negative/overflow、多次元は対象外とする。
+
+### このセッション（続き1247）: block extern同名objectの正の10進literal array boundを回復した
+- 対象選定:
+  - 続き1246の浅い次候補`typedef int T; { extern T T[4]; }`は先頭型名のhover range自体は外側typedefを指す一方、E3088・`partial:true`を残していた。
+  - 空配列までのfile-scope typedef判定とshadow拒否は再探索せず、array boundを式として評価しない、先頭が`1`–`9`で残りが`0`–`9`の正の10進digit列1個だけへ限定した。zero、先頭zero、hex、integer suffix、演算式、多次元、括弧付き・pointer-to-array、深い宣言子、深い式、security監査系には広げていない。
+- 原因と変更:
+  - 続き1246の専用回復は空の`[]`しか認めず、`[4]`は同名宣言子を型指定子なしと再解釈するgeneric recoveryへ落ちていた。
+  - さらに、空配列を含むarray宣言全体を削除する回復では、不完全recordやvoidを要素型にした不正配列まで解析から消え、誤ってdiagnostics空・`partial:false`にできることが分かった。
+  - 直接同名宣言子直後のarray suffixで、空または上記decimal digit列の後ろがcomment・空白・行継続を挟んで`]`と`;`へ直結する場合だけ専用回復へ入れる。array形は現在宣言の`;`までを保持してmarkerを後置し、要素型・boundの意味検証を実行する。
+  - 保持したvalid宣言はblock linkage aliasをscope graphへ追加するため、解析後に同名aliasを特定し、hover/completionのlookup pointだけをその宣言順の直前へ戻す。これにより型指定子位置では外側typedefを返し、現在objectは可視にしない。
+  - same-typedef Native/Wasm共通fixtureへ直接`[4]`、pointer要素`[16]`、comment付き`[8]`、LF splice付き`[32]`の4形を統合した。外側typedefの正確なrange、名前境界、再利用/fresh instance、diagnostics空・`partial:false`、現在object非可視、Native/Wasm snapshot一致を固定した。
+  - 意味境界として、合法な不完全record直接`extern`はcompleteのまま、不完全record/voidの空配列と`[4]`配列はcomplete扱いしない。Nativeはpartial snapshot、Wasmは構造化E3064 analysis failureを返す既存のinvalid-source契約をそれぞれ確認する。
+- テスト時間の改善:
+  - 新targetは追加せず、既存`make test-wasm-language-analysis-same-typedef-declarators`へ統合し、valid 13形、shadow 5境界、意味型5境界、Native parity、名前境界、再利用/fresh instance込みで**real 5.73秒 / user 6.08秒 / sys 0.34秒**だった。
+  - prototype bound、declarator array bound、local member array boundの隣接3 targetだけを`make -j3`で並列実行し、**real 6.79秒 / user 9.76秒 / sys 0.75秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 6.97秒 / user 5.05秒 / sys 1.53秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.93秒 / user 42.68秒 / sys 1.29秒**。更新後の焦点Wasm gateで上記valid/invalid境界を確認した。
+  - 小型Wasm probeでは`[4]`だけがdiagnostics空・`partial:false`へ変わり、`[0]`、`[04]`、`[0x4]`、`[4u]`、`[1 + 3]`、`[][4]`、括弧付き、pointer-to-arrayはE3088・partialのまま専用回復に一致しない。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.38秒 / user 3.07秒 / sys 0.24秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.31秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 5.73秒のNative parity付き焦点gateで同じJS本体を確認できるため、1354秒規模の`make test-wasm-js-api`は実行しない。code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eも反復しない。
+  - macro/enum/演算式bound、zero/negative/overflow、多次元array、括弧付き・function/pointer-to-array declarator、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - 小型probeで`extern T (T);`は依然E3088・`partial:true`を残す。array suffixと意味型境界は再探索せず、次はpointer-to-arrayへ広げない、同名object 1個だけの直接parenthesized declaratorを通常サイズの浅い宣言として扱えるか調べる。
