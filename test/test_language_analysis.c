@@ -1445,7 +1445,29 @@ static const char macro_definition_forms_source[] =
     "#undef REDEFINED_MACRO\n"
     "#define REDEFINED_MACRO 13\n"
     "#pragma macro_definition_boundary\n"
+    "#define COMMENT_UNDEF_MACRO 14\n"
+    "#undef /* undef gap */ COMMENT_UNDEF_MACRO\n"
+    "#define SPLICED_UNDEF_MACRO 15\n"
+    "#undef \\\n"
+    "  SPLICED_UNDEF_MACRO\n"
+    "#undef NEVER_DEFINED_UNDEF_MACRO\n"
     "#define CONDITIONAL_FALSE_MACRO 0\n"
+    "#ifdef SIMPLE_MACRO\n"
+    "int conditional_ifdef_value;\n"
+    "#endif\n"
+    "#ifndef SIMPLE_MACRO\n"
+    "int conditional_ifndef_hidden_value;\n"
+    "#endif\n"
+    "#ifndef /* condition gap */ SIMPLE_MACRO\n"
+    "int conditional_ifndef_comment_hidden_value;\n"
+    "#endif\n"
+    "#ifndef \\\n"
+    "  SIMPLE_MACRO\n"
+    "int conditional_ifndef_spliced_hidden_value;\n"
+    "#endif\n"
+    "#ifndef NEVER_DEFINED_CONDITIONAL_MACRO\n"
+    "int conditional_ifndef_undefined_value;\n"
+    "#endif\n"
     "#if SIMPLE_MACRO\n"
     "int conditional_direct_value;\n"
     "#endif\n"
@@ -9301,6 +9323,136 @@ static int test_macro_definition_hover(ag_target_info_t target) {
         "macro definition before undef fields");
   ag_language_analysis_snapshot_dispose(&snapshot);
 
+  struct {
+    const char *fragment;
+    const char *name;
+    const char *replacement;
+  } undef_cases[] = {
+      {"#undef REDEFINED_MACRO", "REDEFINED_MACRO", "12"},
+      {"#undef /* undef gap */ COMMENT_UNDEF_MACRO",
+       "COMMENT_UNDEF_MACRO", "14"},
+      {"#undef \\\n  SPLICED_UNDEF_MACRO",
+       "SPLICED_UNDEF_MACRO", "15"},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(undef_cases) / sizeof(undef_cases[0]);
+       case_index++) {
+    const char *fragment = strstr(
+        macro_definition_forms_source, undef_cases[case_index].fragment);
+    const char *operand = fragment
+                              ? strstr(fragment,
+                                       undef_cases[case_index].name)
+                              : NULL;
+    const char *definition = strstr(
+        macro_definition_forms_source, undef_cases[case_index].name);
+    CHECK(fragment && operand && definition,
+          "undef directive macro anchors");
+    size_t name_length = strlen(undef_cases[case_index].name);
+    size_t deltas[] = {0, name_length / 2, name_length};
+    for (size_t delta_index = 0;
+         delta_index < sizeof(deltas) / sizeof(deltas[0]);
+         delta_index++) {
+      for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+        ag_compilation_session_t *analysis_session =
+            fresh_session ? ag_compilation_session_create(&target) : session;
+        CHECK(analysis_session != NULL,
+              "undef directive macro fresh session");
+        CHECK(analyze_named(
+                  analysis_session, "macro-definition.c",
+                  macro_definition_forms_source,
+                  (size_t)(operand - macro_definition_forms_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "undef directive macro analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        int snapshot_matches =
+            macro_definition_snapshot_matches(
+                &snapshot, undef_cases[case_index].name,
+                undef_cases[case_index].replacement, 0) &&
+            hover->declaration.source_name &&
+            strcmp(hover->declaration.source_name,
+                   "macro-definition.c") == 0 &&
+            hover->declaration.start.offset ==
+                (int)(definition - macro_definition_forms_source) &&
+            hover->declaration.end.offset ==
+                (int)(definition - macro_definition_forms_source) +
+                    (int)name_length;
+        if (!snapshot_matches)
+          fprintf(
+              stderr,
+              "undef directive case=%zu delta=%zu fresh=%d "
+              "hover=%s partial=%d diagnostics=%d\n",
+              case_index, deltas[delta_index], fresh_session,
+              hover && hover->name ? hover->name : "<null>",
+              snapshot.partial, snapshot.diagnostic_count);
+        CHECK(snapshot_matches, "undef directive macro snapshot");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+
+  struct {
+    const char *fragment;
+    const char *name;
+    const char *later_object;
+  } undefined_directive_cases[] = {
+      {"#undef NEVER_DEFINED_UNDEF_MACRO",
+       "NEVER_DEFINED_UNDEF_MACRO", NULL},
+      {"#ifndef NEVER_DEFINED_CONDITIONAL_MACRO\n"
+       "int conditional_ifndef_undefined_value",
+       "NEVER_DEFINED_CONDITIONAL_MACRO",
+       "conditional_ifndef_undefined_value"},
+  };
+  for (size_t case_index = 0;
+       case_index < sizeof(undefined_directive_cases) /
+                        sizeof(undefined_directive_cases[0]);
+       case_index++) {
+    const char *fragment = strstr(
+        macro_definition_forms_source,
+        undefined_directive_cases[case_index].fragment);
+    const char *operand = fragment
+                              ? strstr(
+                                    fragment,
+                                    undefined_directive_cases[case_index].name)
+                              : NULL;
+    CHECK(fragment && operand, "undefined directive macro anchors");
+    size_t name_length = strlen(undefined_directive_cases[case_index].name);
+    size_t deltas[] = {0, name_length / 2, name_length};
+    for (size_t delta_index = 0;
+         delta_index < sizeof(deltas) / sizeof(deltas[0]);
+         delta_index++) {
+      for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+        ag_compilation_session_t *analysis_session =
+            fresh_session ? ag_compilation_session_create(&target) : session;
+        CHECK(analysis_session != NULL,
+              "undefined directive macro fresh session");
+        CHECK(analyze_named(
+                  analysis_session, "macro-definition.c",
+                  macro_definition_forms_source,
+                  (size_t)(operand - macro_definition_forms_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "undefined directive macro analysis");
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  !hover_symbol(&snapshot) &&
+                  !find_symbol(
+                      &snapshot, undefined_directive_cases[case_index].name,
+                      AG_LANGUAGE_SYMBOL_MACRO) &&
+                  (!undefined_directive_cases[case_index].later_object ||
+                   !find_symbol(
+                       &snapshot,
+                       undefined_directive_cases[case_index].later_object,
+                       AG_LANGUAGE_SYMBOL_OBJECT)),
+              "undefined directive macro snapshot");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+
   const char *inactive_definition = strstr(
       macro_definition_forms_source, "#define BRANCH_MACRO 10");
   inactive_definition = inactive_definition
@@ -9337,6 +9489,14 @@ static int test_macro_definition_hover(ag_target_info_t target) {
     const char *replacement;
     const char *later_object;
   } conditional_cases[] = {
+      {"#ifdef SIMPLE_MACRO\nint conditional_ifdef_value",
+       "SIMPLE_MACRO", "1", "conditional_ifdef_value"},
+      {"#ifndef SIMPLE_MACRO\nint conditional_ifndef_hidden_value",
+       "SIMPLE_MACRO", "1", "conditional_ifndef_hidden_value"},
+      {"#ifndef /* condition gap */ SIMPLE_MACRO",
+       "SIMPLE_MACRO", "1", "conditional_ifndef_comment_hidden_value"},
+      {"#ifndef \\\n  SIMPLE_MACRO", "SIMPLE_MACRO", "1",
+       "conditional_ifndef_spliced_hidden_value"},
       {"#if SIMPLE_MACRO\nint conditional_direct_value",
        "SIMPLE_MACRO", "1", "conditional_direct_value"},
       {"#if defined(SIMPLE_MACRO)", "SIMPLE_MACRO", "1",

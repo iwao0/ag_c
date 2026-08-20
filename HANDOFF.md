@@ -35894,3 +35894,47 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 小さいvalid C sourceのprobeから、通常サイズで診断例外または`partial:true`になる次のhover文脈を探す。開発中はNative約7秒と焦点Wasm
     probeを使い、全Wasm parityは関連する小増分の最後に一度だけ実行する。
+
+### このセッション（続き1212）: `#undef`・`#ifndef` operand hoverを回復しmacro焦点Wasm gateを追加した
+- 対象選定:
+  - 続き1211後に通常サイズのvalid C 20文脈を小さいWasm probeで確認した。bit-field幅、`_Alignas`、`_Static_assert`、enum/case値、
+    parameter/typedef配列bound、`offsetof` index、`_Generic`、通常制御式、`#line`、`#include`、`_Atomic`、callback型、`#pragma pack`はgreenだった。
+  - `#undef UNDEF_MACRO`だけがdiagnostics空・`partial:false`でもmacro completion/hoverを失い、定義済みmacroの`#ifndef IFNDEF_MACRO`だけが
+    macro hoverを返しながら完全なsourceを`partial:true`にした。この2件と未定義名の負境界だけを対象とし、深いdirective入れ子、巨大入力、fuzz、
+    資源stress、security監査系には広げなかった。
+- 原因:
+  - `#undef`はcursorまでの汎用recoveryでdirectiveを処理するため、cursor直前まで有効だったmacro自体をpreprocessor contextから削除していた。
+  - `#ifndef`は従来の汎用回復がoperand identifierをelideしてpartial flagを立て、定義済みmacroでは条件が偽なのでdirective行後方のcursor markerも
+    preprocessで除去していた。続き1211の専用回復は`#if`だけを厳密照合し、`ifdef`/`ifndef`を意図的に除外していた。
+- 変更:
+  - `#if`専用helperを、通常`#`で始まる`if` / `ifdef` / `ifndef` / `undef` operandをidentifier境界付きで厳密照合するpreprocessor
+    operand helperへ一般化した。`if`はcomment/quote外の式identifier、他3 directiveはdirective直後の空白・block comment・LF行継続だけを
+    挟む直接operandに限定する。trigraph hashは既存conditional tailの保持境界に合わせて専用経路へ入れない。
+  - いずれもrecovery cursorを論理行先頭へ戻し、markerとC delimiter終端をdirectiveより前へ置く。既存conditional tailが`ifdef`/`ifndef`を
+    保持し、`undef`をblankにするため、cursor時点のmacro状態を公開しつつ条件真偽に依存しない。
+  - Native/Wasmへ通常/comment/行継続`#undef`、真`#ifdef`、定義済みで偽になる通常/comment/行継続`#ifndef`を追加した。未定義名の
+    `#undef`/`#ifndef`はcomplete snapshotのままmacro候補・hoverを作らず、後続objectも非可視にする。Nativeは全形の名前先頭・中央・末尾と
+    同一/fresh session、Wasmは代表境界・全形・fresh instance、Native完全snapshot parity、replacement/declaration range、diagnostics空、
+    `partial:false`を固定した。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=macros`で既存Wasm language-analysisテストをmacro節の完了時に正常終了させる焦点モードと、
+    `make test-wasm-language-analysis-macros`を追加した。別の簡易実装ではなく、全ゲートと同じJSテスト本体・Native parity CLIを使う。
+  - self-host API再生成後の最終焦点gateは**real 29.78秒 / user 29.96秒 / sys 0.61秒**で成功した。前回の全Wasm gate 1205.87秒に対し、
+    macro回復の開発反復を約30秒へ短縮した。最終統合では従来どおり`make test-wasm-js-api`を使う。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (58 scenarios)**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-macros` = runtime manifestとNative/Wasm macro snapshot parityを含めて成功、
+    **real 29.78秒 / user 29.96秒 / sys 0.61秒**。
+  - self-host再生成後の小さいWasm probe 22文脈×名前先頭・中央・末尾が全green。修正2件、comment/行継続、未定義名の負境界と、先にgreenだった
+    12文脈を同一instanceで維持した。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 前回の全Wasm gate直後の関連preprocessor小増分であり、同一テスト本体のmacro焦点gateを追加したため、1200秒規模の
+    `make test-wasm-js-api`はこの増分では再実行せず、次の関連batch末尾のintegration gateへまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。深いdirective入れ子、巨大入力、fuzz、
+    資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回greenだった文脈は再探索せず、通常サイズの完全sourceで未固定のpreprocessor operandまたはdeclaration境界を小さいprobeから探す。
+    開発中はNative約6秒と30秒のmacro焦点Wasm gateを使い、全Wasm parityは関連batch末尾に一度だけ実行する。

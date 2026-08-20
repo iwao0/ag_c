@@ -919,7 +919,29 @@ const macroDefinitionFormsSource = {
     "#undef REDEFINED_MACRO\n" +
     "#define REDEFINED_MACRO 13\n" +
     "#pragma macro_definition_boundary\n" +
+    "#define COMMENT_UNDEF_MACRO 14\n" +
+    "#undef /* undef gap */ COMMENT_UNDEF_MACRO\n" +
+    "#define SPLICED_UNDEF_MACRO 15\n" +
+    "#undef \\\n" +
+    "  SPLICED_UNDEF_MACRO\n" +
+    "#undef NEVER_DEFINED_UNDEF_MACRO\n" +
     "#define CONDITIONAL_FALSE_MACRO 0\n" +
+    "#ifdef SIMPLE_MACRO\n" +
+    "int conditional_ifdef_value;\n" +
+    "#endif\n" +
+    "#ifndef SIMPLE_MACRO\n" +
+    "int conditional_ifndef_hidden_value;\n" +
+    "#endif\n" +
+    "#ifndef /* condition gap */ SIMPLE_MACRO\n" +
+    "int conditional_ifndef_comment_hidden_value;\n" +
+    "#endif\n" +
+    "#ifndef \\\n" +
+    "  SIMPLE_MACRO\n" +
+    "int conditional_ifndef_spliced_hidden_value;\n" +
+    "#endif\n" +
+    "#ifndef NEVER_DEFINED_CONDITIONAL_MACRO\n" +
+    "int conditional_ifndef_undefined_value;\n" +
+    "#endif\n" +
     "#if SIMPLE_MACRO\n" +
     "int conditional_direct_value;\n" +
     "#endif\n" +
@@ -1103,6 +1125,134 @@ assert.deepStrictEqual(oldRedefinitionResult, JSON.parse(execFileSync(
   { encoding: "utf8" },
 )), "native and Wasm definition before undef differ");
 
+const undefDirectiveMacroCases = [
+  {
+    fragment: "#undef REDEFINED_MACRO",
+    name: "REDEFINED_MACRO", replacement: "12", checkBoundaries: true,
+    checkFresh: true,
+  },
+  {
+    fragment: "#undef /* undef gap */ COMMENT_UNDEF_MACRO",
+    name: "COMMENT_UNDEF_MACRO", replacement: "14",
+  },
+  {
+    fragment: "#undef \\\n  SPLICED_UNDEF_MACRO",
+    name: "SPLICED_UNDEF_MACRO", replacement: "15",
+  },
+];
+for (const macroCase of undefDirectiveMacroCases) {
+  const fragmentIndex = macroDefinitionFormsSource.source.indexOf(
+    macroCase.fragment,
+  );
+  const operandIndex = macroDefinitionFormsSource.source.indexOf(
+    macroCase.name, fragmentIndex,
+  );
+  const definitionIndex = macroDefinitionFormsSource.source.indexOf(
+    macroCase.name,
+  );
+  assert.notEqual(fragmentIndex, -1, `missing ${macroCase.fragment} fragment`);
+  assert.notEqual(operandIndex, -1, `missing ${macroCase.name} operand`);
+  assert.notEqual(definitionIndex, -1, `missing ${macroCase.name} definition`);
+  const definitionOffset = byteOffsetForIndex(
+    macroDefinitionFormsSource.source, definitionIndex,
+  );
+  const nameBytes = Buffer.byteLength(macroCase.name);
+  const middleDelta = Math.floor(nameBytes / 2);
+  const deltas = macroCase.checkBoundaries
+    ? [0, middleDelta, nameBytes]
+    : [middleDelta];
+  for (const delta of deltas) {
+    const byteOffset = byteOffsetForIndex(
+      macroDefinitionFormsSource.source, operandIndex,
+    ) + delta;
+    const wasmResult = compiler.analyzeSource(macroDefinitionFormsSource, {
+      cursor: { sourceName: macroDefinitionFormsSource.name, byteOffset },
+    });
+    assertMacroDefinitionSnapshot(wasmResult, {
+      name: macroCase.name, replacement: macroCase.replacement, parameters: [],
+    }, `${macroCase.name} undef directive byte ${byteOffset}`);
+    assert.equal(wasmResult.hover.declaration.sourceName,
+      macroDefinitionFormsSource.name);
+    assert.equal(wasmResult.hover.declaration.start.offset, definitionOffset);
+    assert.equal(wasmResult.hover.declaration.end.offset,
+      definitionOffset + nameBytes);
+    assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--macro-definition-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    )), `native and Wasm ${macroCase.name} undef directive differ`);
+  }
+  if (macroCase.checkFresh) {
+    const byteOffset = byteOffsetForIndex(
+      macroDefinitionFormsSource.source, operandIndex,
+    ) + middleDelta;
+    const freshCompiler = await createCompiler(wasmModule);
+    try {
+      const freshResult = freshCompiler.analyzeSource(
+        macroDefinitionFormsSource,
+        {
+          cursor: {
+            sourceName: macroDefinitionFormsSource.name,
+            byteOffset,
+          },
+        },
+      );
+      assertMacroDefinitionSnapshot(freshResult, {
+        name: macroCase.name,
+        replacement: macroCase.replacement,
+        parameters: [],
+      }, `${macroCase.name} fresh undef directive`);
+    } finally {
+      freshCompiler.dispose();
+    }
+  }
+}
+
+for (const macroCase of [
+  {
+    fragment: "#undef NEVER_DEFINED_UNDEF_MACRO",
+    name: "NEVER_DEFINED_UNDEF_MACRO", laterObject: null,
+  },
+  {
+    fragment: "#ifndef NEVER_DEFINED_CONDITIONAL_MACRO\n" +
+      "int conditional_ifndef_undefined_value",
+    name: "NEVER_DEFINED_CONDITIONAL_MACRO",
+    laterObject: "conditional_ifndef_undefined_value",
+  },
+]) {
+  const fragmentIndex = macroDefinitionFormsSource.source.indexOf(
+    macroCase.fragment,
+  );
+  const operandIndex = macroDefinitionFormsSource.source.indexOf(
+    macroCase.name, fragmentIndex,
+  );
+  assert.notEqual(fragmentIndex, -1, `missing ${macroCase.fragment} fragment`);
+  assert.notEqual(operandIndex, -1, `missing ${macroCase.name} operand`);
+  const byteOffset = byteOffsetForIndex(
+    macroDefinitionFormsSource.source, operandIndex,
+  ) + Math.floor(Buffer.byteLength(macroCase.name) / 2);
+  const wasmResult = compiler.analyzeSource(macroDefinitionFormsSource, {
+    cursor: { sourceName: macroDefinitionFormsSource.name, byteOffset },
+  });
+  assert.equal(wasmResult.partial, false,
+    `${macroCase.name} undefined directive partial`);
+  assert.deepStrictEqual(wasmResult.diagnostics, [],
+    `${macroCase.name} undefined directive diagnostics`);
+  assert.equal(wasmResult.hover, null,
+    `${macroCase.name} undefined directive hover`);
+  assert.equal(symbol(wasmResult, macroCase.name, "macro"), undefined,
+    `${macroCase.name} undefined directive completion`);
+  if (macroCase.laterObject) {
+    assert.equal(symbol(wasmResult, macroCase.laterObject, "object"), undefined,
+      `${macroCase.laterObject} is after the undefined directive cursor`);
+  }
+  assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+    nativeAnalysisPath,
+    ["--macro-definition-parity-json", String(byteOffset)],
+    { encoding: "utf8" },
+  )), `native and Wasm ${macroCase.name} undefined directive differ`);
+}
+
 const inactiveDefinitionIndex = macroDefinitionFormsSource.source.indexOf(
   "BRANCH_MACRO",
   macroDefinitionFormsSource.source.indexOf("#define BRANCH_MACRO 10"),
@@ -1150,15 +1300,40 @@ assert.deepStrictEqual(pragmaResult, JSON.parse(execFileSync(
 
 const conditionalDirectiveMacroCases = [
   {
+    fragment: "#ifdef SIMPLE_MACRO\nint conditional_ifdef_value",
+    name: "SIMPLE_MACRO", replacement: "1",
+    laterObject: "conditional_ifdef_value",
+  },
+  {
+    fragment: "#ifndef SIMPLE_MACRO\n" +
+      "int conditional_ifndef_hidden_value",
+    name: "SIMPLE_MACRO", replacement: "1",
+    laterObject: "conditional_ifndef_hidden_value",
+    checkBoundaries: true,
+    checkFresh: true,
+  },
+  {
+    fragment: "#ifndef /* condition gap */ SIMPLE_MACRO",
+    name: "SIMPLE_MACRO", replacement: "1",
+    laterObject: "conditional_ifndef_comment_hidden_value",
+  },
+  {
+    fragment: "#ifndef \\\n  SIMPLE_MACRO",
+    name: "SIMPLE_MACRO", replacement: "1",
+    laterObject: "conditional_ifndef_spliced_hidden_value",
+  },
+  {
     fragment: "#if SIMPLE_MACRO\nint conditional_direct_value",
     name: "SIMPLE_MACRO", replacement: "1",
     laterObject: "conditional_direct_value",
     checkBoundaries: true,
+    checkFresh: true,
   },
   {
     fragment: "#if defined(SIMPLE_MACRO)",
     name: "SIMPLE_MACRO", replacement: "1",
     laterObject: "conditional_defined_call_value",
+    checkFresh: true,
   },
   {
     fragment: "#if defined SIMPLE_MACRO",
@@ -1195,6 +1370,7 @@ const conditionalDirectiveMacroCases = [
       "#if CONDITIONAL_FALSE_MACRO",
     name: "CONDITIONAL_FALSE_MACRO", replacement: "0", laterObject: null,
     checkBoundaries: true,
+    checkFresh: true,
   },
 ];
 const conditionalDirectiveOffsets = [];
@@ -1255,8 +1431,11 @@ for (const macroCase of conditionalDirectiveMacroCases) {
       `native and Wasm ${macroCase.name} conditional directive differ`);
   }
 }
-for (const caseIndex of [0, 1, 8]) {
+for (let caseIndex = 0;
+     caseIndex < conditionalDirectiveMacroCases.length;
+     caseIndex++) {
   const macroCase = conditionalDirectiveMacroCases[caseIndex];
+  if (!macroCase.checkFresh) continue;
   const byteOffset = conditionalDirectiveOffsets[caseIndex];
   const freshCompiler = await createCompiler(wasmModule);
   try {
@@ -1459,6 +1638,11 @@ for (const macroCase of snakeMacroCases) {
 }
 
 reportTestTiming("macros");
+if (process.env.AGC_LANGUAGE_ANALYSIS_FOCUS === "macros") {
+  compiler.dispose();
+  console.log("wasm language analysis macro tests passed");
+  process.exit(0);
+}
 const castOperandHoverSource = {
   name: "cast-operand.c",
   source: "/// cast operand macro documentation\n" +
