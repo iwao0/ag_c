@@ -369,8 +369,10 @@ void psx_resolve_decl_specifier_value_in_contexts(
       .global_registry = request->global_registry,
       .local_registry = request->local_registry,
   };
-  resolution->requested_alignment = resolve_decl_alignment_value(
-      &context, request->syntax);
+  resolution->requested_alignment =
+      request->is_standalone_tag
+          ? 0
+          : resolve_decl_alignment_value(&context, request->syntax);
   resolution->status = resolve_tag_action_value(
       &context, &request->syntax->tag_action,
       request->is_standalone_tag,

@@ -1592,6 +1592,7 @@ static const test_case_t test_cases[] = {
     {"probes", "storage_class_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/storage_class_constraints.c", 0, 0},
     {"probes", "for_initializer_storage_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/for_initializer_storage_boundaries.c", 0, 0},
     {"probes", "standalone_tag_storage_class_specifiers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/standalone_tag_storage_class_specifiers.c", 0, 0},
+    {"probes", "standalone_tag_ignored_specifiers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/standalone_tag_ignored_specifiers.c", 0, 0},
     {"probes", "function_specifier_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_specifier_constraints.c", 0, 0},
     {"probes", "atomic_type_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_type_constraints.c", 0, 0},
     {"probes", "atomic_qualifier_typedef_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_qualifier_typedef_constraints.c", 0, 0},
@@ -2734,25 +2735,17 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "const_function_typedef_type_name.c",
      "E3117"},
-    {"standalone_tag_const_qualifier_rejected",
-     "fixture:test/fixtures/should_reject/"
-     "standalone_tag_const_qualifier.c",
-     "E3064"},
-    {"local_standalone_tag_volatile_qualifier_rejected",
-     "fixture:test/fixtures/should_reject/"
-     "local_standalone_tag_volatile_qualifier.c",
-     "E3064"},
     {"standalone_tag_restrict_qualifier_rejected",
      "fixture:test/fixtures/should_reject/"
      "standalone_tag_restrict_qualifier.c",
      "E3064"},
-    {"standalone_tag_atomic_qualifier_rejected",
+    {"standalone_tag_inline_specifier_rejected",
      "fixture:test/fixtures/should_reject/"
-     "standalone_tag_atomic_qualifier.c",
+     "standalone_tag_inline_specifier.c",
      "E3064"},
-    {"standalone_tag_storage_class_rejected",
+    {"standalone_tag_noreturn_specifier_rejected",
      "fixture:test/fixtures/should_reject/"
-     "standalone_tag_storage_class.c",
+     "standalone_tag_noreturn_specifier.c",
      "E3064"},
     {"standalone_anonymous_struct_rejected",
      "fixture:test/fixtures/should_reject/"

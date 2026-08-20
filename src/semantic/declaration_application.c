@@ -439,10 +439,6 @@ int psx_apply_declaration_phase_in_contexts(
     psx_declaration_phase_t *phase, int standalone_tag) {
   if (!semantic_context || !global_registry || !local_registry || !phase ||
       phase->state != PSX_DECLARATION_PHASE_SYNTAX) return 0;
-  phase->requested_alignment =
-      psx_resolve_parsed_decl_alignment_in_contexts(
-          semantic_context, global_registry, local_registry,
-          &phase->syntax);
   if (standalone_tag &&
       phase->syntax.source == PSX_PARSED_DECL_TYPE_TAG) {
     if (!psx_validate_parsed_standalone_tag_specifier_constraints_in_context(
@@ -454,6 +450,10 @@ int psx_apply_declaration_phase_in_contexts(
     phase->state = PSX_DECLARATION_PHASE_STANDALONE_TAG;
     return 1;
   }
+  phase->requested_alignment =
+      psx_resolve_parsed_decl_alignment_in_contexts(
+          semantic_context, global_registry, local_registry,
+          &phase->syntax);
   phase->base_qual_type =
       psx_apply_parsed_decl_specifier_qual_type_in_contexts(
           semantic_context, global_registry, local_registry,
@@ -651,17 +651,13 @@ int psx_validate_parsed_standalone_tag_specifier_constraints_in_context(
     return 0;
   }
   const psx_type_spec_result_t *type_spec = &specifier->type_spec;
-  if (psx_decl_specifier_has_storage_class(specifier) ||
-      type_spec->is_const_qualified ||
-      type_spec->is_volatile_qualified ||
-      type_spec->is_restrict_qualified || type_spec->is_atomic ||
-      type_spec->is_inline || type_spec->is_noreturn ||
-      specifier->alignas_specifier_count > 0) {
+  if (type_spec->is_typedef || type_spec->is_restrict_qualified ||
+      type_spec->is_inline || type_spec->is_noreturn) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context), diagnostic_token,
         "declaration-specifier",
-        "standalone tag declaration cannot use storage-class, "
-        "type-qualifier, function, or alignment specifiers");
+        "standalone tag declaration cannot use typedef, restrict, "
+        "or function specifiers");
     return 0;
   }
   return 1;

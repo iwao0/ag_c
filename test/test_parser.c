@@ -15136,6 +15136,16 @@ static void test_declaration_phase_boundary(
   ASSERT_EQ(PSX_DECLARATION_PHASE_STANDALONE_TAG, phase.state);
   psx_dispose_declaration_phase(&phase);
 
+  tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session),
+      (char *)"_Alignas(3) struct __IgnoredAlignment");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
+  parse_test_decl_specifier_syntax(test_suite_session, &syntax);
+  psx_begin_declaration_phase(&phase, &syntax);
+  ASSERT_TRUE(apply_test_declaration_phase(test_suite_session, &phase, 1));
+  ASSERT_EQ(PSX_DECLARATION_PHASE_STANDALONE_TAG, phase.state);
+  ASSERT_EQ(0, phase.requested_alignment);
+  psx_dispose_declaration_phase(&phase);
+
   expect_parse_fail_with_message(
       test_suite_session, "_Alignas(int[]) int incomplete_array_aligned;",
       "E3064");
@@ -20015,20 +20025,29 @@ static void test_parse_invalid(
       "const int qualified_result(void) { return 7; } "
       "int main(void) { FunctionType *const pointer = 0; "
       "return qualified_result() != 7 || pointer != 0; }");
-  expect_parse_fail(test_suite_session,
+  expect_parse_ok(test_suite_session,
       "const struct Forward; int main(void) { return 0; }");
-  expect_parse_fail(test_suite_session,
+  expect_parse_ok(test_suite_session,
       "volatile struct Defined { int value; }; "
       "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
       "restrict union Forward; int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
-      "_Atomic enum { KIND_ZERO }; int main(void) { return 0; }");
+      "inline struct InlineForward; int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
+      "_Noreturn union NoreturnForward; int main(void) { return 0; }");
+  expect_parse_ok(test_suite_session,
+      "_Atomic enum { KIND_ZERO }; "
+      "int main(void) { return KIND_ZERO; }");
+  expect_parse_ok(test_suite_session,
       "static struct Forward; int main(void) { return 0; }");
+  expect_parse_ok(test_suite_session,
+      "_Alignas(3) struct IgnoredAlignment; "
+      "const volatile enum { KIND_ONE = 1 }; "
+      "int main(void) { return KIND_ONE - 1; }");
   expect_parse_fail(test_suite_session,
       "struct { int value; }; int main(void) { return 0; }");
-  expect_parse_fail(test_suite_session,
+  expect_parse_ok(test_suite_session,
       "int main(void) { volatile union Local; return 0; }");
   expect_parse_fail(test_suite_session,
       "int main(void) { union { int value; }; return 0; }");

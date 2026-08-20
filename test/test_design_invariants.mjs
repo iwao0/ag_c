@@ -9278,8 +9278,14 @@ if (!/psx_semantic_type_table_has_cv_qualified_function\s*\([^]*?shape\.kind\s*=
     "CV qualifiers on function typedefs must survive type formation and be rejected recursively at every semantic entry boundary",
   );
 }
-if (!/psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\([^]*?tag->is_anonymous\s*&&\s*tag->kind\s*!=\s*TK_ENUM[^]*?psx_decl_specifier_has_storage_class\s*\([^]*?is_const_qualified[^]*?is_volatile_qualified[^]*?is_restrict_qualified[^]*?is_atomic/.test(
+if (!/psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\([^]*?tag->is_anonymous\s*&&\s*tag->kind\s*!=\s*TK_ENUM[^]*?type_spec->is_typedef[^]*?type_spec->is_restrict_qualified[^]*?type_spec->is_inline[^]*?type_spec->is_noreturn/.test(
       declarationApplicationSource,
+    ) ||
+    !/if\s*\(standalone_tag\s*&&[^]*?PSX_DECLARATION_PHASE_STANDALONE_TAG[^]*?return\s+1\s*;[^]*?phase->requested_alignment\s*=\s*psx_resolve_parsed_decl_alignment_in_contexts/.test(
+      declarationApplicationSource,
+    ) ||
+    !/resolution->requested_alignment\s*=\s*request->is_standalone_tag\s*\?\s*0\s*:\s*resolve_decl_alignment_value/.test(
+      declarationSpecifierResolutionSource,
     ) ||
     !/psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\(/.test(
       toplevelDeclarationFrontendSource,
@@ -9291,7 +9297,7 @@ if (!/psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\([^
       /psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\(/g,
     )?.length ?? 0) < 2) {
   throw new Error(
-    "standalone tag declarations must share qualifier, storage-class, and declared-entity constraints across semantic entry paths",
+    "standalone tag declarations must ignore storage, CV, atomic, and alignment specifiers while sharing typedef, restrict, function, and declared-entity constraints",
   );
 }
 const semanticTypeEntry = semanticTypeIdentitySource.match(

@@ -37784,3 +37784,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規正例をClang/Native/WAT/Wasm objectで直接実行し、negative 2件を3 compilerで確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深いrecord nesting・式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - aggregate内のanonymous enum、named enum、named member有無、flexible array後の境界は閉じた。次も深いaggregate layoutへ広げず、通常サイズの別の宣言・型制約をClang strict差分probeから選ぶ。
+
+### このセッション（続き1277）: standalone tagで無視されるspecifierを再受理した
+- 対象選定:
+  - declaration-specifier順序・重複qualifier・array parameter qualifier・external/internal linkageを既存coverageと照合したところ、いずれも既に正負境界が固定されていたため重複実装を避けた。隣接する識別子namespace、tag、`_Static_assert`、enumerator-only宣言を通常サイズでClang C11 strictと比較した。
+  - `const enum { VALUE = 1 };`をClang strictは受理する一方、ag_cは続き1271のstandalone-tag validatorからE3064で過剰拒否した。境界を広げると、`static struct Forward;`などのstorage class、`const`/`volatile`、Atomic qualifier、`_Alignas`は宣言子なしtag宣言で無視され、file/block scopeともClangは受理していた。
+  - 既存positive fixture `standalone_tag_storage_class_specifiers`も続き1271後はag_cが拒否しており、誤ってshould_rejectへ置かれたconst/volatile/Atomic/storageの4 fixtureもClang strictでは成功する回帰を確認した。深いtag互換性、enum式、layout、security監査系には広げていない。
+- 原因と変更:
+  - 共通standalone-tag validatorが、宣言対象を持たないanonymous struct/unionを拒否する検査と、すべてのstorage class・type qualifier・alignment specifierを拒否する検査を一つにしていた。しかし名前付きtagやenumeratorを宣言するenumでは、storage class、CV/Atomic qualifier、alignment specifierは宣言対象へ適用されず無視される。
+  - validatorを、anonymous struct/union、`typedef`、`restrict`、`inline`/`_Noreturn`だけを拒否する境界へ修正した。file-scope通常適用、block-scope direct Typed HIR、宣言phaseは同じvalidatorを使う。
+  - standalone tagでは`_Alignas(3)`のような、本来objectへ適用すれば不正なalignmentもClangが無視するため、宣言phaseとdirect decl-specifier value解決の両方でalignment解決自体を省く。通常のobject宣言に対するalignment検証順序は変更しない。
+  - design invariantで共通拒否条件、宣言phaseがstandalone return後だけalignmentを解決する順序、direct value resolverのstandalone skipを固定した。
+- coverage:
+  - `standalone_tag_ignored_specifiers`をNative/Wasm E2E一覧へ追加した。file/block scopeの名前付きstruct/union、名前付き・匿名enumについてstorage、CV、Atomic、`_Alignas(3)`が無視され、tag完成・enumerator登録・object layoutが通常どおりであることを実行確認する。
+  - 既存`standalone_tag_storage_class_specifiers`も焦点回帰として直接再実行した。誤ったshould_reject 4件は削除し、`restrict`、anonymous struct/unionに加えてstandalone `inline`/`_Noreturn`をE3064 negativeとして登録した。既存`typedef_standalone_tag`もE3064を維持する。
+  - parser unitへfile/blockのCV、Atomic、storage、alignment無視、enum enumerator利用、function specifier拒否を追加し、宣言phaseでは無視alignmentが0のままであることを固定した。
+- 確認:
+  - 新規fixtureと既存storage-class fixtureはhost Clang strict、ag_c Native実行、WATの`wasm-interp`実行、Wasm object compile/validateがすべて成功した。両WATとも`main() => i32:0`だった。
+  - `restrict`、`inline`、`_Noreturn`、anonymous struct/union、`typedef`のnegative 6件はhost Clang strict、Native、Wasm objectがすべて拒否し、Native/Wasmは全件E3064で一致した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.59秒 / user 3.04秒 / sys 0.22秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.19秒 / user 0.77秒 / sys 0.40秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.23秒 / user 11.50秒 / sys 1.47秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.90秒 / user 42.35秒 / sys 0.94秒**。`build/test_e2e`もwarningなしでビルドした。
+- 未実施:
+  - 既存回帰fixtureを含む正例2件を4経路、negative 6件を3 compilerで直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深いtag/enum式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - standalone tagの無視specifierと拒否specifierはfile/block/phaseまで閉じた。次はtag宣言から離れ、通常サイズのinitializerまたは宣言点境界をClang strictとの差分probeから選ぶ。
