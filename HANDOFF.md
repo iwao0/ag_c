@@ -37272,3 +37272,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `restrict`・`_Atomic`付き2段pointer、両pointerへの修飾、3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - 焦点gateが続き1253の22.62秒から28.64秒へ伸びた。まず`same-typedef-declarators` focus内のNative parity subprocess回数と時間内訳を小さく計測し、同一fixtureのcursor群を1プロセスで返すbatch snapshot modeにまとめられるか検討する。compiler修正は止めず、短いgateへ戻してからClang-validな単一`restrict` 2形へ進む。
+
+### このセッション（続き1255）: same-typedef declarator焦点gateの重複Wasm解析を削減した
+- 計測:
+  - `./build/test_language_analysis --same-typedef-declarator-hover-parity-json 100`を別processで50回実行しても**real 0.10秒 / user 0.03秒 / sys 0.04秒**だった。28.64秒の焦点gateに対してNative subprocess起動は支配要因ではないため、batch CLI追加は行わなかった。
+  - `externObjectTypeCases`は42形あり、従来は全42形を第2Wasm compilerでも再解析し、23形では中央に加えてidentifier両端も巨大fixture全体から再解析していた。
+- 変更:
+  - 全42形の中央cursorにおけるdiagnostics、partial、hover、source range、現在・後続宣言の非可視、Native/Wasm snapshot完全一致は維持した。
+  - identifier両端と第2Wasm compiler instanceでの確認を、direct、splice、array、decimal array、parenthesized、通常qualifier、atomic、atomic+CV、無修飾2段pointer、1段目const、2段目volatileの11カテゴリ代表へ集約した。
+  - Native Cの`test_same_typedef_declarator_hover`は変更せず、全形のshared/fresh sessionと指定済み名前端点を引き続き確認する。Wasm側でも全形の中央cursorを共通compilerで通すため、各宣言形とNative parityの被覆は落としていない。
+- 時間:
+  - `AGC_LANGUAGE_ANALYSIS_TIMING=1 /usr/bin/time -p make test-wasm-language-analysis-same-typedef-declarators` = **passed**、内部計測**17.80秒**、**real 17.99秒 / user 18.30秒 / sys 0.36秒**。
+  - 変更前の続き1254は**real 28.64秒**で、**10.65秒・約37%短縮**した。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 7.15秒 / user 5.63秒 / sys 1.51秒**。Native側の全形fresh/reused coverageを確認した。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.34秒 / user 0.75秒 / sys 0.47秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`、`git diff --check`、`make -q wasm-selfhost-api`も成功した。production sourceとWasm成果物は変更していない。
+- 未実施:
+  - 同じ焦点本体が17.99秒で通るため、1354秒規模の`make test-wasm-js-api`は実行しない。compiler挙動を変更しないテスト構成最適化のためNative/Wasm E2E、parser、fuzz、stress、security監査系も反復しない。
+- 浅い次候補:
+  - compiler修正へ戻り、Clang strictが受理する`extern T (* restrict *T);`と`extern T (** restrict T);`の単一`restrict` 2形を調べる。意味制約を隠さないretained declaration経路を維持し、深い宣言子やsecurity監査系には広げない。

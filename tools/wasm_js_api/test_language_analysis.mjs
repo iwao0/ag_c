@@ -2809,6 +2809,9 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       )), `native and Wasm same typedef declarator differ for ${name}`);
     }
   }
+  // Every form runs at its midpoint with Native parity. The third field
+  // selects category representatives for identifier endpoints and a second
+  // Wasm compiler instance, avoiding duplicate full-fixture reparses.
   const externObjectTypeCases = [
     ["extern ExternObjectDirectType ExternObjectDirectType",
       "ExternObjectDirectType", true],
@@ -2827,7 +2830,7 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
     ["extern ExternObjectCommentArrayType ExternObjectCommentArrayType[/* empty bound */]",
       "ExternObjectCommentArrayType", false],
     ["extern ExternObjectSpliceArrayType ExternObjectSpliceArrayType[\\\n]",
-      "ExternObjectSpliceArrayType", true],
+      "ExternObjectSpliceArrayType", false],
     ["extern ExternObjectDecimalArrayType ExternObjectDecimalArrayType[4]",
       "ExternObjectDecimalArrayType", true],
     ["extern ExternObjectPointerDecimalArrayType *ExternObjectPointerDecimalArrayType[16]",
@@ -2835,7 +2838,7 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
     ["extern ExternObjectCommentDecimalArrayType ExternObjectCommentDecimalArrayType[/* before bound */ 8 /* after bound */]",
       "ExternObjectCommentDecimalArrayType", false],
     ["extern ExternObjectSpliceDecimalArrayType ExternObjectSpliceDecimalArrayType[\\\n32]",
-      "ExternObjectSpliceDecimalArrayType", true],
+      "ExternObjectSpliceDecimalArrayType", false],
     ["extern ExternObjectParenthesizedType (ExternObjectParenthesizedType)",
       "ExternObjectParenthesizedType", true],
     ["extern ExternObjectParenthesizedPointerType (*ExternObjectParenthesizedPointerType)",
@@ -2843,7 +2846,7 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
     ["extern ExternObjectParenthesizedCommentType (/* before object */ ExternObjectParenthesizedCommentType /* after object */)",
       "ExternObjectParenthesizedCommentType", false],
     ["extern ExternObjectParenthesizedSpliceType (\\\nExternObjectParenthesizedSpliceType)",
-      "ExternObjectParenthesizedSpliceType", true],
+      "ExternObjectParenthesizedSpliceType", false],
     ["extern ExternObjectParenthesizedConstPointerType (* const ExternObjectParenthesizedConstPointerType)",
       "ExternObjectParenthesizedConstPointerType", true],
     ["extern ExternObjectParenthesizedVolatilePointerType (* volatile ExternObjectParenthesizedVolatilePointerType)",
@@ -2855,45 +2858,45 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
     ["extern ExternObjectParenthesizedQualifierCommentType (* /* before qualifier */ const /* between qualifiers */ volatile /* after qualifier */ ExternObjectParenthesizedQualifierCommentType)",
       "ExternObjectParenthesizedQualifierCommentType", false],
     ["extern ExternObjectParenthesizedQualifierSpliceType (* const \\\nvolatile ExternObjectParenthesizedQualifierSpliceType)",
-      "ExternObjectParenthesizedQualifierSpliceType", true],
+      "ExternObjectParenthesizedQualifierSpliceType", false],
     ["extern ExternObjectParenthesizedAtomicPointerType (* _Atomic ExternObjectParenthesizedAtomicPointerType)",
       "ExternObjectParenthesizedAtomicPointerType", true],
     ["extern ExternObjectParenthesizedAtomicCommentType (* /* before atomic */ _Atomic /* after atomic */ ExternObjectParenthesizedAtomicCommentType)",
       "ExternObjectParenthesizedAtomicCommentType", false],
     ["extern ExternObjectParenthesizedAtomicSpliceType (* _Atomic \\\nExternObjectParenthesizedAtomicSpliceType)",
-      "ExternObjectParenthesizedAtomicSpliceType", true],
+      "ExternObjectParenthesizedAtomicSpliceType", false],
     ["extern ExternObjectParenthesizedConstAtomicPointerType (* const _Atomic ExternObjectParenthesizedConstAtomicPointerType)",
       "ExternObjectParenthesizedConstAtomicPointerType", true],
     ["extern ExternObjectParenthesizedAtomicConstPointerType (* _Atomic const ExternObjectParenthesizedAtomicConstPointerType)",
-      "ExternObjectParenthesizedAtomicConstPointerType", true],
+      "ExternObjectParenthesizedAtomicConstPointerType", false],
     ["extern ExternObjectParenthesizedAtomicQualifierChainType (* volatile _Atomic const ExternObjectParenthesizedAtomicQualifierChainType)",
       "ExternObjectParenthesizedAtomicQualifierChainType", false],
     ["extern ExternObjectParenthesizedAtomicQualifierCommentType (* const /* before atomic */ _Atomic /* after atomic */ volatile ExternObjectParenthesizedAtomicQualifierCommentType)",
       "ExternObjectParenthesizedAtomicQualifierCommentType", false],
     ["extern ExternObjectParenthesizedAtomicQualifierSpliceType (* const \\\n_Atomic volatile ExternObjectParenthesizedAtomicQualifierSpliceType)",
-      "ExternObjectParenthesizedAtomicQualifierSpliceType", true],
+      "ExternObjectParenthesizedAtomicQualifierSpliceType", false],
     ["extern ExternObjectParenthesizedDoublePointerType (**ExternObjectParenthesizedDoublePointerType)",
       "ExternObjectParenthesizedDoublePointerType", true],
     ["extern ExternObjectParenthesizedDoublePointerCommentType (* /* between pointers */ * ExternObjectParenthesizedDoublePointerCommentType)",
       "ExternObjectParenthesizedDoublePointerCommentType", false],
     ["extern ExternObjectParenthesizedDoublePointerSpliceType (*\\\n*ExternObjectParenthesizedDoublePointerSpliceType)",
-      "ExternObjectParenthesizedDoublePointerSpliceType", true],
+      "ExternObjectParenthesizedDoublePointerSpliceType", false],
     ["extern ExternObjectParenthesizedOuterConstDoublePointerType (* const *ExternObjectParenthesizedOuterConstDoublePointerType)",
       "ExternObjectParenthesizedOuterConstDoublePointerType", true],
     ["extern ExternObjectParenthesizedInnerConstDoublePointerType (** const ExternObjectParenthesizedInnerConstDoublePointerType)",
-      "ExternObjectParenthesizedInnerConstDoublePointerType", true],
+      "ExternObjectParenthesizedInnerConstDoublePointerType", false],
     ["extern ExternObjectParenthesizedDoublePointerConstCommentType (* /* before const */ const /* between pointers */ * ExternObjectParenthesizedDoublePointerConstCommentType)",
       "ExternObjectParenthesizedDoublePointerConstCommentType", false],
     ["extern ExternObjectParenthesizedDoublePointerConstSpliceType (** \\\nconst ExternObjectParenthesizedDoublePointerConstSpliceType)",
-      "ExternObjectParenthesizedDoublePointerConstSpliceType", true],
+      "ExternObjectParenthesizedDoublePointerConstSpliceType", false],
     ["extern ExternObjectParenthesizedOuterVolatileDoublePointerType (* volatile *ExternObjectParenthesizedOuterVolatileDoublePointerType)",
-      "ExternObjectParenthesizedOuterVolatileDoublePointerType", true],
+      "ExternObjectParenthesizedOuterVolatileDoublePointerType", false],
     ["extern ExternObjectParenthesizedInnerVolatileDoublePointerType (** volatile ExternObjectParenthesizedInnerVolatileDoublePointerType)",
       "ExternObjectParenthesizedInnerVolatileDoublePointerType", true],
     ["extern ExternObjectParenthesizedDoublePointerVolatileCommentType (* /* before volatile */ volatile /* between pointers */ * ExternObjectParenthesizedDoublePointerVolatileCommentType)",
       "ExternObjectParenthesizedDoublePointerVolatileCommentType", false],
     ["extern ExternObjectParenthesizedDoublePointerVolatileSpliceType (** \\\nvolatile ExternObjectParenthesizedDoublePointerVolatileSpliceType)",
-      "ExternObjectParenthesizedDoublePointerVolatileSpliceType", true],
+      "ExternObjectParenthesizedDoublePointerVolatileSpliceType", false],
   ];
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
@@ -2949,7 +2952,9 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
   }
   const freshExternObjectTypeCompiler = await createCompiler(wasmModule);
   try {
-    for (const [fragmentText, name] of externObjectTypeCases) {
+    for (const [fragmentText, name, checkRepresentative] of
+      externObjectTypeCases) {
+      if (!checkRepresentative) continue;
       const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
         fragmentText,
       );
