@@ -63,6 +63,9 @@ int psx_resolve_parameter_declaration(
           types, identity.type_id, &shape)) {
     return 0;
   }
+  if (psx_semantic_type_table_has_cv_qualified_function(
+          types, identity))
+    return 0;
   if (psx_semantic_type_table_has_invalid_restrict_qualification(
           types, identity))
     return 0;

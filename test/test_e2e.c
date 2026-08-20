@@ -2708,6 +2708,30 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"function_returning_function_rejected",
      "fixture:test/fixtures/should_reject/function_returning_function.c",
      "E3064"},
+    {"const_function_typedef_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "const_function_typedef_declaration.c",
+     "E3064"},
+    {"volatile_function_typedef_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "volatile_function_typedef_declaration.c",
+     "E3064"},
+    {"const_function_typedef_alias_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "const_function_typedef_alias.c",
+     "E3064"},
+    {"const_function_typedef_parameter_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "const_function_typedef_parameter.c",
+     "E3064"},
+    {"const_function_typedef_pointer_parameter_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "const_function_typedef_pointer_parameter.c",
+     "E3064"},
+    {"const_function_typedef_type_name_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "const_function_typedef_type_name.c",
+     "E3117"},
     {"variably_modified_typedef_array_member_rejected",
      "fixture:test/fixtures/should_reject/"
      "variably_modified_typedef_array_member.c",

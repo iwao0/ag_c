@@ -19935,6 +19935,36 @@ static void test_parse_invalid(
       "typedef void no_parameters; int f(no_parameters); "
       "int f(void) { return 7; } "
       "int main(void) { return f() != 7; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int FunctionType(void); "
+      "const FunctionType function; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int FunctionType(void); "
+      "volatile FunctionType function; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int FunctionType(void); "
+      "typedef const FunctionType QualifiedFunctionType; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int FunctionType(void); "
+      "int consume(const FunctionType callback); "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int FunctionType(void); "
+      "int consume(const FunctionType *callback); "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int FunctionType(void); int main(void) { "
+      "const FunctionType local_function; return 0; }");
+  expect_parse_fail_with_message(test_suite_session,
+      "typedef int FunctionType(void); int main(void) { "
+      "return sizeof(const FunctionType *); }",
+      "E3117");
+  expect_parse_ok(test_suite_session,
+      "typedef int FunctionType(void); "
+      "const int qualified_result(void) { return 7; } "
+      "int main(void) { FunctionType *const pointer = 0; "
+      "return qualified_result() != 7 || pointer != 0; }");
   expect_parse_ok(test_suite_session,
       "struct record; typedef int reader(struct record); "
       "reader read; struct record { int value; }; "

@@ -545,6 +545,39 @@ int psx_semantic_type_table_has_invalid_restrict_qualification(
   return 0;
 }
 
+int psx_semantic_type_table_has_cv_qualified_function(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type) {
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          table, type.type_id, &shape))
+    return 1;
+  if (shape.kind == PSX_TYPE_FUNCTION &&
+      (type.qualifiers & (PSX_TYPE_QUALIFIER_CONST |
+                          PSX_TYPE_QUALIFIER_VOLATILE)) != 0)
+    return 1;
+  if (shape.kind == PSX_TYPE_POINTER ||
+      shape.kind == PSX_TYPE_ARRAY ||
+      shape.kind == PSX_TYPE_FUNCTION) {
+    psx_qual_type_t base =
+        psx_semantic_type_table_base(table, type.type_id);
+    if (base.type_id == PSX_TYPE_ID_INVALID ||
+        psx_semantic_type_table_has_cv_qualified_function(
+            table, base))
+      return 1;
+  }
+  if (shape.kind == PSX_TYPE_FUNCTION) {
+    for (int i = 0; i < shape.parameter_count; i++) {
+      psx_qual_type_t parameter =
+          psx_semantic_type_table_parameter(table, type.type_id, i);
+      if (parameter.type_id == PSX_TYPE_ID_INVALID ||
+          psx_semantic_type_table_has_cv_qualified_function(
+              table, parameter))
+        return 1;
+    }
+  }
+  return 0;
+}
+
 static int semantic_qual_types_match(
     const psx_semantic_type_table_t *table,
     psx_qual_type_t left, psx_qual_type_t right,

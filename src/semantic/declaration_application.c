@@ -237,6 +237,17 @@ psx_qual_type_t psx_apply_parsed_type_name_qual_type_in_contexts(
           .declarator_shape = &shape,
       });
   if (resolved.type_id != PSX_TYPE_ID_INVALID &&
+      psx_semantic_type_table_has_cv_qualified_function(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          resolved)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        type_name->diagnostic_token, "type-name",
+        "function types cannot be const- or volatile-qualified");
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  }
+  if (resolved.type_id != PSX_TYPE_ID_INVALID &&
       psx_semantic_type_table_has_invalid_restrict_qualification(
           ps_ctx_semantic_type_table_in(semantic_context),
           resolved)) {
@@ -623,6 +634,15 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
           ps_ctx_semantic_type_table_in(semantic_context),
           declared_type.type_id, &shape))
     return 0;
+  if (psx_semantic_type_table_has_cv_qualified_function(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          declared_type)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "function types cannot be const- or volatile-qualified");
+    return 0;
+  }
   if (psx_semantic_type_table_has_invalid_restrict_qualification(
           ps_ctx_semantic_type_table_in(semantic_context),
           declared_type)) {

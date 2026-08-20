@@ -129,6 +129,15 @@ int psx_resolve_type_name_qual_type_in_contexts(
           base.base_qual_type, &type_name->syntax->declarator);
   if (resolved.type_id == PSX_TYPE_ID_INVALID)
     return 0;
+  if (psx_semantic_type_table_has_cv_qualified_function(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          resolved)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        type_name->syntax->diagnostic_token, "type-name",
+        "function types cannot be const- or volatile-qualified");
+    return 0;
+  }
   if (psx_semantic_type_table_has_invalid_restrict_qualification(
           ps_ctx_semantic_type_table_in(semantic_context),
           resolved)) {

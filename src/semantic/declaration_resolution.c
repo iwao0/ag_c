@@ -73,7 +73,6 @@ static psx_qual_type_t apply_decl_specifier_cv_qualifiers(
   psx_type_shape_t shape = {0};
   if (!psx_semantic_type_table_describe(types, type.type_id, &shape))
     return invalid_qual_type();
-  if (shape.kind == PSX_TYPE_FUNCTION) return type;
   if (shape.kind != PSX_TYPE_ARRAY) {
     type.qualifiers |= qualifiers;
     return type;

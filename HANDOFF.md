@@ -37619,3 +37619,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規2 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないenum宣言制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、複雑なenum式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - enumの明示・暗黙値rangeはfile/block両経路で閉じた。複雑な定数式へ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1270）: function typedef自体へのCV修飾をstrict拒否した
+- 対象選定:
+  - まず`void` typedef parameterの単独marker、修飾、named、複数parameter、nested callback、pointerの6境界をClang C11 strictと照合したが、すべてag_cと一致したため変更していない。
+  - 隣接するfunction typedefへ移り、`typedef int FunctionType(void); const FunctionType function;`をClang strictは診断する一方、ag_cは受理した。`volatile`、typedef alias、file/local宣言、function parameter、pointer先、type-nameでも同じ差分を再現した。通常サイズの宣言だけを対象にし、nested callback、関数body解析、深い宣言子・式、security監査系には広げていない。
+- 原因と変更:
+  - `apply_decl_specifier_cv_qualifiers`はtypedef参照後のcanonical型がfunctionの場合だけ、構文上の`const`/`volatile`を明示的に捨てていた。そのため後段の型制約から違反が見えず、parameterではfunction-to-pointer調整後に痕跡を失っていた。
+  - function型だけをCV適用から除外する分岐を削除し、function QualType node自身へ構文CVを保持する。`psx_semantic_type_table_has_cv_qualified_function`を追加し、pointer/array/functionのreturn・parameterへ再帰してCV付きfunction nodeを検出する。
+  - 共通decl-specifier検査、parameter調整前、通常/直接type-name、direct type-query境界から同じcanonical検査を使う。`const int function(void)`の戻り型CVと`FunctionType *const`のpointer object CVは異なるnodeなので合法のまま維持する。
+  - design invariantでfunction CVを型形成時に捨てないこと、再帰canonical検査、および各semantic entry boundaryからの利用を固定した。user-facing文言のexact-match testは追加せず、診断IDだけを固定した。
+- coverage:
+  - parser unitへ不正7形（const/volatile、alias、file/local、parameter、pointer先、type-name）と、const戻り型・const pointer objectの合法対照を追加した。
+  - should_rejectへ`const_function_typedef_declaration`、`volatile_function_typedef_declaration`、`const_function_typedef_alias`、`const_function_typedef_parameter`、`const_function_typedef_pointer_parameter`、`const_function_typedef_type_name`を追加し、Native/Wasm compile-fail registryへ前5件E3064、type-nameをE3117で登録した。
+- 確認:
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.52秒 / user 2.98秒 / sys 0.21秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.35秒 / user 0.74秒 / sys 0.42秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.57秒 / user 42.28秒 / sys 0.90秒**。
+  - 新規6 fixtureはhost Clang strict、Native、Wasm objectが全件拒否した。Native/Wasmは前5件E3064、type-nameはE3117で一致した。const戻り型とconst function pointer objectを同時に使う対照はClang strict・Native・Wasm objectともstatus 0を維持した。
+  - `build/test_e2e`をwarningなしでビルドし、`node --check test/test_design_invariants.mjs`も成功した。
+- 未実施:
+  - 新規6 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないfunction型制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、nested callback、深い宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - function typedefのCV適用はdeclaration/parameter/type-name境界まで閉じた。function型互換性やnested callbackへ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。

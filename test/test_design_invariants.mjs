@@ -9212,6 +9212,31 @@ if (!/PSX_TYPE_QUALIFIER_RESTRICT\s*=\s*1u\s*<<\s*3/.test(
     "restrict must survive declarator parsing as a canonical QualType qualifier",
   );
 }
+if (!/psx_semantic_type_table_has_cv_qualified_function\s*\([^]*?shape\.kind\s*==\s*PSX_TYPE_FUNCTION[^]*?PSX_TYPE_QUALIFIER_CONST[^]*?PSX_TYPE_QUALIFIER_VOLATILE/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/psx_semantic_type_table_has_cv_qualified_function\s*\([^]*?psx_semantic_type_table_base[^]*?psx_semantic_type_table_parameter/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    /shape\.kind\s*==\s*PSX_TYPE_FUNCTION\s*\)\s*return\s+type/.test(
+      declarationResolutionSource,
+    ) ||
+    !/psx_semantic_type_table_has_cv_qualified_function\s*\([^]*?declared_type/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_semantic_type_table_has_cv_qualified_function\s*\([^]*?identity/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/psx_semantic_type_table_has_cv_qualified_function\s*\([^]*?resolved/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/psx_semantic_type_table_has_cv_qualified_function\s*\([^]*?queried_qual_type/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "CV qualifiers on function typedefs must survive type formation and be rejected recursively at every semantic entry boundary",
+  );
+}
 const semanticTypeEntry = semanticTypeIdentitySource.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*psx_semantic_type_entry_t\s*;/,
 );
