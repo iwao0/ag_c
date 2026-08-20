@@ -3292,8 +3292,8 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   int has_parenthesized_atomic_pointer_qualifier = 0;
   size_t parenthesized_pointer_qualifier_count = 0;
   size_t parenthesized_second_pointer_qualifier_count = 0;
-  unsigned parenthesized_first_pointer_cv_qualifier_mask = 0;
-  unsigned parenthesized_second_pointer_cv_qualifier_mask = 0;
+  unsigned parenthesized_first_pointer_cvr_qualifier_mask = 0;
+  unsigned parenthesized_second_pointer_cvr_qualifier_mask = 0;
   size_t declarator_pointer_count = 0;
   while (scan < length) {
     scan = skip_analysis_space_and_comments_mode(
@@ -3316,8 +3316,9 @@ static char *build_file_typedef_block_extern_type_recovery_source(
               (has_parenthesized_non_cvr_pointer_qualifier ||
                (parenthesized_pointer_qualifier_count != 1 &&
                 (parenthesized_pointer_qualifier_count != 2 ||
-                 has_parenthesized_restrict_pointer_qualifier ||
-                 parenthesized_first_pointer_cv_qualifier_mask != 3)))) ||
+                 (parenthesized_first_pointer_cvr_qualifier_mask != 3 &&
+                  parenthesized_first_pointer_cvr_qualifier_mask != 5 &&
+                  parenthesized_first_pointer_cvr_qualifier_mask != 6))))) ||
              has_parenthesized_atomic_pointer_qualifier))
           return NULL;
         has_parenthesized_pointer = 1;
@@ -3353,8 +3354,8 @@ static char *build_file_typedef_block_extern_type_recovery_source(
             source, word_start, word_length, "volatile");
         int is_restrict = analysis_word_is(
             source, word_start, word_length, "restrict");
-        unsigned cv_qualifier_mask =
-            is_const ? 1u : (is_volatile ? 2u : 0u);
+        unsigned cvr_qualifier_mask =
+            is_const ? 1u : (is_volatile ? 2u : (is_restrict ? 4u : 0u));
         if (declarator_pointer_count > 1) {
           size_t first_pointer_qualifier_count =
               parenthesized_pointer_qualifier_count -
@@ -3365,19 +3366,20 @@ static char *build_file_typedef_block_extern_type_recovery_source(
                first_pointer_qualifier_count > 1) ||
               (parenthesized_second_pointer_qualifier_count == 1 &&
                (first_pointer_qualifier_count != 0 ||
-                cv_qualifier_mask == 0 ||
-                has_parenthesized_restrict_pointer_qualifier ||
-                (parenthesized_second_pointer_cv_qualifier_mask &
-                 cv_qualifier_mask) != 0)) ||
+                cvr_qualifier_mask == 0 ||
+                (parenthesized_second_pointer_cvr_qualifier_mask &
+                 cvr_qualifier_mask) != 0)) ||
               parenthesized_second_pointer_qualifier_count > 1)
             return NULL;
         }
         parenthesized_pointer_qualifier_count++;
         if (declarator_pointer_count > 1) {
           parenthesized_second_pointer_qualifier_count++;
-          parenthesized_second_pointer_cv_qualifier_mask |= cv_qualifier_mask;
+          parenthesized_second_pointer_cvr_qualifier_mask |=
+              cvr_qualifier_mask;
         } else {
-          parenthesized_first_pointer_cv_qualifier_mask |= cv_qualifier_mask;
+          parenthesized_first_pointer_cvr_qualifier_mask |=
+              cvr_qualifier_mask;
         }
         if (!is_const && !is_volatile && !is_restrict)
           has_parenthesized_non_cvr_pointer_qualifier = 1;
