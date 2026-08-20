@@ -36876,3 +36876,31 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。tagのscope-aware宣言/reference分類、pointer修飾子、配列・括弧付きatomic abstract declarator、attribute、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - atomic pointer chainは再探索せず、tagや括弧付きabstract declaratorへ入らない別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationは反復せず、Native約6秒と2.09秒のsame-typedef焦点gateを使う。
+
+### このセッション（続き1240）: `_Atomic` pointer chainの中間修飾子lookup pointを回復した
+- 対象選定:
+  - 続き1239で対象外だったpointer修飾子のうち、深いabstract declaratorへ入らない直線的な`_Atomic(Base * const *) Alias`、`_Atomic(const Base * volatile *) Alias`、`_Atomic(Base * restrict *) Alias`だけを小型probeで比較した。
+  - file/block、comment、LF splice、nested blockの同名shadowを含む代表形はClang/ag_cで有効だった。typedef hover、kind、宣言range、diagnostics空・`partial:false`は正しかった一方、現在aliasがpoint of declarationより前からcompletionへ公開され、blockの現在aliasにはsynthetic rangeが残る形もあった。
+  - 比較用の`_Atomic(Base * const) InvalidAlias`はClangがtop-level qualified atomic typeとして拒否したため、最後のpointer修飾子は有効形の回復対象に含めなかった。tag、配列、括弧付きabstract declarator、深い式、security監査系には入っていない。
+- 原因:
+  - atomic suffix scannerは選択typedef名の後をcomment/LF spliceを除外しながら`*`だけ反復し、各`*`後にidentifierが現れると直後の`)`条件を満たせず辞退していた。
+  - 辞退後はgeneric recoveryが現在typedef宣言を完結するため、中間pointerだけが修飾されたvalid type-nameでも現在aliasを早期公開していた。
+- 変更:
+  - 各`*`の後で既存`analysis_type_name_qualifier_word()`を使い、`const`/`volatile`/`restrict`だけをcomment/LF/CRLF splice越しに反復してから次の`*`または`)`を確認する。
+  - 新しい`*`を読むたびに修飾状態をリセットし、最後に読んだ`*`が修飾されていれば辞退する。これにより中間pointerの修飾だけを許可し、Clangが拒否するtop-level qualified atomic typeへ回復を適用しない。
+  - fileのinner const、pointee const + intermediate volatile、restrict/comment、LF splice、block形、nested同名shadowを既存same-typedef fixtureへ統合した。現在aliasと後続objectを非可視にし、shadow時は外側typedefの正確なrangeへ戻す。
+- テスト時間の改善:
+  - 新しいtargetは増やさず、既存`make test-wasm-language-analysis-same-typedef-declarators`へ統合した。Native snapshot parity、代表境界、fresh instance、scalar/pointer/qualified-pointer同名shadowを含む最終実測は**real 2.63秒 / user 2.70秒 / sys 0.23秒**、JS本体は**2.45秒**だった。
+  - local member array bound、prototype bound、declarator array boundの隣接3 targetは`make -j3`で並列実行し、**real 1.79秒 / user 4.39秒 / sys 0.61秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 6.28秒 / user 4.53秒 / sys 1.49秒**。追加5形と同名shadowを名前境界、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.75秒 / user 42.73秒 / sys 1.29秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-same-typedef-declarators` = 成功、**real 2.63秒 / user 2.70秒 / sys 0.23秒**。
+  - `make -j3 test-wasm-language-analysis-local-member-array-bounds test-wasm-language-analysis-prototype-bounds test-wasm-language-analysis-declarator-array-bounds` = 3 target成功、**real 1.79秒 / user 4.39秒 / sys 0.61秒**。
+  - 有効な中間`const`/`volatile`/`restrict`修飾の代表sourceは`clang -std=c11 -pedantic-errors -fsyntax-only`と`./build/ag_c`で成功し、最後の`*`を`const`修飾した比較sourceはClangが期待どおり拒否した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 3.29秒 / user 2.99秒 / sys 0.24秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.32秒**。
+- 未実施:
+  - 同じJS本体を2.45秒のfresh instance・Native parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行しない。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。tagのscope-aware宣言/reference分類、配列・括弧付きatomic abstract declarator、attribute、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回の中間pointer修飾子は再探索せず、tagや括弧付きabstract declaratorへ入らない別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationは反復せず、Native約6秒と2.45秒のsame-typedef焦点gateを使う。

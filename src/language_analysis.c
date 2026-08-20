@@ -2527,14 +2527,32 @@ static int analysis_typedef_specifier_before_first_declarator(
   scan = name_end;
   if (selected_specifier_mode == ANALYSIS_TYPEDEF_SPECIFIER_ATOMIC) {
     size_t pointer_count = 0;
+    int last_pointer_has_qualifier = 0;
     while (1) {
       scan = skip_analysis_space_and_comments_mode(
           source, length, scan, enable_trigraphs);
       if (scan >= length || source[scan] != '*') break;
       pointer_count++;
       scan++;
+      last_pointer_has_qualifier = 0;
+      while (1) {
+        scan = skip_analysis_space_and_comments_mode(
+            source, length, scan, enable_trigraphs);
+        if (scan >= length ||
+            !is_identifier_byte((unsigned char)source[scan]))
+          break;
+        size_t qualifier_start = scan;
+        while (scan < length &&
+               is_identifier_byte((unsigned char)source[scan]))
+          scan++;
+        if (!analysis_type_name_qualifier_word(
+                source, qualifier_start, scan - qualifier_start))
+          return 0;
+        last_pointer_has_qualifier = 1;
+      }
     }
     if (atomic_qualifier_before_name && pointer_count == 0) return 0;
+    if (last_pointer_has_qualifier) return 0;
     if (scan >= length || source[scan] != ')') return 0;
     scan++;
   }

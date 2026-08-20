@@ -1821,6 +1821,14 @@ static const char same_typedef_declarator_hover_source[] =
     "FirstFileAtomicPointerCommentAlias;\n"
     "typedef _Atomic(FirstFileAtomicBase *\\\n"
     ") FirstFileAtomicPointerSpliceAlias;\n"
+    "typedef _Atomic(FirstFileAtomicBase * const *) "
+    "FirstFileAtomicInnerConstAlias;\n"
+    "typedef _Atomic(const FirstFileAtomicBase * volatile *) "
+    "FirstFileAtomicQualifiedChainAlias;\n"
+    "typedef _Atomic(FirstFileAtomicBase * restrict * "
+    "/* qualified gap */) FirstFileAtomicRestrictChainAlias;\n"
+    "typedef _Atomic(FirstFileAtomicBase * const *\\\n"
+    ") FirstFileAtomicQualifiedSpliceAlias;\n"
     "typedef int FirstFileBase;\n"
     "typedef FirstFileBase FirstFileCopy;\n"
     "typedef const FirstFileBase FirstFileConst;\n"
@@ -1852,8 +1860,11 @@ static const char same_typedef_declarator_hover_source[] =
     "  typedef _Atomic(FirstBlockAtomicBase) FirstBlockAtomicAlias;\n"
     "  typedef _Atomic(FirstBlockAtomicBase *) "
     "FirstBlockAtomicPointerAlias;\n"
+    "  typedef _Atomic(FirstBlockAtomicBase * const *) "
+    "FirstBlockAtomicQualifiedAlias;\n"
     "  typedef int FirstBlockAtomicShadow;\n"
     "  typedef int FirstBlockAtomicPointerShadow;\n"
+    "  typedef int FirstBlockAtomicQualifiedShadow;\n"
     "  typedef FirstBlockBase *FirstBlockPointer;\n"
     "  typedef FirstBlockBase (*FirstBlockCallback)(void);\n"
     "  typedef FirstBlockBase FirstBlockShadow;\n"
@@ -1870,6 +1881,8 @@ static const char same_typedef_declarator_hover_source[] =
     "typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; "
     "typedef _Atomic(FirstBlockAtomicPointerShadow *) "
     "FirstBlockAtomicPointerShadow; "
+    "typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) "
+    "FirstBlockAtomicQualifiedShadow; "
     "typedef int (*InternalBlockShadow)(InternalBlockShadow); "
     "typedef int PrimaryNestedExtent; "
     "typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; "
@@ -10127,6 +10140,25 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
       {"typedef _Atomic(FirstBlockAtomicBase *) "
        "FirstBlockAtomicPointerAlias",
        "FirstBlockAtomicBase", "FirstBlockAtomicPointerAlias", NULL, 1, 0},
+      {"typedef _Atomic(FirstFileAtomicBase * const *) "
+       "FirstFileAtomicInnerConstAlias",
+       "FirstFileAtomicBase", "FirstFileAtomicInnerConstAlias", NULL, 0, 1},
+      {"typedef _Atomic(const FirstFileAtomicBase * volatile *) "
+       "FirstFileAtomicQualifiedChainAlias",
+       "FirstFileAtomicBase", "FirstFileAtomicQualifiedChainAlias", NULL, 0,
+       0},
+      {"typedef _Atomic(FirstFileAtomicBase * restrict * "
+       "/* qualified gap */) FirstFileAtomicRestrictChainAlias",
+       "FirstFileAtomicBase", "FirstFileAtomicRestrictChainAlias", NULL, 0,
+       0},
+      {"typedef _Atomic(FirstFileAtomicBase * const *\\\n) "
+       "FirstFileAtomicQualifiedSpliceAlias",
+       "FirstFileAtomicBase", "FirstFileAtomicQualifiedSpliceAlias", NULL,
+       0, 0},
+      {"typedef _Atomic(FirstBlockAtomicBase * const *) "
+       "FirstBlockAtomicQualifiedAlias",
+       "FirstBlockAtomicBase", "FirstBlockAtomicQualifiedAlias", NULL, 1,
+       0},
   };
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "same typedef declarator session");
@@ -10222,6 +10254,9 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
       {"typedef _Atomic(FirstBlockAtomicPointerShadow *) "
        "FirstBlockAtomicPointerShadow",
        "FirstBlockAtomicPointerShadow", 0},
+      {"typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) "
+       "FirstBlockAtomicQualifiedShadow",
+       "FirstBlockAtomicQualifiedShadow", 0},
   };
   for (size_t shadow_index = 0;
        shadow_index < sizeof(shadow_cases) / sizeof(shadow_cases[0]);

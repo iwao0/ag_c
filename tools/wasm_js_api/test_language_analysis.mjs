@@ -2188,6 +2188,10 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef _Atomic(FirstFileAtomicBase **) FirstFileAtomicDoublePointerAlias;\n" +
     "typedef _Atomic(FirstFileAtomicBase * /* pointer gap */) FirstFileAtomicPointerCommentAlias;\n" +
     "typedef _Atomic(FirstFileAtomicBase *\\\n) FirstFileAtomicPointerSpliceAlias;\n" +
+    "typedef _Atomic(FirstFileAtomicBase * const *) FirstFileAtomicInnerConstAlias;\n" +
+    "typedef _Atomic(const FirstFileAtomicBase * volatile *) FirstFileAtomicQualifiedChainAlias;\n" +
+    "typedef _Atomic(FirstFileAtomicBase * restrict * /* qualified gap */) FirstFileAtomicRestrictChainAlias;\n" +
+    "typedef _Atomic(FirstFileAtomicBase * const *\\\n) FirstFileAtomicQualifiedSpliceAlias;\n" +
     "typedef int FirstFileBase;\n" +
     "typedef FirstFileBase FirstFileCopy;\n" +
     "typedef const FirstFileBase FirstFileConst;\n" +
@@ -2213,8 +2217,10 @@ const sameTypedefDeclaratorHoverSource = {
     "  typedef int FirstBlockAtomicBase;\n" +
     "  typedef _Atomic(FirstBlockAtomicBase) FirstBlockAtomicAlias;\n" +
     "  typedef _Atomic(FirstBlockAtomicBase *) FirstBlockAtomicPointerAlias;\n" +
+    "  typedef _Atomic(FirstBlockAtomicBase * const *) FirstBlockAtomicQualifiedAlias;\n" +
     "  typedef int FirstBlockAtomicShadow;\n" +
     "  typedef int FirstBlockAtomicPointerShadow;\n" +
+    "  typedef int FirstBlockAtomicQualifiedShadow;\n" +
     "  typedef FirstBlockBase *FirstBlockPointer;\n" +
     "  typedef FirstBlockBase (*FirstBlockCallback)(void);\n" +
     "  typedef FirstBlockBase FirstBlockShadow;\n" +
@@ -2225,7 +2231,7 @@ const sameTypedefDeclaratorHoverSource = {
     "  typedef int InternalBlockShadow;\n" +
     "  typedef int BlockAlias, BlockArray[sizeof(BlockAlias)];\n" +
     "  typedef int BlockParameter, (*BlockCallback)(BlockParameter);\n" +
-    "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
+    "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
     "}\n" +
@@ -2302,6 +2308,16 @@ const sameTypedefDeclaratorCases = [
     "FirstFileAtomicBase", "FirstFileAtomicPointerSpliceAlias", 0, false],
   ["typedef _Atomic(FirstBlockAtomicBase *) FirstBlockAtomicPointerAlias",
     "FirstBlockAtomicBase", "FirstBlockAtomicPointerAlias", 1, false],
+  ["typedef _Atomic(FirstFileAtomicBase * const *) FirstFileAtomicInnerConstAlias",
+    "FirstFileAtomicBase", "FirstFileAtomicInnerConstAlias", 0, true],
+  ["typedef _Atomic(const FirstFileAtomicBase * volatile *) FirstFileAtomicQualifiedChainAlias",
+    "FirstFileAtomicBase", "FirstFileAtomicQualifiedChainAlias", 0, false],
+  ["typedef _Atomic(FirstFileAtomicBase * restrict * /* qualified gap */) FirstFileAtomicRestrictChainAlias",
+    "FirstFileAtomicBase", "FirstFileAtomicRestrictChainAlias", 0, false],
+  ["typedef _Atomic(FirstFileAtomicBase * const *\\\n) FirstFileAtomicQualifiedSpliceAlias",
+    "FirstFileAtomicBase", "FirstFileAtomicQualifiedSpliceAlias", 0, false],
+  ["typedef _Atomic(FirstBlockAtomicBase * const *) FirstBlockAtomicQualifiedAlias",
+    "FirstBlockAtomicBase", "FirstBlockAtomicQualifiedAlias", 1, false],
 ];
 if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarators") {
   for (const [fragmentText, name, currentDeclarator, scopeDepth,
@@ -2477,6 +2493,8 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "FirstBlockAtomicShadow"],
     ["typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow",
       "FirstBlockAtomicPointerShadow"],
+    ["typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow",
+      "FirstBlockAtomicQualifiedShadow"],
   ]) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
       fragmentText,
