@@ -56,6 +56,7 @@ build scriptのいずれかが更新された場合だけ再生成される。
 | `make test-wasm-language-analysis-simple-call-arguments` | 小型の完全なcall sourceだけを先頭・中間の単純引数、literal・1段の単項／member後続引数、comment/splice、lookup point、宣言名境界、Native parity付きで実行する。 | 後続引数を持つcall operandのhoverが部分解析になる修正時の短い反復確認。 |
 | `make test-wasm-language-analysis-local-bitfield-widths` | 小型の完全なlocal record sourceだけをbit-field幅のblock-local enum、file enum、macro、shadowing、comment/splice、lookup point、宣言名境界、Native parity付きで実行する。 | local struct/unionのbit-field幅hover修正時の短い反復確認。 |
 | `make test-wasm-language-analysis-local-member-array-bounds` | 小型の完全なlocal record sourceだけをmember配列境界のblock-local enum、file enum、macro、shadowing、comment/splice、lookup point、宣言名境界、Native parity付きで実行する。 | local struct/unionのmember配列境界hover修正時の短い反復確認。 |
+| `make test-wasm-language-analysis-local-record-static-asserts` | 小型の完全なlocal record sourceだけをmember `_Static_assert` のblock-local enum、file enum、macro、shadowing、comment/splice、lookup point、宣言名境界、Native parity付きで実行する。 | local struct/unionのmember static assertion hover修正時の短い反復確認。 |
 | `make test-wasm-linker-selfhost` | wasm 化したリンカーの JS API smoke。 | wasm linker API 修正時。 |
 | `make test-wasm-js-pipeline` | wasm 化したコンパイラの `compileObject()` と wasm 化したリンカーの `link()` を JS 上で直結する smoke。 | browser 上の compile+link 経路修正時。 |
 | `make test-wasm-js-e2e` | `test_e2e.c` 登録 fixture を、wasm 化したコンパイラと wasm 化したリンカーで linked wasm にして実行。 | selfhost compile+link 経路の広い確認。 |

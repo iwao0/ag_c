@@ -1166,7 +1166,8 @@ typedef enum {
 } ag_language_recovery_flags_t;
 
 static char analysis_last_significant_between(
-    const char *source, size_t start, size_t end, int enable_trigraphs) {
+    const char *source, size_t start, size_t end, int enable_trigraphs,
+    size_t *last_offset) {
   int line_comment = 0;
   int block_comment = 0;
   int quote = 0;
@@ -1174,6 +1175,7 @@ static char analysis_last_significant_between(
   int at_line_start = 0;
   int preprocessor_line = 0;
   char last = 0;
+  if (last_offset) *last_offset = SIZE_MAX;
   for (size_t i = start; i < end; i++) {
     size_t splice_size = analysis_line_splice_size_mode(
         source, end, i, enable_trigraphs);
@@ -1218,6 +1220,7 @@ static char analysis_last_significant_between(
       quote = c;
       at_line_start = 0;
       last = 'x';
+      if (last_offset) *last_offset = i;
       continue;
     }
     if (c == '\n') {
@@ -1230,8 +1233,26 @@ static char analysis_last_significant_between(
     at_line_start = 0;
     if (preprocessor_line || isspace((unsigned char)c)) continue;
     last = c;
+    if (last_offset) *last_offset = i;
   }
   return last;
+}
+
+static int analysis_identifier_before_offset_matches(
+    const char *source, size_t length, size_t start, size_t end,
+    int enable_trigraphs, const char *name) {
+  size_t identifier_offset = SIZE_MAX;
+  analysis_last_significant_between(
+      source, start, end, enable_trigraphs, &identifier_offset);
+  analysis_identifier_span_t identifier = {0};
+  size_t name_length = strlen(name);
+  return identifier_offset != SIZE_MAX &&
+         analysis_identifier_span_at_mode(
+             source, length, identifier_offset, enable_trigraphs,
+             &identifier) &&
+         analysis_identifier_span_matches(
+             source, length, &identifier, enable_trigraphs,
+             name, name_length);
 }
 
 static char *build_record_member_recovery_source(
@@ -1262,8 +1283,16 @@ static char *build_record_member_recovery_source(
       record_open >= name_start ||
       !analysis_source_delimiters_are_balanced(source, length))
     return NULL;
+  size_t prefix_last_offset = SIZE_MAX;
   char prefix_last = analysis_last_significant_between(
-      source, record_open + 1, name_start, enable_trigraphs);
+      source, record_open + 1, name_start, enable_trigraphs,
+      &prefix_last_offset);
+  if (source[after_name] == ',' && prefix_last == '(' &&
+      prefix_last_offset != SIZE_MAX &&
+      analysis_identifier_before_offset_matches(
+          source, length, record_open + 1, prefix_last_offset,
+          enable_trigraphs, "_Static_assert"))
+    return NULL;
   const char *record_operand_tail = NULL;
   size_t record_operand_tail_length = 0;
   size_t operand_source_consumed = 0;

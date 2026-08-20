@@ -629,6 +629,33 @@ static const char local_member_array_bound_hover_source[] =
     "         (int)sizeof(local_member_anonymous) + member_bound_after_local;\n"
     "}\n"
     "int member_bound_after_file;\n";
+static const char local_record_static_assert_hover_source[] =
+    "typedef int FileRecordAssertType;\n"
+    "enum FileRecordAssertConstants { FILE_RECORD_ASSERT = 1, SHADOW_RECORD_ASSERT = 2 };\n"
+    "#define RECORD_ASSERT_MACRO 1\n"
+    "int local_record_static_assert_hover(void) {\n"
+    "  typedef int LocalRecordAssertType;\n"
+    "  enum LocalRecordAssertConstants { LOCAL_RECORD_ASSERT = 1, SHADOW_RECORD_ASSERT = 3 };\n"
+    "  struct LocalRecordAssertNamed { _Static_assert(LOCAL_RECORD_ASSERT, \"named\"); int value; };\n"
+    "  union LocalRecordAssertUnion { _Static_assert(LOCAL_RECORD_ASSERT, \"union\"); int value; };\n"
+    "  struct { _Static_assert(LOCAL_RECORD_ASSERT, \"anonymous\"); int value; } local_record_assert_anonymous;\n"
+    "  { struct LocalRecordAssertNested { _Static_assert(LOCAL_RECORD_ASSERT, \"nested\"); int value; }; }\n"
+    "  struct LocalRecordAssertFile { _Static_assert(FILE_RECORD_ASSERT, \"file\"); int value; };\n"
+    "  struct LocalRecordAssertMacro { _Static_assert(RECORD_ASSERT_MACRO, \"macro\"); int value; };\n"
+    "  struct LocalRecordAssertComment { _Static_assert(/* operand */ LOCAL_RECORD_ASSERT, \"comment\"); int value; };\n"
+    "  struct LocalRecordAssertKeywordComment { _Static_assert /* gap */ (LOCAL_RECORD_ASSERT, \"keyword\"); int value; };\n"
+    "  struct LocalRecordAssertLf { _Static_assert(\\\nLOCAL_RECORD_ASSERT, \"LF splice\"); int value; };\n"
+    "  struct LocalRecordAssertCrlf { _Static_assert(\\\r\nLOCAL_RECORD_ASSERT, \"CRLF splice\"); int value; };\r\n"
+    "  struct LocalRecordAssertShadow { _Static_assert(SHADOW_RECORD_ASSERT, \"shadow\"); int value; };\n"
+    "  struct LocalRecordAssertType { _Static_assert(sizeof(LocalRecordAssertType) == sizeof(int), \"type\"); int value; };\n"
+    "  enum { RECORD_ASSERT_AFTER = 4 };\n"
+    "  int record_assert_after_local;\n"
+    "  return (int)sizeof(struct LocalRecordAssertNamed) +\n"
+    "         (int)sizeof(union LocalRecordAssertUnion) +\n"
+    "         (int)sizeof(local_record_assert_anonymous) +\n"
+    "         record_assert_after_local;\n"
+    "}\n"
+    "int record_assert_after_file;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -3368,6 +3395,20 @@ static int print_local_member_array_bound_hover_parity_snapshot(
   return print_macro_definition_source_snapshot(
       "local-member-array-bound-hover.c",
       local_member_array_bound_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_local_record_static_assert_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(local_record_static_assert_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "local-record-static-assert-hover.c",
+      local_record_static_assert_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -11092,6 +11133,142 @@ static int test_local_member_array_bound_hover(ag_target_info_t target) {
   return 0;
 }
 
+static int test_local_record_static_assert_hover(ag_target_info_t target) {
+  static const struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+    const char *constant_value;
+    const char *macro_replacement;
+  } cases[] = {
+      {"LocalRecordAssertNamed { _Static_assert(LOCAL_RECORD_ASSERT",
+       "LOCAL_RECORD_ASSERT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "1",
+       NULL},
+      {"LocalRecordAssertUnion { _Static_assert(LOCAL_RECORD_ASSERT",
+       "LOCAL_RECORD_ASSERT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "1",
+       NULL},
+      {"struct { _Static_assert(LOCAL_RECORD_ASSERT",
+       "LOCAL_RECORD_ASSERT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "1",
+       NULL},
+      {"LocalRecordAssertNested { _Static_assert(LOCAL_RECORD_ASSERT",
+       "LOCAL_RECORD_ASSERT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "1",
+       NULL},
+      {"LocalRecordAssertFile { _Static_assert(FILE_RECORD_ASSERT",
+       "FILE_RECORD_ASSERT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "1",
+       NULL},
+      {"LocalRecordAssertMacro { _Static_assert(RECORD_ASSERT_MACRO",
+       "RECORD_ASSERT_MACRO", AG_LANGUAGE_SYMBOL_MACRO, NULL, NULL, "1"},
+      {"_Static_assert(/* operand */ LOCAL_RECORD_ASSERT",
+       "LOCAL_RECORD_ASSERT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "1",
+       NULL},
+      {"_Static_assert /* gap */ (LOCAL_RECORD_ASSERT",
+       "LOCAL_RECORD_ASSERT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "1",
+       NULL},
+      {"LocalRecordAssertLf { _Static_assert(\\\nLOCAL_RECORD_ASSERT",
+       "LOCAL_RECORD_ASSERT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "1",
+       NULL},
+      {"LocalRecordAssertCrlf { _Static_assert(\\\r\nLOCAL_RECORD_ASSERT",
+       "LOCAL_RECORD_ASSERT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "1",
+       NULL},
+      {"LocalRecordAssertShadow { _Static_assert(SHADOW_RECORD_ASSERT",
+       "SHADOW_RECORD_ASSERT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "enum LocalRecordAssertConstants", "3", NULL},
+      {"sizeof(LocalRecordAssertType", "LocalRecordAssertType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF, NULL, NULL, NULL},
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "local record static assert hover session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          local_record_static_assert_hover_source,
+          cases[case_index].fragment);
+      const char *use = fragment ? strstr(fragment, cases[case_index].name)
+                                 : NULL;
+      const char *declaration_root = cases[case_index].declaration_fragment
+          ? strstr(local_record_static_assert_hover_source,
+                   cases[case_index].declaration_fragment)
+          : local_record_static_assert_hover_source;
+      const char *declaration = declaration_root
+          ? strstr(declaration_root, cases[case_index].name)
+          : NULL;
+      CHECK(use && declaration, "local record static assert hover anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]);
+           delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "local record static assert hover fresh session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "local-record-static-assert-hover.c",
+                  local_record_static_assert_hover_source,
+                  (size_t)(use - local_record_static_assert_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "local record static assert hover analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover && completion &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "local-record-static-assert-hover.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            local_record_static_assert_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            local_record_static_assert_hover_source) +
+                          (int)name_length &&
+                  same_range(&hover->declaration,
+                             &completion->declaration) &&
+                  !find_symbol(&snapshot, "RECORD_ASSERT_AFTER",
+                               AG_LANGUAGE_SYMBOL_ENUM_CONSTANT) &&
+                  !find_symbol(&snapshot, "record_assert_after_local",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "record_assert_after_file",
+                               AG_LANGUAGE_SYMBOL_OBJECT),
+              "local record static assert hover snapshot");
+        if (cases[case_index].constant_value)
+          CHECK(hover->constant_value && completion->constant_value &&
+                    strcmp(hover->constant_value,
+                           cases[case_index].constant_value) == 0 &&
+                    strcmp(completion->constant_value,
+                           cases[case_index].constant_value) == 0,
+                "local record static assert constant value");
+        if (cases[case_index].macro_replacement)
+          CHECK(hover->macro_replacement &&
+                    completion->macro_replacement &&
+                    strcmp(hover->macro_replacement,
+                           cases[case_index].macro_replacement) == 0 &&
+                    strcmp(completion->macro_replacement,
+                           cases[case_index].macro_replacement) == 0,
+                "local record static assert macro replacement");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -12728,6 +12905,9 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--local-member-array-bound-hover-parity-json") == 0)
     return print_local_member_array_bound_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--local-record-static-assert-hover-parity-json") == 0)
+    return print_local_record_static_assert_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -12897,6 +13077,8 @@ int main(int argc, char **argv) {
         "local bitfield width hover scenarios");
   CHECK(test_local_member_array_bound_hover(target) == 0,
         "local member array bound hover scenarios");
+  CHECK(test_local_record_static_assert_hover(target) == 0,
+        "local record static assert hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -15997,6 +16179,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (69 scenarios)");
+  puts("language analysis tests passed (70 scenarios)");
   return 0;
 }

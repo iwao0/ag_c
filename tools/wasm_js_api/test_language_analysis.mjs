@@ -1769,6 +1769,180 @@ if (languageAnalysisFocus === "local-member-array-bounds") {
   process.exit(0);
 }
 
+const localRecordStaticAssertSource = {
+  name: "local-record-static-assert-hover.c",
+  source: "typedef int FileRecordAssertType;\n" +
+    "enum FileRecordAssertConstants { FILE_RECORD_ASSERT = 1, SHADOW_RECORD_ASSERT = 2 };\n" +
+    "#define RECORD_ASSERT_MACRO 1\n" +
+    "int local_record_static_assert_hover(void) {\n" +
+    "  typedef int LocalRecordAssertType;\n" +
+    "  enum LocalRecordAssertConstants { LOCAL_RECORD_ASSERT = 1, SHADOW_RECORD_ASSERT = 3 };\n" +
+    "  struct LocalRecordAssertNamed { _Static_assert(LOCAL_RECORD_ASSERT, \"named\"); int value; };\n" +
+    "  union LocalRecordAssertUnion { _Static_assert(LOCAL_RECORD_ASSERT, \"union\"); int value; };\n" +
+    "  struct { _Static_assert(LOCAL_RECORD_ASSERT, \"anonymous\"); int value; } local_record_assert_anonymous;\n" +
+    "  { struct LocalRecordAssertNested { _Static_assert(LOCAL_RECORD_ASSERT, \"nested\"); int value; }; }\n" +
+    "  struct LocalRecordAssertFile { _Static_assert(FILE_RECORD_ASSERT, \"file\"); int value; };\n" +
+    "  struct LocalRecordAssertMacro { _Static_assert(RECORD_ASSERT_MACRO, \"macro\"); int value; };\n" +
+    "  struct LocalRecordAssertComment { _Static_assert(/* operand */ LOCAL_RECORD_ASSERT, \"comment\"); int value; };\n" +
+    "  struct LocalRecordAssertKeywordComment { _Static_assert /* gap */ (LOCAL_RECORD_ASSERT, \"keyword\"); int value; };\n" +
+    "  struct LocalRecordAssertLf { _Static_assert(\\\nLOCAL_RECORD_ASSERT, \"LF splice\"); int value; };\n" +
+    "  struct LocalRecordAssertCrlf { _Static_assert(\\\r\nLOCAL_RECORD_ASSERT, \"CRLF splice\"); int value; };\r\n" +
+    "  struct LocalRecordAssertShadow { _Static_assert(SHADOW_RECORD_ASSERT, \"shadow\"); int value; };\n" +
+    "  struct LocalRecordAssertType { _Static_assert(sizeof(LocalRecordAssertType) == sizeof(int), \"type\"); int value; };\n" +
+    "  enum { RECORD_ASSERT_AFTER = 4 };\n" +
+    "  int record_assert_after_local;\n" +
+    "  return (int)sizeof(struct LocalRecordAssertNamed) +\n" +
+    "         (int)sizeof(union LocalRecordAssertUnion) +\n" +
+    "         (int)sizeof(local_record_assert_anonymous) +\n" +
+    "         record_assert_after_local;\n" +
+    "}\n" +
+    "int record_assert_after_file;\n",
+};
+const localRecordStaticAssertCases = [
+  {
+    fragment: "LocalRecordAssertNamed { _Static_assert(LOCAL_RECORD_ASSERT",
+    name: "LOCAL_RECORD_ASSERT", kind: "enumConstant",
+    constantValue: "1", checkBoundaries: true,
+  },
+  {
+    fragment: "LocalRecordAssertUnion { _Static_assert(LOCAL_RECORD_ASSERT",
+    name: "LOCAL_RECORD_ASSERT", kind: "enumConstant",
+    constantValue: "1", checkBoundaries: true,
+  },
+  {
+    fragment: "struct { _Static_assert(LOCAL_RECORD_ASSERT",
+    name: "LOCAL_RECORD_ASSERT", kind: "enumConstant", constantValue: "1",
+  },
+  {
+    fragment: "LocalRecordAssertNested { _Static_assert(LOCAL_RECORD_ASSERT",
+    name: "LOCAL_RECORD_ASSERT", kind: "enumConstant", constantValue: "1",
+  },
+  {
+    fragment: "LocalRecordAssertFile { _Static_assert(FILE_RECORD_ASSERT",
+    name: "FILE_RECORD_ASSERT", kind: "enumConstant",
+    constantValue: "1", checkBoundaries: true,
+  },
+  {
+    fragment: "LocalRecordAssertMacro { _Static_assert(RECORD_ASSERT_MACRO",
+    name: "RECORD_ASSERT_MACRO", kind: "macro",
+    macroReplacement: "1", checkBoundaries: true,
+  },
+  {
+    fragment: "_Static_assert(/* operand */ LOCAL_RECORD_ASSERT",
+    name: "LOCAL_RECORD_ASSERT", kind: "enumConstant", constantValue: "1",
+  },
+  {
+    fragment: "_Static_assert /* gap */ (LOCAL_RECORD_ASSERT",
+    name: "LOCAL_RECORD_ASSERT", kind: "enumConstant", constantValue: "1",
+  },
+  {
+    fragment: "LocalRecordAssertLf { _Static_assert(\\\nLOCAL_RECORD_ASSERT",
+    name: "LOCAL_RECORD_ASSERT", kind: "enumConstant", constantValue: "1",
+  },
+  {
+    fragment: "LocalRecordAssertCrlf { _Static_assert(\\\r\nLOCAL_RECORD_ASSERT",
+    name: "LOCAL_RECORD_ASSERT", kind: "enumConstant", constantValue: "1",
+  },
+  {
+    fragment: "LocalRecordAssertShadow { _Static_assert(SHADOW_RECORD_ASSERT",
+    name: "SHADOW_RECORD_ASSERT", kind: "enumConstant",
+    declarationFragment: "enum LocalRecordAssertConstants",
+    constantValue: "3", checkBoundaries: true,
+  },
+  {
+    fragment: "sizeof(LocalRecordAssertType",
+    name: "LocalRecordAssertType", kind: "typedef",
+  },
+];
+if (!languageAnalysisFocus ||
+    languageAnalysisFocus === "local-record-static-asserts") {
+  for (const assertCase of localRecordStaticAssertCases) {
+    const fragmentIndex = localRecordStaticAssertSource.source.indexOf(
+      assertCase.fragment,
+    );
+    const useIndex = localRecordStaticAssertSource.source.indexOf(
+      assertCase.name, fragmentIndex,
+    );
+    const declarationRoot = assertCase.declarationFragment
+      ? localRecordStaticAssertSource.source.indexOf(
+        assertCase.declarationFragment,
+      )
+      : 0;
+    const declarationIndex = localRecordStaticAssertSource.source.indexOf(
+      assertCase.name, declarationRoot,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${assertCase.name} local record static assert anchor`);
+    const nameBytes = Buffer.byteLength(assertCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = assertCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        localRecordStaticAssertSource.source.slice(0, useIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(localRecordStaticAssertSource, {
+        cursor: {
+          sourceName: localRecordStaticAssertSource.name, byteOffset,
+        },
+      });
+      const completion = symbol(
+        wasmResult, assertCase.name, assertCase.kind,
+      );
+      assert.equal(wasmResult.partial, false,
+        `${assertCase.name} local record static assert partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${assertCase.name} local record static assert diagnostics`);
+      assert.equal(wasmResult.hover?.name, assertCase.name,
+        `${assertCase.name} local record static assert hover name`);
+      assert.equal(wasmResult.hover?.kind, assertCase.kind,
+        `${assertCase.name} local record static assert hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        localRecordStaticAssertSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.deepStrictEqual(wasmResult.hover.declaration,
+        completion?.declaration,
+        `${assertCase.name} local record static assert completion range`);
+      if (assertCase.constantValue) {
+        assert.equal(wasmResult.hover.initializer?.constantValue,
+          assertCase.constantValue);
+        assert.equal(completion?.initializer?.constantValue,
+          assertCase.constantValue);
+      }
+      if (assertCase.macroReplacement) {
+        assert.equal(wasmResult.hover.macro?.replacement,
+          assertCase.macroReplacement);
+        assert.equal(completion?.macro?.replacement,
+          assertCase.macroReplacement);
+      }
+      assert.equal(symbol(
+        wasmResult, "RECORD_ASSERT_AFTER", "enumConstant",
+      ), undefined, `${assertCase.name} later enum hidden`);
+      assert.equal(symbol(
+        wasmResult, "record_assert_after_local", "object",
+      ), undefined, `${assertCase.name} later local object hidden`);
+      assert.equal(symbol(
+        wasmResult, "record_assert_after_file", "object",
+      ), undefined, `${assertCase.name} later file object hidden`);
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--local-record-static-assert-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${assertCase.name} record static assert differ`);
+    }
+  }
+  reportTestTiming("local record static assertions");
+}
+if (languageAnalysisFocus === "local-record-static-asserts") {
+  compiler.dispose();
+  console.log("wasm language analysis local record static assert tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",
