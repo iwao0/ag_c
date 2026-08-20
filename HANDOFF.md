@@ -37316,3 +37316,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 両pointerへの修飾、`_Atomic`付き2段pointer、3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - Clang strictとag_c本体が受理する`extern T (* const * volatile T);`と`extern T (* volatile * const T);`は専用回復に一致せずE3088・`partial:true`を残す。次は2段pointerの各段にCV qualifierを1個ずつ置く浅い2形を扱えるか調べる。
+
+### このセッション（続き1257）: parenthesized block extern同名objectの2段pointer各段に単一CVを回復した
+- 対象選定:
+  - 続き1256の浅い次候補を、`const/const`、`const/volatile`、`volatile/const`、`volatile/volatile`の4組合せとcomment、LF spliceの6形で確認した。Clang C11 strictとag_c本体はすべて受理したが、language analysisはE3088・`partial:true`を残していた。
+  - 括弧1組・pointer 2個・同名identifier・`;`直結と既存lookup経路は再探索せず、各pointerに`const`または`volatile`をちょうど1個ずつ置く形へ限定した。いずれかに`restrict`を含む両段修飾、同じpointer内の複数修飾、`_Atomic`、3段以上、suffix付き複合宣言子、深い式、security監査系には広げていない。
+- 変更:
+  - `build_file_typedef_block_extern_type_recovery_source`で2個目のpointerに付いたqualifier数を別に追跡する。2個目の`*`より前後に1個ずつ修飾子がある場合は、両方がCV qualifierのときだけ許し、2段目の2個目、`restrict`との両段複合、`_Atomic`は一致させない。
+  - 両段単一CV付き2段pointerは既存retained declaration経路で現在宣言の意味確認とlookup-point巻き戻しを共有する。
+  - same-typedef Native/Wasm共通fixtureへ4組合せ、comment、LF spliceの6形を統合した。全52形の中央cursor Native/Wasm parity、Native側の全形の名前端点・shared/fresh session、13カテゴリ代表のWasm名前端点・第2compiler instanceを維持した。
+  - 同一block typedefを両段単一CV付き2段pointerのparenthesized `extern`で再利用する不正shadowも追加し、E3088・partialとNative/Wasm snapshot一致を維持した。
+- テスト時間:
+  - 最適化済み`make test-wasm-language-analysis-same-typedef-declarators`へ統合した。全52形の中央cursorと13カテゴリ代表を含む焦点gateは、内部計測**25.71秒**、**real 25.88秒 / user 26.09秒 / sys 0.53秒**で成功した。
+  - prototype bound、declarator array bound、local member array boundの隣接3 targetだけを`make -j3`で並列実行し、**real 6.73秒 / user 9.73秒 / sys 0.69秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 7.53秒 / user 6.03秒 / sys 1.49秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.47秒 / user 42.68秒 / sys 1.16秒**。更新後の焦点Wasm gateで両段単一CV 6形とshadow境界を確認した。
+  - 小型Wasm probeではCVの4組合せだけがdiagnostics空・`partial:false`になり、同じpointer内の複数CV、CVと`restrict`の両段複合、`_Atomic`付き2段pointer、3段pointerはE3088・partialのままだった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.38秒 / user 3.06秒 / sys 0.24秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.30秒 / user 0.77秒 / sys 0.47秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 25.88秒のNative parity付き焦点gateで同じJS本体を確認できるため、1354秒規模の`make test-wasm-js-api`は実行しない。code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eも反復しない。
+  - いずれかに`restrict`を含む両段修飾、同じpointer内の複数修飾、`_Atomic`付き2段pointer、3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - Clang strictとag_c本体が受理する`extern T (* const * restrict T);`と`extern T (* restrict * const T);`は小型Wasm probeでE3088・`partial:true`を残す。次は両pointerにqualifierを1個ずつ置き、その一方だけが`restrict`の浅い2形を扱えるか調べる。
