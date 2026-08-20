@@ -2978,6 +2978,8 @@ typedef struct {
   size_t for_separator_count;
   int is_do_body;
   int is_static_assert;
+  int is_offsetof_call;
+  int offsetof_has_comma;
   int is_generic_selection;
   size_t generic_separator_count;
   size_t generic_association_start;
@@ -3550,6 +3552,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
   int previous_token_is_for = 0;
   int previous_token_is_do = 0;
   int previous_token_is_static_assert = 0;
+  int previous_token_is_offsetof = 0;
   int previous_token_is_generic = 0;
   int previous_token_requires_type_name = 0;
   int previous_token_is_sizeof = 0;
@@ -3613,6 +3616,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       previous_token_is_for = 0;
       previous_token_is_do = 0;
       previous_token_is_static_assert = 0;
+      previous_token_is_offsetof = 0;
       previous_token_is_generic = 0;
       previous_token_requires_type_name = 0;
       previous_token_is_sizeof = 0;
@@ -3641,6 +3645,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     int opens_for_control = 0;
     int opens_do_body = 0;
     int opens_static_assert = 0;
+    int opens_offsetof = 0;
     int opens_generic_selection = 0;
     int opens_type_name_context = 0;
     int opens_sizeof_context = 0;
@@ -3663,6 +3668,12 @@ static char *build_recovery_source(const char *source, size_t source_length,
             identifier_end - i == strlen("_Static_assert") &&
             memcmp(result + i, "_Static_assert",
                    strlen("_Static_assert")) == 0;
+        previous_token_is_offsetof =
+            (identifier_end - i == strlen("__builtin_offsetof") &&
+             memcmp(result + i, "__builtin_offsetof",
+                    strlen("__builtin_offsetof")) == 0) ||
+            (identifier_end - i == strlen("offsetof") &&
+             memcmp(result + i, "offsetof", strlen("offsetof")) == 0);
         previous_token_is_generic =
             identifier_end - i == strlen("_Generic") &&
             memcmp(result + i, "_Generic", strlen("_Generic")) == 0;
@@ -3704,6 +3715,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
         int identifier_is_expression_prefix_keyword =
             previous_token_is_for || previous_token_is_do ||
             previous_token_is_static_assert ||
+            previous_token_is_offsetof ||
             previous_token_is_generic ||
             previous_token_requires_type_name ||
             previous_token_requires_expression;
@@ -3738,6 +3750,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       opens_for_control = c == '(' && previous_token_is_for;
       opens_do_body = c == '{' && previous_token_is_do;
       opens_static_assert = c == '(' && previous_token_is_static_assert;
+      opens_offsetof = c == '(' && previous_token_is_offsetof;
       opens_generic_selection = c == '(' && previous_token_is_generic;
       opens_type_name_context =
           c == '(' && previous_token_requires_type_name;
@@ -3755,6 +3768,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       previous_token_is_for = 0;
       previous_token_is_do = 0;
       previous_token_is_static_assert = 0;
+      previous_token_is_offsetof = 0;
       previous_token_is_generic = 0;
       previous_token_requires_type_name = 0;
       previous_token_is_sizeof = 0;
@@ -3772,6 +3786,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
           .for_separator_count = 0,
           .is_do_body = opens_do_body,
           .is_static_assert = opens_static_assert,
+          .is_offsetof_call = opens_offsetof,
+          .offsetof_has_comma = 0,
           .is_generic_selection = opens_generic_selection,
           .generic_separator_count = 0,
           .generic_association_start = i + 1,
@@ -3815,6 +3831,9 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (c == ';' &&
         (stack_count == 0 || stack[stack_count - 1].open == '{'))
       simple_do_statement_active = 0;
+    if (c == ',' && stack_count > 0 &&
+        stack[stack_count - 1].is_offsetof_call)
+      stack[stack_count - 1].offsetof_has_comma = 1;
     size_t *pending_conditional_count =
         stack_count > 0
             ? &stack[stack_count - 1].pending_conditional_count
@@ -3930,6 +3949,24 @@ static char *build_recovery_source(const char *source, size_t source_length,
       break;
     }
   }
+  size_t complete_offsetof_frame = SIZE_MAX;
+  size_t complete_offsetof_end = 0;
+  if (has_complete_identifier) {
+    for (size_t i = stack_count; i > 0; i--) {
+      if (!stack[i - 1].is_offsetof_call ||
+          stack[i - 1].offsetof_has_comma)
+        continue;
+      size_t close = 0;
+      if (!analysis_delimited_tail_end_mode(
+              source, source_length, stack[i - 1].open_offset + 1,
+              ')', 1, enable_trigraphs, &close) ||
+          cursor_identifier.end > close)
+        break;
+      complete_offsetof_frame = i - 1;
+      complete_offsetof_end = close;
+      break;
+    }
+  }
   analysis_type_name_array_bound_tail_t type_name_array_bound_tail = {0};
   if (has_complete_identifier)
     type_name_array_bound_tail =
@@ -3997,6 +4034,13 @@ static char *build_recovery_source(const char *source, size_t source_length,
         stack[outer_brace_count++] = stack[i];
     stack_count = outer_brace_count;
     last_significant = ';';
+  } else if (complete_offsetof_frame != SIZE_MAX) {
+    APPEND_BYTES(
+        source + cursor_identifier.start,
+        complete_offsetof_end + 1 - cursor_identifier.start);
+    recovery_tail_consumed = complete_offsetof_end + 1;
+    stack_count = complete_offsetof_frame;
+    last_significant = ')';
   } else if (type_name_array_bound_tail.kind !=
       ANALYSIS_TYPE_NAME_ARRAY_BOUND_NONE) {
     APPEND_BYTES(

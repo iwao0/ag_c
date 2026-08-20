@@ -36210,3 +36210,41 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 今回greenだった21 statement文脈は再探索せず、通常サイズの完全sourceで未固定のinitializerまたはtype-query lookup境界を小型probeから探す。
     開発中はNative約6秒と0.6秒の`do`焦点gateを使い、全Wasm integrationは次の関連batch末尾まで繰り返さない。
+
+### このセッション（続き1220）: `offsetof`第1型引数のhoverを回復した
+- 対象選定:
+  - 通常サイズの完全なvalid Cでinitializer・type queryを含む26の浅い文脈を小型Wasm probeで確認し、22形はgreenだった。
+    `__builtin_offsetof(struct QueryRecord, member)`のtag名と`__builtin_offsetof(QueryType, member)`のtypedef名はE3064「型名が必要」になった。
+  - 残る2形はlocal compound literalの型名とcopy initializer operandで、正しいhoverを返す一方`partial:true`と
+    `AGC_PARTIAL_SEMANTIC rejection 38`が残る別のinitializer回復問題だったため、今回の修正へ混ぜなかった。標準`offsetof` macroも追加確認した。
+- 原因:
+  - cursorで第1型引数の識別子を除いた汎用recoveryが`offsetof`を通常call同様に扱い、仮の式operandを入れていた。そのためbuiltin parserへ
+    record/union型でない第1引数を渡し、完全な元sourceでもE3064になっていた。member引数側の既存semantic hoverには問題がなかった。
+- 変更:
+  - 既存のcomment・quote・preprocessor・LF/CRLF splice対応delimiter scannerで、識別子境界が一致する`__builtin_offsetof`または`offsetof`
+    直後の`(`と、第1top-level commaを通過したかだけをframeへ記録した。
+  - 元sourceに完全な対応`)`があり、cursorが第1引数内にある場合だけ型引数からcall終端までを原文で保持し、その後を現在scopeのmarkerへ閉じる。
+    不完全call、任意macro wrapper、member引数、式評価、再帰探索には広げない。
+  - struct/union tag、typedef、qualified typedef、nested member、標準macro、comment gap、LF/CRLF splice、enum initializer、block-local tag/typedef、
+    外側function argumentの13形を専用sourceへまとめた。後続local/file objectはlookup対象に入れない。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=offsetof-types`と`make test-wasm-language-analysis-offsetof-types`を追加した。全13形の中央と代表5形の
+    名前先頭・末尾、runtime manifest、Native snapshot parityを含む最終実測は**real 0.65秒 / user 0.91秒 / sys 0.15秒**だった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = compile warningなし、
+    **language analysis tests passed (64 scenarios)**。13形すべてを名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.54秒 / user 42.05秒 / sys 0.96秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-offsetof-types` = 成功、
+    **real 0.65秒 / user 0.91秒 / sys 0.15秒**。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 続き1219で全Wasm JS API integrationが1326.18秒で成功した直後の次batch最初の浅い増分なので、同じJS本体の0.65秒焦点gateを使い、
+    `make test-wasm-js-api`は次の関連initializer増分を含むbatch末尾へまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。不完全call、任意macro wrapper、深い式、
+    巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 同じvalid source probeで残ったlocal compound literal型名`(QueryType){...}`とcopy initializer operand`query_copy = query_compound`の
+    `partial:true` / rejection 38を、initializerのlookup pointとrecovery終端だけに限定して切り分ける。開発中はNative約6秒と小型focusを使い、
+    修正後に関連initializer batchの全Wasm integrationを一度だけ実行する。

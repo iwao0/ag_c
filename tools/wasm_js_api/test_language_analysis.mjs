@@ -749,6 +749,149 @@ if (languageAnalysisFocus === "do-body") {
   process.exit(0);
 }
 
+const offsetofTypeHoverSource = {
+  name: "offsetof-type-hover.c",
+  source: "#define offsetof(type, member) __builtin_offsetof(type, member)\n" +
+    "struct OffsetInner { int member; };\n" +
+    "struct OffsetRecord { int member; struct OffsetInner inner; };\n" +
+    "union OffsetUnion { int member; long other; };\n" +
+    "struct OffsetOuter { struct OffsetRecord inner; };\n" +
+    "typedef struct OffsetRecord OffsetType;\n" +
+    "typedef union OffsetUnion OffsetUnionType;\n" +
+    "int offset_builtin_tag = __builtin_offsetof(struct OffsetRecord, member);\n" +
+    "int offset_builtin_typedef = __builtin_offsetof(OffsetType, member);\n" +
+    "int offset_builtin_union = __builtin_offsetof(union OffsetUnion, member);\n" +
+    "int offset_builtin_qualified = __builtin_offsetof(const OffsetType, member);\n" +
+    "int offset_builtin_nested = __builtin_offsetof(struct OffsetOuter, inner.inner.member);\n" +
+    "int offset_macro = offsetof(OffsetType, member);\n" +
+    "int offset_comment = __builtin_offsetof /* gap */ (OffsetType, member);\n" +
+    "int offset_lf = __builtin_offsetof \\\n(OffsetType, member);\n" +
+    "int offset_crlf = __builtin_offsetof \\\r\n(OffsetType, member);\r\n" +
+    "enum { OFFSET_ENUM = __builtin_offsetof(OffsetType, member) };\n" +
+    "int offset_sink(int value);\n" +
+    "int offset_function(void) {\n" +
+    "  typedef struct OffsetLocalRecord { int member; } OffsetLocalType;\n" +
+    "  int offset_local_typedef = __builtin_offsetof(OffsetLocalType, member);\n" +
+    "  int offset_local_tag = __builtin_offsetof(struct OffsetLocalRecord, member);\n" +
+    "  int offset_argument = offset_sink(__builtin_offsetof(OffsetType, member));\n" +
+    "  int offset_after;\n" +
+    "  return offset_local_typedef + offset_local_tag + offset_argument;\n" +
+    "}\n" +
+    "int offset_file_after;\n",
+};
+const offsetofTypeHoverCases = [
+  {
+    fragment: "__builtin_offsetof(struct OffsetRecord",
+    name: "OffsetRecord", kind: "tag", checkBoundaries: true,
+  },
+  {
+    fragment: "__builtin_offsetof(OffsetType",
+    name: "OffsetType", kind: "typedef", checkBoundaries: true,
+  },
+  {
+    fragment: "__builtin_offsetof(union OffsetUnion",
+    name: "OffsetUnion", kind: "tag",
+  },
+  {
+    fragment: "__builtin_offsetof(const OffsetType",
+    name: "OffsetType", kind: "typedef",
+  },
+  {
+    fragment: "__builtin_offsetof(struct OffsetOuter",
+    name: "OffsetOuter", kind: "tag",
+  },
+  {
+    fragment: "int offset_macro = offsetof(OffsetType",
+    name: "OffsetType", kind: "typedef", checkBoundaries: true,
+  },
+  {
+    fragment: "/* gap */ (OffsetType",
+    name: "OffsetType", kind: "typedef",
+  },
+  {
+    fragment: "__builtin_offsetof \\\n(OffsetType",
+    name: "OffsetType", kind: "typedef",
+  },
+  {
+    fragment: "__builtin_offsetof \\\r\n(OffsetType",
+    name: "OffsetType", kind: "typedef",
+  },
+  {
+    fragment: "OFFSET_ENUM = __builtin_offsetof(OffsetType",
+    name: "OffsetType", kind: "typedef",
+  },
+  {
+    fragment: "__builtin_offsetof(OffsetLocalType",
+    name: "OffsetLocalType", kind: "typedef", checkBoundaries: true,
+  },
+  {
+    fragment: "__builtin_offsetof(struct OffsetLocalRecord",
+    name: "OffsetLocalRecord", kind: "tag",
+  },
+  {
+    fragment: "offset_sink(__builtin_offsetof(OffsetType",
+    name: "OffsetType", kind: "typedef", checkBoundaries: true,
+  },
+];
+if (!languageAnalysisFocus || languageAnalysisFocus === "offsetof-types") {
+  for (const offsetCase of offsetofTypeHoverCases) {
+    const fragmentIndex = offsetofTypeHoverSource.source.indexOf(
+      offsetCase.fragment,
+    );
+    const useIndex = offsetofTypeHoverSource.source.indexOf(
+      offsetCase.name, fragmentIndex,
+    );
+    const declarationIndex = offsetofTypeHoverSource.source.indexOf(
+      offsetCase.name,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${offsetCase.name} offsetof type anchor`);
+    const nameBytes = Buffer.byteLength(offsetCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = offsetCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        offsetofTypeHoverSource.source.slice(0, useIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(offsetofTypeHoverSource, {
+        cursor: { sourceName: offsetofTypeHoverSource.name, byteOffset },
+      });
+      assert.equal(wasmResult.partial, false,
+        `${offsetCase.name} offsetof type partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${offsetCase.name} offsetof type diagnostics`);
+      assert.equal(wasmResult.hover?.name, offsetCase.name,
+        `${offsetCase.name} offsetof type hover name`);
+      assert.equal(wasmResult.hover?.kind, offsetCase.kind,
+        `${offsetCase.name} offsetof type hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        offsetofTypeHoverSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.equal(symbol(wasmResult, "offset_after", "object"), undefined,
+        `${offsetCase.name} later local object hidden`);
+      assert.equal(symbol(
+        wasmResult, "offset_file_after", "object",
+      ), undefined, `${offsetCase.name} later file object hidden`);
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--offsetof-type-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${offsetCase.name} offsetof type differ`);
+    }
+  }
+  reportTestTiming("offsetof type hover");
+}
+if (languageAnalysisFocus === "offsetof-types") {
+  compiler.dispose();
+  console.log("wasm language analysis offsetof type tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",

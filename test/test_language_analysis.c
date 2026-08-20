@@ -436,6 +436,34 @@ static const char do_body_hover_source[] =
     "  return do_body_object;\n"
     "}\n"
     "int do_body_file_after;\n";
+static const char offsetof_type_hover_source[] =
+    "#define offsetof(type, member) __builtin_offsetof(type, member)\n"
+    "struct OffsetInner { int member; };\n"
+    "struct OffsetRecord { int member; struct OffsetInner inner; };\n"
+    "union OffsetUnion { int member; long other; };\n"
+    "struct OffsetOuter { struct OffsetRecord inner; };\n"
+    "typedef struct OffsetRecord OffsetType;\n"
+    "typedef union OffsetUnion OffsetUnionType;\n"
+    "int offset_builtin_tag = __builtin_offsetof(struct OffsetRecord, member);\n"
+    "int offset_builtin_typedef = __builtin_offsetof(OffsetType, member);\n"
+    "int offset_builtin_union = __builtin_offsetof(union OffsetUnion, member);\n"
+    "int offset_builtin_qualified = __builtin_offsetof(const OffsetType, member);\n"
+    "int offset_builtin_nested = __builtin_offsetof(struct OffsetOuter, inner.inner.member);\n"
+    "int offset_macro = offsetof(OffsetType, member);\n"
+    "int offset_comment = __builtin_offsetof /* gap */ (OffsetType, member);\n"
+    "int offset_lf = __builtin_offsetof \\\n(OffsetType, member);\n"
+    "int offset_crlf = __builtin_offsetof \\\r\n(OffsetType, member);\r\n"
+    "enum { OFFSET_ENUM = __builtin_offsetof(OffsetType, member) };\n"
+    "int offset_sink(int value);\n"
+    "int offset_function(void) {\n"
+    "  typedef struct OffsetLocalRecord { int member; } OffsetLocalType;\n"
+    "  int offset_local_typedef = __builtin_offsetof(OffsetLocalType, member);\n"
+    "  int offset_local_tag = __builtin_offsetof(struct OffsetLocalRecord, member);\n"
+    "  int offset_argument = offset_sink(__builtin_offsetof(OffsetType, member));\n"
+    "  int offset_after;\n"
+    "  return offset_local_typedef + offset_local_tag + offset_argument;\n"
+    "}\n"
+    "int offset_file_after;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -3092,6 +3120,19 @@ static int print_do_body_hover_parity_snapshot(
     return 1;
   return print_macro_definition_source_snapshot(
       "do-body-hover.c", do_body_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_offsetof_type_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(offsetof_type_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "offsetof-type-hover.c", offsetof_type_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -10123,6 +10164,106 @@ static int test_do_body_hover(ag_target_info_t target) {
   return 0;
 }
 
+static int test_offsetof_type_hover(ag_target_info_t target) {
+  static const struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+  } cases[] = {
+      {"__builtin_offsetof(struct OffsetRecord", "OffsetRecord",
+       AG_LANGUAGE_SYMBOL_TAG},
+      {"__builtin_offsetof(OffsetType", "OffsetType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"__builtin_offsetof(union OffsetUnion", "OffsetUnion",
+       AG_LANGUAGE_SYMBOL_TAG},
+      {"__builtin_offsetof(const OffsetType", "OffsetType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"__builtin_offsetof(struct OffsetOuter", "OffsetOuter",
+       AG_LANGUAGE_SYMBOL_TAG},
+      {"int offset_macro = offsetof(OffsetType", "OffsetType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"/* gap */ (OffsetType", "OffsetType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"__builtin_offsetof \\\n(OffsetType", "OffsetType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"__builtin_offsetof \\\r\n(OffsetType", "OffsetType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"OFFSET_ENUM = __builtin_offsetof(OffsetType", "OffsetType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"__builtin_offsetof(OffsetLocalType", "OffsetLocalType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"__builtin_offsetof(struct OffsetLocalRecord", "OffsetLocalRecord",
+       AG_LANGUAGE_SYMBOL_TAG},
+      {"offset_sink(__builtin_offsetof(OffsetType", "OffsetType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF},
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "offsetof type hover session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          offsetof_type_hover_source, cases[case_index].fragment);
+      const char *use = fragment ? strstr(
+          fragment, cases[case_index].name) : NULL;
+      const char *declaration = strstr(
+          offsetof_type_hover_source, cases[case_index].name);
+      CHECK(use && declaration, "offsetof type hover anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]);
+           delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "offsetof type hover fresh session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "offsetof-type-hover.c",
+                  offsetof_type_hover_source,
+                  (size_t)(use - offsetof_type_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "offsetof type hover analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover && completion &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "offsetof-type-hover.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration - offsetof_type_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration - offsetof_type_hover_source) +
+                          (int)name_length &&
+                  same_range(&hover->declaration,
+                             &completion->declaration) &&
+                  !find_symbol(&snapshot, "offset_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "offset_file_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT),
+              "offsetof type hover snapshot");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -11739,6 +11880,9 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--do-body-hover-parity-json") == 0)
     return print_do_body_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--offsetof-type-hover-parity-json") == 0)
+    return print_offsetof_type_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -11896,6 +12040,8 @@ int main(int argc, char **argv) {
         "block static assert hover scenarios");
   CHECK(test_do_body_hover(target) == 0,
         "do body hover scenarios");
+  CHECK(test_offsetof_type_hover(target) == 0,
+        "offsetof type hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -14996,6 +15142,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (63 scenarios)");
+  puts("language analysis tests passed (64 scenarios)");
   return 0;
 }
