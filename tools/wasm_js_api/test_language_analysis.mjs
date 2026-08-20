@@ -2087,6 +2087,175 @@ if (languageAnalysisFocus === "local-record-static-asserts") {
   process.exit(0);
 }
 
+const declaratorArrayBoundOperandHoverSource = {
+  name: "declarator-array-bound-operand.c",
+  source: "/// declarator array bound macro documentation\n" +
+    "#define DECLARATOR_ARRAY_BOUND_MACRO 4\n" +
+    "enum DeclaratorArrayBoundValue {\n" +
+    "  DECLARATOR_ARRAY_BOUND_ENUM = 3\n" +
+    "};\n" +
+    "typedef int DeclaratorArrayElement;\n" +
+    "int declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO], declarator_array_bound_later;\n" +
+    "DeclaratorArrayElement declarator_array_bound_typedef[DECLARATOR_ARRAY_BOUND_MACRO];\n" +
+    "int declarator_array_bound_enum[DECLARATOR_ARRAY_BOUND_ENUM];\n" +
+    "struct DeclaratorArrayBoundRecord {\n" +
+    "  int member[DECLARATOR_ARRAY_BOUND_ENUM];\n" +
+    "  int later_member;\n" +
+    "};\n" +
+    "static int declarator_array_bound_block(int bound_parameter) {\n" +
+    "  int bound_before = bound_parameter;\n" +
+    "  int local_values[bound_parameter];\n" +
+    "  int declarator_same_count = 4, declarator_same_values[declarator_same_count], declarator_same_later;\n" +
+    "  DeclaratorArrayElement declarator_typedef_count = 4, declarator_typedef_values[declarator_typedef_count], declarator_typedef_later;\n" +
+    "  { int declarator_nested_prior = 4; int declarator_nested_values[declarator_nested_prior]; int declarator_nested_after; }\n" +
+    "  int bound_after = bound_before;\n" +
+    "  return sizeof(local_values) + sizeof(declarator_same_values) + sizeof(declarator_typedef_values) + bound_after;\n" +
+    "}\n" +
+    "static int declarator_array_bound_for(void) {\n" +
+    "  for (int declarator_for_count = 4, (*declarator_for_values)[declarator_for_count] = 0; declarator_for_values; ) { break; }\n" +
+    "  int declarator_for_after;\n" +
+    "  return 0;\n" +
+    "}\n" +
+    "static int declarator_array_bound_subscript(int subscript_index) {\n" +
+    "  return declarator_array_bound_file[subscript_index];\n" +
+    "}\n",
+};
+const declaratorArrayBoundOperandCases = [
+  ["declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO]",
+    "DECLARATOR_ARRAY_BOUND_MACRO", "macro", 1, false],
+  ["declarator_array_bound_typedef[DECLARATOR_ARRAY_BOUND_MACRO]",
+    "DECLARATOR_ARRAY_BOUND_MACRO", "macro", 0, false],
+  ["declarator_array_bound_enum[DECLARATOR_ARRAY_BOUND_ENUM]",
+    "DECLARATOR_ARRAY_BOUND_ENUM", "enumConstant", 0, false],
+  ["member[DECLARATOR_ARRAY_BOUND_ENUM]",
+    "DECLARATOR_ARRAY_BOUND_ENUM", "enumConstant", 0, false],
+  ["local_values[bound_parameter]", "bound_parameter", "parameter", 2,
+    false],
+  ["declarator_same_values[declarator_same_count]",
+    "declarator_same_count", "object", 3, false],
+  ["declarator_nested_values[declarator_nested_prior]",
+    "declarator_nested_prior", "object", 4, true],
+  ["declarator_typedef_values[declarator_typedef_count]",
+    "declarator_typedef_count", "object", 5, true],
+  ["declarator_for_values)[declarator_for_count]",
+    "declarator_for_count", "object", 6, true],
+  ["declarator_array_bound_file[subscript_index]", "subscript_index",
+    "parameter", 0, false],
+];
+if (languageAnalysisFocus === "declarator-array-bounds") {
+  for (const [fragmentText, name, kind, boundaryCase, checkBoundaries] of
+    declaratorArrayBoundOperandCases) {
+    const fragmentIndex = declaratorArrayBoundOperandHoverSource.source.indexOf(
+      fragmentText,
+    );
+    const useIndex = declaratorArrayBoundOperandHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+      `focused declarator array bound anchor missing for ${name}`);
+    const useStart = byteOffsetForIndex(
+      declaratorArrayBoundOperandHoverSource.source, useIndex,
+    );
+    const nameBytes = Buffer.byteLength(name);
+    const deltas = checkBoundaries
+      ? [0, Math.floor(nameBytes / 2), nameBytes]
+      : [Math.floor(nameBytes / 2)];
+    for (const delta of deltas) {
+      const byteOffset = useStart + delta;
+      const result = compiler.analyzeSource(
+        declaratorArrayBoundOperandHoverSource,
+        { cursor: {
+          sourceName: declaratorArrayBoundOperandHoverSource.name,
+          byteOffset,
+        } },
+      );
+      assert.equal(result.partial, false,
+        `${name} focused declarator array bound partial`);
+      assert.deepStrictEqual(result.diagnostics, [],
+        `${name} focused declarator array bound diagnostics`);
+      assert.equal(result.hover?.name, name,
+        `${name} focused declarator array bound hover`);
+      assert.equal(result.hover?.kind, kind,
+        `${name} focused declarator array bound kind`);
+      assert.deepStrictEqual(result.hover?.declaration,
+        symbol(result, name, kind)?.declaration,
+        `${name} focused declarator array bound declaration`);
+      if (boundaryCase === 1)
+        assert.equal(symbol(
+          result, "declarator_array_bound_later", "object",
+        ), undefined, "focused file later declarator hidden");
+      if (boundaryCase === 2)
+        assert.equal(symbol(result, "bound_after", "object"), undefined,
+          "focused block later object hidden");
+      if (boundaryCase === 3) {
+        assert.equal(symbol(
+          result, "declarator_same_later", "object",
+        ), undefined, "focused same declaration later object hidden");
+        assert.equal(symbol(result, "bound_after", "object"), undefined);
+      }
+      if (boundaryCase === 4) {
+        assert.ok(symbol(result, "declarator_same_later", "object"));
+        assert.ok(symbol(result, "declarator_typedef_later", "object"));
+        assert.equal(symbol(
+          result, "declarator_nested_after", "object",
+        ), undefined, "focused nested later object hidden");
+      }
+      if (boundaryCase === 5) {
+        assert.ok(symbol(result, "declarator_same_later", "object"));
+        assert.equal(symbol(
+          result, "declarator_typedef_later", "object",
+        ), undefined, "focused typedef later declarator hidden");
+      }
+      if (boundaryCase === 6)
+        assert.equal(symbol(
+          result, "declarator_for_after", "object",
+        ), undefined, "focused for-init later object hidden");
+      assert.deepStrictEqual(result, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--declarator-array-bound-operand-hover-parity-json",
+          String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm focused declarator bound differ for ${name}`);
+    }
+  }
+  for (const [fragmentText, name, kind] of [
+    ["declarator_typedef_values[declarator_typedef_count]",
+      "declarator_typedef_count", "object"],
+    ["declarator_for_values)[declarator_for_count]",
+      "declarator_for_count", "object"],
+  ]) {
+    const freshCompiler = await createCompiler(wasmModule);
+    try {
+      const fragmentIndex =
+        declaratorArrayBoundOperandHoverSource.source.indexOf(fragmentText);
+      const useIndex = declaratorArrayBoundOperandHoverSource.source.indexOf(
+        name, fragmentIndex,
+      );
+      const byteOffset = byteOffsetForIndex(
+        declaratorArrayBoundOperandHoverSource.source, useIndex,
+      ) + Math.floor(Buffer.byteLength(name) / 2);
+      const result = freshCompiler.analyzeSource(
+        declaratorArrayBoundOperandHoverSource,
+        { cursor: {
+          sourceName: declaratorArrayBoundOperandHoverSource.name,
+          byteOffset,
+        } },
+      );
+      assert.equal(result.partial, false,
+        `${name} fresh declarator array bound partial`);
+      assert.deepStrictEqual(result.diagnostics, [],
+        `${name} fresh declarator array bound diagnostics`);
+      assert.equal(result.hover?.name, name);
+      assert.equal(result.hover?.kind, kind);
+    } finally {
+      freshCompiler.dispose();
+    }
+  }
+  compiler.dispose();
+  console.log("wasm language analysis declarator array bound tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",
@@ -8975,44 +9144,6 @@ assert.equal(reusedTypeNameArrayBoundResult.hover?.name,
   "TYPE_NAME_ARRAY_BOUND_A",
   "type-name array bound compiler was not reusable after invalid source");
 
-const declaratorArrayBoundOperandHoverSource = {
-  name: "declarator-array-bound-operand.c",
-  source: "/// declarator array bound macro documentation\n" +
-    "#define DECLARATOR_ARRAY_BOUND_MACRO 4\n" +
-    "enum DeclaratorArrayBoundValue {\n" +
-    "  DECLARATOR_ARRAY_BOUND_ENUM = 3\n" +
-    "};\n" +
-    "typedef int DeclaratorArrayElement;\n" +
-    "int declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO], declarator_array_bound_later;\n" +
-    "DeclaratorArrayElement declarator_array_bound_typedef[DECLARATOR_ARRAY_BOUND_MACRO];\n" +
-    "int declarator_array_bound_enum[DECLARATOR_ARRAY_BOUND_ENUM];\n" +
-    "struct DeclaratorArrayBoundRecord {\n" +
-    "  int member[DECLARATOR_ARRAY_BOUND_ENUM];\n" +
-    "  int later_member;\n" +
-    "};\n" +
-    "static int declarator_array_bound_block(int bound_parameter) {\n" +
-    "  int bound_before = bound_parameter;\n" +
-    "  int local_values[bound_parameter];\n" +
-    "  int bound_after = bound_before;\n" +
-    "  return sizeof(local_values) + bound_after;\n" +
-    "}\n" +
-    "static int declarator_array_bound_subscript(int subscript_index) {\n" +
-    "  return declarator_array_bound_file[subscript_index];\n" +
-    "}\n",
-};
-const declaratorArrayBoundOperandCases = [
-  ["declarator_array_bound_file[DECLARATOR_ARRAY_BOUND_MACRO]",
-    "DECLARATOR_ARRAY_BOUND_MACRO", "macro", 1],
-  ["declarator_array_bound_typedef[DECLARATOR_ARRAY_BOUND_MACRO]",
-    "DECLARATOR_ARRAY_BOUND_MACRO", "macro", 0],
-  ["declarator_array_bound_enum[DECLARATOR_ARRAY_BOUND_ENUM]",
-    "DECLARATOR_ARRAY_BOUND_ENUM", "enumConstant", 0],
-  ["member[DECLARATOR_ARRAY_BOUND_ENUM]",
-    "DECLARATOR_ARRAY_BOUND_ENUM", "enumConstant", 0],
-  ["local_values[bound_parameter]", "bound_parameter", "parameter", 2],
-  ["declarator_array_bound_file[subscript_index]", "subscript_index",
-    "parameter", 0],
-];
 for (const [fragmentText, name, kind, boundaryCase] of
   declaratorArrayBoundOperandCases) {
   const fragmentIndex = declaratorArrayBoundOperandHoverSource.source.indexOf(

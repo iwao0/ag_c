@@ -2355,6 +2355,8 @@ static int object_declaration_prefix(
 
   int has_type = 0;
   int typedef_candidate_count = 0;
+  int typedef_candidates_before_first_comma = 0;
+  int saw_top_level_comma = 0;
   int has_non_declaration = 0;
   int assignment_after_comma = 0;
   int local_parens = 0;
@@ -2408,11 +2410,16 @@ static int object_declaration_prefix(
           source, word_start, word_length);
       if (is_type)
         has_type = 1;
-      else if (!analysis_declaration_modifier_word(
+      else if (is_identifier_start_byte(
+                   (unsigned char)source[word_start]) &&
+               !analysis_declaration_modifier_word(
                    source, word_start, word_length) &&
                !analysis_non_declaration_word(
-                   source, word_start, word_length))
+                   source, word_start, word_length)) {
         typedef_candidate_count++;
+        if (!saw_top_level_comma)
+          typedef_candidates_before_first_comma++;
+      }
       if (analysis_non_declaration_word(
               source, word_start, word_length))
         has_non_declaration = 1;
@@ -2425,14 +2432,19 @@ static int object_declaration_prefix(
     else if (c == '{') local_braces++;
     else if (c == '}' && local_braces > 0) local_braces--;
     else if (c == ',' && local_parens == 0 && local_brackets == 0 &&
-             local_braces == 0)
+             local_braces == 0) {
+      saw_top_level_comma = 1;
       assignment_after_comma = 0;
+    }
     else if (c == '=' && local_parens == 0 && local_brackets == 0 &&
              local_braces == 0)
       assignment_after_comma = 1;
   }
   int has_typedef_declarator_prefix =
-      definite_declaration && typedef_candidate_count == 2;
+      definite_declaration &&
+      (typedef_candidate_count == 2 ||
+       (saw_top_level_comma &&
+        typedef_candidates_before_first_comma == 2));
   if ((!has_type && typedef_candidate_count != 1 &&
        !has_typedef_declarator_prefix) ||
       has_non_declaration || assignment_after_comma)
@@ -3343,10 +3355,11 @@ static char *build_declarator_array_bound_recovery_source(
   int bracket_depth = 0;
   int brace_depth = 0;
   int definite_declaration = 0;
+  int for_init_declaration = 0;
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
           &bracket_depth, &brace_depth, &definite_declaration,
-          NULL) ||
+          &for_init_declaration) ||
       !definite_declaration || bracket_depth == 0)
     return NULL;
   size_t record_open = 0;
@@ -3356,21 +3369,27 @@ static char *build_declarator_array_bound_recovery_source(
           source, length, name_end, paren_depth, bracket_depth,
           brace_depth, &declarator_end))
     return NULL;
-  static const char suffix[] =
+  static const char regular_suffix[] =
       ";\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  static const char for_init_suffix[] =
+      "; ; ) {\nint " AG_LANGUAGE_CURSOR_MARKER ";\n}\n";
+  const char *suffix = for_init_declaration
+                           ? for_init_suffix
+                           : regular_suffix;
+  size_t suffix_length = strlen(suffix);
   if (outer_brace_count > SIZE_MAX / 2 ||
-      declarator_end > SIZE_MAX - sizeof(suffix) ||
-      declarator_end + sizeof(suffix) >
+      declarator_end > SIZE_MAX - suffix_length - 1 ||
+      declarator_end + suffix_length + 1 >
           SIZE_MAX - outer_brace_count * 2)
     return NULL;
-  size_t result_length = declarator_end + sizeof(suffix) - 1 +
+  size_t result_length = declarator_end + suffix_length +
                          outer_brace_count * 2;
   char *result = malloc(result_length + 1);
   if (!result) return NULL;
   memcpy(result, source, declarator_end);
   size_t output = declarator_end;
-  memcpy(result + output, suffix, sizeof(suffix) - 1);
-  output += sizeof(suffix) - 1;
+  memcpy(result + output, suffix, suffix_length);
+  output += suffix_length;
   for (size_t i = 0; i < outer_brace_count; i++) {
     result[output++] = '}';
     result[output++] = '\n';

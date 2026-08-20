@@ -36663,3 +36663,31 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。外側function parameter内のcallback、factory-return callback、nested callback declarator、複合bound式、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - 今回のblock-scope prototype 4形は再探索せず、通常サイズ・完全sourceにある別の浅いlookup境界を小型probeから探す。全Wasm integrationを反復せず、Native約6秒と1.61秒のprototype-bound焦点gateを使う。
+
+### このセッション（続き1233）: 同一object宣言とfor初期化子の配列境界hoverを回復した
+- 対象選定:
+  - 既修正のprototype/callbackや複合bound式を再探索せず、通常サイズの完全sourceで、先行statement、同一宣言、pointer-to-VLA、typedef、nested block、`for`初期化子を小型Wasm probeへ並べた。
+  - builtin型の同一宣言とnested blockは更新済みself-hostではgreenだった一方、typedef型の同一宣言と`for`初期化子内のpointer-to-VLAだけはE3064で解析失敗した。
+- 原因:
+  - object宣言prefixの字句分類が、typedef名と最初のdeclaratorに加えてinitializerの数値tokenまでtypedef候補として数え、同一宣言の後続declaratorを宣言として確定できなかった。
+  - 宣言子配列境界の回復suffixは通常宣言の`;`だけを補っていたため、`for (`初期化子ではcontrol構文が未完了のまま残った。
+- 変更:
+  - typedef候補はidentifier開始tokenだけを数え、最初のtop-level comma以前に`typedef候補 + 宣言子`が確定した場合は、後続initializer tokenに影響されず宣言prefixとして扱う。この確定条件は宣言子配列境界専用の呼出しだけに限定した。
+  - `for`初期化子と分類された場合は、現在のdeclaratorに加えて空のcondition/iterationとsynthetic bodyを閉じ、markerを元のblock scopeへ置く。通常宣言のsuffixは維持する。
+  - 同一宣言builtin/typedef VLA、nested block、`for`内pointer-to-VLAを既存Native fixtureへ追加し、Wasmと共有する小型焦点fixtureをfull suiteの前段へ移した。後続declarator・nested local・loop後objectは可視にしない。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=declarator-array-bounds`と`make test-wasm-language-analysis-declarator-array-bounds`を追加した。追加形、代表的な名前先頭・中央・末尾、fresh instance、runtime manifest、Native snapshot parityを含む最終実測は**real 0.69秒 / user 0.81秒 / sys 0.16秒**だった。
+  - `for-init`、initializer operand、prototype boundの隣接3 targetを直列実行しても**real 2.71秒 / user 3.42秒 / sys 0.43秒**だった。
+- 確認:
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 5.56秒 / user 4.10秒 / sys 1.45秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.28秒 / user 42.26秒 / sys 1.15秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-declarator-array-bounds` = 成功、**real 0.69秒 / user 0.81秒 / sys 0.16秒**。
+  - `make test-wasm-language-analysis-for-init test-wasm-language-analysis-initializer-operands test-wasm-language-analysis-prototype-bounds` = 3 target成功、**real 2.71秒 / user 3.42秒 / sys 0.43秒**。
+  - 小型probeの先行statement、同一宣言builtin/typedef、pointer-to-VLA、`sizeof`/scalar initializer比較、`for`初期化子、nested block 5形はすべてdiagnostics空・`partial:false`で正しいobject hoverになった。
+  - 代表sourceは`clang -std=c11 -pedantic-errors -fsyntax-only`で成功した。`./build/test_parser` = **OK: All unit tests passed**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体を0.69秒のNative parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行しない。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。複合bound式、深い宣言子、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回の同一宣言/`for`配列境界は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationを反復せず、Native約6秒と0.69秒のdeclarator array-bound焦点gateを使う。

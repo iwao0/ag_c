@@ -1779,8 +1779,16 @@ static const char declarator_array_bound_operand_hover_source[] =
     "static int declarator_array_bound_block(int bound_parameter) {\n"
     "  int bound_before = bound_parameter;\n"
     "  int local_values[bound_parameter];\n"
+    "  int declarator_same_count = 4, declarator_same_values[declarator_same_count], declarator_same_later;\n"
+    "  DeclaratorArrayElement declarator_typedef_count = 4, declarator_typedef_values[declarator_typedef_count], declarator_typedef_later;\n"
+    "  { int declarator_nested_prior = 4; int declarator_nested_values[declarator_nested_prior]; int declarator_nested_after; }\n"
     "  int bound_after = bound_before;\n"
-    "  return sizeof(local_values) + bound_after;\n"
+    "  return sizeof(local_values) + sizeof(declarator_same_values) + sizeof(declarator_typedef_values) + bound_after;\n"
+    "}\n"
+    "static int declarator_array_bound_for(void) {\n"
+    "  for (int declarator_for_count = 4, (*declarator_for_values)[declarator_for_count] = 0; declarator_for_values; ) { break; }\n"
+    "  int declarator_for_after;\n"
+    "  return 0;\n"
     "}\n"
     "static int declarator_array_bound_subscript(int subscript_index) {\n"
     "  return declarator_array_bound_file[subscript_index];\n"
@@ -9773,6 +9781,18 @@ static int test_declarator_array_bound_operand_hover(
        "DECLARATOR_ARRAY_BOUND_ENUM = 3", "3", 0},
       {"local_values[bound_parameter]", "bound_parameter",
        AG_LANGUAGE_SYMBOL_PARAMETER, "bound_parameter)", "", 2},
+      {"declarator_same_values[declarator_same_count]",
+       "declarator_same_count", AG_LANGUAGE_SYMBOL_OBJECT,
+       "declarator_same_count = 4", "", 3},
+      {"declarator_nested_values[declarator_nested_prior]",
+       "declarator_nested_prior", AG_LANGUAGE_SYMBOL_OBJECT,
+       "declarator_nested_prior = 4", "", 4},
+      {"declarator_typedef_values[declarator_typedef_count]",
+       "declarator_typedef_count", AG_LANGUAGE_SYMBOL_OBJECT,
+       "declarator_typedef_count = 4", "", 5},
+      {"declarator_for_values)[declarator_for_count]",
+       "declarator_for_count", AG_LANGUAGE_SYMBOL_OBJECT,
+       "declarator_for_count = 4", "", 6},
       {"declarator_array_bound_file[subscript_index]", "subscript_index",
        AG_LANGUAGE_SYMBOL_PARAMETER, "subscript_index)", "", 0},
   };
@@ -9854,6 +9874,53 @@ static int test_declarator_array_bound_operand_hover(
                     !find_symbol(
                         &snapshot, "bound_after", AG_LANGUAGE_SYMBOL_OBJECT),
                 "declarator array bound preserves cursor lookup point");
+        if (cases[case_index].boundary_case == 3)
+          CHECK(!find_symbol(
+                    &snapshot, "declarator_same_later",
+                    AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "declarator_typedef_later",
+                        AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "declarator_nested_after",
+                        AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "bound_after",
+                        AG_LANGUAGE_SYMBOL_OBJECT),
+                "same declaration and nested bound later objects hidden");
+        if (cases[case_index].boundary_case == 4)
+          CHECK(find_symbol(
+                    &snapshot, "declarator_same_later",
+                    AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    find_symbol(
+                        &snapshot, "declarator_typedef_later",
+                        AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "declarator_nested_after",
+                        AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "bound_after",
+                        AG_LANGUAGE_SYMBOL_OBJECT),
+                "nested bound preserves outer and inner lookup points");
+        if (cases[case_index].boundary_case == 5)
+          CHECK(find_symbol(
+                    &snapshot, "declarator_same_later",
+                    AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "declarator_typedef_later",
+                        AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "declarator_nested_after",
+                        AG_LANGUAGE_SYMBOL_OBJECT) &&
+                    !find_symbol(
+                        &snapshot, "bound_after",
+                        AG_LANGUAGE_SYMBOL_OBJECT),
+                "typedef bound preserves same declaration lookup point");
+        if (cases[case_index].boundary_case == 6)
+          CHECK(!find_symbol(
+                    &snapshot, "declarator_for_after",
+                    AG_LANGUAGE_SYMBOL_OBJECT),
+                "for init bound later object remains hidden");
         ag_language_analysis_snapshot_dispose(&snapshot);
         if (fresh_session)
           ag_compilation_session_destroy(analysis_session);
