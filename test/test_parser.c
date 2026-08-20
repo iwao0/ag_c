@@ -22634,6 +22634,33 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
       graph, PSX_NAMESPACE_ORDINARY, "__synthetic", 11,
       after_synthetic));
 
+  int history_typedef_payload = 13;
+  int history_object_payload = 14;
+  psx_decl_id_t history_typedef_id = psx_scope_graph_declare_synthetic_at(
+      graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+      PSX_NAMESPACE_ORDINARY, PSX_DECL_TYPEDEF,
+      "history", 7, &history_typedef_payload);
+  psx_decl_id_t history_object_id = psx_scope_graph_declare_synthetic_at(
+      graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+      PSX_NAMESPACE_ORDINARY, PSX_DECL_GLOBAL_OBJECT,
+      "history", 7, &history_object_payload);
+  ASSERT_TRUE(history_typedef_id != PSX_DECL_ID_INVALID);
+  ASSERT_TRUE(history_object_id != PSX_DECL_ID_INVALID);
+  const psx_scope_declaration_t *history_nonobject =
+      psx_scope_graph_lookup_different_kind_declaration_in_scope(
+          graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, PSX_DECL_GLOBAL_OBJECT,
+          "history", 7);
+  ASSERT_TRUE(history_nonobject != NULL);
+  ASSERT_EQ(history_typedef_id, history_nonobject->id);
+  const psx_scope_declaration_t *history_nontypedef =
+      psx_scope_graph_lookup_different_kind_declaration_in_scope(
+          graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, PSX_DECL_TYPEDEF,
+          "history", 7);
+  ASSERT_TRUE(history_nontypedef != NULL);
+  ASSERT_EQ(history_object_id, history_nontypedef->id);
+
   psx_scope_id_t prototype_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_FUNCTION_PROTOTYPE);
   ASSERT_TRUE(prototype_scope != PSX_SCOPE_ID_INVALID);

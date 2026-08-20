@@ -37000,3 +37000,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - nested/factory callback、parameter名側、配列/attribute、複合式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - 比較probeでは`typedef int T; { extern int T; }`もClang strictが受理する一方、ag_cはtypedef衝突のE3064で拒否した。block function backingとはstorage/global object registryが異なるため本差分へ混ぜず、次はこのblock-scope `extern` objectがfile typedef/enum constantを隠す通常サイズの直接宣言を調べる。今回のcurrent callableとfunction backingは再探索しない。
+
+### このセッション（続き1244）: file no-linkage名を隠すblock extern objectのbackingを回復した
+- 対象選定:
+  - 続き1243の浅い次候補`typedef int T; { extern int T; }`を、direct/`const`/pointer/incomplete array/comment/LF splice/repeated sibling/外側typedefを型指定子にも使う`extern T T`/file enumの10形へ限定した。
+  - 10形をまとめた通常サイズの完全sourceはClang strictで有効だったが、ag_cは最初のdirect形をfile typedefとのE3064衝突として拒否した。hidden backing作成後に同名file objectを置く比較sourceはClang strictがdifferent kindの再定義として拒否した。
+  - 同一block内のtypedef/enum constant後に`extern` objectを置く既存2 fixtureはC11上不正な別境界なので、引き続き拒否する必要がある。深い式、initializer、alignment、複雑なdeclarator、security監査系には入っていない。
+- 原因:
+  - block-scope `extern` objectはblock内にlinkage aliasを作り、外部linkage entityを共有するtranslation-unit backingをglobal registryへ保持する。
+  - current-scopeの衝突検証は外側file typedef/enumを正しく無視していたが、その後のglobal declaration resolutionがtranslation-unit ordinary namespaceを直接調べ、file typedef/enumを同一scope object衝突としてE3064にしていた。
+  - block externのbackingが作られればpipelineは既に新規backingをlookupから隠せる一方、後続file object resolutionは最新のhidden objectだけを見て元のfile typedef/enumとの衝突を見失う可能性があった。
+- 変更:
+  - global declaration resolution requestへ`is_block_scope`を伝え、blockかつ`extern`で既存translation-unit宣言がtypedef/enum constantの場合だけ、既存objectなしとしてglobal registryに別backingを作らせる。pipelineは新規backingをhiddenにし、block aliasからだけ参照する既存経路をそのまま使う。
+  - scope graphへ、hidden宣言も含む履歴を末尾から走査して「指定scope/namespace/nameが一致し、期待kindとは異なる最新宣言」を返すqueryを追加した。file-scope object/function resolutionがこれを共有し、hidden backingが最新でも過去のtypedef/enum/object衝突をE3064として保持する。
+  - queryはsource-orderを進めないsynthetic typedef/object履歴を使うparser単体境界へ追加し、既存のprototype scope宣言順不変条件を変えない。
+  - positive 10形をNative/Wasm E2Eへ、hidden backing後のfile objectをtypedef/enumそれぞれNative/Wasm object compile-failへ登録した。block終了後はfile typedef/enumが復帰し、block内ではextern objectが見え、sibling blockはcompatible backingを再利用することを`sizeof`だけで実行確認するため、未定義externへのrelocationは発生しない。
+- テスト時間の改善:
+  - 1792件のWasm E2E全体は実行せず、新fixtureの登録index 1445だけをlink/validate/runして**real 0.68秒 / user 0.65秒 / sys 0.06秒**で確認した。
+  - scope queryを共有する隣接5 fixtureはindex 1443から6件だけをまとめて実行し、全件成功、**real 2.65秒 / user 2.38秒 / sys 0.14秒**だった。
+- 確認:
+  - Native ag_cでpositive fixtureをassembly化して実行終了0、`clang -std=c11 -pedantic-errors -Wall -Wextra -fsyntax-only`も成功した。
+  - `file_object_after_block_{typedef,enum}_backing.c`、既存`block_extern_after_typedef.c`、`block_extern_after_enum_constant.c`、function側`file_function_after_block_typedef_backing.c`はNative/Wasm objectの両方でE3064。新negative 2形はClang strictもdifferent kindの再定義として拒否した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.80秒 / user 42.69秒 / sys 1.22秒**。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.50秒 / user 3.01秒 / sys 0.23秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 6.54秒 / user 4.95秒 / sys 1.55秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.37秒**。
+  - 最新Wasm language-analysisの小型probeではblock内参照がobject、block後が元typedef/enumへ戻り、reused/fresh instanceともdiagnostics空・`partial:false`だった。`extern T T;`の宣言名もobjectとして正しく返った。
+- 未実施:
+  - 0.68秒の単一E2Eと2.65秒の隣接scanで同じWasm compiler/linker/run経路を確認できるため、全1792件のWasm E2Eと1354秒規模の`make test-wasm-js-api`は実行しない。
+  - initializer/alignment、複合declarator、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - 小型language-analysis probeで`extern T T;`の先頭の型指定子`T`は正しい外側typedefをhoverに返す一方、recovery sourceが後続宣言名を型指定子なしと解釈してE3088・`partial:true`になった。core backingとblock後のscope復帰は再探索せず、次はfile-scope outer typedefに限定してこの直接同名型指定子のlookup recoveryを調べる。同一block typedefとの不正形を誤って回復しないscope境界を必須とする。

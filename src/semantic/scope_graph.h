@@ -130,6 +130,11 @@ psx_decl_id_t psx_scope_graph_lookup_in_scope(
 const psx_scope_declaration_t *psx_scope_graph_lookup_declaration_in_scope(
     const psx_scope_graph_t *graph, psx_scope_id_t scope_id,
     psx_c_namespace_t name_space, const char *name, int name_len);
+const psx_scope_declaration_t *
+psx_scope_graph_lookup_different_kind_declaration_in_scope(
+    const psx_scope_graph_t *graph, psx_scope_id_t scope_id,
+    psx_c_namespace_t name_space, psx_scope_decl_kind_t expected_kind,
+    const char *name, int name_len);
 const psx_scope_declaration_t *psx_scope_graph_declaration(
     const psx_scope_graph_t *graph, psx_decl_id_t declaration_id);
 size_t psx_scope_graph_declaration_count(

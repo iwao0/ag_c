@@ -110,6 +110,31 @@ void psx_resolve_global_declaration(
     return;
   }
   resolution->declaration_qual_type = request->type;
+  const psx_scope_declaration_t *file_scope_conflict =
+      psx_scope_graph_lookup_different_kind_declaration_in_scope(
+          scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, PSX_DECL_GLOBAL_OBJECT,
+          request->name, request->name_len);
+  if (!request->is_block_scope && file_scope_conflict) {
+    switch (file_scope_conflict->kind) {
+    case PSX_DECL_FUNCTION:
+      resolution->status =
+          PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT;
+      break;
+    case PSX_DECL_TYPEDEF:
+      resolution->status =
+          PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT;
+      break;
+    case PSX_DECL_ENUM_CONSTANT:
+      resolution->status =
+          PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT;
+      break;
+    default:
+      resolution->status = PSX_GLOBAL_DECLARATION_INVALID;
+      break;
+    }
+    return;
+  }
   const psx_scope_declaration_t *existing =
       psx_scope_graph_lookup_declaration_in_scope(
           scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
@@ -120,9 +145,13 @@ void psx_resolve_global_declaration(
       resolution->status = PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT;
       return;
     case PSX_DECL_TYPEDEF:
+      if (request->is_block_scope && request->is_extern_decl)
+        break;
       resolution->status = PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT;
       return;
     case PSX_DECL_ENUM_CONSTANT:
+      if (request->is_block_scope && request->is_extern_decl)
+        break;
       resolution->status = PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT;
       return;
     case PSX_DECL_GLOBAL_OBJECT:

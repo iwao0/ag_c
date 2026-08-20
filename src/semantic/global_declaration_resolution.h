@@ -26,6 +26,7 @@ typedef struct {
   psx_qual_type_t type;
   int is_extern_decl;
   int is_static;
+  int is_block_scope;
   int has_initializer;
   int has_alignment_specifier;
   int requested_alignment;

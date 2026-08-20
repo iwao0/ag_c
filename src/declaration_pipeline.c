@@ -346,6 +346,7 @@ int psx_begin_global_declaration_pipeline(
           .type = request->type,
           .is_extern_decl = request->is_extern_decl,
           .is_static = request->is_static,
+          .is_block_scope = request->is_block_scope,
           .has_initializer = request->initializer->has_initializer,
           .has_alignment_specifier =
               request->has_alignment_specifier,

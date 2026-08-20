@@ -1571,6 +1571,7 @@ static const test_case_t test_cases[] = {
     {"probes", "typedef_enumerator_declaration_point", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_enumerator_declaration_point.c", 0, 0},
     {"probes", "typedef_for_scope_shadow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_for_scope_shadow.c", 0, 0},
     {"probes", "block_scope_extern_visibility", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_scope_extern_visibility.c", 0, 0},
+    {"probes", "block_extern_object_file_nonlinkage_shadow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_extern_object_file_nonlinkage_shadow.c", 0, 0},
     {"probes", "block_function_nested_typedef_shadow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_function_nested_typedef_shadow.c", 0, 0},
     {"probes", "block_function_file_nonlinkage_shadow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_function_file_nonlinkage_shadow.c", 0, 0},
     {"probes", "nested_ordinary_identifier_shadow_boundaries", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nested_ordinary_identifier_shadow_boundaries.c", 0, 0},
@@ -4254,6 +4255,14 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"block_extern_after_enum_constant_rejected",
      "fixture:test/fixtures/should_reject/"
      "block_extern_after_enum_constant.c",
+     "E3064"},
+    {"file_object_after_block_typedef_backing_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "file_object_after_block_typedef_backing.c",
+     "E3064"},
+    {"file_object_after_block_enum_backing_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "file_object_after_block_enum_backing.c",
      "E3064"},
     {"block_function_after_automatic_rejected",
      "fixture:test/fixtures/should_reject/block_function_after_automatic.c",

@@ -479,6 +479,25 @@ const psx_scope_declaration_t *psx_scope_graph_lookup_declaration_in_scope(
                  graph, scope_id, name_space, name, name_len));
 }
 
+const psx_scope_declaration_t *
+psx_scope_graph_lookup_different_kind_declaration_in_scope(
+    const psx_scope_graph_t *graph, psx_scope_id_t scope_id,
+    psx_c_namespace_t name_space, psx_scope_decl_kind_t expected_kind,
+    const char *name, int name_len) {
+  if (!graph || scope_id >= graph->scope_count || !name || name_len <= 0)
+    return NULL;
+  for (size_t index = graph->declaration_count; index > 0; index--) {
+    const psx_scope_declaration_t *declaration =
+        &graph->declarations[index - 1];
+    if (declaration->scope_id == scope_id &&
+        declaration->kind != expected_kind &&
+        declaration_name_matches(
+            declaration, name_space, name, name_len))
+      return declaration;
+  }
+  return NULL;
+}
+
 int psx_scope_graph_checkpoint_begin(
     const psx_scope_graph_t *graph,
     psx_scope_graph_checkpoint_t *checkpoint) {
