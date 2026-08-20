@@ -286,6 +286,16 @@ const prototypeParameterBoundSource = {
     "  int callback_after_local;\n" +
     "  return callback_local_object != 0;\n" +
     "}\n" +
+    "typedef int ProtoBlockResult;\n" +
+    "int proto_block_scope(void) {\n" +
+    "  int proto_block_before = 1;\n" +
+    "  int proto_block_function(int block_count, int block_values[block_count], int block_later);\n" +
+    "  typedef int ProtoBlockFunction(int block_typedef_count, int block_typedef_values[block_typedef_count], int block_typedef_later);\n" +
+    "  { int proto_block_nested(int block_nested_count, int block_nested_values[block_nested_count], int block_nested_later); }\n" +
+    "  ProtoBlockResult /* return gap */ proto_block_comment(int block_comment_count, int block_comment_values[/* bound gap */ block_comment_count], int block_comment_later);\n" +
+    "  int proto_block_after;\n" +
+    "  return proto_block_before + (int)sizeof(ProtoBlockFunction *);\n" +
+    "}\n" +
     "int proto_bound_after;\n",
 };
 const prototypeParameterBoundCases = [
@@ -391,6 +401,25 @@ const prototypeParameterBoundCases = [
     name: "callback_local_count", kind: "parameter",
     later: "callback_local_later", checkBoundaries: true,
   },
+  {
+    fragment: "block_values[block_count]", name: "block_count",
+    kind: "parameter", later: "block_later", checkBoundaries: true,
+  },
+  {
+    fragment: "block_typedef_values[block_typedef_count]",
+    name: "block_typedef_count", kind: "parameter",
+    later: "block_typedef_later",
+  },
+  {
+    fragment: "block_nested_values[block_nested_count]",
+    name: "block_nested_count", kind: "parameter",
+    later: "block_nested_later", checkBoundaries: true,
+  },
+  {
+    fragment: "block_comment_values[/* bound gap */ block_comment_count]",
+    name: "block_comment_count", kind: "parameter",
+    later: "block_comment_later",
+  },
 ];
 if (!languageAnalysisFocus ||
     languageAnalysisFocus === "prototype-bounds") {
@@ -444,6 +473,8 @@ if (!languageAnalysisFocus ||
         undefined, `${boundCase.name} later file object hidden`);
       assert.equal(symbol(wasmResult, "callback_after_local", "object"),
         undefined, `${boundCase.name} later callback local hidden`);
+      assert.equal(symbol(wasmResult, "proto_block_after", "object"),
+        undefined, `${boundCase.name} later prototype block local hidden`);
       if (boundCase.name === "definition_count") {
         assert.equal(symbol(wasmResult, "definition_body", "object"),
           undefined, "definition body local hidden at parameter bound");

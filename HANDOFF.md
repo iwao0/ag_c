@@ -36634,3 +36634,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。local function typedef、外側function parameter callback、factory-return callback、nested declarator、複合bound式、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - 今回の直接function-pointer object 7形は再探索せず、通常サイズ・完全sourceにある別の浅いlookup境界を小型probeから探す。全Wasm integrationを反復せず、Native約6秒と1.02秒のprototype-bound焦点gateを使う。
+
+### このセッション（続き1232）: block-scope prototype parameter配列境界hoverを回復した
+- 対象選定:
+  - 既修正のcallback objectやdesignatorを再探索せず、通常サイズの完全sourceでblock-scopeの通常function prototype、function typedef、parameter宣言位置、外側enum/object、local pointer object、compound literalを小型Wasm probeへ並べた。
+  - 外側enum/object、parameter宣言位置、local pointer object、compound literalはdiagnostics空・`partial:false`でgreenだった。
+  - block-scope通常prototypeとfunction typedefの配列境界から同じprototypeの先行parameterを参照する2形だけは、hover/completionがnullだった。
+- 原因:
+  - `build_function_parameter_recovery_source()`は候補function名を`brace_depth == 0`でだけ認識していたため、file-scope prototype/typedef/definitionにはparameter markerを挿入できてもblock宣言へ到達しなかった。
+  - 別の汎用回復は外側blockのlookup pointを保つため、外側enum/objectは見える一方、prototype scopeだけに属する先行parameterを復元できなかった。
+- 変更:
+  - block内でも、選択位置を含む完全なparameter listを持つ候補について、既存`object_declaration_prefix()`が現在のbrace depthにある宣言prefixを返す場合だけfunction parameter回復へ入れる。
+  - candidateの宣言終端が選択位置を含むことを先に確認してからprefix分類する順序にし、cursor以前の通常callごとにsource先頭から再走査する二次的コストを避けた。
+  - 選択配列parameter直後へsynthetic marker parameterを入れ、現在宣言の`;`でsourceを切って外側blockを閉じる。record bodyとblock内definition候補は辞退し、既存file-scope経路は維持する。
+  - 通常block prototype、block function typedef、nested block、typedef戻り型/commentの4失敗形を既存prototype-bound fixtureへ統合した。後続parameterと`proto_block_after`をcompletionへ入れない。
+- テスト時間の改善:
+  - 新しいMake targetは追加せず、既存`make test-wasm-language-analysis-prototype-bounds`へ追加した。Wasmの全4形をNative snapshotと照合し、名前境界は通常/nested blockの代表2形へ集約した最終実測は**real 1.61秒 / user 1.73秒 / sys 0.17秒**だった。
+  - initializer/direct operand/simple call argumentを含む隣接4 targetの直列実行も**real 5.85秒 / user 7.30秒 / sys 0.66秒**だった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = compile warningなし、**language analysis tests passed (70 scenarios)**、**real 5.89秒 / user 4.17秒 / sys 1.44秒**。追加4形を名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.11秒 / user 42.41秒 / sys 1.14秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-prototype-bounds` = 成功、**real 1.61秒 / user 1.73秒 / sys 0.17秒**。
+  - `make test-wasm-language-analysis-prototype-bounds test-wasm-language-analysis-initializer-operands test-wasm-language-analysis-direct-operands test-wasm-language-analysis-simple-call-arguments` = 4 target成功、**real 5.85秒 / user 7.30秒 / sys 0.66秒**。
+  - block-scope通常/nested prototypeとfunction typedefの代表sourceは`clang -std=c11 -pedantic-errors -fsyntax-only`で成功した。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体を1.61秒のNative parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行せず、関連batch gateへまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。外側function parameter内のcallback、factory-return callback、nested callback declarator、複合bound式、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回のblock-scope prototype 4形は再探索せず、通常サイズ・完全sourceにある別の浅いlookup境界を小型probeから探す。全Wasm integrationを反復せず、Native約6秒と1.61秒のprototype-bound焦点gateを使う。

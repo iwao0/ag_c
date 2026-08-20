@@ -2995,6 +2995,10 @@ static char *build_function_parameter_recovery_source(
   if (!selected_name || selected_length == 0) return NULL;
   size_t selected_start = (size_t)(selected_name - source);
   size_t selected_end = selected_start + selected_length;
+  size_t selected_record_open = 0;
+  if (record_body_open_at(
+          source, selected_start, &selected_record_open))
+    return NULL;
   int paren_depth = 0;
   int bracket_depth = 0;
   int brace_depth = 0;
@@ -3062,10 +3066,14 @@ static char *build_function_parameter_recovery_source(
              is_identifier_byte((unsigned char)source[candidate_end]))
         candidate_end++;
       if (!top_level_initializer && paren_depth == 0 &&
-          bracket_depth == 0 && brace_depth == 0) {
+          bracket_depth == 0) {
         size_t after_candidate = skip_analysis_space_and_comments(
             source, length, candidate_end);
         if (after_candidate < length && source[after_candidate] == '(') {
+          size_t candidate_outer_brace_count = 0;
+          int candidate_paren_depth = 0;
+          int candidate_bracket_depth = 0;
+          int candidate_brace_depth = 0;
           size_t declaration_end = 0;
           size_t function_body_open = SIZE_MAX;
           size_t parameter_list_close = SIZE_MAX;
@@ -3078,6 +3086,22 @@ static char *build_function_parameter_recovery_source(
               selected_end <= (is_definition
                                    ? function_body_open
                                    : declaration_end)) {
+            int candidate_is_declaration = brace_depth == 0;
+            if (!candidate_is_declaration)
+              candidate_is_declaration =
+                  object_declaration_prefix(
+                      source, i, &candidate_outer_brace_count,
+                      &candidate_paren_depth, &candidate_bracket_depth,
+                      &candidate_brace_depth, NULL, NULL) &&
+                  candidate_outer_brace_count == (size_t)brace_depth &&
+                  candidate_paren_depth == 0 &&
+                  candidate_bracket_depth == 0 &&
+                  candidate_brace_depth == 0;
+            if (!candidate_is_declaration ||
+                (is_definition && candidate_outer_brace_count != 0)) {
+              i = candidate_end - 1;
+              continue;
+            }
             static const char marker[] =
                 "\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
             size_t parameter_open = skip_analysis_space_and_comments(
@@ -3089,11 +3113,15 @@ static char *build_function_parameter_recovery_source(
                     &parameter_marker_offset)) {
               static const char parameter_marker[] =
                   ", int " AG_LANGUAGE_CURSOR_MARKER;
-              if (declaration_end >
-                  SIZE_MAX - sizeof(parameter_marker))
+              if (candidate_outer_brace_count > SIZE_MAX / 2 ||
+                  declaration_end >
+                      SIZE_MAX - sizeof(parameter_marker) ||
+                  declaration_end + sizeof(parameter_marker) >
+                      SIZE_MAX - candidate_outer_brace_count * 2)
                 return NULL;
               size_t result_length =
-                  declaration_end + sizeof(parameter_marker) - 1;
+                  declaration_end + sizeof(parameter_marker) - 1 +
+                  candidate_outer_brace_count * 2;
               char *result = malloc(result_length + 1);
               if (!result) return NULL;
               memcpy(result, source, parameter_marker_offset);
@@ -3103,21 +3131,39 @@ static char *build_function_parameter_recovery_source(
                          sizeof(parameter_marker) - 1,
                      source + parameter_marker_offset,
                      declaration_end - parameter_marker_offset);
-              result[result_length] = '\0';
+              size_t output =
+                  declaration_end + sizeof(parameter_marker) - 1;
+              for (size_t close = 0;
+                   close < candidate_outer_brace_count; close++) {
+                result[output++] = '}';
+                result[output++] = '\n';
+              }
+              result[output] = '\0';
               if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
               if (source_consumed) *source_consumed = declaration_end;
               return result;
             }
             if (!is_definition) {
-              if (declaration_end > SIZE_MAX - sizeof(marker)) return NULL;
+              if (candidate_outer_brace_count > SIZE_MAX / 2 ||
+                  declaration_end > SIZE_MAX - sizeof(marker) ||
+                  declaration_end + sizeof(marker) >
+                      SIZE_MAX - candidate_outer_brace_count * 2)
+                return NULL;
               size_t result_length =
-                  declaration_end + sizeof(marker) - 1;
+                  declaration_end + sizeof(marker) - 1 +
+                  candidate_outer_brace_count * 2;
               char *result = malloc(result_length + 1);
               if (!result) return NULL;
               memcpy(result, source, declaration_end);
               memcpy(result + declaration_end,
                      marker, sizeof(marker) - 1);
-              result[result_length] = '\0';
+              size_t output = declaration_end + sizeof(marker) - 1;
+              for (size_t close = 0;
+                   close < candidate_outer_brace_count; close++) {
+                result[output++] = '}';
+                result[output++] = '\n';
+              }
+              result[output] = '\0';
               if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
               if (source_consumed) *source_consumed = declaration_end;
               return result;

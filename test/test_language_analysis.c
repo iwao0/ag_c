@@ -396,6 +396,16 @@ static const char prototype_parameter_bound_hover_source[] =
     "  int callback_after_local;\n"
     "  return callback_local_object != 0;\n"
     "}\n"
+    "typedef int ProtoBlockResult;\n"
+    "int proto_block_scope(void) {\n"
+    "  int proto_block_before = 1;\n"
+    "  int proto_block_function(int block_count, int block_values[block_count], int block_later);\n"
+    "  typedef int ProtoBlockFunction(int block_typedef_count, int block_typedef_values[block_typedef_count], int block_typedef_later);\n"
+    "  { int proto_block_nested(int block_nested_count, int block_nested_values[block_nested_count], int block_nested_later); }\n"
+    "  ProtoBlockResult /* return gap */ proto_block_comment(int block_comment_count, int block_comment_values[/* bound gap */ block_comment_count], int block_comment_later);\n"
+    "  int proto_block_after;\n"
+    "  return proto_block_before + (int)sizeof(ProtoBlockFunction *);\n"
+    "}\n"
     "int proto_bound_after;\n";
 static const char block_static_assert_hover_source[] =
     "/// block static assert macro documentation\n"
@@ -10133,6 +10143,17 @@ static int test_prototype_parameter_bound_hover(
       {"callback_local_values[callback_local_count]",
        "callback_local_count", AG_LANGUAGE_SYMBOL_PARAMETER,
        "callback_local_later"},
+      {"block_values[block_count]", "block_count",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "block_later"},
+      {"block_typedef_values[block_typedef_count]",
+       "block_typedef_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "block_typedef_later"},
+      {"block_nested_values[block_nested_count]",
+       "block_nested_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "block_nested_later"},
+      {"block_comment_values[/* bound gap */ block_comment_count]",
+       "block_comment_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "block_comment_later"},
   };
   ag_compilation_session_t *session =
       ag_compilation_session_create(&target);
@@ -10201,6 +10222,8 @@ static int test_prototype_parameter_bound_hover(
                   !find_symbol(&snapshot, "proto_bound_after",
                                AG_LANGUAGE_SYMBOL_OBJECT) &&
                   !find_symbol(&snapshot, "callback_after_local",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "proto_block_after",
                                AG_LANGUAGE_SYMBOL_OBJECT) &&
                   (strcmp(cases[case_index].name,
                           "definition_count") != 0 ||
