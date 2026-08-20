@@ -19801,6 +19801,29 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session, "int main() { return (1+2; }");          // ')' がない
   expect_parse_fail(test_suite_session, "int main() { if 1) return 0; }");       // '(' がない
   expect_parse_fail(test_suite_session, "int main() { for (i=0 i<3; i=i+1) return 0; }"); // ';' 不足
+  expect_parse_fail_with_message(test_suite_session,
+      "float float value; int main(void) { return 0; }", "E3006");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(void) { double const double value; return 0; }", "E3006");
+  expect_parse_fail_with_message(test_suite_session,
+      "void void function(void); int main(void) { return 0; }", "E3006");
+  expect_parse_fail_with_message(test_suite_session,
+      "struct Value { _Bool _Bool member; }; int main(void) { return 0; }",
+      "E3006");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(void) { return sizeof(long long double); }", "E3006");
+  expect_parse_fail_with_message(test_suite_session,
+      "double long long value; int main(void) { return 0; }", "E3006");
+  expect_parse_fail_with_message(test_suite_session,
+      "long double long value; int main(void) { return 0; }", "E3006");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(void) { return sizeof(_Atomic(double double)); }", "E3006");
+  expect_parse_ok(test_suite_session,
+      "typedef double long OrderedLongDouble; "
+      "typedef signed long long SignedWide; "
+      "struct Value { long const double floating; long long integer; }; "
+      "int main(void) { OrderedLongDouble value=1.0L; SignedWide wide=2; "
+      "struct Value pair={value,wide}; return pair.integer != 2; }");
   expect_parse_fail(test_suite_session, "int main() { ++1; }");                  // lvalueでない
   expect_parse_fail(test_suite_session, "int main() { 1++; }");                  // lvalueでない
   expect_parse_fail(test_suite_session,

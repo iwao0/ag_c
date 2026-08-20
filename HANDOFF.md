@@ -37810,3 +37810,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 既存回帰fixtureを含む正例2件を4経路、negative 6件を3 compilerで直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深いtag/enum式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - standalone tagの無視specifierと拒否specifierはfile/block/phaseまで閉じた。次はtag宣言から離れ、通常サイズのinitializerまたは宣言点境界をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1278）: 単一type-specifierの重複と`long double`個数をstrict化した
+- 対象選定:
+  - tag宣言から離れ、initializer制約、識別子の宣言点、複数declaratorのalignment/thread/restrict境界を通常サイズでClang C11 strictと少数比較したが、いずれもag_cと一致したため変更していない。
+  - 隣接するtype-specifier組合せへ移ると、`float float`、`double double`、`void void`、`_Bool _Bool`と、`long long double`、`double long long`、`long double long`をClang strictは拒否する一方、ag_cは受理していた。`double long`、`long const double`、整数の`signed/unsigned long long`は双方が受理した。
+  - file/block object、function return、member、type-name、Atomic type-nameまでの浅いparser境界に限定し、深い宣言子・式、巨大入力、security監査系には広げていない。
+- 原因と変更:
+  - 共通type-specifier loopの`void`/`float`/`double`/`_Bool`分岐は他specifierとの競合だけを検査し、自分自身の既出flagを条件に含めていなかった。また`double`分岐は先行する`long`が2個ある形を拒否せず、`long`分岐も`double`後の2個目を受理していた。
+  - 各単一specifier分岐で自分自身の反復をE3006へ戻し、`double`に組み合わせられる`long`を語順に依存せず1個までにした。整数の`long long`と合法な`long double`の並びは維持する。
+  - design invariantは各flagと`long_count`が代入文ではなく診断条件内に存在することを固定する。
+- coverage:
+  - parser unitへ不正8形と、`double long`、`long const double`、signed integer `long long`の合法対照を追加した。
+  - `type_specifier_combination_boundaries`をNative/Wasm E2E一覧へ追加し、long doubleの語順・qualifier順序、signed/unsigned long long、struct member、関数parameter/returnを実行確認する。
+  - should_rejectへ`repeated_{float,double,void,bool}_type_specifier`と`long_long_double_type_specifier`を追加し、Native/Wasm compile-fail registryへE3006で登録した。
+- 確認:
+  - 正例fixtureはhost Clang strict、ag_c Native実行、WATの`wasm-interp`実行、Wasm object compile/validateがすべて成功し、WATは`main() => i32:0`だった。
+  - negative 5件はhost Clang strict、Native、Wasm objectがすべて拒否し、Native/Wasmは全件E3006で一致した。
+  - parser、design invariants、language analysisの独立ゲートを並列実行し、すべて成功した。各`time`はCPU競合を含み、parser **real 6.62秒**、design **real 4.35秒**、language analysis **real 21.27秒**、全体wall timeは約21秒だった。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 66.53秒 / user 64.22秒 / sys 1.37秒**。`build/test_e2e`もwarningなしでビルドした。
+- 未実施:
+  - 正例を4経路、negative 5件を3 compilerで直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深い宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - singleton type-specifierの反復とfloating `long`個数は共通parser境界で閉じた。次も複雑なspecifier列へ広げず、通常サイズの別の宣言・型制約をClang strictとの差分probeから選ぶ。

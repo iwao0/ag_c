@@ -614,7 +614,8 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
       continue;
     }
     if (k == TK_LONG) {
-      if (saw_char || saw_short || saw_void || saw_float || saw_bool || long_count >= 2) {
+      if (saw_char || saw_short || saw_void || saw_float || saw_bool ||
+          long_count >= 2 || (saw_double && long_count >= 1)) {
         emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
       }
       long_count++;
@@ -650,7 +651,8 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
       continue;
     }
     if (k == TK_VOID) {
-      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_float || saw_double || saw_bool) {
+      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count ||
+          saw_int || saw_void || saw_float || saw_double || saw_bool) {
         emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
       }
       saw_void = 1;
@@ -659,7 +661,8 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
       continue;
     }
     if (k == TK_FLOAT) {
-      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_double || saw_bool) {
+      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count ||
+          saw_int || saw_void || saw_float || saw_double || saw_bool) {
         emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
       }
       saw_float = 1;
@@ -668,7 +671,8 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
       continue;
     }
     if (k == TK_DOUBLE) {
-      if (saw_signed || saw_unsigned || saw_char || saw_short || saw_int || saw_void || saw_float || saw_bool) {
+      if (saw_signed || saw_unsigned || saw_char || saw_short || saw_int ||
+          saw_void || saw_float || saw_double || saw_bool || long_count >= 2) {
         emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
       }
       saw_double = 1;
@@ -677,7 +681,8 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
       continue;
     }
     if (k == TK_BOOL) {
-      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double) {
+      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count ||
+          saw_int || saw_void || saw_float || saw_double || saw_bool) {
         emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
       }
       saw_bool = 1;

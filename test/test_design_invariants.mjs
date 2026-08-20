@@ -5291,6 +5291,19 @@ const initializerSyntaxHeader = await readFile(
   "src/parser/initializer_syntax.h",
   "utf8",
 );
+if (!/if\s*\(k\s*==\s*TK_LONG\)\s*\{\s*if\s*\([^;]*long_count\s*>=\s*2[^;]*saw_double\s*&&\s*long_count\s*>=\s*1[^;]*emit_invalid_type_spec_diag/.test(
+      parserSource,
+    ) ||
+    !/if\s*\(k\s*==\s*TK_VOID\)\s*\{\s*if\s*\([^;]*saw_void[^;]*emit_invalid_type_spec_diag/.test(parserSource) ||
+    !/if\s*\(k\s*==\s*TK_FLOAT\)\s*\{\s*if\s*\([^;]*saw_float[^;]*emit_invalid_type_spec_diag/.test(parserSource) ||
+    !/if\s*\(k\s*==\s*TK_DOUBLE\)\s*\{\s*if\s*\([^;]*saw_double[^;]*long_count\s*>=\s*2[^;]*emit_invalid_type_spec_diag/.test(
+      parserSource,
+    ) ||
+    !/if\s*\(k\s*==\s*TK_BOOL\)\s*\{\s*if\s*\([^;]*saw_bool[^;]*emit_invalid_type_spec_diag/.test(parserSource)) {
+  throw new Error(
+    "C type-specifier parsing must reject repeated singleton specifiers and more than one long on double",
+  );
+}
 if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
       `${initializerSyntaxHeader}\n${initializerSyntaxSource}`,
     ) ||
