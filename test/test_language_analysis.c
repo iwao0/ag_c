@@ -1988,6 +1988,16 @@ static const char same_typedef_declarator_hover_source[] =
     "typedef int ExternObjectParenthesizedInnerRestrictVolatileConstDoublePointerType;\n"
     "typedef int ExternObjectParenthesizedDoublePointerSingleLevelAllCvrCommentType;\n"
     "typedef int ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType;\n"
+    "typedef int ExternObjectParenthesizedOuterCvInnerConstDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterConstInnerVrDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedBothPairCvrDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedBothAllCvrDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedDoublePointerBothCvrListCommentType;\n"
+    "typedef int ExternObjectParenthesizedDoublePointerBothCvrListSpliceType;\n"
     "static int same_typedef_block(void) {\n"
     "  typedef int FirstBlockBase;\n"
     "  typedef int FirstBlockAtomicBase;\n"
@@ -2248,6 +2258,37 @@ static const char same_typedef_declarator_hover_source[] =
     "  { extern ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType "
     "(** restrict volatile \\\n"
     "const ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType); }\n"
+    "  { extern ExternObjectParenthesizedOuterCvInnerConstDoublePointerType "
+    "(* const volatile * const "
+    "ExternObjectParenthesizedOuterCvInnerConstDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterConstInnerVrDoublePointerType "
+    "(* const * volatile restrict "
+    "ExternObjectParenthesizedOuterConstInnerVrDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType "
+    "(* const volatile restrict * volatile "
+    "ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType "
+    "(* restrict * const volatile restrict "
+    "ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedBothPairCvrDoublePointerType "
+    "(* const volatile * const restrict "
+    "ExternObjectParenthesizedBothPairCvrDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType "
+    "(* const volatile restrict * const volatile "
+    "ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType "
+    "(* volatile restrict * const volatile restrict "
+    "ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedBothAllCvrDoublePointerType "
+    "(* const volatile restrict * const volatile restrict "
+    "ExternObjectParenthesizedBothAllCvrDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedDoublePointerBothCvrListCommentType "
+    "(* const /* outer gap */ volatile * restrict /* inner gap */ const "
+    "ExternObjectParenthesizedDoublePointerBothCvrListCommentType); }\n"
+    "  { extern ExternObjectParenthesizedDoublePointerBothCvrListSpliceType "
+    "(* restrict volatile const * const \\\n"
+    "volatile restrict "
+    "ExternObjectParenthesizedDoublePointerBothCvrListSpliceType); }\n"
     "  { typedef int FirstNestedBase; "
     "typedef FirstNestedBase FirstNestedArray[4]; "
     "typedef FirstBlockShadow FirstBlockShadow; "
@@ -2386,6 +2427,15 @@ static const char
     "  typedef int SameBlockParenthesizedSingleLevelAllCvrDoublePointerExternType;\n"
     "  extern SameBlockParenthesizedSingleLevelAllCvrDoublePointerExternType "
     "(* const volatile restrict *SameBlockParenthesizedSingleLevelAllCvrDoublePointerExternType);\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char
+    same_block_parenthesized_both_level_cvr_list_double_pointer_extern_typedef_conflict_source[] =
+    "int same_block_parenthesized_both_level_cvr_list_double_pointer_extern_typedef_conflict(void) {\n"
+    "  typedef int SameBlockParenthesizedBothLevelCvrListDoublePointerExternType;\n"
+    "  extern SameBlockParenthesizedBothLevelCvrListDoublePointerExternType "
+    "(* const volatile * const restrict SameBlockParenthesizedBothLevelCvrListDoublePointerExternType);\n"
     "  return 0;\n"
     "}\n";
 
@@ -4682,6 +4732,7 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       same_block_parenthesized_single_level_cv_double_pointer_extern_typedef_conflict_source,
       same_block_parenthesized_single_level_cvr_double_pointer_extern_typedef_conflict_source,
       same_block_parenthesized_single_level_all_cvr_double_pointer_extern_typedef_conflict_source,
+      same_block_parenthesized_both_level_cvr_list_double_pointer_extern_typedef_conflict_source,
   };
   static const char *source_names[] = {
       "same-block-extern-typedef-conflict.c",
@@ -4702,6 +4753,7 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       "same-block-parenthesized-single-level-cv-double-pointer-extern-typedef-conflict.c",
       "same-block-parenthesized-single-level-cvr-double-pointer-extern-typedef-conflict.c",
       "same-block-parenthesized-single-level-all-cvr-double-pointer-extern-typedef-conflict.c",
+      "same-block-parenthesized-both-level-cvr-list-double-pointer-extern-typedef-conflict.c",
   };
   char *variant_end = NULL;
   unsigned long variant = strtoul(variant_text, &variant_end, 10);
@@ -11408,6 +11460,47 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "(** restrict volatile \\\nconst "
        "ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType)",
        "ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType", 1},
+      {"extern ExternObjectParenthesizedOuterCvInnerConstDoublePointerType "
+       "(* const volatile * const "
+       "ExternObjectParenthesizedOuterCvInnerConstDoublePointerType)",
+       "ExternObjectParenthesizedOuterCvInnerConstDoublePointerType", 1},
+      {"extern ExternObjectParenthesizedOuterConstInnerVrDoublePointerType "
+       "(* const * volatile restrict "
+       "ExternObjectParenthesizedOuterConstInnerVrDoublePointerType)",
+       "ExternObjectParenthesizedOuterConstInnerVrDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType "
+       "(* const volatile restrict * volatile "
+       "ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType)",
+       "ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType "
+       "(* restrict * const volatile restrict "
+       "ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType)",
+       "ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedBothPairCvrDoublePointerType "
+       "(* const volatile * const restrict "
+       "ExternObjectParenthesizedBothPairCvrDoublePointerType)",
+       "ExternObjectParenthesizedBothPairCvrDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType "
+       "(* const volatile restrict * const volatile "
+       "ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType)",
+       "ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType "
+       "(* volatile restrict * const volatile restrict "
+       "ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType)",
+       "ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedBothAllCvrDoublePointerType "
+       "(* const volatile restrict * const volatile restrict "
+       "ExternObjectParenthesizedBothAllCvrDoublePointerType)",
+       "ExternObjectParenthesizedBothAllCvrDoublePointerType", 0},
+      {"extern ExternObjectParenthesizedDoublePointerBothCvrListCommentType "
+       "(* const /* outer gap */ volatile * restrict "
+       "/* inner gap */ const "
+       "ExternObjectParenthesizedDoublePointerBothCvrListCommentType)",
+       "ExternObjectParenthesizedDoublePointerBothCvrListCommentType", 0},
+      {"extern ExternObjectParenthesizedDoublePointerBothCvrListSpliceType "
+       "(* restrict volatile const * const \\\nvolatile restrict "
+       "ExternObjectParenthesizedDoublePointerBothCvrListSpliceType)",
+       "ExternObjectParenthesizedDoublePointerBothCvrListSpliceType", 1},
   };
   for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
     for (size_t case_index = 0;
@@ -11580,6 +11673,12 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "(* const volatile restrict *"
        "SameBlockParenthesizedSingleLevelAllCvrDoublePointerExternType)",
        "SameBlockParenthesizedSingleLevelAllCvrDoublePointerExternType"},
+      {"same-block-parenthesized-both-level-cvr-list-double-pointer-extern-typedef-conflict.c",
+       same_block_parenthesized_both_level_cvr_list_double_pointer_extern_typedef_conflict_source,
+       "extern SameBlockParenthesizedBothLevelCvrListDoublePointerExternType "
+       "(* const volatile * const restrict "
+       "SameBlockParenthesizedBothLevelCvrListDoublePointerExternType)",
+       "SameBlockParenthesizedBothLevelCvrListDoublePointerExternType"},
   };
   for (size_t conflict_index = 0;
        conflict_index < sizeof(extern_typedef_conflicts) /

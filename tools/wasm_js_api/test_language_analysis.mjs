@@ -2450,6 +2450,16 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int ExternObjectParenthesizedInnerRestrictVolatileConstDoublePointerType;\n" +
     "typedef int ExternObjectParenthesizedDoublePointerSingleLevelAllCvrCommentType;\n" +
     "typedef int ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType;\n" +
+    "typedef int ExternObjectParenthesizedOuterCvInnerConstDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedOuterConstInnerVrDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedBothPairCvrDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedBothAllCvrDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedDoublePointerBothCvrListCommentType;\n" +
+    "typedef int ExternObjectParenthesizedDoublePointerBothCvrListSpliceType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2558,6 +2568,16 @@ const sameTypedefDeclaratorHoverSource = {
     "  { extern ExternObjectParenthesizedInnerRestrictVolatileConstDoublePointerType (** restrict volatile const ExternObjectParenthesizedInnerRestrictVolatileConstDoublePointerType); }\n" +
     "  { extern ExternObjectParenthesizedDoublePointerSingleLevelAllCvrCommentType (* const /* first gap */ volatile /* second gap */ restrict * ExternObjectParenthesizedDoublePointerSingleLevelAllCvrCommentType); }\n" +
     "  { extern ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType (** restrict volatile \\\nconst ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType); }\n" +
+    "  { extern ExternObjectParenthesizedOuterCvInnerConstDoublePointerType (* const volatile * const ExternObjectParenthesizedOuterCvInnerConstDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedOuterConstInnerVrDoublePointerType (* const * volatile restrict ExternObjectParenthesizedOuterConstInnerVrDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType (* const volatile restrict * volatile ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType (* restrict * const volatile restrict ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedBothPairCvrDoublePointerType (* const volatile * const restrict ExternObjectParenthesizedBothPairCvrDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType (* const volatile restrict * const volatile ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType (* volatile restrict * const volatile restrict ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedBothAllCvrDoublePointerType (* const volatile restrict * const volatile restrict ExternObjectParenthesizedBothAllCvrDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedDoublePointerBothCvrListCommentType (* const /* outer gap */ volatile * restrict /* inner gap */ const ExternObjectParenthesizedDoublePointerBothCvrListCommentType); }\n" +
+    "  { extern ExternObjectParenthesizedDoublePointerBothCvrListSpliceType (* restrict volatile const * const \\\nvolatile restrict ExternObjectParenthesizedDoublePointerBothCvrListSpliceType); }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
@@ -2770,6 +2790,19 @@ const externTypedefShadowConflictSources = [
   "extern SameBlockParenthesizedSingleLevelAllCvrDoublePointerExternType " +
     "(* const volatile restrict *" +
     "SameBlockParenthesizedSingleLevelAllCvrDoublePointerExternType)"],
+  [{
+    name: "same-block-parenthesized-both-level-cvr-list-double-pointer-extern-typedef-conflict.c",
+    source:
+      "int same_block_parenthesized_both_level_cvr_list_double_pointer_extern_typedef_conflict(void) {\n" +
+      "  typedef int SameBlockParenthesizedBothLevelCvrListDoublePointerExternType;\n" +
+      "  extern SameBlockParenthesizedBothLevelCvrListDoublePointerExternType " +
+      "(* const volatile * const restrict SameBlockParenthesizedBothLevelCvrListDoublePointerExternType);\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "SameBlockParenthesizedBothLevelCvrListDoublePointerExternType",
+  "extern SameBlockParenthesizedBothLevelCvrListDoublePointerExternType " +
+    "(* const volatile * const restrict " +
+    "SameBlockParenthesizedBothLevelCvrListDoublePointerExternType)"],
 ];
 const externTypedefSemanticTypeSources = [
   [{
@@ -3162,6 +3195,26 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "ExternObjectParenthesizedDoublePointerSingleLevelAllCvrCommentType", false],
     ["extern ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType (** restrict volatile \\\nconst ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType)",
       "ExternObjectParenthesizedDoublePointerSingleLevelAllCvrSpliceType", false],
+    ["extern ExternObjectParenthesizedOuterCvInnerConstDoublePointerType (* const volatile * const ExternObjectParenthesizedOuterCvInnerConstDoublePointerType)",
+      "ExternObjectParenthesizedOuterCvInnerConstDoublePointerType", true],
+    ["extern ExternObjectParenthesizedOuterConstInnerVrDoublePointerType (* const * volatile restrict ExternObjectParenthesizedOuterConstInnerVrDoublePointerType)",
+      "ExternObjectParenthesizedOuterConstInnerVrDoublePointerType", false],
+    ["extern ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType (* const volatile restrict * volatile ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType)",
+      "ExternObjectParenthesizedOuterAllCvrInnerVolatileDoublePointerType", false],
+    ["extern ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType (* restrict * const volatile restrict ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType)",
+      "ExternObjectParenthesizedOuterRestrictInnerAllCvrDoublePointerType", false],
+    ["extern ExternObjectParenthesizedBothPairCvrDoublePointerType (* const volatile * const restrict ExternObjectParenthesizedBothPairCvrDoublePointerType)",
+      "ExternObjectParenthesizedBothPairCvrDoublePointerType", false],
+    ["extern ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType (* const volatile restrict * const volatile ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType)",
+      "ExternObjectParenthesizedOuterAllCvrInnerCvDoublePointerType", false],
+    ["extern ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType (* volatile restrict * const volatile restrict ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType)",
+      "ExternObjectParenthesizedOuterVrInnerAllCvrDoublePointerType", false],
+    ["extern ExternObjectParenthesizedBothAllCvrDoublePointerType (* const volatile restrict * const volatile restrict ExternObjectParenthesizedBothAllCvrDoublePointerType)",
+      "ExternObjectParenthesizedBothAllCvrDoublePointerType", false],
+    ["extern ExternObjectParenthesizedDoublePointerBothCvrListCommentType (* const /* outer gap */ volatile * restrict /* inner gap */ const ExternObjectParenthesizedDoublePointerBothCvrListCommentType)",
+      "ExternObjectParenthesizedDoublePointerBothCvrListCommentType", false],
+    ["extern ExternObjectParenthesizedDoublePointerBothCvrListSpliceType (* restrict volatile const * const \\\nvolatile restrict ExternObjectParenthesizedDoublePointerBothCvrListSpliceType)",
+      "ExternObjectParenthesizedDoublePointerBothCvrListSpliceType", false],
   ];
   function assertExternObjectTypeResult(
     result, source, name, declarationIndex, label,

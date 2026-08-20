@@ -3359,19 +3359,12 @@ static char *build_file_typedef_block_extern_type_recovery_source(
         unsigned cvr_qualifier_mask =
             is_const ? 1u : (is_volatile ? 2u : (is_restrict ? 4u : 0u));
         if (declarator_pointer_count > 1) {
-          size_t first_pointer_qualifier_count =
-              parenthesized_pointer_qualifier_count -
-              parenthesized_second_pointer_qualifier_count;
           if ((!is_const && !is_volatile && !is_restrict) ||
               has_parenthesized_atomic_pointer_qualifier ||
-              (parenthesized_second_pointer_qualifier_count == 0 &&
-               first_pointer_qualifier_count > 1) ||
-              (parenthesized_second_pointer_qualifier_count > 0 &&
-               (first_pointer_qualifier_count != 0 ||
-                cvr_qualifier_mask == 0 ||
-                (parenthesized_second_pointer_cvr_qualifier_mask &
-                 cvr_qualifier_mask) != 0 ||
-                parenthesized_second_pointer_qualifier_count > 2)))
+              cvr_qualifier_mask == 0 ||
+              (parenthesized_second_pointer_cvr_qualifier_mask &
+               cvr_qualifier_mask) != 0 ||
+              parenthesized_second_pointer_qualifier_count > 2)
             return NULL;
         }
         parenthesized_pointer_qualifier_count++;
