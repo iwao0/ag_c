@@ -37529,3 +37529,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - language analysisは同段`_Atomic restrict`を回復せずClang strictと整合したが、ag_c本体は`extern T (* _Atomic restrict *T);`と`extern T (** _Atomic restrict T);`を現在受理してしまう。次はparser/semantic側でatomic-qualified pointerへの`restrict`を拒否し、1段/2段とqualifier順序をNative/Wasm compile-failで固定する。
+
+### このセッション（続き1266）: atomic-qualified pointerへの同段`restrict`を本体で拒否した
+- 対象選定:
+  - 続き1265で確認した過剰受理を、直接`int * _Atomic restrict`、逆順、2段pointerの内側/外側、Atomic pointer typedefへのprefix `restrict`、type-name、parameter、member、`restrict _Atomic(int *)` type specifierの9形でClang C11 strictと照合した。同じpointer段にAtomicとrestrictが共存する形は不正だが、異なるpointer段に置く`int * _Atomic *restrict`と`int *restrict * _Atomic`は有効である。
+  - array parameterの`int values[restrict _Atomic 1]`はClangとag_cの双方が受理する別の調整規則なので拒否対象へ含めない。深い宣言子、式、security監査系には広げていない。
+- 原因と変更:
+  - `psx_semantic_type_table_has_invalid_restrict_qualification`はrestrict付きcanonical `QualType`がobject/incomplete pointerであるかだけを確認し、同じ`QualType.qualifiers`に`PSX_TYPE_QUALIFIER_ATOMIC`がある場合も通していた。
+  - restrictを持つ各再帰段でAtomic bitも確認し、同段Atomicならinvalidとする条件を追加した。既存のpointer-to-function拒否とpointer/array/function内部への再帰検査を再利用するため、直接宣言、宣言子のどのpointer段、typedef、type-name、parameter/member、`_Atomic(type)` specifierへ一貫して適用される。
+  - design invariantにもrestrict検査がAtomic bitを確認することを追加した。診断文言は既存のrestrict制約を再利用し、user-facing messageのexact-match testは追加していない。
+- coverage:
+  - parser unitへ不正9形と異なるpointer段の合法2形を追加した。
+  - should_rejectへ`atomic_restrict_pointer`、`restrict_atomic_pointer`、`atomic_restrict_nested_pointer`、`atomic_restrict_typedef_pointer`、`atomic_restrict_pointer_type_name`、`atomic_restrict_pointer_parameter`、`atomic_specifier_restrict_pointer`の7 fixtureを追加し、Clang strict・Native・Wasm objectで個別確認した。
+  - Native/Wasm compile-fail registryへ同じ7 fixtureを登録した。直接/逆順/多段/typedef/parameter/specifierはE3064、type-nameの`sizeof`経路はE3117で診断ID parityを固定した。registry本体のビルドは確認したが、長時間の全compile-fail registryは反復していない。
+- 確認:
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、最終実行は**real 3.55秒 / user 3.02秒 / sys 0.21秒**。
+  - 新規7 fixtureはhost Clangがすべて拒否し、Native/Wasm objectもE0006へ落ちず全件拒否した。異なるpointer段のAtomic/restrictを含む既存valid probeはNative/Wasm objectともstatus 0を維持した。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.47秒 / user 11.58秒 / sys 1.62秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.93秒 / user 42.52秒 / sys 1.09秒**。更新後のsame-typedef焦点gateは全128形・21代表を含めて内部**26.93秒**、**real 27.07秒 / user 27.22秒 / sys 0.55秒**で成功し、language-analysis側の同段Atomic/restrict partial境界も維持した。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.14秒 / user 0.78秒 / sys 0.48秒**。`build/test_e2e`、`node --check test/test_design_invariants.mjs`、`git diff --check`も成功した。
+- 未実施:
+  - 新規7 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。1354秒規模の`make test-wasm-js-api`、全E2E、深い宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - `restrict _Atomic(int *)`と`_Atomic(int * restrict)`は今回のcentral検査と既存atomic type-specifier検査でClang同様に拒否でき、block extern同名objectの2段pointer familyもCVR/Atomicまで閉じた。3段以上や二重括弧へ広げず、次は別の既知の浅いClang差分をHANDOFF/coverageから選ぶ。

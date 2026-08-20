@@ -518,8 +518,9 @@ int psx_semantic_type_table_has_invalid_restrict_qualification(
           table, type.type_id, &shape))
     return 1;
   if ((type.qualifiers & PSX_TYPE_QUALIFIER_RESTRICT) != 0 &&
-      !psx_semantic_type_table_pointer_can_be_restrict_qualified(
-          table, type.type_id))
+      ((type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0 ||
+       !psx_semantic_type_table_pointer_can_be_restrict_qualified(
+           table, type.type_id)))
     return 1;
   if (shape.kind == PSX_TYPE_POINTER ||
       shape.kind == PSX_TYPE_ARRAY ||

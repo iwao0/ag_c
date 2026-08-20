@@ -10517,7 +10517,7 @@ if (!/int\s+op_index\s*=\s*declarator->declarator_shape\.count[^]*?parse_context
 if (!/psx_semantic_type_table_pointer_can_be_restrict_qualified\s*\([^]*?pointer_shape\.kind\s*!=\s*PSX_TYPE_POINTER[^]*?pointee_shape\.kind\s*!=\s*PSX_TYPE_FUNCTION/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/psx_semantic_type_table_has_invalid_restrict_qualification\s*\([^]*?PSX_TYPE_QUALIFIER_RESTRICT[^]*?psx_semantic_type_table_pointer_can_be_restrict_qualified[^]*?shape\.kind\s*==\s*PSX_TYPE_POINTER[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?shape\.kind\s*==\s*PSX_TYPE_FUNCTION/.test(
+    !/psx_semantic_type_table_has_invalid_restrict_qualification\s*\([^]*?PSX_TYPE_QUALIFIER_RESTRICT[^]*?PSX_TYPE_QUALIFIER_ATOMIC[^]*?psx_semantic_type_table_pointer_can_be_restrict_qualified[^]*?shape\.kind\s*==\s*PSX_TYPE_POINTER[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?shape\.kind\s*==\s*PSX_TYPE_FUNCTION/.test(
       semanticTypeIdentitySource,
     ) ||
     !/psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?restrict qualifier requires a pointer to an object or[^]*?incomplete type/.test(
@@ -10536,7 +10536,7 @@ if (!/psx_semantic_type_table_pointer_can_be_restrict_qualified\s*\([^]*?pointer
       typeNameResolutionSource,
     )) {
   throw new Error(
-    "restrict qualifiers must be validated against canonical pointer pointee identity and reject function pointers",
+    "restrict qualifiers must be validated against canonical pointer pointee identity and reject function or atomic-qualified pointers",
   );
 }
 if (!/semantic_type_has_invalid_atomic_qualification\s*\([^]*?PSX_TYPE_QUALIFIER_ATOMIC[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?!psx_semantic_type_is_complete_object_in[^]*?shape\.kind\s*==\s*PSX_TYPE_POINTER[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?shape\.kind\s*==\s*PSX_TYPE_FUNCTION/.test(

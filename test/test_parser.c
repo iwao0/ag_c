@@ -19780,6 +19780,37 @@ static void test_parse_invalid(
       "typedef int function_type(void); "
       "typedef function_type *restrict callback_type; "
       "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int * _Atomic restrict invalid_pointer; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int * restrict _Atomic invalid_pointer; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int * _Atomic restrict *invalid_outer_pointer; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int ** _Atomic restrict invalid_inner_pointer; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef int * _Atomic atomic_pointer; "
+      "restrict atomic_pointer invalid_pointer; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "restrict _Atomic(int *) invalid_pointer; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int main(void) { return sizeof(int * _Atomic restrict); }");
+  expect_parse_fail(test_suite_session,
+      "int read_atomic_restrict(int * _Atomic restrict pointer); "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct holder { int * _Atomic restrict pointer; }; "
+      "int main(void) { return 0; }");
+  expect_parse_ok(test_suite_session,
+      "int main(void) { int * _Atomic *restrict outer=0; "
+      "int *restrict * _Atomic inner=0; "
+      "return outer != 0 || inner != 0; }");
   expect_parse_ok(test_suite_session,
       "typedef int function_type(void); "
       "typedef int array_type[2]; typedef int *int_pointer; "
