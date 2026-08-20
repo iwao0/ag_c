@@ -583,6 +583,13 @@ static int resolve_parsed_alignas_type_name(
         "alignas", "alignment type name could not be resolved");
     return 1;
   }
+  if (!psx_semantic_type_is_complete_object_in(
+          semantic_context, qual_type.type_id)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), alignas->diagnostic_token,
+        "alignas", "alignment type name must be a complete object type");
+    return 1;
+  }
   int alignment = psx_qual_type_layout_alignof(
       ps_ctx_semantic_type_table_in(semantic_context),
       ps_ctx_record_layout_table_in(semantic_context), qual_type,

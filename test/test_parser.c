@@ -15135,6 +15135,21 @@ static void test_declaration_phase_boundary(
   ASSERT_TRUE(apply_test_declaration_phase(test_suite_session, &phase, 1));
   ASSERT_EQ(PSX_DECLARATION_PHASE_STANDALONE_TAG, phase.state);
   psx_dispose_declaration_phase(&phase);
+
+  expect_parse_fail_with_message(
+      test_suite_session, "_Alignas(int[]) int incomplete_array_aligned;",
+      "E3064");
+  expect_parse_fail_with_message(
+      test_suite_session,
+      "typedef int IncompleteArray[]; "
+      "_Alignas(IncompleteArray) int incomplete_typedef_aligned;",
+      "E3064");
+  expect_parse_ok(
+      test_suite_session, "_Alignas(int[2]) int complete_array_aligned;");
+  expect_parse_ok(
+      test_suite_session,
+      "void alignas_vla_typedef(int count) { "
+      "typedef int Row[count]; _Alignas(Row) int value; (void)value; }");
 }
 
 static void test_type_name_phase_boundary(

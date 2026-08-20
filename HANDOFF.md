@@ -37711,3 +37711,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規2 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないtranslation-unit構文制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深い式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - translation-unitの空/宣言あり境界はpreprocess後item countで閉じた。include graphやpreprocessor internalsへ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1274）: `_Alignas`の不完全配列type-nameを拒否した
+- 対象選定:
+  - translation unitから離れ、aggregate memberとparameterのstorage class、file-scope不完全配列、parameter/member list終端を通常サイズでClang C11 strictと照合したが、いずれもag_cと一致したため変更していない。
+  - `_Alignas(type-name)`へ移ると、`void`・未完成record・関数型は既に双方が拒否し、完全配列・pointer・Atomic型は双方が受理した。一方、`_Alignas(int[]) int value;`と不完全配列typedefを使う形はClang strictが拒否するのに、ag_cはelement alignmentを取得できるだけで受理していた。
+  - block-scopeではVLA typedefとpointer-to-VLA typedefをalignment type-nameに使う形をClang/ag_cとも受理した。直接`int[count]` type-nameはag_cが既存のICE検査で過剰拒否する別のscope-aware runtime-bound境界だったため、今回の不完全型拒否へ混ぜていない。深い式、巨大入力、security監査系には広げていない。
+- 原因と変更:
+  - `resolve_parsed_alignas_type_name`はtype-name解決後すぐ`psx_qual_type_layout_alignof`を呼び、正のalignmentが得られれば型の完全性を確認しなかった。不完全配列もelement alignmentを持つため検査を抜けていた。
+  - layout照会の前にcanonical `TypeId`を`psx_semantic_type_is_complete_object_in`で検証した。これにより不完全配列とそのtypedefをE3064で拒否し、完全配列、pointer、Atomic型、解決済みVLA typedefは維持する。
+  - design invariantでalignment type-nameの完全object検査がDataLayout照会より前にあることを固定した。user-facing文言のexact-match testは追加せず診断IDだけを固定した。
+- coverage:
+  - parser unitへ直接不完全配列とtypedef形のE3064拒否、完全配列とVLA typedefの合法対照を追加した。
+  - should_rejectへ`alignas_incomplete_array_type`と`alignas_incomplete_array_typedef`を追加し、Native/Wasm compile-fail registryへ両方をE3064で登録した。
+- 確認:
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.67秒 / user 2.97秒 / sys 0.23秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.40秒 / user 0.75秒 / sys 0.47秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.47秒 / user 11.62秒 / sys 1.58秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.97秒 / user 42.80秒 / sys 1.16秒**。`make -q wasm-selfhost-api`もcurrentを確認した。
+  - 新規2 fixtureはhost Clang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3064で一致した。完全配列、VLA typedef、pointer-to-VLA typedefの3対照はNative/Wasm objectともstatus 0を維持した。`build/test_e2e`もwarningなしでビルドした。
+- 未実施:
+  - 新規2 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないalignment type-name制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深い式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - `_Alignas(int[count])`と`_Alignas(int (*)[count])`の直接VLA type-nameはClang strictが受理する一方、ag_cはarray boundをICEとして解決しようとしてE3064にする。VLA typedef経由は既に受理するため、次に進めるならalignment専用のscope-aware runtime-bound type-name解決を小型identifier boundに限定して検討する。

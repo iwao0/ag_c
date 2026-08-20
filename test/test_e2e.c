@@ -4250,6 +4250,14 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"alignas_signed_overflow_rejected",
      "fixture:test/fixtures/should_reject/alignas_signed_overflow.c",
      "E3064"},
+    {"alignas_incomplete_array_type_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "alignas_incomplete_array_type.c",
+     "E3064"},
+    {"alignas_incomplete_array_typedef_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "alignas_incomplete_array_typedef.c",
+     "E3064"},
     {"alignas_typedef_rejected",
      "fixture:test/fixtures/should_reject/alignas_typedef.c",
      "E3064"},

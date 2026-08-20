@@ -8760,7 +8760,7 @@ if (/\bpsx_ctx_get_type_info\s*\(/.test(tagContextSource) ||
     !/\bag_data_layout_scalar_size\s*\(/.test(tagContextSource) ||
     !/\bag_data_layout_scalar_alignment\s*\(/.test(tagContextSource) ||
     !/\bpsx_ctx_find_typedef_layout_in\s*\(/.test(tagContextSource) ||
-    !/resolve_parsed_alignas_type_name\s*\([^]*?psx_qual_type_layout_alignof\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
+    !/resolve_parsed_alignas_type_name\s*\([^]*?psx_semantic_type_is_complete_object_in\s*\([^]*?psx_qual_type_layout_alignof\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
       declarationApplicationSource,
     ) ||
     !/resolve_parsed_alignas_expression\s*\([^]*?psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
