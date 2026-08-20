@@ -36,6 +36,10 @@ static int tag_action_syntax_supported(
   const psx_parsed_aggregate_body_t *body = action->aggregate_body;
   for (int i = 0; i < body->item_count; i++) {
     const psx_parsed_aggregate_item_t *item = &body->items[i];
+    if (item->kind == PSX_PARSED_AGGREGATE_STATIC_ASSERT) {
+      if (!item->value.static_assertion.condition) return 0;
+      continue;
+    }
     if (item->kind != PSX_PARSED_AGGREGATE_MEMBER_DECLARATION)
       return 0;
     const psx_parsed_aggregate_member_declaration_t *declaration =
@@ -157,8 +161,20 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
   int resolved_member_count = 0;
   const psx_parsed_aggregate_body_t *body = action->aggregate_body;
   for (int i = 0; i < body->item_count; i++) {
+    const psx_parsed_aggregate_item_t *item = &body->items[i];
+    if (item->kind == PSX_PARSED_AGGREGATE_STATIC_ASSERT) {
+      if (!psx_apply_static_assert_in_contexts(
+              context->semantic_context, context->global_registry,
+              context->local_registry,
+              item->value.static_assertion.condition,
+              item->value.static_assertion.diagnostic_token))
+        return PSX_DECL_SPECIFIER_VALUE_INVALID;
+      continue;
+    }
+    if (item->kind != PSX_PARSED_AGGREGATE_MEMBER_DECLARATION)
+      return PSX_DECL_SPECIFIER_VALUE_INVALID;
     const psx_parsed_aggregate_member_declaration_t *declaration =
-        &body->items[i].value.member_declaration;
+        &item->value.member_declaration;
     psx_decl_specifier_value_status_t base_status;
     psx_qual_type_t base_qual_type = resolve_decl_specifier_type_value(
         context, &declaration->specifier, &base_status);

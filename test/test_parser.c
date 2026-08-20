@@ -19659,6 +19659,21 @@ static void test_multiple_funcdefs(
        "main", NULL},
       {"struct SA { _Static_assert(sizeof(int)==4, \"ok\"); int x; }; "
        "int main(void) { return 0; }", "main", NULL},
+      {"int main(void) { "
+       "typedef int LocalAssertType; "
+       "enum { LOCAL_ASSERT_VALUE = 1 }; "
+       "struct LocalAssertRecord { "
+       "_Static_assert(LOCAL_ASSERT_VALUE, \"enum\"); "
+       "_Static_assert(sizeof(LocalAssertType)==sizeof(int), \"type\"); "
+       "int value; }; "
+       "union LocalAssertUnion { "
+       "_Static_assert(LOCAL_ASSERT_VALUE, \"union\"); int value; }; "
+       "struct LocalAssertOuter { struct LocalAssertInner { "
+       "_Static_assert(LOCAL_ASSERT_VALUE, \"nested\"); int value; "
+       "} inner; int tail; }; "
+       "return sizeof(struct LocalAssertRecord) + "
+       "sizeof(union LocalAssertUnion) + "
+       "sizeof(struct LocalAssertOuter); }", "main", NULL},
   };
   for (size_t i = 0;
        i < sizeof(root_cases) / sizeof(root_cases[0]); i++) {
@@ -19981,6 +19996,9 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session, "int main() { switch (1) { default: int value = 0; return value; } }");
   expect_parse_fail(test_suite_session,
       "struct SA { _Static_assert(0, \"ng\"); int x; }; int main(void){return 0;}");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(void) { struct SA { _Static_assert(0, \"ng\"); "
+      "int x; } value; return sizeof(value); }", "E3012");
   expect_parse_fail(test_suite_session, "int main() { int x; x.y=1; }");            // 非構造体への .
   expect_parse_fail(test_suite_session, "int main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
   expect_parse_fail(test_suite_session,

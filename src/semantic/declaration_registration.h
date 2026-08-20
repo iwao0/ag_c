@@ -30,7 +30,7 @@ int psx_apply_aggregate_member_declaration(
     psx_aggregate_layout_state_t *layout,
     const psx_aggregate_member_declaration_request_t *request,
     token_t *diag_tok);
-void psx_apply_static_assert_in_contexts(
+int psx_apply_static_assert_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,

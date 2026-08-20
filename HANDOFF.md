@@ -36506,3 +36506,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - local member配列境界12形とgreen比較の`_Alignas`/`_Atomic`は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。
     全Wasm integrationの反復は避け、Native約6秒と0.48秒のlocal member配列境界焦点gateを使う。
+
+### このセッション（続き1228）: local record member `_Static_assert` のdirect HIR拒否を修正した
+- 対象選定:
+  - record内の浅い宣言operandを調べる小型language-analysis probeから、`int main(void) { struct Local { _Static_assert(1, "ok"); int value; }; }`
+    という完全valid source自体がコンパイラ本体でE0006「direct function Syntax rejection has no diagnostic」になることを分離した。
+  - file-scope struct/unionのmember `_Static_assert`は既存fixtureでgreenだったが、local struct/union、anonymous/nested local recordはdirect typed-HIR経路だけが未対応だった。
+- 原因:
+  - `tag_action_syntax_supported()`がaggregate body内の`PSX_PARSED_AGGREGATE_STATIC_ASSERT`を一律に未対応としていた。
+    local declarationのdirect resolverはこの無診断statusをそのままfunction Syntax rejectionへ返し、利用者向け診断がないためE0006へ変換されていた。
+  - legacy/file declaration applicationにはstatic assertionの共通評価があった一方、`resolve_aggregate_body_value()`は全itemをmember declarationと仮定していた。
+- 変更:
+  - direct declaration-specifierの構文対応判定で、conditionを持つaggregate static assertionを明示的に受理する。
+  - direct aggregate value resolutionで既存の`psx_apply_static_assert_in_contexts()`を呼び、local registryを含む同じ整数定数式評価とE3011/E3012診断を適用してから
+    layoutを継続する。同APIは成功可否を返すようにし、偽・非定数assertionを無診断内部失敗へ戻さない。
+  - `static_assert_in_struct` fixtureへlocal enum/typedef、local struct/union、nested local recordの正例と実行時layout/initializer確認を追加した。
+    parser direct-HIR root caseにも同じ形を追加し、local record内の偽assertionが拒否されることを固定した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser && ./build/test_parser` = compile warningなし、**OK: All unit tests passed**。
+  - `static_assert_in_struct.c`は`clang -std=c11 -pedantic-errors`のcompile/runと、ag_c Native assemblyのassemble/runがともに成功した。
+  - `./build/ag_c_wasm -c`で同fixtureをWasm object化し、`ag_wasm_link`でruntimeとlinkしたWasmの`main()`が0を返した。
+  - local record内の偽assertionはE0006ではなく**E3012**を返した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.49秒 / user 41.95秒 / sys 0.96秒**。
+    includeなしのlocal struct/union・nested local record sourceをself-host `compileObject()`へ渡し、469-byte objectを生成した。
+  - `make test-design-invariants`、`git diff --check`は成功。
+- 未実施:
+  - exact fixtureをClang/Native/Wasm object link/runとself-host compileで直接確認したため、全fixtureを走査する`./build/test_e2e`、全Wasm JS integrationは再実行しない。
+  - 深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - compiler本体がlocal record static assertionを受理するようになったため、最初のlanguage-analysis probeへ戻り、direct enum/macro operandのlookup pointだけを
+    小型Native/Wasm parityで分類する。複合assertion式やdeep recoveryには広げない。
