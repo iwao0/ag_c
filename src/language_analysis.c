@@ -1838,6 +1838,8 @@ static int object_declaration_prefix(
   int escaped = 0;
   int at_line_start = 1;
   int preprocessor_line = 0;
+  int tag_specifier_state = 0;
+  size_t tag_body_depth = 0;
   for (size_t i = 0; i < name_start; i++) {
     char c = source[i];
     char next = i + 1 < name_start ? source[i + 1] : 0;
@@ -1887,6 +1889,37 @@ static int object_declaration_prefix(
     if (at_line_start && c == '#') preprocessor_line = 1;
     at_line_start = 0;
     if (preprocessor_line) continue;
+    if (tag_body_depth > 0) {
+      if (c == '{') {
+        tag_body_depth++;
+      } else if (c == '}') {
+        tag_body_depth--;
+      }
+      continue;
+    }
+    if (is_identifier_byte((unsigned char)c)) {
+      size_t word_start = i;
+      while (i + 1 < name_start &&
+             is_identifier_byte((unsigned char)source[i + 1]))
+        i++;
+      size_t word_length = i + 1 - word_start;
+      if (analysis_word_is(source, word_start, word_length, "struct") ||
+          analysis_word_is(source, word_start, word_length, "union") ||
+          analysis_word_is(source, word_start, word_length, "enum")) {
+        tag_specifier_state = 1;
+      } else if (tag_specifier_state == 1) {
+        tag_specifier_state = 2;
+      } else {
+        tag_specifier_state = 0;
+      }
+      continue;
+    }
+    if (c == '{' && tag_specifier_state != 0) {
+      tag_body_depth = 1;
+      tag_specifier_state = 0;
+      continue;
+    }
+    if (!isspace((unsigned char)c)) tag_specifier_state = 0;
     if (c == '(') {
       parens++;
     } else if (c == ')' && parens > 0) {

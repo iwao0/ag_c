@@ -45,6 +45,7 @@ build scriptのいずれかが更新された場合だけ再生成される。
 | `make test-wasm-obj-linker` | `ag_wasm_link` の smoke。runtime object あり/なしや relocation を確認。 | リンカー修正時の第一確認。 |
 | `make test-wasm-js-api` | wasm 化したコンパイラのJS API smoke、Native/Wasm language-analysis parity、package exportsを確認。`AGC_LANGUAGE_ANALYSIS_TIMING=1`でlanguage-analysisの区間別累積時間を表示する。 | browser/JS API修正時の広い確認。 |
 | `make test-wasm-language-analysis-macros` | language-analysisの基本・documentation・macro節までを実行し、そこで正常終了する。Native/Wasm macro snapshot parityとfresh/reused instanceを確認する。 | macro hover/recovery修正時の短い反復確認。最終統合では`make test-wasm-js-api`も実行する。 |
+| `make test-wasm-language-analysis-inline-tags` | 小型のinline tag object宣言sourceだけを先頭・中央・末尾およびNative parity付きで実行する。最初のWasm解析をfresh instance、後続を同一instance再利用として確認する。 | `struct/union/enum { ... } object`の宣言位置hover修正時の短い反復確認。 |
 | `make test-wasm-linker-selfhost` | wasm 化したリンカーの JS API smoke。 | wasm linker API 修正時。 |
 | `make test-wasm-js-pipeline` | wasm 化したコンパイラの `compileObject()` と wasm 化したリンカーの `link()` を JS 上で直結する smoke。 | browser 上の compile+link 経路修正時。 |
 | `make test-wasm-js-e2e` | `test_e2e.c` 登録 fixture を、wasm 化したコンパイラと wasm 化したリンカーで linked wasm にして実行。 | selfhost compile+link 経路の広い確認。 |

@@ -325,6 +325,27 @@ static const char function_declarator_hover_source[] =
     "    return shared_label;\n"
     "  }\n"
     "}\n";
+static const char inline_tag_object_source[] =
+    "struct { int member; } inline_anonymous_record;\n"
+    "struct InlineNamedRecord { int member; } inline_named_record;\n"
+    "union { int integer_member; long long_member; } inline_anonymous_union;\n"
+    "union InlineNamedUnion { int integer_member; long long_member; } inline_named_union;\n"
+    "enum { INLINE_ANONYMOUS_VALUE = 2 } inline_anonymous_enum;\n"
+    "enum InlineNamedEnum { INLINE_NAMED_VALUE = 3 } inline_named_enum;\n"
+    "struct { struct { int value; } nested; int (*callback)(int); } inline_nested_record;\n"
+    "struct { int member; } inline_initialized = { 1 };\n"
+    "struct { int member; } inline_first, inline_second;\n"
+    "int inline_tag_block(void) {\n"
+    "  struct { int member; } inline_local;\n"
+    "  int inline_after_local;\n"
+    "  return inline_local.member + inline_after_local;\n"
+    "}\n"
+    "int inline_parameter(struct { int member; } inline_parameter_value);\n"
+    "typedef struct { int member; } InlineRecordTypedef;\n"
+    "typedef struct InlineTypedefRecord { int member; } NamedInlineRecordTypedef;\n"
+    "typedef enum { INLINE_TYPEDEF_VALUE = 4 } InlineEnumTypedef;\n"
+    "struct { int first; /* } */ int second; } inline_commented_record;\n"
+    "int inline_after_file;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -2915,6 +2936,19 @@ static int print_conditional_logical_line_parity_snapshot(
     return 1;
   return print_macro_definition_source_snapshot(
       "conditional-logical-lines.c", conditional_logical_line_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_inline_tag_object_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(inline_tag_object_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "inline-tag-object.c", inline_tag_object_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -9337,6 +9371,97 @@ static int test_declarator_array_bound_operand_hover(
   return 0;
 }
 
+static int test_inline_tag_object_hover(ag_target_info_t target) {
+  static const struct {
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *later_object;
+  } cases[] = {
+      {"inline_anonymous_record", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_file"},
+      {"inline_named_record", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_file"},
+      {"inline_anonymous_union", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_file"},
+      {"inline_named_union", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_file"},
+      {"inline_anonymous_enum", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_file"},
+      {"inline_named_enum", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_file"},
+      {"inline_nested_record", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_file"},
+      {"inline_initialized", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_file"},
+      {"inline_second", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_file"},
+      {"inline_local", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_local"},
+      {"inline_parameter_value", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "inline_after_file"},
+      {"InlineRecordTypedef", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "inline_after_file"},
+      {"NamedInlineRecordTypedef", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "inline_after_file"},
+      {"InlineEnumTypedef", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "inline_after_file"},
+      {"inline_commented_record", AG_LANGUAGE_SYMBOL_OBJECT,
+       "inline_after_file"},
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "inline tag object session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  for (size_t case_index = 0;
+       case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+    const char *declaration = strstr(
+        inline_tag_object_source, cases[case_index].name);
+    CHECK(declaration != NULL, "inline tag object declaration anchor");
+    size_t name_length = strlen(cases[case_index].name);
+    size_t deltas[] = {0, name_length / 2, name_length};
+    for (size_t delta_index = 0;
+         delta_index < sizeof(deltas) / sizeof(deltas[0]);
+         delta_index++) {
+      for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+        ag_compilation_session_t *analysis_session =
+            fresh_session ? ag_compilation_session_create(&target) : session;
+        CHECK(analysis_session != NULL,
+              "inline tag object fresh session");
+        CHECK(analyze_named(
+                  analysis_session, "inline-tag-object.c",
+                  inline_tag_object_source,
+                  (size_t)(declaration - inline_tag_object_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "inline tag object analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover && strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "inline-tag-object.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration - inline_tag_object_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration - inline_tag_object_source) +
+                          (int)name_length &&
+                  !find_symbol(&snapshot, cases[case_index].later_object,
+                               AG_LANGUAGE_SYMBOL_OBJECT),
+              "inline tag object snapshot");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -10938,6 +11063,9 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--conditional-logical-line-parity-json") == 0)
     return print_conditional_logical_line_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--inline-tag-object-parity-json") == 0)
+    return print_inline_tag_object_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -11085,6 +11213,8 @@ int main(int argc, char **argv) {
         "type-name array bound operand hover scenarios");
   CHECK(test_declarator_array_bound_operand_hover(target) == 0,
         "declarator array bound operand hover scenarios");
+  CHECK(test_inline_tag_object_hover(target) == 0,
+        "inline tag object hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -14185,6 +14315,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (58 scenarios)");
+  puts("language analysis tests passed (59 scenarios)");
   return 0;
 }

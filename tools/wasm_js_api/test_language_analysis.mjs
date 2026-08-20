@@ -10,6 +10,7 @@ const wasmPath = process.argv[2] || "build/wasm_selfhost_api/ag_c_wasm_api.wasm"
 const nativeAnalysisPath = process.argv[3] || "build/test_language_analysis";
 const wasmModule = await WebAssembly.compile(await readFile(wasmPath));
 const compiler = await createCompiler(wasmModule);
+const languageAnalysisFocus = process.env.AGC_LANGUAGE_ANALYSIS_FOCUS;
 const testTimingStart = performance.now();
 function reportTestTiming(label) {
   if (process.env.AGC_LANGUAGE_ANALYSIS_TIMING === "1") {
@@ -17,6 +18,107 @@ function reportTestTiming(label) {
       (performance.now() - testTimingStart) / 1000
     ).toFixed(2)}s`);
   }
+}
+
+function symbol(snapshot, name, kind) {
+  return snapshot.completionItems.find((item) =>
+    item.name === name && item.kind === kind);
+}
+
+const inlineTagObjectSource = {
+  name: "inline-tag-object.c",
+  source: "struct { int member; } inline_anonymous_record;\n" +
+    "struct InlineNamedRecord { int member; } inline_named_record;\n" +
+    "union { int integer_member; long long_member; } inline_anonymous_union;\n" +
+    "union InlineNamedUnion { int integer_member; long long_member; } inline_named_union;\n" +
+    "enum { INLINE_ANONYMOUS_VALUE = 2 } inline_anonymous_enum;\n" +
+    "enum InlineNamedEnum { INLINE_NAMED_VALUE = 3 } inline_named_enum;\n" +
+    "struct { struct { int value; } nested; int (*callback)(int); } inline_nested_record;\n" +
+    "struct { int member; } inline_initialized = { 1 };\n" +
+    "struct { int member; } inline_first, inline_second;\n" +
+    "int inline_tag_block(void) {\n" +
+    "  struct { int member; } inline_local;\n" +
+    "  int inline_after_local;\n" +
+    "  return inline_local.member + inline_after_local;\n" +
+    "}\n" +
+    "int inline_parameter(struct { int member; } inline_parameter_value);\n" +
+    "typedef struct { int member; } InlineRecordTypedef;\n" +
+    "typedef struct InlineTypedefRecord { int member; } NamedInlineRecordTypedef;\n" +
+    "typedef enum { INLINE_TYPEDEF_VALUE = 4 } InlineEnumTypedef;\n" +
+    "struct { int first; /* } */ int second; } inline_commented_record;\n" +
+    "int inline_after_file;\n",
+};
+const inlineTagObjectCases = [
+  { name: "inline_anonymous_record", kind: "object", checkBoundaries: true },
+  { name: "inline_named_record", kind: "object" },
+  { name: "inline_anonymous_union", kind: "object" },
+  { name: "inline_named_union", kind: "object" },
+  { name: "inline_anonymous_enum", kind: "object" },
+  { name: "inline_named_enum", kind: "object" },
+  { name: "inline_nested_record", kind: "object" },
+  { name: "inline_initialized", kind: "object" },
+  { name: "inline_second", kind: "object" },
+  {
+    name: "inline_local", kind: "object",
+    laterObject: "inline_after_local", checkBoundaries: true,
+  },
+  { name: "inline_parameter_value", kind: "parameter" },
+  { name: "InlineRecordTypedef", kind: "typedef" },
+  { name: "NamedInlineRecordTypedef", kind: "typedef" },
+  { name: "InlineEnumTypedef", kind: "typedef" },
+  { name: "inline_commented_record", kind: "object" },
+];
+if (languageAnalysisFocus !== "macros") {
+  for (const inlineCase of inlineTagObjectCases) {
+    const declarationIndex = inlineTagObjectSource.source.indexOf(
+      inlineCase.name,
+    );
+    assert.notEqual(declarationIndex, -1,
+      `missing ${inlineCase.name} inline tag declaration`);
+    const nameBytes = Buffer.byteLength(inlineCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = inlineCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        inlineTagObjectSource.source.slice(0, declarationIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(inlineTagObjectSource, {
+        cursor: { sourceName: inlineTagObjectSource.name, byteOffset },
+      });
+      assert.equal(wasmResult.partial, false,
+        `${inlineCase.name} inline tag partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${inlineCase.name} inline tag diagnostics`);
+      assert.equal(wasmResult.hover?.name, inlineCase.name,
+        `${inlineCase.name} inline tag hover name`);
+      assert.equal(wasmResult.hover?.kind, inlineCase.kind,
+        `${inlineCase.name} inline tag hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        inlineTagObjectSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.equal(symbol(
+        wasmResult,
+        inlineCase.laterObject ?? "inline_after_file",
+        "object",
+      ), undefined, `${inlineCase.name} later object is hidden`);
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--inline-tag-object-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${inlineCase.name} inline tag differ`);
+    }
+  }
+  reportTestTiming("inline tag objects");
+}
+if (languageAnalysisFocus === "inline-tags") {
+  compiler.dispose();
+  console.log("wasm language analysis inline tag tests passed");
+  process.exit(0);
 }
 
 const paritySource = {
@@ -49,11 +151,6 @@ const result = compiler.analyzeSource(source, {
     "game.h": "#define GAME_SCREEN_WIDTH 320\nvoid screen_clear(int color);\n",
   },
 });
-
-function symbol(snapshot, name, kind) {
-  return snapshot.completionItems.find((item) =>
-    item.name === name && item.kind === kind);
-}
 
 if (!symbol(result, "GAME_SCREEN_WIDTH", "macro") ||
     !symbol(result, "screen_clear", "function") ||

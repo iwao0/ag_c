@@ -36020,3 +36020,42 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - preprocessor operand群は全Wasm integrationまで完了したため、通常サイズの完全sourceで未固定のdeclaration境界へ移る。開発中はNative約6秒と
     対応する小型probeを使い、長いenum call/declarator群はその領域を変更した場合の焦点gateまたはbatch末尾の全件だけで実行する。
+
+### このセッション（続き1215）: inline tag定義直後のobject・typedef宣言hoverを回復した
+- 対象選定:
+  - 通常サイズの完全なvalid C 27宣言形を小さいWasm probeで確認した。`_Atomic` 5形、括弧付きobject/typedef、function typedef、
+    function pointer/array、多段pointer、anonymous tag、flexible member、`_Noreturn`、complex、inline tag parameterなどを対象にした。
+  - 最初はanonymous `struct` objectとanonymous `enum` objectだけがE3016になった。named/anonymous `struct/union/enum`、initializer、複数宣言子、
+    block local、parameterへ広げた35形では、inline tag直後の最初のfile object 6形、initializer付きobject、block localの8形がE3016/E3064、
+    第2 declaratorとparameterはgreenだった。深いtag入れ子、巨大入力、fuzz、資源stress、security監査系には広げなかった。
+- 原因:
+  - `object_declaration_prefix()`の前方scannerは、`{`をすべてfunction/block scope開始、`}`をその終了として扱い、さらにtop-level相当のmember
+    `;`とtag bodyの閉じ`}`で宣言開始位置を直後へ更新していた。このため`struct { ... } object`ではcursor nameより前の型指定を失い、
+    object recoveryが宣言と認識できなかった。
+- 変更:
+  - comment・quote・preprocessor lineを除外する既存反復scannerへ、`struct/union/enum` keyword、任意のtag名、対応tag bodyの字句状態を追加した。
+    tag body内はnested braceだけを反復的に数え、memberの`;`や閉じ`}`を外側scope・宣言開始位置の計数へ入れない。意味解析や再帰探索は追加しない。
+  - 小型の`inline-tag-object.c`専用sourceへanonymous/named struct・union・enum、nested inline recordとfunction-pointer member、initializer、
+    複数宣言子、block local、parameter、anonymous/named record typedef、enum typedef、comment内の`}`をまとめた。正確なsymbol kind、type/signature、
+    declaration range、後続object非可視、diagnostics空、`partial:false`をNative/Wasm snapshot parityで固定した。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=inline-tags`で同じJSテスト本体を専用source完了時に正常終了させる
+    `make test-wasm-language-analysis-inline-tags`を追加した。全Wasmのdeclarator/member hover区間は直近実測約316秒だったが、新targetは
+    **real 0.50秒 / user 0.53秒 / sys 0.11秒**。15形の中央と代表2形の先頭・末尾を検査し、最初のWasm解析がfresh、後続は同一instance再利用となる。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (59 scenarios)**。
+    新規15形は名前の先頭・中央・末尾を同一/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.74秒 / user 42.15秒 / sys 0.96秒**。拡張後の元probe 39文脈は全green。
+  - `/usr/bin/time -p make test-wasm-language-analysis-inline-tags` = runtime manifestとNative/Wasm snapshot parityを含めて成功、
+    **real 0.50秒 / user 0.53秒 / sys 0.11秒**。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 直前の続き1214で1542秒の全Wasm integrationが成功した直後の最初のdeclaration小増分であり、同じJS本体の0.5秒焦点gateを追加したため、
+    `make test-wasm-js-api`は次の関連declaration batch末尾へまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。深いtag入れ子、巨大入力、fuzz、
+    資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回greenだった39宣言形は再探索せず、通常サイズの完全sourceで未固定のdeclaration specifierまたはlookup-point境界を小さいprobeから探す。
+    開発中はNative約6秒と0.5秒のinline-tag焦点gateを使い、全Wasmは関連declaration batch末尾に一度だけ実行する。
