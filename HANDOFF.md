@@ -37433,3 +37433,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同一qualifierの重複、片段の3 qualifier、片段CVR2個と他段qualifierの複合、`_Atomic`付き2段pointer、3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - Clang strictとag_c本体が受理する`extern T (* const volatile restrict *T);`と`extern T (** const volatile restrict T);`は小型Wasm probeでE3088・`partial:true`を残す。次は2段pointerの片方だけに異なるCVR qualifierを3個すべて置く浅い2形を扱えるか調べる。
+
+### このセッション（続き1262）: parenthesized block extern同名objectの2段pointer片段に異なるCVR 3個を回復した
+- 対象選定:
+  - 続き1261の浅い次候補を、`const`・`volatile`・`restrict`の全6語順と1段目/2段目への配置を組み合わせた12形、comment、LF spliceの14形で確認した。Clang C11 strictとag_c本体はすべて受理したが、language analysisはE3088・`partial:true`を残していた。
+  - 括弧1組・pointer 2個・同名identifier・`;`直結と既存lookup経路は再探索せず、片方のpointerだけに異なるCVR qualifierを3個すべて置く形へ限定した。同一qualifierの重複、もう一方のpointerへの追加修飾、`_Atomic`、3段以上、suffix付き複合宣言子、深い式、security監査系には広げていない。
+- 変更:
+  - `build_file_typedef_block_extern_type_recovery_source`で、1段目は2個目の`*`を読む時点にqualifier個数3・CVR mask 7を認め、2段目は既存maskとの重なりがなく段別個数が3以下なら3個目を認める。
+  - これにより語順に依存せず全6順序を扱い、4個目、重複、他段への追加は既存の段別個数・mask境界で拒否する。両段単一CVR、片段CVR2個、`_Atomic`拒否、pointer上限も維持した。
+  - same-typedef Native/Wasm共通fixtureへ配置・全6語順12形、comment、LF spliceの14形を統合した。全89形の中央cursor Native/Wasm parity、Native側の全形の名前端点・shared/fresh session、17カテゴリ代表のWasm名前端点・第2compiler instanceを維持した。
+  - 同一block typedefを片段CVR3個付き2段pointerのparenthesized `extern`で再利用する不正shadowも追加し、E3088・partialとNative/Wasm snapshot一致を維持した。
+- テスト時間:
+  - 短縮済み`make test-wasm-language-analysis-same-typedef-declarators`へ統合した。全89形の中央cursorと17カテゴリ代表を含む焦点gateは、内部**23.05秒**、**real 23.21秒 / user 23.66秒 / sys 0.49秒**で成功した。
+  - prototype bound、declarator array bound、local member array boundの隣接3 targetだけを`make -j3`で並列実行し、**real 13.45秒 / user 19.41秒 / sys 1.07秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.65秒 / user 11.36秒 / sys 2.03秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 68.61秒 / user 66.16秒 / sys 1.52秒**。通常の約44秒より遅かったが完了し、更新後の焦点Wasm gateで片段CVR3個の14形とshadow境界を確認した。
+  - 小型Wasm probeでは配置・全6語順12形だけがdiagnostics空・`partial:false`になり、同一qualifierの重複、他段への追加修飾、`_Atomic`付き2段pointer、3段pointerはE3088・partialのままだった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 8.75秒 / user 8.08秒 / sys 0.42秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 4.60秒 / user 1.64秒 / sys 0.89秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 23.21秒のNative parity付き焦点gateで同じJS本体を確認できるため、1354秒規模の`make test-wasm-js-api`は実行しない。code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eも反復しない。
+  - 同一qualifierの重複、片段CVR listと他段qualifierの複合、`_Atomic`付き2段pointer、3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - Clang strictとag_c本体が受理する`extern T (* const volatile * const T);`は小型Wasm probeでE3088・`partial:true`を残す。次は片方のpointerに重複なしCVR list、もう一方に単一CVRを置く浅い形を、段別個数・mask境界を再利用して扱えるか調べる。

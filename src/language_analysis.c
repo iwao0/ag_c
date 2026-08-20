@@ -3318,7 +3318,9 @@ static char *build_file_typedef_block_extern_type_recovery_source(
                 (parenthesized_pointer_qualifier_count != 2 ||
                  (parenthesized_first_pointer_cvr_qualifier_mask != 3 &&
                   parenthesized_first_pointer_cvr_qualifier_mask != 5 &&
-                  parenthesized_first_pointer_cvr_qualifier_mask != 6))))) ||
+                  parenthesized_first_pointer_cvr_qualifier_mask != 6)) &&
+                (parenthesized_pointer_qualifier_count != 3 ||
+                 parenthesized_first_pointer_cvr_qualifier_mask != 7)))) ||
              has_parenthesized_atomic_pointer_qualifier))
           return NULL;
         has_parenthesized_pointer = 1;
@@ -3364,12 +3366,12 @@ static char *build_file_typedef_block_extern_type_recovery_source(
               has_parenthesized_atomic_pointer_qualifier ||
               (parenthesized_second_pointer_qualifier_count == 0 &&
                first_pointer_qualifier_count > 1) ||
-              (parenthesized_second_pointer_qualifier_count == 1 &&
+              (parenthesized_second_pointer_qualifier_count > 0 &&
                (first_pointer_qualifier_count != 0 ||
                 cvr_qualifier_mask == 0 ||
                 (parenthesized_second_pointer_cvr_qualifier_mask &
-                 cvr_qualifier_mask) != 0)) ||
-              parenthesized_second_pointer_qualifier_count > 1)
+                 cvr_qualifier_mask) != 0 ||
+                parenthesized_second_pointer_qualifier_count > 2)))
             return NULL;
         }
         parenthesized_pointer_qualifier_count++;
