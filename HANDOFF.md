@@ -36430,3 +36430,41 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - simple call後続30形は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationの反復は避け、
     Native約6秒と2.75秒のsimple call argument焦点gateを使う。
+
+### このセッション（続き1226）: local record bit-field幅のenum hoverを回復した
+- 対象選定:
+  - `_Alignas`、`_Atomic`、bit-field幅を含む通常サイズの完全valid宣言9形を小型Wasm probeで分類した。file/blockの`_Alignas`型・enum・macro、
+    `_Atomic`型、file recordのenum幅はdiagnosticsなし・`partial:false`で正しいhoverだった。
+  - `enum { LOCAL_WIDTH=4 }; struct Local { unsigned field : LOCAL_WIDTH; };`だけはdiagnosticsなし・`partial:false`なのにhoverとcompletionがnullだった。
+    named struct/union、anonymous record、nested blockでもlocal enumだけが欠落し、file enumとmacroは同じlocal record内でもgreenだった。
+- 原因:
+  - generic recoveryより先に選ばれるrecord member専用recoveryが、完全source全体を保持した後にcursor markerをtranslation unit末尾へ追加していた。
+    member宣言名のhoverでは宣言自身のscopeへ補正される一方、bit-field幅から参照されるblock-local enumにはその補正がなく、file scopeのmarkerから
+    lookupできなかった。最初に試したgeneric recovery側の分岐はこの専用経路に到達せず、挙動を変えないため除去した。
+- 変更:
+  - record member専用recoveryで、選択識別子の直前の有意tokenをcomment・quote・preprocessor・LF/CRLF splice対応の反復scanで確認する。
+    選択位置が最内の直接struct/union bodyにあり、直前が`:`、直後が`;`の場合だけ、幅識別子までのprefixを保持してrecordをreserved synthetic objectとして
+    閉じ、markerを直後の外側scopeへ置く。元recordの残りmember、複合幅式、nested record bodyは読まない。
+  - named struct/union、anonymous record、nested block、file enum、macro、comment、LF/CRLF splice、local shadowingの10形を専用sourceへまとめた。
+    後続enum/local/file objectをlookup対象に入れない。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=local-bitfield-widths`と`make test-wasm-language-analysis-local-bitfield-widths`を追加した。全10形の中央と代表5形の
+    名前先頭・末尾、runtime manifest、Native snapshot parityを含む最終実測は**real 0.39秒 / user 0.49秒 / sys 0.09秒**だった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = compile warningなし、
+    **language analysis tests passed (68 scenarios)**。10形すべてを名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.51秒 / user 42.03秒 / sys 0.97秒**。
+    最終のoverflow guard整理後も依存再buildが成功した。
+  - `/usr/bin/time -p make test-wasm-language-analysis-local-bitfield-widths` = 成功、
+    **real 0.39秒 / user 0.49秒 / sys 0.09秒**。
+  - 隣接回帰を直列実行した`make test-wasm-language-analysis-inline-tags test-wasm-language-analysis-local-bitfield-widths` = 両方成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体の10形を0.39秒のNative parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行せず、関連batch gateへまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。nested record body、複合bit-field幅式、
+    深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - local bit-field幅10形と既にgreenだった`_Alignas`/`_Atomic`宣言は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。
+    全Wasm integrationの反復は避け、Native約6秒と0.39秒のlocal bit-field焦点gateを使う。

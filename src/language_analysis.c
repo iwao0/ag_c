@@ -1165,9 +1165,78 @@ typedef enum {
   AG_LANGUAGE_RECOVERY_ENUM_CALL_ELIDED = 1 << 5,
 } ag_language_recovery_flags_t;
 
+static char analysis_last_significant_between(
+    const char *source, size_t start, size_t end, int enable_trigraphs) {
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = 0;
+  int preprocessor_line = 0;
+  char last = 0;
+  for (size_t i = start; i < end; i++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, end, i, enable_trigraphs);
+    if (splice_size) {
+      i += splice_size - 1;
+      continue;
+    }
+    char c = source[i];
+    char next = i + 1 < end ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      last = 'x';
+      continue;
+    }
+    if (c == '\n') {
+      at_line_start = 1;
+      preprocessor_line = 0;
+      continue;
+    }
+    if (at_line_start && (c == ' ' || c == '\t' || c == '\r')) continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    at_line_start = 0;
+    if (preprocessor_line || isspace((unsigned char)c)) continue;
+    last = c;
+  }
+  return last;
+}
+
 static char *build_record_member_recovery_source(
-    const char *source, size_t length, size_t cursor, int *changed,
-    size_t *source_consumed) {
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs, int *changed, size_t *source_consumed) {
   const char *name = NULL;
   size_t name_length = 0;
   identifier_at(source, length, cursor, &name, &name_length);
@@ -1193,6 +1262,47 @@ static char *build_record_member_recovery_source(
       record_open >= name_start ||
       !analysis_source_delimiters_are_balanced(source, length))
     return NULL;
+  if (source[after_name] == ';' &&
+      analysis_last_significant_between(
+          source, record_open + 1, name_start,
+          enable_trigraphs) == ':') {
+    size_t direct_open = 0;
+    size_t outer_brace_count = 0;
+    int direct_record =
+        (tag_body_open_at(
+             source, name_start, "struct", &direct_open,
+             &outer_brace_count) ||
+         tag_body_open_at(
+             source, name_start, "union", &direct_open,
+             &outer_brace_count)) &&
+        direct_open == record_open;
+    static const char bitfield_tail[] =
+        "; } __agc_bitfield_record;\n"
+        "int " AG_LANGUAGE_CURSOR_MARKER ";\n";
+    size_t prefix_length = name_start + name_length;
+    if (direct_record &&
+        prefix_length <= SIZE_MAX - (sizeof(bitfield_tail) - 1) &&
+        outer_brace_count <=
+            (SIZE_MAX - prefix_length -
+             (sizeof(bitfield_tail) - 1)) / 2) {
+      size_t result_length = prefix_length + sizeof(bitfield_tail) - 1 +
+                             outer_brace_count * 2;
+      char *result = malloc(result_length + 1);
+      if (!result) return NULL;
+      memcpy(result, source, prefix_length);
+      size_t output = prefix_length;
+      memcpy(result + output, bitfield_tail, sizeof(bitfield_tail) - 1);
+      output += sizeof(bitfield_tail) - 1;
+      for (size_t i = 0; i < outer_brace_count; i++) {
+        result[output++] = '}';
+        result[output++] = '\n';
+      }
+      result[output] = '\0';
+      if (changed) *changed = 1;
+      if (source_consumed) *source_consumed = after_name + 1;
+      return result;
+    }
+  }
   static const char marker[] =
       "\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
   if (length > SIZE_MAX - sizeof(marker)) return NULL;
@@ -3692,7 +3802,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
           enum_recovery, source, source_length, source_consumed,
           enable_trigraphs);
     char *record_member_recovery = build_record_member_recovery_source(
-        source, source_length, recovery_cursor, changed,
+        source, source_length, recovery_cursor, enable_trigraphs, changed,
         &source_consumed);
     if (record_member_recovery)
       return append_conditional_validation_tail(

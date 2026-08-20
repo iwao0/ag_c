@@ -581,6 +581,28 @@ static const char simple_remaining_call_argument_hover_source[] =
     "  int simple_after;\n"
     "}\n"
     "int simple_file_after;\n";
+static const char local_bitfield_width_hover_source[] =
+    "enum FileBitfieldWidths { FILE_BITFIELD_WIDTH = 3, SHADOW_BITFIELD_WIDTH = 2 };\n"
+    "#define BITFIELD_WIDTH_MACRO 5\n"
+    "int local_bitfield_widths(void) {\n"
+    "  enum LocalBitfieldWidths { LOCAL_BITFIELD_WIDTH = 4, SHADOW_BITFIELD_WIDTH = 6 };\n"
+    "  struct LocalNamedBits { unsigned local_named : LOCAL_BITFIELD_WIDTH; };\n"
+    "  union LocalUnionBits { unsigned local_union : LOCAL_BITFIELD_WIDTH; };\n"
+    "  struct { unsigned local_anonymous : LOCAL_BITFIELD_WIDTH; } local_anonymous_bits;\n"
+    "  { struct LocalNestedBits { unsigned local_nested : LOCAL_BITFIELD_WIDTH; }; }\n"
+    "  struct LocalFileBits { unsigned file_width : FILE_BITFIELD_WIDTH; };\n"
+    "  struct LocalMacroBits { unsigned macro_width : BITFIELD_WIDTH_MACRO; };\n"
+    "  struct LocalCommentBits { unsigned comment_width : /* width */ LOCAL_BITFIELD_WIDTH; };\n"
+    "  struct LocalLfBits { unsigned lf_width : \\\nLOCAL_BITFIELD_WIDTH; };\n"
+    "  struct LocalCrlfBits { unsigned crlf_width : \\\r\nLOCAL_BITFIELD_WIDTH; };\r\n"
+    "  struct LocalShadowBits { unsigned shadow_width : SHADOW_BITFIELD_WIDTH; };\n"
+    "  enum { BITFIELD_WIDTH_AFTER = 7 };\n"
+    "  int bitfield_after_local;\n"
+    "  return (int)sizeof(struct LocalNamedBits) +\n"
+    "         (int)sizeof(union LocalUnionBits) +\n"
+    "         (int)sizeof(local_anonymous_bits) + bitfield_after_local;\n"
+    "}\n"
+    "int bitfield_after_file;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -3292,6 +3314,20 @@ static int print_simple_remaining_call_argument_hover_parity_snapshot(
   return print_macro_definition_source_snapshot(
       "simple-remaining-call-argument-hover.c",
       simple_remaining_call_argument_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_local_bitfield_width_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(local_bitfield_width_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "local-bitfield-width-hover.c",
+      local_bitfield_width_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -10767,6 +10803,126 @@ static int test_simple_remaining_call_argument_hover(
   return 0;
 }
 
+static int test_local_bitfield_width_hover(ag_target_info_t target) {
+  static const struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *declaration_fragment;
+    const char *enum_value;
+    const char *macro_replacement;
+  } cases[] = {
+      {"local_named : LOCAL_BITFIELD_WIDTH", "LOCAL_BITFIELD_WIDTH",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "4", NULL},
+      {"local_union : LOCAL_BITFIELD_WIDTH", "LOCAL_BITFIELD_WIDTH",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "4", NULL},
+      {"local_anonymous : LOCAL_BITFIELD_WIDTH", "LOCAL_BITFIELD_WIDTH",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "4", NULL},
+      {"local_nested : LOCAL_BITFIELD_WIDTH", "LOCAL_BITFIELD_WIDTH",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "4", NULL},
+      {"file_width : FILE_BITFIELD_WIDTH", "FILE_BITFIELD_WIDTH",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "3", NULL},
+      {"macro_width : BITFIELD_WIDTH_MACRO", "BITFIELD_WIDTH_MACRO",
+       AG_LANGUAGE_SYMBOL_MACRO, NULL, NULL, "5"},
+      {"/* width */ LOCAL_BITFIELD_WIDTH", "LOCAL_BITFIELD_WIDTH",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "4", NULL},
+      {"lf_width : \\\nLOCAL_BITFIELD_WIDTH", "LOCAL_BITFIELD_WIDTH",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "4", NULL},
+      {"crlf_width : \\\r\nLOCAL_BITFIELD_WIDTH", "LOCAL_BITFIELD_WIDTH",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, NULL, "4", NULL},
+      {"shadow_width : SHADOW_BITFIELD_WIDTH", "SHADOW_BITFIELD_WIDTH",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "enum LocalBitfieldWidths", "6",
+       NULL},
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "local bitfield width hover session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          local_bitfield_width_hover_source, cases[case_index].fragment);
+      const char *use = fragment ? strstr(fragment, cases[case_index].name)
+                                 : NULL;
+      const char *declaration_root = cases[case_index].declaration_fragment
+          ? strstr(local_bitfield_width_hover_source,
+                   cases[case_index].declaration_fragment)
+          : local_bitfield_width_hover_source;
+      const char *declaration = declaration_root
+          ? strstr(declaration_root, cases[case_index].name)
+          : NULL;
+      CHECK(use && declaration, "local bitfield width hover anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]);
+           delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "local bitfield width hover fresh session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "local-bitfield-width-hover.c",
+                  local_bitfield_width_hover_source,
+                  (size_t)(use - local_bitfield_width_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "local bitfield width hover analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover && completion &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "local-bitfield-width-hover.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration - local_bitfield_width_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration - local_bitfield_width_hover_source) +
+                          (int)name_length &&
+                  same_range(&hover->declaration,
+                             &completion->declaration) &&
+                  !find_symbol(&snapshot, "BITFIELD_WIDTH_AFTER",
+                               AG_LANGUAGE_SYMBOL_ENUM_CONSTANT) &&
+                  !find_symbol(&snapshot, "bitfield_after_local",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "bitfield_after_file",
+                               AG_LANGUAGE_SYMBOL_OBJECT),
+              "local bitfield width hover snapshot");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(hover->constant_value && completion->constant_value &&
+                    strcmp(hover->constant_value,
+                           cases[case_index].enum_value) == 0 &&
+                    strcmp(completion->constant_value,
+                           cases[case_index].enum_value) == 0,
+                "local bitfield width enum value");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+          CHECK(hover->macro_replacement &&
+                    completion->macro_replacement &&
+                    strcmp(hover->macro_replacement,
+                           cases[case_index].macro_replacement) == 0 &&
+                    strcmp(completion->macro_replacement,
+                           cases[case_index].macro_replacement) == 0,
+                "local bitfield width macro replacement");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -12397,6 +12553,9 @@ int main(int argc, char **argv) {
     return print_simple_remaining_call_argument_hover_parity_snapshot(
         argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--local-bitfield-width-hover-parity-json") == 0)
+    return print_local_bitfield_width_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -12562,6 +12721,8 @@ int main(int argc, char **argv) {
         "direct aggregate operand hover scenarios");
   CHECK(test_simple_remaining_call_argument_hover(target) == 0,
         "simple remaining call argument hover scenarios");
+  CHECK(test_local_bitfield_width_hover(target) == 0,
+        "local bitfield width hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -15662,6 +15823,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (67 scenarios)");
+  puts("language analysis tests passed (68 scenarios)");
   return 0;
 }

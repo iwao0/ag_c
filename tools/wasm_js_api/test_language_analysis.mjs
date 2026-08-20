@@ -1447,6 +1447,155 @@ if (languageAnalysisFocus === "simple-call-arguments") {
   process.exit(0);
 }
 
+const localBitfieldWidthSource = {
+  name: "local-bitfield-width-hover.c",
+  source: "enum FileBitfieldWidths { FILE_BITFIELD_WIDTH = 3, SHADOW_BITFIELD_WIDTH = 2 };\n" +
+    "#define BITFIELD_WIDTH_MACRO 5\n" +
+    "int local_bitfield_widths(void) {\n" +
+    "  enum LocalBitfieldWidths { LOCAL_BITFIELD_WIDTH = 4, SHADOW_BITFIELD_WIDTH = 6 };\n" +
+    "  struct LocalNamedBits { unsigned local_named : LOCAL_BITFIELD_WIDTH; };\n" +
+    "  union LocalUnionBits { unsigned local_union : LOCAL_BITFIELD_WIDTH; };\n" +
+    "  struct { unsigned local_anonymous : LOCAL_BITFIELD_WIDTH; } local_anonymous_bits;\n" +
+    "  { struct LocalNestedBits { unsigned local_nested : LOCAL_BITFIELD_WIDTH; }; }\n" +
+    "  struct LocalFileBits { unsigned file_width : FILE_BITFIELD_WIDTH; };\n" +
+    "  struct LocalMacroBits { unsigned macro_width : BITFIELD_WIDTH_MACRO; };\n" +
+    "  struct LocalCommentBits { unsigned comment_width : /* width */ LOCAL_BITFIELD_WIDTH; };\n" +
+    "  struct LocalLfBits { unsigned lf_width : \\\nLOCAL_BITFIELD_WIDTH; };\n" +
+    "  struct LocalCrlfBits { unsigned crlf_width : \\\r\nLOCAL_BITFIELD_WIDTH; };\r\n" +
+    "  struct LocalShadowBits { unsigned shadow_width : SHADOW_BITFIELD_WIDTH; };\n" +
+    "  enum { BITFIELD_WIDTH_AFTER = 7 };\n" +
+    "  int bitfield_after_local;\n" +
+    "  return (int)sizeof(struct LocalNamedBits) +\n" +
+    "         (int)sizeof(union LocalUnionBits) +\n" +
+    "         (int)sizeof(local_anonymous_bits) + bitfield_after_local;\n" +
+    "}\n" +
+    "int bitfield_after_file;\n",
+};
+const localBitfieldWidthCases = [
+  {
+    fragment: "local_named : LOCAL_BITFIELD_WIDTH",
+    name: "LOCAL_BITFIELD_WIDTH", kind: "enumConstant",
+    constantValue: "4", checkBoundaries: true,
+  },
+  {
+    fragment: "local_union : LOCAL_BITFIELD_WIDTH",
+    name: "LOCAL_BITFIELD_WIDTH", kind: "enumConstant",
+    constantValue: "4", checkBoundaries: true,
+  },
+  {
+    fragment: "local_anonymous : LOCAL_BITFIELD_WIDTH",
+    name: "LOCAL_BITFIELD_WIDTH", kind: "enumConstant", constantValue: "4",
+  },
+  {
+    fragment: "local_nested : LOCAL_BITFIELD_WIDTH",
+    name: "LOCAL_BITFIELD_WIDTH", kind: "enumConstant", constantValue: "4",
+  },
+  {
+    fragment: "file_width : FILE_BITFIELD_WIDTH",
+    name: "FILE_BITFIELD_WIDTH", kind: "enumConstant",
+    constantValue: "3", checkBoundaries: true,
+  },
+  {
+    fragment: "macro_width : BITFIELD_WIDTH_MACRO",
+    name: "BITFIELD_WIDTH_MACRO", kind: "macro",
+    macroReplacement: "5", checkBoundaries: true,
+  },
+  {
+    fragment: "/* width */ LOCAL_BITFIELD_WIDTH",
+    name: "LOCAL_BITFIELD_WIDTH", kind: "enumConstant", constantValue: "4",
+  },
+  {
+    fragment: "lf_width : \\\nLOCAL_BITFIELD_WIDTH",
+    name: "LOCAL_BITFIELD_WIDTH", kind: "enumConstant", constantValue: "4",
+  },
+  {
+    fragment: "crlf_width : \\\r\nLOCAL_BITFIELD_WIDTH",
+    name: "LOCAL_BITFIELD_WIDTH", kind: "enumConstant", constantValue: "4",
+  },
+  {
+    fragment: "shadow_width : SHADOW_BITFIELD_WIDTH",
+    name: "SHADOW_BITFIELD_WIDTH", kind: "enumConstant",
+    declarationFragment: "enum LocalBitfieldWidths", constantValue: "6",
+    checkBoundaries: true,
+  },
+];
+if (!languageAnalysisFocus ||
+    languageAnalysisFocus === "local-bitfield-widths") {
+  for (const bitfieldCase of localBitfieldWidthCases) {
+    const fragmentIndex = localBitfieldWidthSource.source.indexOf(
+      bitfieldCase.fragment,
+    );
+    const useIndex = localBitfieldWidthSource.source.indexOf(
+      bitfieldCase.name, fragmentIndex,
+    );
+    const declarationRoot = bitfieldCase.declarationFragment
+      ? localBitfieldWidthSource.source.indexOf(bitfieldCase.declarationFragment)
+      : 0;
+    const declarationIndex = localBitfieldWidthSource.source.indexOf(
+      bitfieldCase.name, declarationRoot,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${bitfieldCase.name} local bitfield width anchor`);
+    const nameBytes = Buffer.byteLength(bitfieldCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = bitfieldCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        localBitfieldWidthSource.source.slice(0, useIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(localBitfieldWidthSource, {
+        cursor: {
+          sourceName: localBitfieldWidthSource.name, byteOffset,
+        },
+      });
+      assert.equal(wasmResult.partial, false,
+        `${bitfieldCase.name} local bitfield width partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${bitfieldCase.name} local bitfield width diagnostics`);
+      assert.equal(wasmResult.hover?.name, bitfieldCase.name,
+        `${bitfieldCase.name} local bitfield width hover name`);
+      assert.equal(wasmResult.hover?.kind, bitfieldCase.kind,
+        `${bitfieldCase.name} local bitfield width hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        localBitfieldWidthSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      if (bitfieldCase.constantValue) {
+        assert.equal(wasmResult.hover.initializer?.constantValue,
+          bitfieldCase.constantValue);
+      }
+      if (bitfieldCase.macroReplacement) {
+        assert.equal(wasmResult.hover.macro?.replacement,
+          bitfieldCase.macroReplacement);
+      }
+      assert.equal(symbol(
+        wasmResult, "BITFIELD_WIDTH_AFTER", "enumConstant",
+      ), undefined, `${bitfieldCase.name} later enum hidden`);
+      assert.equal(symbol(
+        wasmResult, "bitfield_after_local", "object",
+      ), undefined, `${bitfieldCase.name} later local object hidden`);
+      assert.equal(symbol(
+        wasmResult, "bitfield_after_file", "object",
+      ), undefined, `${bitfieldCase.name} later file object hidden`);
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--local-bitfield-width-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${bitfieldCase.name} bitfield width differ`);
+    }
+  }
+  reportTestTiming("local bitfield widths");
+}
+if (languageAnalysisFocus === "local-bitfield-widths") {
+  compiler.dispose();
+  console.log("wasm language analysis local bitfield width tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",
