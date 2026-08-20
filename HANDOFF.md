@@ -36358,3 +36358,39 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 今回固定した単純後続引数13形は再探索せず、通常サイズの完全sourceで未固定の浅いoperand境界を小型probeから探す。開発中はNative約6秒と
     0.87秒のsimple call argument焦点gateを使い、全Wasm integrationは関連batch gateまで繰り返さない。
+
+### このセッション（続き1224）: callの単純literal後続引数を回復した
+- 対象選定:
+  - 続き1223の単純な後続call argumentへ、通常サイズの文字列、文字、数値literal 8形を追加probeした。`"text"`、`,`と`)`を内部に含む文字列、
+    `'x'`、`'\\n'`、`1.5`、`-1`、`+1`の7形はrejection 43の`AGC_PARTIAL_SEMANTIC`で、既存token判定に収まる`1e3`だけgreenだった。
+  - 比較した`&scalar`、`sizeof scalar`、`local.member`は同じpartialのままで、今回の浅いliteral回復には含めなかった。
+- 原因:
+  - 続き1223の後続引数scannerはidentifier byteだけを受け入れていた。指数表記を含む英数字tokenは偶然その範囲に入る一方、quote、decimal point、
+    先頭の単項符号を持つ単一literalは完全な浅い引数でも拒否され、後続を捨てた引数不足の一時callへ戻っていた。
+- 変更:
+  - 単一の後続引数tokenを、identifier、encoding prefix対応のC文字／文字列literal、または任意の`+`/`-`と指数符号を持つ数値tokenとして
+    字句的に走査する小型helperへ分離した。quote内delimiter、escape、LF/CRLF spliceを反復scanし、式評価や再帰探索は追加しない。
+  - 既存のsimple-call fixtureへdelimiter入り文字列、文字・escape文字、小数・指数・正負数値の8形を加え、合計21形にした。Nativeの全名前境界、
+    再利用/fresh sessionと、Wasmの全形中央・代表6形の名前境界をNative snapshotへ完全一致させる。
+  - scope確認probeではaddress、`sizeof`、member accessを従来どおりpartialに保ち、単一literal以外へ広がっていないことを確認した。
+- テスト時間の改善:
+  - 既存の`make test-wasm-language-analysis-simple-call-arguments`へ統合し、21形、runtime manifest、Native parityを含む最終実測は
+    **real 1.50秒 / user 1.92秒 / sys 0.16秒**だった。新しい重複targetや全Wasm反復は追加しない。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = compile warningなし、
+    **language analysis tests passed (67 scenarios)**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.65秒 / user 42.04秒 / sys 0.93秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-simple-call-arguments` = 成功、
+    **real 1.50秒 / user 1.92秒 / sys 0.16秒**。
+  - 隣接回帰`make test-wasm-language-analysis-direct-operands` = 成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体の21形を1.50秒のNative parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`はこの小型拡張だけでは再実行せず、
+    関連batch gateへまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。address、`sizeof`、member access、
+    後続の演算式・call、conditional/comma式、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - call後続literal 21形は再探索せず、通常サイズの完全sourceで未固定の浅いoperand境界を小型probeから探す。全Wasm integrationの反復は避け、
+    Native約6秒と1.50秒のsimple call argument焦点gateを使う。

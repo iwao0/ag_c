@@ -539,6 +539,8 @@ static const char simple_remaining_call_argument_hover_source[] =
     "int simple_take_pair(SimpleCallType value, int number);\n"
     "int simple_take_three(int first, SimpleCallType value, int last);\n"
     "int simple_take_scalars(int first, int second);\n"
+    "int simple_take_string(SimpleCallType value, const char *text);\n"
+    "int simple_take_double(SimpleCallType value, double number);\n"
     "int simple_take_union(union SimpleCallUnion value, int number);\n"
     "int simple_take_two_items(SimpleCallType first, SimpleCallType second);\n"
     "int simple_take_four(SimpleCallType first, int second, int third, int fourth);\n"
@@ -557,6 +559,14 @@ static const char simple_remaining_call_argument_hover_source[] =
     "  int simple_crlf = simple_take_pair(simple_local \\\r\n, simple_scalar_parameter);\r\n"
     "  int simple_nested = simple_wrap_scalar(simple_take_pair(simple_local, simple_scalar_parameter));\n"
     "  int simple_many = simple_take_four(simple_local, simple_scalar_parameter, SIMPLE_CALL_ENUM, 3);\n"
+    "  int simple_string = simple_take_string(simple_local, \"text\");\n"
+    "  int simple_string_delimiters = simple_take_string(simple_local, \"comma, close )\");\n"
+    "  int simple_character = simple_take_scalars(simple_scalar_parameter, 'x');\n"
+    "  int simple_escaped_character = simple_take_scalars(simple_scalar_parameter, '\\n');\n"
+    "  int simple_float = simple_take_double(simple_local, 1.5);\n"
+    "  int simple_exponent = simple_take_double(simple_local, 1e3);\n"
+    "  int simple_negative = simple_take_pair(simple_local, -1);\n"
+    "  int simple_positive = simple_take_pair(simple_local, +1);\n"
     "  return simple_take_pair(simple_local, 3);\n"
     "  int simple_after;\n"
     "}\n"
@@ -10636,6 +10646,22 @@ static int test_simple_remaining_call_argument_hover(
        "simple_local", AG_LANGUAGE_SYMBOL_OBJECT},
       {"simple_take_four(simple_local, simple_scalar_parameter, SIMPLE_CALL_ENUM, 3)",
        "simple_local", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_take_string(simple_local, \"text\")", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_take_string(simple_local, \"comma, close )\")",
+       "simple_local", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_take_scalars(simple_scalar_parameter, 'x')",
+       "simple_scalar_parameter", AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"simple_take_scalars(simple_scalar_parameter, '\\n')",
+       "simple_scalar_parameter", AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"simple_take_double(simple_local, 1.5)", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_take_double(simple_local, 1e3)", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_take_pair(simple_local, -1)", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_take_pair(simple_local, +1)", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
       {"return simple_take_pair(simple_local, 3)", "simple_local",
        AG_LANGUAGE_SYMBOL_OBJECT},
   };

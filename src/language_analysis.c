@@ -3048,6 +3048,80 @@ static int analysis_complete_direct_expression_operand_tail(
   return 1;
 }
 
+static int analysis_simple_call_argument_token_end(
+    const char *source, size_t limit, size_t start, int enable_trigraphs,
+    size_t *token_end) {
+  if (!source || start >= limit) return 0;
+  size_t cursor = start;
+  size_t quote_start = cursor;
+  if (source[quote_start] == 'u' && quote_start + 2 < limit &&
+      source[quote_start + 1] == '8' && source[quote_start + 2] == '"') {
+    quote_start += 2;
+  } else if ((source[quote_start] == 'u' ||
+              source[quote_start] == 'U' ||
+              source[quote_start] == 'L') &&
+             quote_start + 1 < limit &&
+             (source[quote_start + 1] == '\'' ||
+              source[quote_start + 1] == '"')) {
+    quote_start++;
+  }
+  if (source[quote_start] == '\'' || source[quote_start] == '"') {
+    char quote = source[quote_start];
+    int escaped = 0;
+    for (cursor = quote_start + 1; cursor < limit; cursor++) {
+      size_t splice_size = analysis_line_splice_size_mode(
+          source, limit, cursor, enable_trigraphs);
+      if (splice_size) {
+        cursor += splice_size - 1;
+        continue;
+      }
+      char c = source[cursor];
+      if (escaped) {
+        escaped = 0;
+      } else if (c == '\\') {
+        escaped = 1;
+      } else if (c == quote) {
+        if (token_end) *token_end = cursor + 1;
+        return 1;
+      }
+    }
+    return 0;
+  }
+  if (source[cursor] == '+' || source[cursor] == '-') cursor++;
+  if (cursor >= limit) return 0;
+  if (isdigit((unsigned char)source[cursor]) ||
+      (source[cursor] == '.' && cursor + 1 < limit &&
+       isdigit((unsigned char)source[cursor + 1]))) {
+    char previous = 0;
+    cursor++;
+    while (cursor < limit) {
+      unsigned char c = (unsigned char)source[cursor];
+      if (isalnum(c) || c == '_' || c == '.') {
+        previous = (char)c;
+        cursor++;
+        continue;
+      }
+      if ((c == '+' || c == '-') &&
+          (previous == 'e' || previous == 'E' ||
+           previous == 'p' || previous == 'P')) {
+        previous = (char)c;
+        cursor++;
+        continue;
+      }
+      break;
+    }
+    if (token_end) *token_end = cursor;
+    return 1;
+  }
+  if (!is_identifier_start_byte((unsigned char)source[cursor])) return 0;
+  cursor++;
+  while (cursor < limit &&
+         is_identifier_byte((unsigned char)source[cursor]))
+    cursor++;
+  if (token_end) *token_end = cursor;
+  return 1;
+}
+
 static int analysis_complete_simple_remaining_call_tail(
     const char *source, size_t source_length,
     const recovery_delimiter_t *stack, size_t stack_count,
@@ -3071,12 +3145,9 @@ static int analysis_complete_simple_remaining_call_tail(
     cursor = skip_analysis_space_and_comments_mode(
         source, call_end, cursor, enable_trigraphs);
     if (cursor >= call_end) return 0;
-    unsigned char first = (unsigned char)source[cursor];
-    if (!is_identifier_byte(first) && !isdigit(first)) return 0;
-    cursor++;
-    while (cursor < call_end &&
-           is_identifier_byte((unsigned char)source[cursor]))
-      cursor++;
+    if (!analysis_simple_call_argument_token_end(
+            source, call_end, cursor, enable_trigraphs, &cursor))
+      return 0;
     cursor = skip_analysis_space_and_comments_mode(
         source, call_end, cursor, enable_trigraphs);
     if (cursor == call_end) break;

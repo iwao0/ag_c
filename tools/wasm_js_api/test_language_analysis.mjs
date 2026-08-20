@@ -1215,6 +1215,8 @@ const simpleRemainingCallArgumentSource = {
     "int simple_take_pair(SimpleCallType value, int number);\n" +
     "int simple_take_three(int first, SimpleCallType value, int last);\n" +
     "int simple_take_scalars(int first, int second);\n" +
+    "int simple_take_string(SimpleCallType value, const char *text);\n" +
+    "int simple_take_double(SimpleCallType value, double number);\n" +
     "int simple_take_union(union SimpleCallUnion value, int number);\n" +
     "int simple_take_two_items(SimpleCallType first, SimpleCallType second);\n" +
     "int simple_take_four(SimpleCallType first, int second, int third, int fourth);\n" +
@@ -1233,6 +1235,14 @@ const simpleRemainingCallArgumentSource = {
     "  int simple_crlf = simple_take_pair(simple_local \\\r\n, simple_scalar_parameter);\r\n" +
     "  int simple_nested = simple_wrap_scalar(simple_take_pair(simple_local, simple_scalar_parameter));\n" +
     "  int simple_many = simple_take_four(simple_local, simple_scalar_parameter, SIMPLE_CALL_ENUM, 3);\n" +
+    "  int simple_string = simple_take_string(simple_local, \"text\");\n" +
+    "  int simple_string_delimiters = simple_take_string(simple_local, \"comma, close )\");\n" +
+    "  int simple_character = simple_take_scalars(simple_scalar_parameter, 'x');\n" +
+    "  int simple_escaped_character = simple_take_scalars(simple_scalar_parameter, '\\n');\n" +
+    "  int simple_float = simple_take_double(simple_local, 1.5);\n" +
+    "  int simple_exponent = simple_take_double(simple_local, 1e3);\n" +
+    "  int simple_negative = simple_take_pair(simple_local, -1);\n" +
+    "  int simple_positive = simple_take_pair(simple_local, +1);\n" +
     "  return simple_take_pair(simple_local, 3);\n" +
     "  int simple_after;\n" +
     "}\n" +
@@ -1285,6 +1295,38 @@ const simpleRemainingCallArgumentCases = [
   },
   {
     fragment: "simple_take_four(simple_local, simple_scalar_parameter, SIMPLE_CALL_ENUM, 3)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_string(simple_local, \"text\")",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_string(simple_local, \"comma, close )\")",
+    name: "simple_local", kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "simple_take_scalars(simple_scalar_parameter, 'x')",
+    name: "simple_scalar_parameter", kind: "parameter",
+  },
+  {
+    fragment: "simple_take_scalars(simple_scalar_parameter, '\\n')",
+    name: "simple_scalar_parameter", kind: "parameter",
+  },
+  {
+    fragment: "simple_take_double(simple_local, 1.5)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_double(simple_local, 1e3)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_pair(simple_local, -1)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_pair(simple_local, +1)",
     name: "simple_local", kind: "object",
   },
   {
