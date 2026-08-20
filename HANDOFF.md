@@ -36101,3 +36101,39 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同じ40形probeで残った`int function(int count, int values[count]);`の`count`使用位置hoverがdiagnostics空・`partial:false`でもnullになる問題を、
     prototype-scopeの先行parameter lookup pointだけに限定して切り分ける。開発中はNative約5秒と小型focusを使い、修正後に関連declaration batchの
     全Wasm integrationを一度だけ実行する。
+
+### このセッション（続き1217）: prototype parameterの配列境界operand hoverを回復した
+- 対象選定:
+  - `int f(int count, int values[count]);`で後続parameterの配列境界にある先行parameterをhoverすると、diagnostics空・`partial:false`でも
+    `hover:null`になる問題を、直接function parameter listのprototype scopeへ限定して調べた。
+  - 通常、`static`、array qualifier、複数operand式、括弧付きbound、多次元配列、pointer-to-VLA、comment、LF/CRLF splice、function typedef、
+    function definition、file object、enum定数、macroの16形を確認した。nested callback parameter listは深い宣言子になるため対象外とした。
+- 原因:
+  - parameter宣言専用recoveryは完全なprototypeを保持する一方、解析markerをprototype終了後のfile scopeへ置いていた。そのlookup pointでは
+    prototype-scopeのparameter名がすでに不可視となるため、後続parameterのboundから先行parameterを解決できなかった。
+  - definitionではbody内markerならparameterが見えるが、元のbound位置より後にあるparameterとbody localまで候補へ混入し得た。
+- 変更:
+  - function宣言終端scannerから直接parameter listの対応する`)`を返し、comment・quote・preprocessor line・LF/CRLF spliceを除外する反復scannerで、
+    選択識別子が直接parameterの配列宣言子内にある場合だけ現在parameter直後の`,`または`)`を求める。
+  - その位置へ一時marker parameterを挿入し、先行parameterとfile symbolを可視にしつつ、後続parameterとdefinition body localを不可視に保つ。
+    配列の`[`がnested callback内のparen depthで開く形は一致させず、意味評価・再帰探索は追加しない。
+  - Native/Wasm fixtureで16形の正確なkind・declaration range、enum値、macro replacement/documentation、後続symbol非可視、diagnostics空、
+    `partial:false`を固定した。Nativeは全形の名前先頭・中央・末尾を再利用/fresh sessionで、Wasmは全形中央と代表5形の境界を確認する。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=prototype-bounds`と`make test-wasm-language-analysis-prototype-bounds`を追加した。同じJSテスト本体の小型sourceだけを
+    実行し、runtime manifestとNative snapshot parityを含む最終実測は**real 0.53秒 / user 0.64秒 / sys 0.11秒**だった。
+  - 全Wasm integrationでは同区間が0.73秒で、既存のtwo-/three-argument enum callやdeclarator/member hoverが総時間の大半を占めることを区間計測で確認した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = **language analysis tests passed (61 scenarios)**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-prototype-bounds` = 成功、**real 0.53秒 / user 0.64秒 / sys 0.11秒**。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `AGC_LANGUAGE_ANALYSIS_TIMING=1 /usr/bin/time -p make test-wasm-js-api` = language-analysis、smoke、package exportsすべて成功、
+    **real 1296.80秒 / user 1293.52秒 / sys 6.87秒**。関連declaration batch末尾の全統合gateとして実施した。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。nested callbackの配列境界、深い宣言子、
+    巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回の16形と直前の40形でgreenだった境界は再探索せず、通常サイズの完全sourceで未固定のdeclaration/lookup-point境界を小型probeから探す。
+    開発中は対応する0.5秒前後の焦点gateを使い、全Wasm integrationは次の関連batch末尾まで繰り返さない。

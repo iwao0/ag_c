@@ -362,6 +362,29 @@ static const char for_init_declaration_hover_source[] =
     "  return for_after;\n"
     "}\n"
     "int for_file_after;\n";
+static const char prototype_parameter_bound_hover_source[] =
+    "/// prototype bound macro documentation\n"
+    "#define PROTO_BOUND_MACRO 7\n"
+    "enum { PROTO_BOUND_ENUM = 5 };\n"
+    "int proto_bound_file = 4;\n"
+    "int proto_direct(int direct_count, int direct_values[direct_count], int direct_later);\n"
+    "int proto_static(int static_count, int static_values[static static_count], int static_later);\n"
+    "int proto_qualified(int qualified_count, int qualified_values[const qualified_count], int qualified_later);\n"
+    "int proto_expression(int expr_rows, int expr_columns, int expr_values[(expr_rows + expr_columns)], int expr_later);\n"
+    "int proto_grouped(int grouped_count, int grouped_values[(grouped_count)], int grouped_later);\n"
+    "int proto_inner(int inner_rows, int inner_columns, int inner_values[inner_rows][inner_columns], int inner_later);\n"
+    "int proto_pointer(int pointer_count, int (*pointer_values)[pointer_count], int pointer_later);\n"
+    "int proto_comment(int comment_count, int comment_values[/* gap */ comment_count], int comment_later);\n"
+    "int proto_splice_lf(int splice_lf_count, int splice_lf_values[\\\n"
+    "splice_lf_count], int splice_lf_later);\n"
+    "int proto_splice_crlf(int splice_crlf_count, int splice_crlf_values[\\\r\n"
+    "splice_crlf_count], int splice_crlf_later);\r\n"
+    "typedef int ProtoBoundFunction(int typedef_count, int typedef_values[typedef_count], int typedef_later);\n"
+    "int proto_definition(int definition_count, int definition_values[definition_count], int definition_later) { int definition_body; return definition_count + definition_values[0] + definition_later + definition_body; }\n"
+    "int proto_file_object(int file_values[proto_bound_file], int file_later);\n"
+    "int proto_enum(int enum_values[PROTO_BOUND_ENUM], int enum_later);\n"
+    "int proto_macro(int macro_values[PROTO_BOUND_MACRO], int macro_later);\n"
+    "int proto_bound_after;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -2978,6 +3001,20 @@ static int print_for_init_declaration_parity_snapshot(
     return 1;
   return print_macro_definition_source_snapshot(
       "for-init-hover.c", for_init_declaration_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_prototype_parameter_bound_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(prototype_parameter_bound_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "prototype-parameter-bound.c",
+      prototype_parameter_bound_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -9617,6 +9654,144 @@ static int test_for_init_declaration_hover(ag_target_info_t target) {
   return 0;
 }
 
+static int test_prototype_parameter_bound_hover(
+    ag_target_info_t target) {
+  static const struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    const char *later_parameter;
+  } cases[] = {
+      {"direct_values[direct_count]", "direct_count",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "direct_later"},
+      {"static_values[static static_count]", "static_count",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "static_later"},
+      {"qualified_values[const qualified_count]", "qualified_count",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "qualified_later"},
+      {"expr_values[(expr_rows + expr_columns)]", "expr_rows",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "expr_later"},
+      {"expr_values[(expr_rows + expr_columns)]", "expr_columns",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "expr_later"},
+      {"grouped_values[(grouped_count)]", "grouped_count",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "grouped_later"},
+      {"inner_values[inner_rows][inner_columns]", "inner_columns",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "inner_later"},
+      {"(*pointer_values)[pointer_count]", "pointer_count",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "pointer_later"},
+      {"comment_values[/* gap */ comment_count]", "comment_count",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "comment_later"},
+      {"splice_lf_values[\\\nsplice_lf_count]", "splice_lf_count",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "splice_lf_later"},
+      {"splice_crlf_values[\\\r\nsplice_crlf_count]",
+       "splice_crlf_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "splice_crlf_later"},
+      {"typedef_values[typedef_count]", "typedef_count",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "typedef_later"},
+      {"definition_values[definition_count]", "definition_count",
+       AG_LANGUAGE_SYMBOL_PARAMETER, "definition_later"},
+      {"file_values[proto_bound_file]", "proto_bound_file",
+       AG_LANGUAGE_SYMBOL_OBJECT, "file_later"},
+      {"enum_values[PROTO_BOUND_ENUM]", "PROTO_BOUND_ENUM",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "enum_later"},
+      {"macro_values[PROTO_BOUND_MACRO]", "PROTO_BOUND_MACRO",
+       AG_LANGUAGE_SYMBOL_MACRO, "macro_later"},
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "prototype parameter bound session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  const char *macro_comment = strstr(
+      prototype_parameter_bound_hover_source,
+      "/// prototype bound macro documentation");
+  CHECK(macro_comment != NULL, "prototype bound macro comment anchor");
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          prototype_parameter_bound_hover_source,
+          cases[case_index].fragment);
+      const char *use = fragment ? strstr(
+          fragment, cases[case_index].name) : NULL;
+      const char *declaration = strstr(
+          prototype_parameter_bound_hover_source,
+          cases[case_index].name);
+      CHECK(use && declaration, "prototype parameter bound anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]);
+           delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "prototype parameter bound fresh session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "prototype-parameter-bound.c",
+                  prototype_parameter_bound_hover_source,
+                  (size_t)(use -
+                           prototype_parameter_bound_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "prototype parameter bound analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover && completion &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "prototype-parameter-bound.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            prototype_parameter_bound_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            prototype_parameter_bound_hover_source) +
+                          (int)name_length &&
+                  same_range(&hover->declaration,
+                             &completion->declaration) &&
+                  !find_symbol(&snapshot,
+                               cases[case_index].later_parameter,
+                               AG_LANGUAGE_SYMBOL_PARAMETER) &&
+                  !find_symbol(&snapshot, "proto_bound_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  (strcmp(cases[case_index].name,
+                          "definition_count") != 0 ||
+                   !find_symbol(&snapshot, "definition_body",
+                                AG_LANGUAGE_SYMBOL_OBJECT)),
+              "prototype parameter bound snapshot");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(strcmp(hover->constant_value, "5") == 0,
+                "prototype bound enum value");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+          CHECK(hover->macro_replacement &&
+                    strcmp(hover->macro_replacement, "7") == 0 &&
+                    check_documentation_symbol(
+                        hover, "prototype bound macro documentation",
+                        "prototype-parameter-bound.c",
+                        (size_t)(macro_comment -
+                                 prototype_parameter_bound_hover_source),
+                        (size_t)(macro_comment -
+                                 prototype_parameter_bound_hover_source) +
+                            strlen("/// prototype bound macro documentation")),
+                "prototype bound macro fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -11224,6 +11399,9 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--for-init-declaration-parity-json") == 0)
     return print_for_init_declaration_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--prototype-parameter-bound-parity-json") == 0)
+    return print_prototype_parameter_bound_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -11375,6 +11553,8 @@ int main(int argc, char **argv) {
         "inline tag object hover scenarios");
   CHECK(test_for_init_declaration_hover(target) == 0,
         "for init declaration hover scenarios");
+  CHECK(test_prototype_parameter_bound_hover(target) == 0,
+        "prototype parameter bound hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -14475,6 +14655,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (60 scenarios)");
+  puts("language analysis tests passed (61 scenarios)");
   return 0;
 }

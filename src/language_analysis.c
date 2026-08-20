@@ -2142,8 +2142,9 @@ static int function_declaration_recovery_end(
     const char *source, size_t length, size_t name_end,
     int initial_paren_depth, int initial_bracket_depth,
     size_t *declaration_end, int *is_definition,
-    size_t *body_open) {
+    size_t *body_open, size_t *parameter_list_close) {
   if (body_open) *body_open = SIZE_MAX;
+  if (parameter_list_close) *parameter_list_close = SIZE_MAX;
   size_t cursor = name_end;
   int direct_function_name =
       initial_paren_depth == 0 && initial_bracket_depth == 0;
@@ -2241,6 +2242,7 @@ static int function_declaration_recovery_end(
       if (paren_depth == 0 && !initial_parameter_list_closed) {
         initial_parameter_list_closed = 1;
         closed_initial_parameter_list = 1;
+        if (parameter_list_close) *parameter_list_close = i;
       }
     } else if (c == '[') bracket_depth++;
     else if (c == ']' && bracket_depth > 0) bracket_depth--;
@@ -2278,6 +2280,109 @@ static int function_declaration_recovery_end(
         !closed_initial_parameter_list &&
         !isspace((unsigned char)c) && c != ';' && c != ',' && c != '{')
       parameter_declaration_has_tokens = 1;
+  }
+  return 0;
+}
+
+static int analysis_direct_parameter_array_bound_marker_offset(
+    const char *source, size_t length, size_t parameter_open,
+    size_t parameter_close, size_t selected_start,
+    size_t *marker_offset) {
+  if (!source || !marker_offset || parameter_open >= selected_start ||
+      selected_start >= parameter_close || parameter_close >= length ||
+      source[parameter_open] != '(' || source[parameter_close] != ')')
+    return 0;
+  size_t paren_depth = 1;
+  size_t bracket_depth = 0;
+  size_t brace_depth = 0;
+  size_t array_bound_paren_depth = SIZE_MAX;
+  int cursor_in_direct_array_bound = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = 0;
+  int preprocessor_line = 0;
+  for (size_t i = parameter_open + 1; i <= parameter_close; i++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, i, 0);
+    if (splice_size > 0) {
+      i += splice_size - 1;
+      continue;
+    }
+    char c = source[i];
+    char next = i + 1 < length ? source[i + 1] : 0;
+    if (i == selected_start)
+      cursor_in_direct_array_bound = bracket_depth > 0 &&
+                                     array_bound_paren_depth == 1;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      at_line_start = 1;
+      preprocessor_line = 0;
+      continue;
+    }
+    if (at_line_start && (c == ' ' || c == '\t' || c == '\r'))
+      continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    at_line_start = 0;
+    if (preprocessor_line) continue;
+    if (cursor_in_direct_array_bound && i > selected_start &&
+        paren_depth == 1 && bracket_depth == 0 && brace_depth == 0 &&
+        (c == ',' || c == ')')) {
+      *marker_offset = i;
+      return 1;
+    }
+    if (c == '(') {
+      paren_depth++;
+    } else if (c == ')' && paren_depth > 1) {
+      paren_depth--;
+    } else if (c == '[') {
+      if (bracket_depth == 0)
+        array_bound_paren_depth = paren_depth;
+      bracket_depth++;
+    } else if (c == ']' && bracket_depth > 0) {
+      bracket_depth--;
+      if (bracket_depth == 0) array_bound_paren_depth = SIZE_MAX;
+    } else if (c == '{') {
+      brace_depth++;
+    } else if (c == '}' && brace_depth > 0) {
+      brace_depth--;
+    }
   }
   return 0;
 }
@@ -2539,17 +2644,46 @@ static char *build_function_parameter_recovery_source(
         if (after_candidate < length && source[after_candidate] == '(') {
           size_t declaration_end = 0;
           size_t function_body_open = SIZE_MAX;
+          size_t parameter_list_close = SIZE_MAX;
           int is_definition = 0;
           if (function_declaration_recovery_end(
                   source, length, candidate_end, 0, 0,
                   &declaration_end, &is_definition,
-                  &function_body_open) &&
+                  &function_body_open, &parameter_list_close) &&
               candidate_end <= selected_start &&
               selected_end <= (is_definition
                                    ? function_body_open
                                    : declaration_end)) {
             static const char marker[] =
                 "\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+            size_t parameter_open = skip_analysis_space_and_comments(
+                source, length, candidate_end);
+            size_t parameter_marker_offset = 0;
+            if (analysis_direct_parameter_array_bound_marker_offset(
+                    source, length, parameter_open,
+                    parameter_list_close, selected_start,
+                    &parameter_marker_offset)) {
+              static const char parameter_marker[] =
+                  ", int " AG_LANGUAGE_CURSOR_MARKER;
+              if (declaration_end >
+                  SIZE_MAX - sizeof(parameter_marker))
+                return NULL;
+              size_t result_length =
+                  declaration_end + sizeof(parameter_marker) - 1;
+              char *result = malloc(result_length + 1);
+              if (!result) return NULL;
+              memcpy(result, source, parameter_marker_offset);
+              memcpy(result + parameter_marker_offset,
+                     parameter_marker, sizeof(parameter_marker) - 1);
+              memcpy(result + parameter_marker_offset +
+                         sizeof(parameter_marker) - 1,
+                     source + parameter_marker_offset,
+                     declaration_end - parameter_marker_offset);
+              result[result_length] = '\0';
+              if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+              if (source_consumed) *source_consumed = declaration_end;
+              return result;
+            }
             if (!is_definition) {
               if (declaration_end > SIZE_MAX - sizeof(marker)) return NULL;
               size_t result_length =
@@ -2630,7 +2764,7 @@ static char *build_function_declaration_recovery_source(
   int is_definition = 0;
   if (!function_declaration_recovery_end(
           source, length, name_end, paren_depth, bracket_depth,
-          &declaration_end, &is_definition, NULL) ||
+          &declaration_end, &is_definition, NULL, NULL) ||
       (is_definition && outer_brace_count != 0))
     return NULL;
   static const char suffix[] =

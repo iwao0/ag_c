@@ -249,6 +249,179 @@ if (languageAnalysisFocus === "for-init") {
   process.exit(0);
 }
 
+const prototypeParameterBoundSource = {
+  name: "prototype-parameter-bound.c",
+  source: "/// prototype bound macro documentation\n" +
+    "#define PROTO_BOUND_MACRO 7\n" +
+    "enum { PROTO_BOUND_ENUM = 5 };\n" +
+    "int proto_bound_file = 4;\n" +
+    "int proto_direct(int direct_count, int direct_values[direct_count], int direct_later);\n" +
+    "int proto_static(int static_count, int static_values[static static_count], int static_later);\n" +
+    "int proto_qualified(int qualified_count, int qualified_values[const qualified_count], int qualified_later);\n" +
+    "int proto_expression(int expr_rows, int expr_columns, int expr_values[(expr_rows + expr_columns)], int expr_later);\n" +
+    "int proto_grouped(int grouped_count, int grouped_values[(grouped_count)], int grouped_later);\n" +
+    "int proto_inner(int inner_rows, int inner_columns, int inner_values[inner_rows][inner_columns], int inner_later);\n" +
+    "int proto_pointer(int pointer_count, int (*pointer_values)[pointer_count], int pointer_later);\n" +
+    "int proto_comment(int comment_count, int comment_values[/* gap */ comment_count], int comment_later);\n" +
+    "int proto_splice_lf(int splice_lf_count, int splice_lf_values[\\\n" +
+    "splice_lf_count], int splice_lf_later);\n" +
+    "int proto_splice_crlf(int splice_crlf_count, int splice_crlf_values[\\\r\n" +
+    "splice_crlf_count], int splice_crlf_later);\r\n" +
+    "typedef int ProtoBoundFunction(int typedef_count, int typedef_values[typedef_count], int typedef_later);\n" +
+    "int proto_definition(int definition_count, int definition_values[definition_count], int definition_later) { int definition_body; return definition_count + definition_values[0] + definition_later + definition_body; }\n" +
+    "int proto_file_object(int file_values[proto_bound_file], int file_later);\n" +
+    "int proto_enum(int enum_values[PROTO_BOUND_ENUM], int enum_later);\n" +
+    "int proto_macro(int macro_values[PROTO_BOUND_MACRO], int macro_later);\n" +
+    "int proto_bound_after;\n",
+};
+const prototypeParameterBoundCases = [
+  {
+    fragment: "direct_values[direct_count]", name: "direct_count",
+    kind: "parameter", later: "direct_later", checkBoundaries: true,
+  },
+  {
+    fragment: "static_values[static static_count]", name: "static_count",
+    kind: "parameter", later: "static_later",
+  },
+  {
+    fragment: "qualified_values[const qualified_count]",
+    name: "qualified_count", kind: "parameter", later: "qualified_later",
+  },
+  {
+    fragment: "expr_values[(expr_rows + expr_columns)]", name: "expr_rows",
+    kind: "parameter", later: "expr_later",
+  },
+  {
+    fragment: "expr_values[(expr_rows + expr_columns)]",
+    name: "expr_columns", kind: "parameter", later: "expr_later",
+    checkBoundaries: true,
+  },
+  {
+    fragment: "grouped_values[(grouped_count)]", name: "grouped_count",
+    kind: "parameter", later: "grouped_later",
+  },
+  {
+    fragment: "inner_values[inner_rows][inner_columns]",
+    name: "inner_columns", kind: "parameter", later: "inner_later",
+  },
+  {
+    fragment: "(*pointer_values)[pointer_count]", name: "pointer_count",
+    kind: "parameter", later: "pointer_later", checkBoundaries: true,
+  },
+  {
+    fragment: "comment_values[/* gap */ comment_count]",
+    name: "comment_count", kind: "parameter", later: "comment_later",
+  },
+  {
+    fragment: "splice_lf_values[\\\nsplice_lf_count]",
+    name: "splice_lf_count", kind: "parameter", later: "splice_lf_later",
+  },
+  {
+    fragment: "splice_crlf_values[\\\r\nsplice_crlf_count]",
+    name: "splice_crlf_count", kind: "parameter",
+    later: "splice_crlf_later",
+  },
+  {
+    fragment: "typedef_values[typedef_count]", name: "typedef_count",
+    kind: "parameter", later: "typedef_later",
+  },
+  {
+    fragment: "definition_values[definition_count]",
+    name: "definition_count", kind: "parameter", later: "definition_later",
+    checkBoundaries: true,
+  },
+  {
+    fragment: "file_values[proto_bound_file]", name: "proto_bound_file",
+    kind: "object", later: "file_later",
+  },
+  {
+    fragment: "enum_values[PROTO_BOUND_ENUM]", name: "PROTO_BOUND_ENUM",
+    kind: "enumConstant", later: "enum_later",
+  },
+  {
+    fragment: "macro_values[PROTO_BOUND_MACRO]", name: "PROTO_BOUND_MACRO",
+    kind: "macro", later: "macro_later", checkBoundaries: true,
+  },
+];
+if (!languageAnalysisFocus ||
+    languageAnalysisFocus === "prototype-bounds") {
+  for (const boundCase of prototypeParameterBoundCases) {
+    const fragmentIndex = prototypeParameterBoundSource.source.indexOf(
+      boundCase.fragment,
+    );
+    const useIndex = prototypeParameterBoundSource.source.indexOf(
+      boundCase.name, fragmentIndex,
+    );
+    const declarationIndex = prototypeParameterBoundSource.source.indexOf(
+      boundCase.name,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${boundCase.name} prototype bound anchor`);
+    const nameBytes = Buffer.byteLength(boundCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = boundCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        prototypeParameterBoundSource.source.slice(0, useIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(
+        prototypeParameterBoundSource,
+        {
+          cursor: {
+            sourceName: prototypeParameterBoundSource.name,
+            byteOffset,
+          },
+        },
+      );
+      assert.equal(wasmResult.partial, false,
+        `${boundCase.name} prototype bound partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${boundCase.name} prototype bound diagnostics`);
+      assert.equal(wasmResult.hover?.name, boundCase.name,
+        `${boundCase.name} prototype bound hover name`);
+      assert.equal(wasmResult.hover?.kind, boundCase.kind,
+        `${boundCase.name} prototype bound hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        prototypeParameterBoundSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.equal(symbol(wasmResult, boundCase.later, "parameter"),
+        undefined, `${boundCase.name} later parameter hidden`);
+      assert.equal(symbol(wasmResult, "proto_bound_after", "object"),
+        undefined, `${boundCase.name} later file object hidden`);
+      if (boundCase.name === "definition_count") {
+        assert.equal(symbol(wasmResult, "definition_body", "object"),
+          undefined, "definition body local hidden at parameter bound");
+      }
+      if (boundCase.name === "PROTO_BOUND_ENUM") {
+        assert.equal(wasmResult.hover.initializer?.constantValue, "5",
+          "prototype bound enum value");
+      }
+      if (boundCase.name === "PROTO_BOUND_MACRO") {
+        assert.equal(wasmResult.hover.macro?.replacement, "7",
+          "prototype bound macro replacement");
+        assert.equal(wasmResult.hover.documentation,
+          "prototype bound macro documentation");
+      }
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--prototype-parameter-bound-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${boundCase.name} prototype bound differ`);
+    }
+  }
+  reportTestTiming("prototype parameter bounds");
+}
+if (languageAnalysisFocus === "prototype-bounds") {
+  compiler.dispose();
+  console.log("wasm language analysis prototype bound tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",
