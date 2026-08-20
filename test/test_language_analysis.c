@@ -365,6 +365,7 @@ static const char for_init_declaration_hover_source[] =
 static const char prototype_parameter_bound_hover_source[] =
     "/// prototype bound macro documentation\n"
     "#define PROTO_BOUND_MACRO 7\n"
+    "#define CALLBACK_DECL_NOISE (\n"
     "enum { PROTO_BOUND_ENUM = 5 };\n"
     "int proto_bound_file = 4;\n"
     "int proto_direct(int direct_count, int direct_values[direct_count], int direct_later);\n"
@@ -384,6 +385,17 @@ static const char prototype_parameter_bound_hover_source[] =
     "int proto_file_object(int file_values[proto_bound_file], int file_later);\n"
     "int proto_enum(int enum_values[PROTO_BOUND_ENUM], int enum_later);\n"
     "int proto_macro(int macro_values[PROTO_BOUND_MACRO], int macro_later);\n"
+    "void (*proto_callback_object)(int callback_object_count, int callback_object_values[callback_object_count], int callback_object_later);\n"
+    "void (*proto_callback_static)(int callback_static_count, int callback_static_values[static callback_static_count], int callback_static_later);\n"
+    "void (*proto_callback_comment)(int callback_comment_count, int callback_comment_values[/* gap */ callback_comment_count], int callback_comment_later);\n"
+    "void (*proto_callback_splice_lf)(int callback_splice_lf_count, int callback_splice_lf_values[\\\ncallback_splice_lf_count], int callback_splice_lf_later);\n"
+    "void (*proto_callback_splice_crlf)(int callback_splice_crlf_count, int callback_splice_crlf_values[\\\r\ncallback_splice_crlf_count], int callback_splice_crlf_later);\r\n"
+    "typedef void ProtoCallbackTypedef(int callback_typedef_count, int callback_typedef_values[callback_typedef_count], int callback_typedef_later);\n"
+    "int proto_callback_local(void) {\n"
+    "  void (*callback_local_object)(int callback_local_count, int callback_local_values[callback_local_count], int callback_local_later);\n"
+    "  int callback_after_local;\n"
+    "  return callback_local_object != 0;\n"
+    "}\n"
     "int proto_bound_after;\n";
 static const char block_static_assert_hover_source[] =
     "/// block static assert macro documentation\n"
@@ -10100,6 +10112,27 @@ static int test_prototype_parameter_bound_hover(
        AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "enum_later"},
       {"macro_values[PROTO_BOUND_MACRO]", "PROTO_BOUND_MACRO",
        AG_LANGUAGE_SYMBOL_MACRO, "macro_later"},
+      {"callback_object_values[callback_object_count]",
+       "callback_object_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "callback_object_later"},
+      {"callback_static_values[static callback_static_count]",
+       "callback_static_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "callback_static_later"},
+      {"callback_comment_values[/* gap */ callback_comment_count]",
+       "callback_comment_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "callback_comment_later"},
+      {"callback_splice_lf_values[\\\ncallback_splice_lf_count]",
+       "callback_splice_lf_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "callback_splice_lf_later"},
+      {"callback_splice_crlf_values[\\\r\ncallback_splice_crlf_count]",
+       "callback_splice_crlf_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "callback_splice_crlf_later"},
+      {"callback_typedef_values[callback_typedef_count]",
+       "callback_typedef_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "callback_typedef_later"},
+      {"callback_local_values[callback_local_count]",
+       "callback_local_count", AG_LANGUAGE_SYMBOL_PARAMETER,
+       "callback_local_later"},
   };
   ag_compilation_session_t *session =
       ag_compilation_session_create(&target);
@@ -10166,6 +10199,8 @@ static int test_prototype_parameter_bound_hover(
                                cases[case_index].later_parameter,
                                AG_LANGUAGE_SYMBOL_PARAMETER) &&
                   !find_symbol(&snapshot, "proto_bound_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "callback_after_local",
                                AG_LANGUAGE_SYMBOL_OBJECT) &&
                   (strcmp(cases[case_index].name,
                           "definition_count") != 0 ||

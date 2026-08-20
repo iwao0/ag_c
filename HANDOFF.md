@@ -36603,3 +36603,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。nested callback declarator、複合bound式、nested record body、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - callback parameter配列境界11形は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationの反復は避け、Native約6秒と1.11秒のlocal member配列境界焦点gateを使う。
+
+### このセッション（続き1231）: 直接function-pointer objectのprototype parameter配列境界hoverを回復した
+- 対象選定:
+  - 通常サイズの完全sourceだけを使う小型Native/Wasm probeで、先行callback parameterを後続配列parameterの境界から参照する宣言を分類した。
+  - file function typedefはgreenだった一方、file/block scopeのfunction-pointer objectはhover/completionがnull、diagnostics空・`partial:false`だった。
+  - local function typedef、外側function parameter内のcallback、factory-return callbackも未回復だったが、括弧scopeの異なる深い宣言子なので今回の直接object範囲から除外した。
+- 原因:
+  - 既存のgeneric function parameter recoveryが`void (*callback)(...)`先頭の`void (`を外側function parameter listとして先に扱い、callback prototype scopeへmarkerを置けなかった。
+  - 直前コミットのrecord member専用scannerは直接callback parameter listを識別できたが、record bodyとmember終端`;`を前提にしており通常objectへ再利用できなかった。
+- 変更:
+  - scannerを、選択識別子を含む直接配列境界と、そのparameter list直前に完結したtop-level pointer declaratorがあることを返す共通helperへ限定的に一般化した。
+  - pointer declarator内にnested括弧がある場合は辞退するため、factory-return callbackやnested declaratorへは一致しない。record側は従来どおりparameter list後がmember終端`;`であることを別途確認する。
+  - 通常object側の回復をgeneric function parameter recoveryより先に置き、選択配列parameter直後へsynthetic marker parameterを挿入する。現在宣言の`;`でsourceを切り、block scopeでは外側braceだけを閉じて、後続parameter・local/file objectを可視にしない。
+  - file先頭からscanする場合は先頭行をpreprocessor候補として初期化し、未使用macro replacement内の不均衡な括弧を宣言delimiterに数えない。
+  - file/local object、`static` array parameter、comment、LF/CRLF spliceの6失敗形、括弧を含む未使用macro noise、file function typedefの既存green比較を、既存prototype-bound fixtureへ統合した。新しいMake targetは追加しない。
+- テスト時間の改善:
+  - 既存`make test-wasm-language-analysis-prototype-bounds`へ統合し、従来形と追加7形、runtime manifest、Native snapshot parityを含む最終実測は**real 1.02秒 / user 1.14秒 / sys 0.12秒**だった。
+  - 直前のrecord callback回帰と同じself-hostを使う2 targetの直列実行も**real 2.03秒 / user 2.41秒 / sys 0.21秒**だった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = compile warningなし、**language analysis tests passed (70 scenarios)**、**real 5.69秒 / user 4.00秒 / sys 1.44秒**。追加7形を名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.83秒 / user 42.25秒 / sys 0.97秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-prototype-bounds` = 成功、**real 1.02秒 / user 1.14秒 / sys 0.12秒**。追加7形の中央とfile/local objectの名前境界をNative snapshotへ完全一致させた。
+  - `make test-wasm-language-analysis-prototype-bounds test-wasm-language-analysis-local-member-array-bounds` = 2 target成功、**real 2.03秒 / user 2.41秒 / sys 0.21秒**。
+  - file/local function-pointer objectの代表sourceは`clang -std=c11 -pedantic-errors -fsyntax-only`で成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体を1.02秒のNative parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行せず、関連batch gateへまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。local function typedef、外側function parameter callback、factory-return callback、nested declarator、複合bound式、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回の直接function-pointer object 7形は再探索せず、通常サイズ・完全sourceにある別の浅いlookup境界を小型probeから探す。全Wasm integrationを反復せず、Native約6秒と1.02秒のprototype-bound焦点gateを使う。

@@ -253,6 +253,7 @@ const prototypeParameterBoundSource = {
   name: "prototype-parameter-bound.c",
   source: "/// prototype bound macro documentation\n" +
     "#define PROTO_BOUND_MACRO 7\n" +
+    "#define CALLBACK_DECL_NOISE (\n" +
     "enum { PROTO_BOUND_ENUM = 5 };\n" +
     "int proto_bound_file = 4;\n" +
     "int proto_direct(int direct_count, int direct_values[direct_count], int direct_later);\n" +
@@ -272,6 +273,19 @@ const prototypeParameterBoundSource = {
     "int proto_file_object(int file_values[proto_bound_file], int file_later);\n" +
     "int proto_enum(int enum_values[PROTO_BOUND_ENUM], int enum_later);\n" +
     "int proto_macro(int macro_values[PROTO_BOUND_MACRO], int macro_later);\n" +
+    "void (*proto_callback_object)(int callback_object_count, int callback_object_values[callback_object_count], int callback_object_later);\n" +
+    "void (*proto_callback_static)(int callback_static_count, int callback_static_values[static callback_static_count], int callback_static_later);\n" +
+    "void (*proto_callback_comment)(int callback_comment_count, int callback_comment_values[/* gap */ callback_comment_count], int callback_comment_later);\n" +
+    "void (*proto_callback_splice_lf)(int callback_splice_lf_count, int callback_splice_lf_values[\\\n" +
+    "callback_splice_lf_count], int callback_splice_lf_later);\n" +
+    "void (*proto_callback_splice_crlf)(int callback_splice_crlf_count, int callback_splice_crlf_values[\\\r\n" +
+    "callback_splice_crlf_count], int callback_splice_crlf_later);\r\n" +
+    "typedef void ProtoCallbackTypedef(int callback_typedef_count, int callback_typedef_values[callback_typedef_count], int callback_typedef_later);\n" +
+    "int proto_callback_local(void) {\n" +
+    "  void (*callback_local_object)(int callback_local_count, int callback_local_values[callback_local_count], int callback_local_later);\n" +
+    "  int callback_after_local;\n" +
+    "  return callback_local_object != 0;\n" +
+    "}\n" +
     "int proto_bound_after;\n",
 };
 const prototypeParameterBoundCases = [
@@ -342,6 +356,41 @@ const prototypeParameterBoundCases = [
     fragment: "macro_values[PROTO_BOUND_MACRO]", name: "PROTO_BOUND_MACRO",
     kind: "macro", later: "macro_later", checkBoundaries: true,
   },
+  {
+    fragment: "callback_object_values[callback_object_count]",
+    name: "callback_object_count", kind: "parameter",
+    later: "callback_object_later", checkBoundaries: true,
+  },
+  {
+    fragment: "callback_static_values[static callback_static_count]",
+    name: "callback_static_count", kind: "parameter",
+    later: "callback_static_later",
+  },
+  {
+    fragment: "callback_comment_values[/* gap */ callback_comment_count]",
+    name: "callback_comment_count", kind: "parameter",
+    later: "callback_comment_later",
+  },
+  {
+    fragment: "callback_splice_lf_values[\\\ncallback_splice_lf_count]",
+    name: "callback_splice_lf_count", kind: "parameter",
+    later: "callback_splice_lf_later",
+  },
+  {
+    fragment: "callback_splice_crlf_values[\\\r\ncallback_splice_crlf_count]",
+    name: "callback_splice_crlf_count", kind: "parameter",
+    later: "callback_splice_crlf_later",
+  },
+  {
+    fragment: "callback_typedef_values[callback_typedef_count]",
+    name: "callback_typedef_count", kind: "parameter",
+    later: "callback_typedef_later",
+  },
+  {
+    fragment: "callback_local_values[callback_local_count]",
+    name: "callback_local_count", kind: "parameter",
+    later: "callback_local_later", checkBoundaries: true,
+  },
 ];
 if (!languageAnalysisFocus ||
     languageAnalysisFocus === "prototype-bounds") {
@@ -393,6 +442,8 @@ if (!languageAnalysisFocus ||
         undefined, `${boundCase.name} later parameter hidden`);
       assert.equal(symbol(wasmResult, "proto_bound_after", "object"),
         undefined, `${boundCase.name} later file object hidden`);
+      assert.equal(symbol(wasmResult, "callback_after_local", "object"),
+        undefined, `${boundCase.name} later callback local hidden`);
       if (boundCase.name === "definition_count") {
         assert.equal(symbol(wasmResult, "definition_body", "object"),
           undefined, "definition body local hidden at parameter bound");
