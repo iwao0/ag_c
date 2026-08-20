@@ -2374,6 +2374,10 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int ExternObjectPointerDecimalArrayType;\n" +
     "typedef int ExternObjectCommentDecimalArrayType;\n" +
     "typedef int ExternObjectSpliceDecimalArrayType;\n" +
+    "typedef int ExternObjectParenthesizedType;\n" +
+    "typedef int ExternObjectParenthesizedPointerType;\n" +
+    "typedef int ExternObjectParenthesizedCommentType;\n" +
+    "typedef int ExternObjectParenthesizedSpliceType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2406,6 +2410,10 @@ const sameTypedefDeclaratorHoverSource = {
     "  { extern ExternObjectPointerDecimalArrayType *ExternObjectPointerDecimalArrayType[16]; }\n" +
     "  { extern ExternObjectCommentDecimalArrayType ExternObjectCommentDecimalArrayType[/* before bound */ 8 /* after bound */]; }\n" +
     "  { extern ExternObjectSpliceDecimalArrayType ExternObjectSpliceDecimalArrayType[\\\n32]; }\n" +
+    "  { extern ExternObjectParenthesizedType (ExternObjectParenthesizedType); }\n" +
+    "  { extern ExternObjectParenthesizedPointerType (*ExternObjectParenthesizedPointerType); }\n" +
+    "  { extern ExternObjectParenthesizedCommentType (/* before object */ ExternObjectParenthesizedCommentType /* after object */); }\n" +
+    "  { extern ExternObjectParenthesizedSpliceType (\\\nExternObjectParenthesizedSpliceType); }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
@@ -2458,6 +2466,17 @@ const externTypedefShadowConflictSources = [
       "  return 0;\n" +
       "}\n",
   }, "ForInitExternType"],
+  [{
+    name: "same-block-parenthesized-extern-typedef-conflict.c",
+    source: "int same_block_parenthesized_extern_typedef_conflict(void) {\n" +
+      "  typedef int SameBlockParenthesizedExternType;\n" +
+      "  extern SameBlockParenthesizedExternType " +
+      "(SameBlockParenthesizedExternType);\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "SameBlockParenthesizedExternType",
+  "extern SameBlockParenthesizedExternType " +
+    "(SameBlockParenthesizedExternType)"],
 ];
 const externTypedefSemanticTypeSources = [
   [{
@@ -2673,6 +2692,14 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "ExternObjectCommentDecimalArrayType", false],
     ["extern ExternObjectSpliceDecimalArrayType ExternObjectSpliceDecimalArrayType[\\\n32]",
       "ExternObjectSpliceDecimalArrayType", true],
+    ["extern ExternObjectParenthesizedType (ExternObjectParenthesizedType)",
+      "ExternObjectParenthesizedType", true],
+    ["extern ExternObjectParenthesizedPointerType (*ExternObjectParenthesizedPointerType)",
+      "ExternObjectParenthesizedPointerType", false],
+    ["extern ExternObjectParenthesizedCommentType (/* before object */ ExternObjectParenthesizedCommentType /* after object */)",
+      "ExternObjectParenthesizedCommentType", false],
+    ["extern ExternObjectParenthesizedSpliceType (\\\nExternObjectParenthesizedSpliceType)",
+      "ExternObjectParenthesizedSpliceType", true],
   ];
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
@@ -2759,10 +2786,10 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
   for (let conflictIndex = 0;
     conflictIndex < externTypedefShadowConflictSources.length;
     conflictIndex++) {
-    const [conflictSource, conflictName] =
+    const [conflictSource, conflictName, conflictFragment] =
       externTypedefShadowConflictSources[conflictIndex];
     const conflictFragmentIndex = conflictSource.source.indexOf(
-      `extern ${conflictName} ${conflictName}`,
+      conflictFragment ?? `extern ${conflictName} ${conflictName}`,
     );
     const conflictUseIndex = conflictSource.source.indexOf(
       conflictName, conflictFragmentIndex,

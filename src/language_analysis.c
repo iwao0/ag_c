@@ -3284,11 +3284,23 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   size_t selected_start = (size_t)(selected_name - source);
   size_t scan = selected_start + selected_length;
   size_t candidate_start = SIZE_MAX;
+  int has_parenthesized_declarator = 0;
+  size_t declarator_pointer_count = 0;
   while (scan < length) {
     scan = skip_analysis_space_and_comments_mode(
         source, length, scan, enable_trigraphs);
     if (scan >= length) return NULL;
+    if (!has_parenthesized_declarator && source[scan] == '(') {
+      if (declarator_pointer_count > 1) return NULL;
+      has_parenthesized_declarator = 1;
+      scan++;
+      continue;
+    }
     if (source[scan] == '*') {
+      declarator_pointer_count++;
+      if (has_parenthesized_declarator &&
+          declarator_pointer_count > 1)
+        return NULL;
       scan++;
       continue;
     }
@@ -3299,8 +3311,10 @@ static char *build_file_typedef_block_extern_type_recovery_source(
       scan++;
     size_t word_length = scan - word_start;
     if (analysis_type_name_qualifier_word(
-            source, word_start, word_length))
+            source, word_start, word_length)) {
+      if (has_parenthesized_declarator) return NULL;
       continue;
+    }
     if (word_length != selected_length ||
         memcmp(source + word_start, selected_name,
                selected_length) != 0)
@@ -3312,8 +3326,15 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   size_t candidate_end = candidate_start + selected_length;
   size_t declaration_end = skip_analysis_space_and_comments_mode(
       source, length, candidate_end, enable_trigraphs);
+  if (has_parenthesized_declarator) {
+    if (declaration_end >= length || source[declaration_end] != ')')
+      return NULL;
+    declaration_end = skip_analysis_space_and_comments_mode(
+        source, length, declaration_end + 1, enable_trigraphs);
+  }
   int has_array_suffix = 0;
-  if (declaration_end < length && source[declaration_end] == '[') {
+  if (!has_parenthesized_declarator &&
+      declaration_end < length && source[declaration_end] == '[') {
     has_array_suffix = 1;
     declaration_end = skip_analysis_space_and_comments_mode(
         source, length, declaration_end + 1, enable_trigraphs);
@@ -3351,7 +3372,8 @@ static char *build_file_typedef_block_extern_type_recovery_source(
           &definite_declaration, &for_init_declaration,
           &declaration_start) ||
       outer_brace_count == 0 || for_init_declaration ||
-      paren_depth != 0 || bracket_depth != 0 || brace_depth != 0)
+      paren_depth != (has_parenthesized_declarator ? 1 : 0) ||
+      bracket_depth != 0 || brace_depth != 0)
     return NULL;
   (void)definite_declaration;
 
