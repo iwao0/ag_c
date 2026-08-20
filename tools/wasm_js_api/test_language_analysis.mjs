@@ -2403,6 +2403,10 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int ExternObjectParenthesizedInnerVolatileDoublePointerType;\n" +
     "typedef int ExternObjectParenthesizedDoublePointerVolatileCommentType;\n" +
     "typedef int ExternObjectParenthesizedDoublePointerVolatileSpliceType;\n" +
+    "typedef int ExternObjectParenthesizedOuterRestrictDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedInnerRestrictDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedDoublePointerRestrictCommentType;\n" +
+    "typedef int ExternObjectParenthesizedDoublePointerRestrictSpliceType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2464,6 +2468,10 @@ const sameTypedefDeclaratorHoverSource = {
     "  { extern ExternObjectParenthesizedInnerVolatileDoublePointerType (** volatile ExternObjectParenthesizedInnerVolatileDoublePointerType); }\n" +
     "  { extern ExternObjectParenthesizedDoublePointerVolatileCommentType (* /* before volatile */ volatile /* between pointers */ * ExternObjectParenthesizedDoublePointerVolatileCommentType); }\n" +
     "  { extern ExternObjectParenthesizedDoublePointerVolatileSpliceType (** \\\nvolatile ExternObjectParenthesizedDoublePointerVolatileSpliceType); }\n" +
+    "  { extern ExternObjectParenthesizedOuterRestrictDoublePointerType (* restrict *ExternObjectParenthesizedOuterRestrictDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedInnerRestrictDoublePointerType (** restrict ExternObjectParenthesizedInnerRestrictDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedDoublePointerRestrictCommentType (* /* before restrict */ restrict /* between pointers */ * ExternObjectParenthesizedDoublePointerRestrictCommentType); }\n" +
+    "  { extern ExternObjectParenthesizedDoublePointerRestrictSpliceType (** \\\nrestrict ExternObjectParenthesizedDoublePointerRestrictSpliceType); }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
@@ -2599,6 +2607,18 @@ const externTypedefShadowConflictSources = [
   }, "SameBlockParenthesizedVolatileDoublePointerExternType",
   "extern SameBlockParenthesizedVolatileDoublePointerExternType " +
     "(* volatile *SameBlockParenthesizedVolatileDoublePointerExternType)"],
+  [{
+    name: "same-block-parenthesized-restrict-double-pointer-extern-typedef-conflict.c",
+    source:
+      "int same_block_parenthesized_restrict_double_pointer_extern_typedef_conflict(void) {\n" +
+      "  typedef int SameBlockParenthesizedRestrictDoublePointerExternType;\n" +
+      "  extern SameBlockParenthesizedRestrictDoublePointerExternType " +
+      "(* restrict *SameBlockParenthesizedRestrictDoublePointerExternType);\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "SameBlockParenthesizedRestrictDoublePointerExternType",
+  "extern SameBlockParenthesizedRestrictDoublePointerExternType " +
+    "(* restrict *SameBlockParenthesizedRestrictDoublePointerExternType)"],
 ];
 const externTypedefSemanticTypeSources = [
   [{
@@ -2897,6 +2917,14 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "ExternObjectParenthesizedDoublePointerVolatileCommentType", false],
     ["extern ExternObjectParenthesizedDoublePointerVolatileSpliceType (** \\\nvolatile ExternObjectParenthesizedDoublePointerVolatileSpliceType)",
       "ExternObjectParenthesizedDoublePointerVolatileSpliceType", false],
+    ["extern ExternObjectParenthesizedOuterRestrictDoublePointerType (* restrict *ExternObjectParenthesizedOuterRestrictDoublePointerType)",
+      "ExternObjectParenthesizedOuterRestrictDoublePointerType", true],
+    ["extern ExternObjectParenthesizedInnerRestrictDoublePointerType (** restrict ExternObjectParenthesizedInnerRestrictDoublePointerType)",
+      "ExternObjectParenthesizedInnerRestrictDoublePointerType", false],
+    ["extern ExternObjectParenthesizedDoublePointerRestrictCommentType (* /* before restrict */ restrict /* between pointers */ * ExternObjectParenthesizedDoublePointerRestrictCommentType)",
+      "ExternObjectParenthesizedDoublePointerRestrictCommentType", false],
+    ["extern ExternObjectParenthesizedDoublePointerRestrictSpliceType (** \\\nrestrict ExternObjectParenthesizedDoublePointerRestrictSpliceType)",
+      "ExternObjectParenthesizedDoublePointerRestrictSpliceType", false],
   ];
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(

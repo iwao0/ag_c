@@ -3287,7 +3287,7 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   int has_parenthesized_declarator = 0;
   int has_parenthesized_pointer = 0;
   int has_parenthesized_pointer_qualifier = 0;
-  int has_parenthesized_non_cv_pointer_qualifier = 0;
+  int has_parenthesized_non_cvr_pointer_qualifier = 0;
   int has_parenthesized_restrict_pointer_qualifier = 0;
   int has_parenthesized_atomic_pointer_qualifier = 0;
   size_t parenthesized_pointer_qualifier_count = 0;
@@ -3310,7 +3310,7 @@ static char *build_file_typedef_block_extern_type_recovery_source(
       if (has_parenthesized_declarator) {
         if (declarator_pointer_count == 2 &&
             ((has_parenthesized_pointer_qualifier &&
-              (has_parenthesized_non_cv_pointer_qualifier ||
+              (has_parenthesized_non_cvr_pointer_qualifier ||
                parenthesized_pointer_qualifier_count != 1)) ||
              has_parenthesized_atomic_pointer_qualifier))
           return NULL;
@@ -3345,16 +3345,17 @@ static char *build_file_typedef_block_extern_type_recovery_source(
             source, word_start, word_length, "const");
         int is_volatile = analysis_word_is(
             source, word_start, word_length, "volatile");
+        int is_restrict = analysis_word_is(
+            source, word_start, word_length, "restrict");
         if (declarator_pointer_count > 1 &&
-            ((!is_const && !is_volatile) ||
+            ((!is_const && !is_volatile && !is_restrict) ||
              parenthesized_pointer_qualifier_count != 0 ||
              has_parenthesized_atomic_pointer_qualifier))
           return NULL;
         parenthesized_pointer_qualifier_count++;
-        if (!is_const && !is_volatile)
-          has_parenthesized_non_cv_pointer_qualifier = 1;
-        if (analysis_word_is(
-                source, word_start, word_length, "restrict")) {
+        if (!is_const && !is_volatile && !is_restrict)
+          has_parenthesized_non_cvr_pointer_qualifier = 1;
+        if (is_restrict) {
           if (has_parenthesized_atomic_pointer_qualifier)
             return NULL;
           has_parenthesized_restrict_pointer_qualifier = 1;
