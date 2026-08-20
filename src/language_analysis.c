@@ -3303,10 +3303,15 @@ static char *build_file_typedef_block_extern_type_recovery_source(
     if (source[scan] == '*') {
       declarator_pointer_count++;
       if (has_parenthesized_declarator &&
-          declarator_pointer_count > 1)
+          declarator_pointer_count > 2)
         return NULL;
-      if (has_parenthesized_declarator)
+      if (has_parenthesized_declarator) {
+        if (declarator_pointer_count == 2 &&
+            (has_parenthesized_pointer_qualifier ||
+             has_parenthesized_atomic_pointer_qualifier))
+          return NULL;
         has_parenthesized_pointer = 1;
+      }
       scan++;
       continue;
     }
@@ -3320,6 +3325,7 @@ static char *build_file_typedef_block_extern_type_recovery_source(
             source, word_start, word_length, "_Atomic")) {
       if (!has_parenthesized_declarator ||
           !has_parenthesized_pointer ||
+          declarator_pointer_count > 1 ||
           has_parenthesized_restrict_pointer_qualifier ||
           has_parenthesized_atomic_pointer_qualifier)
         return NULL;
@@ -3329,7 +3335,8 @@ static char *build_file_typedef_block_extern_type_recovery_source(
     if (analysis_type_name_qualifier_word(
             source, word_start, word_length)) {
       if (has_parenthesized_declarator) {
-        if (!has_parenthesized_pointer)
+        if (!has_parenthesized_pointer ||
+            declarator_pointer_count > 1)
           return NULL;
         if (analysis_word_is(
                 source, word_start, word_length, "restrict")) {

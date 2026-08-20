@@ -37200,3 +37200,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `restrict`との複合、重複`_Atomic`、`_Atomic(type)`、二重括弧、複数pointer、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - Clang strictが受理する`extern T (**T);`は小型Wasm probeでE3088・`partial:true`を残す。今回のqualifier走査と意味境界は再探索せず、次は括弧1組内の無修飾pointerを2段だけに限定して扱えるか調べる。
+
+### このセッション（続き1252）: parenthesized block extern同名objectの無修飾2段pointerを回復した
+- 対象選定:
+  - 続き1251の浅い次候補`typedef int T; { extern T (**T); }`を、直接、pointer間comment、LF spliceの3形で確認した。Clang C11 strictはすべて受理したが、language analysisはE3088・`partial:true`を残していた。
+  - 括弧1組・同名identifier・`;`直結と既存lookup経路は再探索せず、両段とも無修飾のpointer 2個だけへ限定した。3段以上、いずれかのpointerに通常qualifierまたは`_Atomic`が付く形、suffix付き複合宣言子、深い式、security監査系には広げていない。
+- 変更:
+  - `build_file_typedef_block_extern_type_recovery_source`のparenthesized declarator走査でpointer上限を2へ広げた。2個目の`*`を読む時点で既存qualifierがあれば一致させず、pointer数が2になった後の通常qualifierと`_Atomic`も拒否する。
+  - 無修飾2段pointerは意味評価を追加せず、現在宣言を除いて宣言開始位置へmarkerを置く既存のparenthesized無修飾経路を共有する。
+  - same-typedef Native/Wasm共通fixtureへ直接、comment、LF spliceの3形を統合した。名前境界、再利用/fresh session、外側typedefの正確なrange、現在object非可視、diagnostics空・`partial:false`、Native/Wasm snapshot一致を固定した。
+  - 同一block typedefを無修飾2段pointerのparenthesized `extern`で再利用する不正shadowも追加し、E3088・partialとNative/Wasm snapshot一致を維持した。
+- テスト時間の改善:
+  - 新targetは増やさず、既存`make test-wasm-language-analysis-same-typedef-declarators`へ統合し、既存valid/invalid境界を含む焦点gateは**real 18.27秒 / user 18.54秒 / sys 0.42秒**だった。
+  - prototype bound、declarator array bound、local member array boundの隣接3 targetだけを`make -j3`で並列実行し、**real 6.77秒 / user 9.76秒 / sys 0.70秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 7.25秒 / user 5.44秒 / sys 1.53秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.73秒 / user 42.64秒 / sys 1.25秒**。更新後の焦点Wasm gateで2段pointer 3形とshadow境界を確認した。
+  - 小型Wasm probeでは無修飾2段pointerの3形だけがdiagnostics空・`partial:false`へ変わり、3段pointer、1段目または2段目に`const`を付けた2形はE3088・partialのままだった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.38秒 / user 3.05秒 / sys 0.23秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.35秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 18.27秒のNative parity付き焦点gateで同じJS本体を確認できるため、1354秒規模の`make test-wasm-js-api`は実行しない。code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eも反復しない。
+  - 修飾子付き2段pointer、3段以上のpointer、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - Clang strictが受理する`extern T (* const *T);`と`extern T (** const T);`は小型Wasm probeでE3088・`partial:true`を残す。今回のpointer数上限とshadow境界は再探索せず、次は2段pointerのどちらか一方に`const` 1個だけを置く浅い2形を扱えるか調べる。
