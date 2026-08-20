@@ -999,6 +999,15 @@ const initializerOperandHoverSource = {
     "  for (InitializerType initializer_loop = initializer_compound; initializer_loop.member; ) { break; }\n" +
     "  int initializer_scalar = 1;\n" +
     "  int initializer_scalar_copy = initializer_scalar;\n" +
+    "  int initializer_scalar_first = 1, initializer_scalar_second = initializer_scalar_first, initializer_scalar_later;\n" +
+    "  InitializerType initializer_same_first = initializer_parameter, initializer_same_second = initializer_same_first, initializer_same_later;\n" +
+    "  struct InitializerRecord initializer_tag_first = initializer_parameter, initializer_tag_second = initializer_tag_first, initializer_tag_later;\n" +
+    "  InitializerUnionType initializer_union_first = initializer_union, initializer_union_second = initializer_union_first, initializer_union_later;\n" +
+    "  InitializerType initializer_address_first = initializer_parameter, *initializer_address_pointer = &initializer_address_first, initializer_address_later;\n" +
+    "  for (InitializerType initializer_for_first = initializer_parameter, initializer_for_second = initializer_for_first; initializer_for_second.member; ) { break; }\n" +
+    "  int initializer_for_later;\n" +
+    "  { InitializerType initializer_nested_first = initializer_parameter, initializer_nested_second = initializer_nested_first, initializer_nested_later; }\n" +
+    "  int initializer_nested_after;\n" +
     "  int initializer_after;\n" +
     "  return initializer_argument + initializer_parameter_copy.member +\n" +
     "         initializer_local_copy.member + initializer_comment_copy.member +\n" +
@@ -1063,6 +1072,41 @@ const initializerOperandHoverCases = [
     fragment: "copy = initializer_scalar",
     name: "initializer_scalar", kind: "object",
   },
+  {
+    fragment: "initializer_scalar_second = initializer_scalar_first",
+    name: "initializer_scalar_first", kind: "object",
+    laterObject: "initializer_scalar_later",
+  },
+  {
+    fragment: "initializer_same_second = initializer_same_first",
+    name: "initializer_same_first", kind: "object", checkBoundaries: true,
+    laterObject: "initializer_same_later",
+  },
+  {
+    fragment: "initializer_tag_second = initializer_tag_first",
+    name: "initializer_tag_first", kind: "object",
+    laterObject: "initializer_tag_later",
+  },
+  {
+    fragment: "initializer_union_second = initializer_union_first",
+    name: "initializer_union_first", kind: "object", checkBoundaries: true,
+    laterObject: "initializer_union_later",
+  },
+  {
+    fragment: "initializer_address_pointer = &initializer_address_first",
+    name: "initializer_address_first", kind: "object",
+    laterObject: "initializer_address_later",
+  },
+  {
+    fragment: "initializer_for_second = initializer_for_first",
+    name: "initializer_for_first", kind: "object", checkBoundaries: true,
+    laterObject: "initializer_for_later",
+  },
+  {
+    fragment: "initializer_nested_second = initializer_nested_first",
+    name: "initializer_nested_first", kind: "object", checkBoundaries: true,
+    laterObject: "initializer_nested_later",
+  },
 ];
 if (!languageAnalysisFocus || languageAnalysisFocus === "initializer-operands") {
   for (const initializerCase of initializerOperandHoverCases) {
@@ -1111,11 +1155,56 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "initializer-operands") 
       assert.equal(symbol(
         wasmResult, "initializer_file_after", "object",
       ), undefined, `${initializerCase.name} later file object hidden`);
+      if (initializerCase.laterObject)
+        assert.equal(symbol(
+          wasmResult, initializerCase.laterObject, "object",
+        ), undefined, `${initializerCase.name} later declarator hidden`);
       assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
         nativeAnalysisPath,
         ["--initializer-operand-hover-parity-json", String(byteOffset)],
         { encoding: "utf8" },
       )), `native and Wasm ${initializerCase.name} initializer operand differ`);
+    }
+  }
+  if (languageAnalysisFocus === "initializer-operands") {
+    for (const initializerCase of initializerOperandHoverCases.filter(
+      (item) => [
+        "initializer_same_first",
+        "initializer_for_first",
+        "initializer_nested_first",
+      ].includes(item.name),
+    )) {
+      const freshCompiler = await createCompiler(wasmModule);
+      try {
+        const fragmentIndex = initializerOperandHoverSource.source.indexOf(
+          initializerCase.fragment,
+        );
+        const useIndex = initializerOperandHoverSource.source.indexOf(
+          initializerCase.name, fragmentIndex,
+        );
+        const byteOffset = Buffer.byteLength(
+          initializerOperandHoverSource.source.slice(0, useIndex),
+        ) + Math.floor(Buffer.byteLength(initializerCase.name) / 2);
+        const freshResult = freshCompiler.analyzeSource(
+          initializerOperandHoverSource,
+          { cursor: {
+            sourceName: initializerOperandHoverSource.name, byteOffset,
+          } },
+        );
+        assert.equal(freshResult.partial, false,
+          `fresh ${initializerCase.name} initializer operand partial`);
+        assert.deepStrictEqual(freshResult.diagnostics, [],
+          `fresh ${initializerCase.name} initializer operand diagnostics`);
+        assert.equal(freshResult.hover?.name, initializerCase.name,
+          `fresh ${initializerCase.name} initializer operand hover`);
+        assert.deepStrictEqual(freshResult, JSON.parse(execFileSync(
+          nativeAnalysisPath,
+          ["--initializer-operand-hover-parity-json", String(byteOffset)],
+          { encoding: "utf8" },
+        )), `fresh native and Wasm ${initializerCase.name} differ`);
+      } finally {
+        freshCompiler.dispose();
+      }
     }
   }
   reportTestTiming("initializer operands");

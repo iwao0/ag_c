@@ -510,6 +510,15 @@ static const char initializer_operand_hover_source[] =
     "  for (InitializerType initializer_loop = initializer_compound; initializer_loop.member; ) { break; }\n"
     "  int initializer_scalar = 1;\n"
     "  int initializer_scalar_copy = initializer_scalar;\n"
+    "  int initializer_scalar_first = 1, initializer_scalar_second = initializer_scalar_first, initializer_scalar_later;\n"
+    "  InitializerType initializer_same_first = initializer_parameter, initializer_same_second = initializer_same_first, initializer_same_later;\n"
+    "  struct InitializerRecord initializer_tag_first = initializer_parameter, initializer_tag_second = initializer_tag_first, initializer_tag_later;\n"
+    "  InitializerUnionType initializer_union_first = initializer_union, initializer_union_second = initializer_union_first, initializer_union_later;\n"
+    "  InitializerType initializer_address_first = initializer_parameter, *initializer_address_pointer = &initializer_address_first, initializer_address_later;\n"
+    "  for (InitializerType initializer_for_first = initializer_parameter, initializer_for_second = initializer_for_first; initializer_for_second.member; ) { break; }\n"
+    "  int initializer_for_later;\n"
+    "  { InitializerType initializer_nested_first = initializer_parameter, initializer_nested_second = initializer_nested_first, initializer_nested_later; }\n"
+    "  int initializer_nested_after;\n"
     "  int initializer_after;\n"
     "  return initializer_argument + initializer_parameter_copy.member +\n"
     "         initializer_local_copy.member + initializer_comment_copy.member +\n"
@@ -10681,35 +10690,57 @@ static int test_initializer_operand_hover(ag_target_info_t target) {
     const char *fragment;
     const char *name;
     ag_language_symbol_kind_t kind;
+    const char *later_name;
   } cases[] = {
       {"sizeof((InitializerType", "InitializerType",
-       AG_LANGUAGE_SYMBOL_TYPEDEF},
+       AG_LANGUAGE_SYMBOL_TYPEDEF, NULL},
       {"initializer_compound = (InitializerType", "InitializerType",
-       AG_LANGUAGE_SYMBOL_TYPEDEF},
+       AG_LANGUAGE_SYMBOL_TYPEDEF, NULL},
       {"initializer_qualified = (const InitializerType", "InitializerType",
-       AG_LANGUAGE_SYMBOL_TYPEDEF},
+       AG_LANGUAGE_SYMBOL_TYPEDEF, NULL},
       {"initializer_tag = (struct InitializerRecord", "InitializerRecord",
-       AG_LANGUAGE_SYMBOL_TAG},
+       AG_LANGUAGE_SYMBOL_TAG, NULL},
       {"initializer_union = (InitializerUnionType", "InitializerUnionType",
-       AG_LANGUAGE_SYMBOL_TYPEDEF},
+       AG_LANGUAGE_SYMBOL_TYPEDEF, NULL},
       {"(/* type */ InitializerType", "InitializerType",
-       AG_LANGUAGE_SYMBOL_TYPEDEF},
+       AG_LANGUAGE_SYMBOL_TYPEDEF, NULL},
       {"initializer_lf = (\\\nInitializerType", "InitializerType",
-       AG_LANGUAGE_SYMBOL_TYPEDEF},
+       AG_LANGUAGE_SYMBOL_TYPEDEF, NULL},
       {"initializer_crlf = (\\\r\nInitializerType", "InitializerType",
-       AG_LANGUAGE_SYMBOL_TYPEDEF},
+       AG_LANGUAGE_SYMBOL_TYPEDEF, NULL},
       {"initializer_sink((InitializerType", "InitializerType",
-       AG_LANGUAGE_SYMBOL_TYPEDEF},
+       AG_LANGUAGE_SYMBOL_TYPEDEF, NULL},
       {"copy = initializer_parameter",
-       "initializer_parameter", AG_LANGUAGE_SYMBOL_PARAMETER},
+       "initializer_parameter", AG_LANGUAGE_SYMBOL_PARAMETER, NULL},
       {"initializer_local_copy = initializer_compound",
-       "initializer_compound", AG_LANGUAGE_SYMBOL_OBJECT},
+       "initializer_compound", AG_LANGUAGE_SYMBOL_OBJECT, NULL},
       {"initializer_comment_copy = initializer_compound",
-       "initializer_compound", AG_LANGUAGE_SYMBOL_OBJECT},
+       "initializer_compound", AG_LANGUAGE_SYMBOL_OBJECT, NULL},
       {"initializer_loop = initializer_compound",
-       "initializer_compound", AG_LANGUAGE_SYMBOL_OBJECT},
+       "initializer_compound", AG_LANGUAGE_SYMBOL_OBJECT, NULL},
       {"copy = initializer_scalar",
-       "initializer_scalar", AG_LANGUAGE_SYMBOL_OBJECT},
+       "initializer_scalar", AG_LANGUAGE_SYMBOL_OBJECT, NULL},
+      {"initializer_scalar_second = initializer_scalar_first",
+       "initializer_scalar_first", AG_LANGUAGE_SYMBOL_OBJECT,
+       "initializer_scalar_later"},
+      {"initializer_same_second = initializer_same_first",
+       "initializer_same_first", AG_LANGUAGE_SYMBOL_OBJECT,
+       "initializer_same_later"},
+      {"initializer_tag_second = initializer_tag_first",
+       "initializer_tag_first", AG_LANGUAGE_SYMBOL_OBJECT,
+       "initializer_tag_later"},
+      {"initializer_union_second = initializer_union_first",
+       "initializer_union_first", AG_LANGUAGE_SYMBOL_OBJECT,
+       "initializer_union_later"},
+      {"initializer_address_pointer = &initializer_address_first",
+       "initializer_address_first", AG_LANGUAGE_SYMBOL_OBJECT,
+       "initializer_address_later"},
+      {"initializer_for_second = initializer_for_first",
+       "initializer_for_first", AG_LANGUAGE_SYMBOL_OBJECT,
+       "initializer_for_later"},
+      {"initializer_nested_second = initializer_nested_first",
+       "initializer_nested_first", AG_LANGUAGE_SYMBOL_OBJECT,
+       "initializer_nested_later"},
   };
   ag_compilation_session_t *session =
       ag_compilation_session_create(&target);
@@ -10766,7 +10797,10 @@ static int test_initializer_operand_hover(ag_target_info_t target) {
                   !find_symbol(&snapshot, "initializer_after",
                                AG_LANGUAGE_SYMBOL_OBJECT) &&
                   !find_symbol(&snapshot, "initializer_file_after",
-                               AG_LANGUAGE_SYMBOL_OBJECT),
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  (!cases[case_index].later_name ||
+                   !find_symbol(&snapshot, cases[case_index].later_name,
+                                AG_LANGUAGE_SYMBOL_OBJECT)),
               "initializer operand hover snapshot");
         ag_language_analysis_snapshot_dispose(&snapshot);
         if (fresh_session)

@@ -2417,7 +2417,7 @@ static int object_declaration_prefix(
                !analysis_non_declaration_word(
                    source, word_start, word_length)) {
         typedef_candidate_count++;
-        if (!saw_top_level_comma)
+        if (!saw_top_level_comma && !assignment_after_comma)
           typedef_candidates_before_first_comma++;
       }
       if (analysis_non_declaration_word(
@@ -2530,10 +2530,11 @@ static int analysis_complete_direct_object_initializer_operand(
   int declarator_paren_depth = 0;
   int declarator_bracket_depth = 0;
   int declarator_brace_depth = 0;
+  int definite_declaration = 0;
   if (!object_declaration_prefix(
           source, candidate_start, &outer_brace_count,
           &declarator_paren_depth, &declarator_bracket_depth,
-          &declarator_brace_depth, NULL, NULL))
+          &declarator_brace_depth, &definite_declaration, NULL))
     return 0;
   size_t declarator_end = 0;
   if (!object_declarator_end(

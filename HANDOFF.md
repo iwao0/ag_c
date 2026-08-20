@@ -36691,3 +36691,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。複合bound式、深い宣言子、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - 今回の同一宣言/`for`配列境界は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationを反復せず、Native約6秒と0.69秒のdeclarator array-bound焦点gateを使う。
+
+### このセッション（続き1234）: 同一typedef aggregate宣言のinitializer operand hoverを回復した
+- 対象選定:
+  - 既修正の配列境界・callback・designatorと深い式を再探索せず、まずfile/block/nestedのfunction-pointer typedefを小型Wasm probeで比較したが、直近のscanner一般化により全形greenだった。
+  - 次に既存coverageで未対象だった複数declaratorのtypedef aggregate copyを、先行statement、builtin scalar、struct tag直書き、typedef struct/union、address initializer、nested block、`for`初期化子と比較した。
+  - 先行statement・scalar・tag直書きはgreenだった一方、typedef aggregate/unionの同一宣言copy/addressは正しいhoverを返しても`AGC_PARTIAL_SEMANTIC` rejection 38/62を残し、nested blockと`for`初期化子ではhoverもnullだった。
+- 原因:
+  - direct initializer回復が選択operand直前のdeclarator候補を再確認するとき、`object_declaration_prefix()`のtypedef複数declarator確定モードを有効にしていなかった。
+  - 確定モードを有効にしても、最初の`Aggregate first = parameter`にあるinitializer識別子`parameter`までtypedef候補へ数えるため、`Aggregate + first`という宣言prefixを認識できなかった。
+- 変更:
+  - 最初のtop-level comma以前に数えるtypedef候補を、最初のtop-level `=`より前のidentifierへ限定した。initializer内のobject名は型・宣言子候補へ含めない。
+  - direct initializer専用の宣言再確認から既存のtypedef複数declarator確定モードを有効にした。単一typedef declarator、builtin型、tag直書きと通常assignmentの既存分類は維持する。
+  - 同一宣言のscalar/typedef struct/tag/union copy、address initializer、nested block、`for`初期化子を既存initializer fixtureへ追加した。同一宣言の後続declarator、loop後・nested後・function後のobjectは可視にしない。
+- テスト時間の改善:
+  - 新しいtargetは増やさず、既存`make test-wasm-language-analysis-initializer-operands`へ追加した。追加7形、代表4形の名前先頭・中央・末尾、代表3形のfresh Wasm instance、runtime manifest、Native snapshot parityを含む最終実測は**real 1.65秒 / user 2.11秒 / sys 0.23秒**だった。
+  - declarator array-bound、`for-init`、direct operandの隣接3 targetも**real 1.84秒 / user 2.57秒 / sys 0.38秒**で成功した。
+- 確認:
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 5.83秒 / user 4.29秒 / sys 1.51秒**。全追加形を名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.53秒 / user 42.29秒 / sys 1.09秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-initializer-operands` = 成功、**real 1.65秒 / user 2.11秒 / sys 0.23秒**。
+  - 元の小型Wasm probe 8形はすべてdiagnostics空・`partial:false`で正しいobject hoverになった。
+  - 代表sourceは`clang -std=c11 -pedantic-errors -fsyntax-only`で成功し、`./build/ag_c`でもcompile exit 0だった。
+  - `./build/test_parser` = **OK: All unit tests passed**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体を1.65秒のfresh instance・Native parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行しない。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。不完全compound literal、複合initializer式、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回の同一typedef aggregate initializer 7形は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationを反復せず、Native約6秒と1.65秒のinitializer operand焦点gateを使う。
