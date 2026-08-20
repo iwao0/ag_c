@@ -1803,6 +1803,24 @@ static const char declarator_array_bound_operand_hover_source[] =
     "  return declarator_array_bound_file[subscript_index];\n"
     "}\n";
 
+static const char same_typedef_declarator_hover_source[] =
+    "struct SameTypedefRecord { int value; };\n"
+    "typedef int FileAlias, FileArray[sizeof(FileAlias)];\n"
+    "typedef int FileParameter, FileFunction(FileParameter);\n"
+    "typedef int FilePointerParameter, "
+    "(*FileCallback)(FilePointerParameter);\n"
+    "typedef struct SameTypedefRecord FileRecordAlias, "
+    "(*FileRecordCallback)(FileRecordAlias);\n"
+    "static int same_typedef_block(void) {\n"
+    "  typedef int BlockAlias, BlockArray[sizeof(BlockAlias)];\n"
+    "  typedef int BlockParameter, (*BlockCallback)(BlockParameter);\n"
+    "  { typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; "
+    "int nested_after; }\n"
+    "  int block_after;\n"
+    "  return 0;\n"
+    "}\n"
+    "int file_after;\n";
+
 static const char macro_definition_forms_source[] =
     "#define SIMPLE_MACRO 1\n"
     "# define PARENTHESIZED_MACRO (2 + 3)\r\n"
@@ -3960,6 +3978,20 @@ static int print_declarator_array_bound_operand_hover_parity_snapshot(
       "declarator-array-bound-operand.c",
       declarator_array_bound_operand_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_same_typedef_declarator_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(same_typedef_declarator_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "same-typedef-declarator-hover.c",
+      same_typedef_declarator_hover_source, (size_t)parsed_cursor,
+      (header_bundle_t){0});
 }
 
 static int print_cast_operand_project_parity_snapshot(
@@ -9940,6 +9972,118 @@ static int test_declarator_array_bound_operand_hover(
   return 0;
 }
 
+static int test_same_typedef_declarator_hover(ag_target_info_t target) {
+  static const struct {
+    const char *fragment;
+    const char *name;
+    const char *current_declarator;
+    int scope_depth;
+  } cases[] = {
+      {"FileArray[sizeof(FileAlias)]", "FileAlias", "FileArray", 0},
+      {"FileFunction(FileParameter)", "FileParameter", "FileFunction", 0},
+      {"(*FileCallback)(FilePointerParameter)", "FilePointerParameter",
+       "FileCallback", 0},
+      {"(*FileRecordCallback)(FileRecordAlias)", "FileRecordAlias",
+       "FileRecordCallback", 0},
+      {"BlockArray[sizeof(BlockAlias)]", "BlockAlias", "BlockArray", 1},
+      {"(*BlockCallback)(BlockParameter)", "BlockParameter",
+       "BlockCallback", 1},
+      {"NestedArray[sizeof(NestedAlias)]", "NestedAlias", "NestedArray", 2},
+  };
+  ag_compilation_session_t *session = ag_compilation_session_create(&target);
+  CHECK(session != NULL, "same typedef declarator session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          same_typedef_declarator_hover_source, cases[case_index].fragment);
+      const char *use = fragment ? strstr(fragment, cases[case_index].name)
+                                 : NULL;
+      const char *declaration = strstr(
+          same_typedef_declarator_hover_source, cases[case_index].name);
+      CHECK(use && declaration && use != declaration,
+            "same typedef declarator anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]); delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh same typedef declarator session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "same-typedef-declarator-hover.c",
+                  same_typedef_declarator_hover_source,
+                  (size_t)(use - same_typedef_declarator_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "same typedef declarator analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, AG_LANGUAGE_SYMBOL_TYPEDEF);
+        CHECK(hover && completion && !snapshot.partial &&
+                  snapshot.diagnostic_count == 0 &&
+                  hover->kind == AG_LANGUAGE_SYMBOL_TYPEDEF &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            same_typedef_declarator_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            same_typedef_declarator_hover_source +
+                            name_length) &&
+                  same_range(&hover->declaration, &completion->declaration),
+              "same typedef declarator hover fields");
+        CHECK(!find_symbol(
+                  &snapshot, cases[case_index].current_declarator,
+                  AG_LANGUAGE_SYMBOL_TYPEDEF),
+              "current typedef declarator remains invisible");
+        if (cases[case_index].scope_depth >= 2)
+          CHECK(!find_symbol(
+                    &snapshot, "nested_after", AG_LANGUAGE_SYMBOL_OBJECT),
+                "nested later object remains invisible");
+        if (cases[case_index].scope_depth >= 1)
+          CHECK(!find_symbol(
+                    &snapshot, "block_after", AG_LANGUAGE_SYMBOL_OBJECT),
+                "block later object remains invisible");
+        CHECK(!find_symbol(
+                  &snapshot, "file_after", AG_LANGUAGE_SYMBOL_OBJECT),
+              "file later object remains invisible");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  const char *current_declaration = strstr(
+      same_typedef_declarator_hover_source, "FileArray");
+  CHECK(current_declaration != NULL,
+        "current typedef declarator declaration anchor");
+  CHECK(analyze_named(
+            session, "same-typedef-declarator-hover.c",
+            same_typedef_declarator_hover_source,
+            (size_t)(current_declaration -
+                     same_typedef_declarator_hover_source) +
+                strlen("FileArray") / 2,
+            (header_bundle_t){0}, defaults, &snapshot, &error),
+        "current typedef declarator declaration analysis");
+  const ag_language_symbol_t *current_hover = hover_symbol(&snapshot);
+  CHECK(current_hover && !snapshot.partial &&
+            snapshot.diagnostic_count == 0 &&
+            current_hover->kind == AG_LANGUAGE_SYMBOL_TYPEDEF &&
+            strcmp(current_hover->name, "FileArray") == 0,
+        "current typedef declarator declaration hover retained");
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_inline_tag_object_hover(ag_target_info_t target) {
   static const struct {
     const char *name;
@@ -13185,6 +13329,10 @@ int main(int argc, char **argv) {
     return print_declarator_array_bound_operand_hover_parity_snapshot(
         argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1],
+             "--same-typedef-declarator-hover-parity-json") == 0)
+    return print_same_typedef_declarator_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-project-parity-json") == 0)
     return print_cast_operand_project_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -13259,6 +13407,8 @@ int main(int argc, char **argv) {
         "type-name array bound operand hover scenarios");
   CHECK(test_declarator_array_bound_operand_hover(target) == 0,
         "declarator array bound operand hover scenarios");
+  CHECK(test_same_typedef_declarator_hover(target) == 0,
+        "same typedef declarator hover scenarios");
   CHECK(test_inline_tag_object_hover(target) == 0,
         "inline tag object hover scenarios");
   CHECK(test_for_init_declaration_hover(target) == 0,

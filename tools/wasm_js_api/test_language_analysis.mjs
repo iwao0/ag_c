@@ -2176,6 +2176,132 @@ if (languageAnalysisFocus === "local-record-static-asserts") {
   process.exit(0);
 }
 
+const sameTypedefDeclaratorHoverSource = {
+  name: "same-typedef-declarator-hover.c",
+  source: "struct SameTypedefRecord { int value; };\n" +
+    "typedef int FileAlias, FileArray[sizeof(FileAlias)];\n" +
+    "typedef int FileParameter, FileFunction(FileParameter);\n" +
+    "typedef int FilePointerParameter, (*FileCallback)(FilePointerParameter);\n" +
+    "typedef struct SameTypedefRecord FileRecordAlias, (*FileRecordCallback)(FileRecordAlias);\n" +
+    "static int same_typedef_block(void) {\n" +
+    "  typedef int BlockAlias, BlockArray[sizeof(BlockAlias)];\n" +
+    "  typedef int BlockParameter, (*BlockCallback)(BlockParameter);\n" +
+    "  { typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
+    "  int block_after;\n" +
+    "  return 0;\n" +
+    "}\n" +
+    "int file_after;\n",
+};
+const sameTypedefDeclaratorCases = [
+  ["FileArray[sizeof(FileAlias)]", "FileAlias", "FileArray", 0, true],
+  ["FileFunction(FileParameter)", "FileParameter", "FileFunction", 0,
+    false],
+  ["(*FileCallback)(FilePointerParameter)", "FilePointerParameter",
+    "FileCallback", 0, true],
+  ["(*FileRecordCallback)(FileRecordAlias)", "FileRecordAlias",
+    "FileRecordCallback", 0, false],
+  ["BlockArray[sizeof(BlockAlias)]", "BlockAlias", "BlockArray", 1, false],
+  ["(*BlockCallback)(BlockParameter)", "BlockParameter", "BlockCallback", 1,
+    true],
+  ["NestedArray[sizeof(NestedAlias)]", "NestedAlias", "NestedArray", 2,
+    true],
+];
+if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarators") {
+  for (const [fragmentText, name, currentDeclarator, scopeDepth,
+    checkBoundaries] of sameTypedefDeclaratorCases) {
+    const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+      fragmentText,
+    );
+    const useIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+      name, fragmentIndex,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0,
+      `missing same typedef declarator anchor for ${name}`);
+    const nameBytes = Buffer.byteLength(name);
+    const deltas = checkBoundaries
+      ? [0, Math.floor(nameBytes / 2), nameBytes]
+      : [Math.floor(nameBytes / 2)];
+    for (const delta of deltas) {
+      const byteOffset = byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source, useIndex,
+      ) + delta;
+      const result = compiler.analyzeSource(
+        sameTypedefDeclaratorHoverSource,
+        { cursor: {
+          sourceName: sameTypedefDeclaratorHoverSource.name,
+          byteOffset,
+        } },
+      );
+      assert.equal(result.partial, false,
+        `${name} same typedef declarator partial`);
+      assert.deepStrictEqual(result.diagnostics, [],
+        `${name} same typedef declarator diagnostics`);
+      assert.equal(result.hover?.name, name,
+        `${name} same typedef declarator hover`);
+      assert.equal(result.hover?.kind, "typedef",
+        `${name} same typedef declarator kind`);
+      assert.deepStrictEqual(result.hover?.declaration,
+        symbol(result, name, "typedef")?.declaration,
+        `${name} same typedef declarator declaration`);
+      assert.equal(symbol(result, currentDeclarator, "typedef"), undefined,
+        `${currentDeclarator} current typedef declarator hidden`);
+      if (scopeDepth >= 2)
+        assert.equal(symbol(result, "nested_after", "object"), undefined,
+          "nested later object hidden");
+      if (scopeDepth >= 1)
+        assert.equal(symbol(result, "block_after", "object"), undefined,
+          "block later object hidden");
+      assert.equal(symbol(result, "file_after", "object"), undefined,
+        "file later object hidden");
+      assert.deepStrictEqual(result, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--same-typedef-declarator-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm same typedef declarator differ for ${name}`);
+    }
+  }
+  for (const [fragmentText, name, currentDeclarator] of [
+    sameTypedefDeclaratorCases[0],
+    sameTypedefDeclaratorCases[5],
+    sameTypedefDeclaratorCases[6],
+  ]) {
+    const freshCompiler = await createCompiler(wasmModule);
+    try {
+      const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+        fragmentText,
+      );
+      const useIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
+        name, fragmentIndex,
+      );
+      const byteOffset = byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source, useIndex,
+      ) + Math.floor(Buffer.byteLength(name) / 2);
+      const result = freshCompiler.analyzeSource(
+        sameTypedefDeclaratorHoverSource,
+        { cursor: {
+          sourceName: sameTypedefDeclaratorHoverSource.name,
+          byteOffset,
+        } },
+      );
+      assert.equal(result.partial, false,
+        `${name} fresh same typedef declarator partial`);
+      assert.deepStrictEqual(result.diagnostics, [],
+        `${name} fresh same typedef declarator diagnostics`);
+      assert.equal(result.hover?.name, name);
+      assert.equal(result.hover?.kind, "typedef");
+      assert.equal(symbol(result, currentDeclarator, "typedef"), undefined);
+    } finally {
+      freshCompiler.dispose();
+    }
+  }
+  reportTestTiming("same typedef declarators");
+}
+if (languageAnalysisFocus === "same-typedef-declarators") {
+  compiler.dispose();
+  console.log("wasm language analysis same typedef declarator tests passed");
+  process.exit(0);
+}
+
 const declaratorArrayBoundOperandHoverSource = {
   name: "declarator-array-bound-operand.c",
   source: "/// declarator array bound macro documentation\n" +

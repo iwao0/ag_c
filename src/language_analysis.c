@@ -2218,9 +2218,11 @@ static int analysis_case_label_end_mode(
 static int object_declaration_prefix(
     const char *source, size_t name_start, size_t *outer_brace_count,
     int *paren_depth, int *bracket_depth, int *brace_depth,
-    int *definite_declaration, int *for_init_declaration) {
+    int *definite_declaration, int *for_init_declaration,
+    size_t *declaration_start) {
   if (definite_declaration) *definite_declaration = 0;
   if (for_init_declaration) *for_init_declaration = 0;
+  if (declaration_start) *declaration_start = 0;
   size_t start = 0;
   size_t open_braces = 0;
   int parens = 0;
@@ -2458,7 +2460,162 @@ static int object_declaration_prefix(
   if (for_init_declaration)
     *for_init_declaration = for_paren_depth > 0 &&
                             for_separator_count == 0;
+  if (declaration_start) *declaration_start = start;
   return 1;
+}
+
+static char *build_prior_typedef_declarator_recovery_source(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs, int *changed, size_t *source_consumed) {
+  const char *name = NULL;
+  size_t name_length = 0;
+  identifier_at(source, length, cursor, &name, &name_length);
+  if (!name || name_length == 0) return NULL;
+  size_t name_start = (size_t)(name - source);
+  size_t outer_brace_count = 0;
+  size_t declaration_start = 0;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  int definite_declaration = 0;
+  int for_init_declaration = 0;
+  if (!object_declaration_prefix(
+          source, name_start, &outer_brace_count, &paren_depth,
+          &bracket_depth, &brace_depth, &definite_declaration,
+          &for_init_declaration, &declaration_start) ||
+      !definite_declaration || for_init_declaration)
+    return NULL;
+
+  size_t last_top_level_comma = SIZE_MAX;
+  int has_typedef_keyword = 0;
+  int has_current_declarator_identifier = 0;
+  int local_parens = 0;
+  int local_brackets = 0;
+  int local_braces = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = declaration_start == 0 ||
+                      source[declaration_start - 1] == '\n';
+  int preprocessor_line = 0;
+  for (size_t i = declaration_start; i < name_start; i++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, name_start, i, enable_trigraphs);
+    if (splice_size > 0) {
+      i += splice_size - 1;
+      continue;
+    }
+    char c = source[i];
+    char next = i + 1 < name_start ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      at_line_start = 1;
+      preprocessor_line = 0;
+      continue;
+    }
+    if (at_line_start && (c == ' ' || c == '\t' || c == '\r'))
+      continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    else if (at_line_start && enable_trigraphs && c == '?' &&
+             next == '?' && i + 2 < name_start &&
+             source[i + 2] == '=') {
+      preprocessor_line = 1;
+      i += 2;
+    }
+    at_line_start = 0;
+    if (preprocessor_line) continue;
+    if (is_identifier_byte((unsigned char)c)) {
+      size_t word_start = i;
+      while (i + 1 < name_start &&
+             is_identifier_byte((unsigned char)source[i + 1]))
+        i++;
+      size_t word_length = i + 1 - word_start;
+      if (local_parens == 0 && local_brackets == 0 &&
+          local_braces == 0 &&
+          analysis_word_is(
+              source, word_start, word_length, "typedef"))
+        has_typedef_keyword = 1;
+      if (last_top_level_comma != SIZE_MAX &&
+          word_start > last_top_level_comma)
+        has_current_declarator_identifier = 1;
+      continue;
+    }
+    if (c == '(') local_parens++;
+    else if (c == ')' && local_parens > 0) local_parens--;
+    else if (c == '[') local_brackets++;
+    else if (c == ']' && local_brackets > 0) local_brackets--;
+    else if (c == '{') local_braces++;
+    else if (c == '}' && local_braces > 0) local_braces--;
+    else if (c == ',' && local_parens == 0 && local_brackets == 0 &&
+             local_braces == 0) {
+      last_top_level_comma = i;
+      has_current_declarator_identifier = 0;
+    }
+  }
+  if (!has_typedef_keyword || last_top_level_comma == SIZE_MAX ||
+      !has_current_declarator_identifier)
+    return NULL;
+
+  static const char suffix[] =
+      ";\nint " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  size_t suffix_length = sizeof(suffix) - 1;
+  if (outer_brace_count > SIZE_MAX / 2 ||
+      last_top_level_comma > SIZE_MAX - suffix_length ||
+      last_top_level_comma + suffix_length >
+          SIZE_MAX - outer_brace_count * 2)
+    return NULL;
+  size_t result_length = last_top_level_comma + suffix_length +
+                         outer_brace_count * 2;
+  char *result = malloc(result_length + 1);
+  if (!result) return NULL;
+  memcpy(result, source, last_top_level_comma);
+  size_t output = last_top_level_comma;
+  memcpy(result + output, suffix, suffix_length);
+  output += suffix_length;
+  for (size_t i = 0; i < outer_brace_count; i++) {
+    result[output++] = '}';
+    result[output++] = '\n';
+  }
+  result[output] = '\0';
+  if (changed) *changed = AG_LANGUAGE_RECOVERY_CHANGED;
+  if (source_consumed) *source_consumed = last_top_level_comma;
+  return result;
 }
 
 static int object_declarator_end(
@@ -2534,7 +2691,7 @@ static int analysis_complete_direct_object_initializer_operand(
   if (!object_declaration_prefix(
           source, candidate_start, &outer_brace_count,
           &declarator_paren_depth, &declarator_bracket_depth,
-          &declarator_brace_depth, &definite_declaration, NULL))
+          &declarator_brace_depth, &definite_declaration, NULL, NULL))
     return 0;
   size_t declarator_end = 0;
   if (!object_declarator_end(
@@ -3105,7 +3262,7 @@ static char *build_function_parameter_recovery_source(
                   object_declaration_prefix(
                       source, i, &candidate_outer_brace_count,
                       &candidate_paren_depth, &candidate_bracket_depth,
-                      &candidate_brace_depth, NULL, NULL) &&
+                      &candidate_brace_depth, NULL, NULL, NULL) &&
                   candidate_outer_brace_count == (size_t)brace_depth &&
                   candidate_paren_depth == 0 &&
                   candidate_bracket_depth == 0 &&
@@ -3239,7 +3396,7 @@ static char *build_function_declaration_recovery_source(
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
           &bracket_depth, &brace_depth, NULL,
-          &for_init_declaration) ||
+          &for_init_declaration, NULL) ||
       for_init_declaration ||
       brace_depth != 0 || (paren_depth == 0 && bracket_depth != 0))
     return NULL;
@@ -3293,7 +3450,7 @@ static char *build_object_declaration_recovery_source(
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
           &bracket_depth, &brace_depth, NULL,
-          &for_init_declaration) ||
+          &for_init_declaration, NULL) ||
       bracket_depth != 0)
     return NULL;
   size_t after_name = skip_analysis_space_and_comments(
@@ -3360,7 +3517,7 @@ static char *build_declarator_array_bound_recovery_source(
   if (!object_declaration_prefix(
           source, name_start, &outer_brace_count, &paren_depth,
           &bracket_depth, &brace_depth, &definite_declaration,
-          &for_init_declaration) ||
+          &for_init_declaration, NULL) ||
       !definite_declaration || bracket_depth == 0)
     return NULL;
   size_t record_open = 0;
@@ -4133,6 +4290,14 @@ static char *build_recovery_source(const char *source, size_t source_length,
   size_t source_consumed = recovery_cursor;
   if (!cursor_on_complete_macro_definition &&
       !cursor_on_complete_preprocessor_operand) {
+    char *prior_typedef_declarator_recovery =
+        build_prior_typedef_declarator_recovery_source(
+            source, source_length, recovery_cursor, enable_trigraphs,
+            changed, &source_consumed);
+    if (prior_typedef_declarator_recovery)
+      return append_conditional_validation_tail(
+          prior_typedef_declarator_recovery, source, source_length,
+          source_consumed, enable_trigraphs);
     char *callback_parameter_bound_recovery =
         build_direct_callback_parameter_bound_recovery_source(
             source, source_length, recovery_cursor, enable_trigraphs,

@@ -36720,3 +36720,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。不完全compound literal、複合initializer式、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - 今回の同一typedef aggregate initializer 7形は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。全Wasm integrationを反復せず、Native約6秒と1.65秒のinitializer operand焦点gateを使う。
+
+### このセッション（続き1235）: 同一typedef宣言の後続宣言子lookup pointを回復した
+- 対象選定:
+  - 既修正のinitializer operandや深い宣言子を再探索せず、通常サイズの完全sourceで、同一`typedef`宣言の先行aliasを後続の配列・直接function・function-pointer宣言子から参照する形を小型Wasm probeへ並べた。
+  - 先行aliasのhoverはdiagnostics空・`partial:false`でgreenだった一方、現在宣言中の後続typedef名がCのpoint of declarationより早くcompletionへ公開されていた。
+  - commaのない`typedef PriorAlias PriorCopy;`にも同じ早期公開は残るが、今回の先行宣言子を保持する限定回復とは境界が異なるため対象外とした。
+- 原因:
+  - function parameter回復とdeclarator array-bound回復が現在の後続typedef宣言子を完結し、synthetic markerをその宣言子より後へ置いていた。
+  - そのため先行aliasは参照できる一方、解析lookup pointも後続宣言子のpoint of declarationを越えていた。
+- 変更:
+  - `object_declaration_prefix()`から現在宣言の開始offsetを任意に返し、同一宣言内だけを調べる限定scannerを追加した。
+  - scannerはcomment・quote・preprocessor line・LF/CRLF spliceを除外し、top-level `typedef`、先行するtop-level comma、comma後の現在宣言子名がすべてある場合だけ一致する。
+  - 最後のtop-level commaを`;`へ置き換え、先行typedef宣言子の直後へmarkerを置いて外側blockだけを閉じる。これにより先行aliasは見える一方、現在のtypedef名と後続nested/block/file objectは見えない。
+  - 選択tokenより前に現在宣言子名がない場合は辞退するため、現在のtypedef宣言名自身の宣言位置hoverは既存経路に残した。
+  - file/block/nested scopeの配列、直接function、function pointer、record typedef callbackをNative/Wasm共通fixtureへ追加した。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=same-typedef-declarators`と`make test-wasm-language-analysis-same-typedef-declarators`を追加した。Native snapshot parity、代表境界、fresh instance、runtime manifestを含む最終実測は**real 0.36秒 / user 0.40秒 / sys 0.10秒**だった。
+  - prototype bound、declarator array-bound、initializer operandの隣接3 targetは`make -j3`で並列実行し、**real 1.82秒 / user 5.21秒 / sys 0.66秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 6.63秒 / user 4.46秒 / sys 1.60秒**。追加7形を名前先頭・中央・末尾、再利用/fresh Native sessionで確認し、現在宣言名自身のhoverも確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 45.23秒 / user 42.54秒 / sys 1.22秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-same-typedef-declarators` = 成功、**real 0.36秒 / user 0.40秒 / sys 0.10秒**。
+  - 更新後の小型Wasm probeでは同一宣言11形すべてで先行aliasの正しいtypedef hoverを返し、現在宣言子は非可視になった。commaなし比較ケースだけは対象外どおり現在宣言子が見える。
+  - 代表sourceは`clang -std=c11 -pedantic-errors -fsyntax-only`と`./build/ag_c`で成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 3.22秒 / user 2.94秒 / sys 0.21秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、並列build込み**real 3.36秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体を0.36秒のfresh instance・Native parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行しない。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。commaのない単一typedef宣言子、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回の同一typedef後続宣言子は再探索せず、commaのない単一typedef宣言子のlookup pointか、別の通常サイズ・完全sourceにある浅い境界を小型probeから調べる。全Wasm integrationを反復せず、Native約7秒と0.36秒の専用焦点gateを使う。
