@@ -2179,6 +2179,10 @@ if (languageAnalysisFocus === "local-record-static-asserts") {
 const sameTypedefDeclaratorHoverSource = {
   name: "same-typedef-declarator-hover.c",
   source: "struct SameTypedefRecord { int value; };\n" +
+    "typedef int FirstFileAtomicBase;\n" +
+    "typedef _Atomic(FirstFileAtomicBase) FirstFileAtomicAlias;\n" +
+    "typedef _Atomic(/* atomic gap */ FirstFileAtomicBase) FirstFileAtomicCommentAlias;\n" +
+    "typedef _Atomic(\\\nFirstFileAtomicBase) FirstFileAtomicSpliceAlias;\n" +
     "typedef int FirstFileBase;\n" +
     "typedef FirstFileBase FirstFileCopy;\n" +
     "typedef const FirstFileBase FirstFileConst;\n" +
@@ -2201,6 +2205,9 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef struct SameTypedefRecord FileRecordAlias, (*FileRecordCallback)(FileRecordAlias);\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
+    "  typedef int FirstBlockAtomicBase;\n" +
+    "  typedef _Atomic(FirstBlockAtomicBase) FirstBlockAtomicAlias;\n" +
+    "  typedef int FirstBlockAtomicShadow;\n" +
     "  typedef FirstBlockBase *FirstBlockPointer;\n" +
     "  typedef FirstBlockBase (*FirstBlockCallback)(void);\n" +
     "  typedef FirstBlockBase FirstBlockShadow;\n" +
@@ -2211,7 +2218,7 @@ const sameTypedefDeclaratorHoverSource = {
     "  typedef int InternalBlockShadow;\n" +
     "  typedef int BlockAlias, BlockArray[sizeof(BlockAlias)];\n" +
     "  typedef int BlockParameter, (*BlockCallback)(BlockParameter);\n" +
-    "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
+    "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
     "}\n" +
@@ -2268,6 +2275,14 @@ const sameTypedefDeclaratorCases = [
     true],
   ["NestedArray[sizeof(NestedAlias)]", "NestedAlias", "NestedArray", 2,
     true],
+  ["typedef _Atomic(FirstFileAtomicBase) FirstFileAtomicAlias",
+    "FirstFileAtomicBase", "FirstFileAtomicAlias", 0, true],
+  ["typedef _Atomic(/* atomic gap */ FirstFileAtomicBase) FirstFileAtomicCommentAlias",
+    "FirstFileAtomicBase", "FirstFileAtomicCommentAlias", 0, false],
+  ["typedef _Atomic(\\\nFirstFileAtomicBase) FirstFileAtomicSpliceAlias",
+    "FirstFileAtomicBase", "FirstFileAtomicSpliceAlias", 0, false],
+  ["typedef _Atomic(FirstBlockAtomicBase) FirstBlockAtomicAlias",
+    "FirstBlockAtomicBase", "FirstBlockAtomicAlias", 1, false],
 ];
 if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarators") {
   for (const [fragmentText, name, currentDeclarator, scopeDepth,
@@ -2436,7 +2451,66 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       nativeAnalysisPath,
       ["--same-typedef-declarator-hover-parity-json", String(byteOffset)],
       { encoding: "utf8" },
-    )), "native and Wasm internal typedef shadow differ");
+      )), "native and Wasm internal typedef shadow differ");
+  }
+  const atomicShadowFragmentIndex =
+    sameTypedefDeclaratorHoverSource.source.indexOf(
+      "typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow",
+    );
+  const atomicShadowUseIndex =
+    sameTypedefDeclaratorHoverSource.source.indexOf(
+      "FirstBlockAtomicShadow", atomicShadowFragmentIndex,
+    );
+  const atomicShadowCurrentIndex =
+    sameTypedefDeclaratorHoverSource.source.indexOf(
+      "FirstBlockAtomicShadow",
+      atomicShadowUseIndex + "FirstBlockAtomicShadow".length,
+    );
+  const atomicShadowDeclarationIndex =
+    sameTypedefDeclaratorHoverSource.source.indexOf("FirstBlockAtomicShadow");
+  assert.ok(atomicShadowFragmentIndex >= 0 &&
+    atomicShadowUseIndex > atomicShadowDeclarationIndex &&
+    atomicShadowCurrentIndex > atomicShadowUseIndex,
+  "missing atomic typedef shadow anchors");
+  const atomicShadowNameBytes = Buffer.byteLength("FirstBlockAtomicShadow");
+  for (const delta of [
+    0, Math.floor(atomicShadowNameBytes / 2), atomicShadowNameBytes,
+  ]) {
+    const byteOffset = byteOffsetForIndex(
+      sameTypedefDeclaratorHoverSource.source, atomicShadowUseIndex,
+    ) + delta;
+    const result = compiler.analyzeSource(
+      sameTypedefDeclaratorHoverSource,
+      { cursor: {
+        sourceName: sameTypedefDeclaratorHoverSource.name,
+        byteOffset,
+      } },
+    );
+    const shadowSymbol = symbol(result, "FirstBlockAtomicShadow", "typedef");
+    assert.equal(result.partial, false, "atomic typedef shadow partial");
+    assert.deepStrictEqual(result.diagnostics, [],
+      "atomic typedef shadow diagnostics");
+    assert.equal(result.hover?.name, "FirstBlockAtomicShadow");
+    assert.equal(result.hover?.kind, "typedef");
+    assert.equal(result.hover?.declaration.start.offset,
+      byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source,
+        atomicShadowDeclarationIndex,
+      ), "atomic typedef shadow resolves outer declaration");
+    assert.deepStrictEqual(result.hover?.declaration,
+      shadowSymbol?.declaration);
+    assert.notEqual(result.hover?.declaration.start.offset,
+      byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source, atomicShadowCurrentIndex,
+      ), "current atomic shadowing typedef remains invisible");
+    assert.equal(symbol(result, "nested_after", "object"), undefined);
+    assert.equal(symbol(result, "block_after", "object"), undefined);
+    assert.equal(symbol(result, "file_after", "object"), undefined);
+    assert.deepStrictEqual(result, JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--same-typedef-declarator-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    )), "native and Wasm atomic typedef shadow differ");
   }
   for (const [fragmentText, name, currentDeclarator] of [
     sameTypedefDeclaratorCases[0],
@@ -2446,6 +2520,7 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
     sameTypedefDeclaratorCases[16],
     sameTypedefDeclaratorCases[18],
     sameTypedefDeclaratorCases[19],
+    sameTypedefDeclaratorCases[sameTypedefDeclaratorCases.length - 1],
   ]) {
     const freshCompiler = await createCompiler(wasmModule);
     try {

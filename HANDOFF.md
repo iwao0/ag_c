@@ -36813,3 +36813,35 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。prototype parameter内の配列境界、nested callback declarator、複合bound式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - 今回の直接function/function-pointer parameter型と直接配列境界は再探索せず、`typedef struct Tag Alias;`や`typedef _Atomic(Base) AtomicBase;`の浅い型指定子lookup pointを小型probeで比較する。全Wasm integrationを反復せず、Native約6秒と1.01秒のsame-typedef焦点gateを使う。
+
+### このセッション（続き1238）: `_Atomic` typedef型指定子のlookup pointを回復した
+- 対象選定:
+  - 続き1237の次候補から、`typedef struct Tag Alias;`と`typedef _Atomic(Base) AtomicBase;`をfile/block scope、comment、LF splice、同名shadowを含む通常サイズの完全sourceで比較した。
+  - 既存tag/typedefのhover、kind、宣言range、diagnostics空・`partial:false`は正しかった一方、現在のaliasがpoint of declarationより前からcompletionへ公開されていた。block側では現在aliasがsource不明・offset -1のsynthetic typedefとして現れる形もあった。
+  - `_Atomic`は直接typedef名だけを囲む浅い形に限定できた。tagは同じ字句形が既存tag参照と`typedef struct NewTag Alias;`による新規forward tag宣言の両方を表すため、別扱いにした。
+- 原因:
+  - 既存の宣言指定子回復は`typedef`とqualifierの直後にある直接aliasだけを認識し、`_Atomic(`と`)`を含む型指定子を辞退していた。
+  - さらに`object_declaration_prefix()`は`_Atomic(Base)`内の`Base`位置でも現在宣言を確定済みとして返すため、従来の`!definite_declaration`分岐内にだけ置いた宣言指定子回復へ到達しなかった。
+- 変更:
+  - 宣言指定子classifierへatomic modeを追加し、`typedef`/qualifierの後が直接`_Atomic(`、選択typedef名、`)`で、その後に浅い宣言子を既存classifierで確定できる場合だけ一致させた。commentとLF/CRLF spliceは既存skip helperで除外する。
+  - 宣言指定子classifierを`definite_declaration`分岐より前に評価し、一致時は現在typedef宣言全体を回復sourceから除いて宣言直前へmarkerを置く。これにより外側typedefは正しいrangeで残り、現在aliasと後続nested/block/file objectは見えない。
+  - fileの直接/comment/LF splice、blockの直接形、nested blockの同名shadowを既存same-typedef fixtureへ統合した。atomic代表形と同名shadowだけを名前先頭・中央・末尾で確認し、他形は中央へ集約した。
+- tag試行の取り下げ:
+  - 最初は`struct`/`union`/`enum`直後のtag名も同じ字句classifierへ追加したが、既存tag参照では期待どおり現在aliasを隠す一方、新規forward tag宣言のtag名hoverをnullにする退行を小型probeで検出した。
+  - 宣言全体を除く方式では新規tag宣言も失われ、単純な`struct Tag;`補完ではblock内で外側tagをshadowし得る。scope-awareに「参照か新規宣言か」を区別する必要があるため、この試行はproduction/test fixtureから除去し、forward tagの既存hoverを維持した。
+- テスト時間の改善:
+  - 新しいtargetは増やさず、既存`make test-wasm-language-analysis-same-typedef-declarators`へ統合した。Native parity、代表境界、fresh instance、同名shadowを含む最終実測は**real 1.61秒 / user 1.71秒 / sys 0.20秒**、JS本体は**1.40秒**だった。
+  - inline tag、local member array bound、prototype boundの隣接3 targetは`make -j3`で並列実行し、**real 1.82秒 / user 4.16秒 / sys 0.55秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 6.19秒 / user 4.45秒 / sys 1.49秒**。追加5形を再利用/fresh Native session、代表的な名前境界で確認した。
+  - 最終self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 46.98秒 / user 44.87秒 / sys 1.25秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-same-typedef-declarators` = 成功、**real 1.61秒 / user 1.71秒 / sys 0.20秒**。
+  - 最終小型Wasm probeではatomicのfile/block/comment/LF spliceで現在aliasが非可視、同名shadowは外側typedef rangeへ解決した。tag比較では既存のalias早期公開は残る一方、file/blockの新規forward tag宣言名hoverが維持されることを確認した。
+  - 代表sourceは`clang -std=c11 -pedantic-errors -fsyntax-only`と`./build/ag_c`で成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 3.44秒 / user 3.12秒 / sys 0.25秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.36秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体を1.40秒のfresh instance・Native parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行しない。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。tagのscope-aware宣言/reference分類、複合`_Atomic` type-name、attribute、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - tagはscope-aware分類が必要と判明したため次の即時候補にはせず、別の通常サイズ・完全sourceにある浅いpoint-of-declaration境界を小型probeから探す。全Wasm integrationは反復せず、Native約6秒と1.40秒のsame-typedef焦点gateを使う。

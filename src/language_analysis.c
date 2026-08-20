@@ -2468,6 +2468,10 @@ static int analysis_typedef_specifier_before_first_declarator(
     const char *source, size_t length, size_t name_start, size_t name_end,
     size_t declaration_start, size_t outer_brace_count,
     int enable_trigraphs) {
+  enum {
+    ANALYSIS_TYPEDEF_SPECIFIER_ALIAS,
+    ANALYSIS_TYPEDEF_SPECIFIER_ATOMIC,
+  } selected_specifier_mode = ANALYSIS_TYPEDEF_SPECIFIER_ALIAS;
   size_t scan = declaration_start;
   int has_typedef_keyword = 0;
   while (scan < name_start) {
@@ -2484,14 +2488,32 @@ static int analysis_typedef_specifier_before_first_declarator(
             source, word_start, word_length, "typedef")) {
       if (has_typedef_keyword) return 0;
       has_typedef_keyword = 1;
-    } else if (!analysis_declaration_modifier_word(
+    } else if (analysis_declaration_modifier_word(
                    source, word_start, word_length)) {
+      continue;
+    } else if (analysis_word_is(
+                   source, word_start, word_length, "_Atomic")) {
+      scan = skip_analysis_space_and_comments_mode(
+          source, name_start, scan, enable_trigraphs);
+      if (scan >= name_start || source[scan] != '(') return 0;
+      scan = skip_analysis_space_and_comments_mode(
+          source, name_start, scan + 1, enable_trigraphs);
+      if (scan != name_start) return 0;
+      selected_specifier_mode = ANALYSIS_TYPEDEF_SPECIFIER_ATOMIC;
+      break;
+    } else {
       return 0;
     }
   }
   if (!has_typedef_keyword) return 0;
 
   scan = name_end;
+  if (selected_specifier_mode == ANALYSIS_TYPEDEF_SPECIFIER_ATOMIC) {
+    scan = skip_analysis_space_and_comments_mode(
+        source, length, scan, enable_trigraphs);
+    if (scan >= length || source[scan] != ')') return 0;
+    scan++;
+  }
   while (scan < length) {
     scan = skip_analysis_space_and_comments_mode(
         source, length, scan, enable_trigraphs);
@@ -2585,15 +2607,13 @@ static char *build_prior_typedef_declarator_recovery_source(
       for_init_declaration)
     return NULL;
 
-  if (!definite_declaration) {
-    if (!analysis_typedef_specifier_before_first_declarator(
-            source, length, name_start, name_start + name_length,
-            declaration_start, outer_brace_count, enable_trigraphs))
-      return NULL;
+  if (analysis_typedef_specifier_before_first_declarator(
+          source, length, name_start, name_start + name_length,
+          declaration_start, outer_brace_count, enable_trigraphs))
     return build_typedef_declaration_start_recovery_source(
         source, declaration_start, outer_brace_count, changed,
         source_consumed);
-  }
+  if (!definite_declaration) return NULL;
 
   size_t last_top_level_comma = SIZE_MAX;
   int has_typedef_keyword = 0;
