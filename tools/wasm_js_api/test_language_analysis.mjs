@@ -2384,6 +2384,9 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int ExternObjectParenthesizedQualifiedChainType;\n" +
     "typedef int ExternObjectParenthesizedQualifierCommentType;\n" +
     "typedef int ExternObjectParenthesizedQualifierSpliceType;\n" +
+    "typedef int ExternObjectParenthesizedAtomicPointerType;\n" +
+    "typedef int ExternObjectParenthesizedAtomicCommentType;\n" +
+    "typedef int ExternObjectParenthesizedAtomicSpliceType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2426,6 +2429,9 @@ const sameTypedefDeclaratorHoverSource = {
     "  { extern ExternObjectParenthesizedQualifiedChainType (* const volatile restrict ExternObjectParenthesizedQualifiedChainType); }\n" +
     "  { extern ExternObjectParenthesizedQualifierCommentType (* /* before qualifier */ const /* between qualifiers */ volatile /* after qualifier */ ExternObjectParenthesizedQualifierCommentType); }\n" +
     "  { extern ExternObjectParenthesizedQualifierSpliceType (* const \\\nvolatile ExternObjectParenthesizedQualifierSpliceType); }\n" +
+    "  { extern ExternObjectParenthesizedAtomicPointerType (* _Atomic ExternObjectParenthesizedAtomicPointerType); }\n" +
+    "  { extern ExternObjectParenthesizedAtomicCommentType (* /* before atomic */ _Atomic /* after atomic */ ExternObjectParenthesizedAtomicCommentType); }\n" +
+    "  { extern ExternObjectParenthesizedAtomicSpliceType (* _Atomic \\\nExternObjectParenthesizedAtomicSpliceType); }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
@@ -2501,6 +2507,18 @@ const externTypedefShadowConflictSources = [
   }, "SameBlockParenthesizedQualifiedExternType",
   "extern SameBlockParenthesizedQualifiedExternType " +
     "(* const SameBlockParenthesizedQualifiedExternType)"],
+  [{
+    name: "same-block-parenthesized-atomic-extern-typedef-conflict.c",
+    source:
+      "int same_block_parenthesized_atomic_extern_typedef_conflict(void) {\n" +
+      "  typedef int SameBlockParenthesizedAtomicExternType;\n" +
+      "  extern SameBlockParenthesizedAtomicExternType " +
+      "(* _Atomic SameBlockParenthesizedAtomicExternType);\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "SameBlockParenthesizedAtomicExternType",
+  "extern SameBlockParenthesizedAtomicExternType " +
+    "(* _Atomic SameBlockParenthesizedAtomicExternType)"],
 ];
 const externTypedefSemanticTypeSources = [
   [{
@@ -2747,6 +2765,12 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "ExternObjectParenthesizedQualifierCommentType", false],
     ["extern ExternObjectParenthesizedQualifierSpliceType (* const \\\nvolatile ExternObjectParenthesizedQualifierSpliceType)",
       "ExternObjectParenthesizedQualifierSpliceType", true],
+    ["extern ExternObjectParenthesizedAtomicPointerType (* _Atomic ExternObjectParenthesizedAtomicPointerType)",
+      "ExternObjectParenthesizedAtomicPointerType", true],
+    ["extern ExternObjectParenthesizedAtomicCommentType (* /* before atomic */ _Atomic /* after atomic */ ExternObjectParenthesizedAtomicCommentType)",
+      "ExternObjectParenthesizedAtomicCommentType", false],
+    ["extern ExternObjectParenthesizedAtomicSpliceType (* _Atomic \\\nExternObjectParenthesizedAtomicSpliceType)",
+      "ExternObjectParenthesizedAtomicSpliceType", true],
   ];
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(

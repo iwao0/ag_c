@@ -3287,6 +3287,7 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   int has_parenthesized_declarator = 0;
   int has_parenthesized_pointer = 0;
   int has_parenthesized_pointer_qualifier = 0;
+  int has_parenthesized_atomic_pointer_qualifier = 0;
   size_t declarator_pointer_count = 0;
   while (scan < length) {
     scan = skip_analysis_space_and_comments_mode(
@@ -3314,10 +3315,22 @@ static char *build_file_typedef_block_extern_type_recovery_source(
            is_identifier_byte((unsigned char)source[scan]))
       scan++;
     size_t word_length = scan - word_start;
+    if (analysis_word_is(
+            source, word_start, word_length, "_Atomic")) {
+      if (!has_parenthesized_declarator ||
+          !has_parenthesized_pointer ||
+          has_parenthesized_pointer_qualifier ||
+          has_parenthesized_atomic_pointer_qualifier)
+        return NULL;
+      has_parenthesized_atomic_pointer_qualifier = 1;
+      continue;
+    }
     if (analysis_type_name_qualifier_word(
             source, word_start, word_length)) {
       if (has_parenthesized_declarator) {
-        if (!has_parenthesized_pointer) return NULL;
+        if (!has_parenthesized_pointer ||
+            has_parenthesized_atomic_pointer_qualifier)
+          return NULL;
         has_parenthesized_pointer_qualifier = 1;
       }
       continue;
@@ -3429,7 +3442,8 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   if (visible != ANALYSIS_VISIBLE_DIRECT_DECLARATION_FILE_TYPEDEF)
     return NULL;
   if (has_array_suffix ||
-      has_parenthesized_pointer_qualifier)
+      has_parenthesized_pointer_qualifier ||
+      has_parenthesized_atomic_pointer_qualifier)
     return build_retained_declaration_lookup_recovery_source(
         source, declaration_end + 1, outer_brace_count,
         changed, source_consumed);

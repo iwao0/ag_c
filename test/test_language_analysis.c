@@ -1922,6 +1922,9 @@ static const char same_typedef_declarator_hover_source[] =
     "typedef int ExternObjectParenthesizedQualifiedChainType;\n"
     "typedef int ExternObjectParenthesizedQualifierCommentType;\n"
     "typedef int ExternObjectParenthesizedQualifierSpliceType;\n"
+    "typedef int ExternObjectParenthesizedAtomicPointerType;\n"
+    "typedef int ExternObjectParenthesizedAtomicCommentType;\n"
+    "typedef int ExternObjectParenthesizedAtomicSpliceType;\n"
     "static int same_typedef_block(void) {\n"
     "  typedef int FirstBlockBase;\n"
     "  typedef int FirstBlockAtomicBase;\n"
@@ -1994,6 +1997,14 @@ static const char same_typedef_declarator_hover_source[] =
     "  { extern ExternObjectParenthesizedQualifierSpliceType "
     "(* const \\\n"
     "volatile ExternObjectParenthesizedQualifierSpliceType); }\n"
+    "  { extern ExternObjectParenthesizedAtomicPointerType "
+    "(* _Atomic ExternObjectParenthesizedAtomicPointerType); }\n"
+    "  { extern ExternObjectParenthesizedAtomicCommentType "
+    "(* /* before atomic */ _Atomic /* after atomic */ "
+    "ExternObjectParenthesizedAtomicCommentType); }\n"
+    "  { extern ExternObjectParenthesizedAtomicSpliceType "
+    "(* _Atomic \\\n"
+    "ExternObjectParenthesizedAtomicSpliceType); }\n"
     "  { typedef int FirstNestedBase; "
     "typedef FirstNestedBase FirstNestedArray[4]; "
     "typedef FirstBlockShadow FirstBlockShadow; "
@@ -2033,6 +2044,15 @@ static const char
     "  typedef int SameBlockParenthesizedQualifiedExternType;\n"
     "  extern SameBlockParenthesizedQualifiedExternType "
     "(* const SameBlockParenthesizedQualifiedExternType);\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char
+    same_block_parenthesized_atomic_extern_typedef_conflict_source[] =
+    "int same_block_parenthesized_atomic_extern_typedef_conflict(void) {\n"
+    "  typedef int SameBlockParenthesizedAtomicExternType;\n"
+    "  extern SameBlockParenthesizedAtomicExternType "
+    "(* _Atomic SameBlockParenthesizedAtomicExternType);\n"
     "  return 0;\n"
     "}\n";
 
@@ -4297,6 +4317,7 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       for_init_extern_typedef_conflict_source,
       same_block_parenthesized_extern_typedef_conflict_source,
       same_block_parenthesized_qualified_extern_typedef_conflict_source,
+      same_block_parenthesized_atomic_extern_typedef_conflict_source,
   };
   static const char *source_names[] = {
       "same-block-extern-typedef-conflict.c",
@@ -4306,6 +4327,7 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       "for-init-extern-typedef-conflict.c",
       "same-block-parenthesized-extern-typedef-conflict.c",
       "same-block-parenthesized-qualified-extern-typedef-conflict.c",
+      "same-block-parenthesized-atomic-extern-typedef-conflict.c",
   };
   char *variant_end = NULL;
   unsigned long variant = strtoul(variant_text, &variant_end, 10);
@@ -10751,6 +10773,16 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "(* const \\\nvolatile "
        "ExternObjectParenthesizedQualifierSpliceType)",
        "ExternObjectParenthesizedQualifierSpliceType", 1},
+      {"extern ExternObjectParenthesizedAtomicPointerType "
+       "(* _Atomic ExternObjectParenthesizedAtomicPointerType)",
+       "ExternObjectParenthesizedAtomicPointerType", 1},
+      {"extern ExternObjectParenthesizedAtomicCommentType "
+       "(* /* before atomic */ _Atomic /* after atomic */ "
+       "ExternObjectParenthesizedAtomicCommentType)",
+       "ExternObjectParenthesizedAtomicCommentType", 0},
+      {"extern ExternObjectParenthesizedAtomicSpliceType "
+       "(* _Atomic \\\nExternObjectParenthesizedAtomicSpliceType)",
+       "ExternObjectParenthesizedAtomicSpliceType", 1},
   };
   for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
     for (size_t case_index = 0;
@@ -10863,6 +10895,11 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "extern SameBlockParenthesizedQualifiedExternType "
        "(* const SameBlockParenthesizedQualifiedExternType)",
        "SameBlockParenthesizedQualifiedExternType"},
+      {"same-block-parenthesized-atomic-extern-typedef-conflict.c",
+       same_block_parenthesized_atomic_extern_typedef_conflict_source,
+       "extern SameBlockParenthesizedAtomicExternType "
+       "(* _Atomic SameBlockParenthesizedAtomicExternType)",
+       "SameBlockParenthesizedAtomicExternType"},
   };
   for (size_t conflict_index = 0;
        conflict_index < sizeof(extern_typedef_conflicts) /
