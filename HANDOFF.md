@@ -35977,3 +35977,46 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 通常サイズの完全sourceで未固定のpreprocessor operandまたはdeclaration境界を小さいprobeから探す。開発中はNative約8秒と約1分の
     macro焦点Wasm gateを使い、全Wasm parityは関連batch末尾に一度だけ実行する。
+
+### このセッション（続き1214）: 論理行形式のconditional groupで`#elif` macro hoverを回復した
+- 対象選定:
+  - 通常サイズの完全なvalid C 27文脈を小さいWasm probeで確認した。配列bound、`_Alignas`、`_Static_assert`、bit-field、parameter、
+    `_Generic`、`offsetof`、initializer、`case`、macro replacement、`#line/#include/#pragma`など22文脈はgreenだった。
+  - 偽macroをoperandにした`#elif`で、opening `#if` keywordのLF split、`#`後block comment、`#`後CRLF行継続、および閉じた内側group 1段の
+    split `#endif`だけが`partial:true`となり、split `#endif`ではE1053も返した。split current `#elif`はgreenだった。深い条件式・directive入れ子、
+    巨大入力、fuzz、資源stress、security監査系には広げなかった。
+- 原因:
+  - 続き1213の対応opener探索は物理行ごとに通常`#`と連続したdirective keywordを読んでいたため、translation phase 2/3後には正当な
+    conditional directiveになる行継続・comment形式をgroup境界として数えられなかった。
+  - recovery後に元groupを戻すconditional validation tailも別の物理行classifierを使っており、opener探索だけを直してもsplit/comment形式を
+    tailへ復元できない状態だった。
+- 変更:
+  - conditional directive分類を、既存のLF/CRLFおよびtrigraph mode対応line-splice helperとblock-comment spacingを使う論理行classifierへ
+    統一した。`if/ifdef/ifndef`、`elif/else`、`endif`をidentifier境界付きで分類し、対応openerの後方向線形探索とvalidation tailで共有する。
+  - 後方向探索は前の物理行からその論理行先頭へ戻り、閉じた内側group数だけを反復的に数える。通常`#`だけを対象とし、条件式評価、再帰探索、
+    深い構文解析は追加しない。
+  - Native/Wasmへsplit opening keyword、`#`後comment、`#`後CRLF行継続、閉じた内側group 1段のsplit `#endif`、split current `#elif`を追加した。
+    Nativeは全5形の名前先頭・中央・末尾を同一/fresh sessionで固定し、Wasmは元の4失敗形をNative snapshotと完全照合する。
+- テスト時間の改善:
+  - 新規形を既存の大きなmacro sourceへ足した状態では、全既存ケースが追加行まで再解析するため焦点gateが**real 75.94秒**になった。
+    新規形を小型の`conditional-logical-lines.c`専用sourceへ分離し、Native parity CLIも同じsourceを使うようにした結果、同じ焦点gateを
+    **real 51.18秒 / user 51.27秒 / sys 0.66秒**へ24.76秒短縮した。
+  - 全Wasm gateへ区間timingを付けたところ、2引数enum call群約140秒、3引数enum call群約291秒、designator/array bound/cast群約196秒、
+    control expression/`_Generic`群約238秒、declarator/member hover群約316秒が主要区間だった。今後は変更領域に対応する焦点gateを使い、全件は
+    関連batch末尾のintegrationで一度だけ実行する。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (58 scenarios)**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.99秒 / user 42.24秒 / sys 1.08秒**。元probe 27文脈は全green。
+  - `/usr/bin/time -p make test-wasm-language-analysis-macros` = runtime manifestとNative/Wasm macro snapshot parityを含めて成功、
+    **real 51.18秒 / user 51.27秒 / sys 0.66秒**。
+  - `AGC_LANGUAGE_ANALYSIS_TIMING=1 /usr/bin/time -p make test-wasm-js-api` = smoke、language analysis、package exportsすべて成功、
+    **real 1542.72秒 / user 1532.60秒 / sys 12.06秒**。関連preprocessor 3増分をまとめた全Wasm integrationを完了した。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。深い条件式・directive入れ子、巨大入力、
+    fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - preprocessor operand群は全Wasm integrationまで完了したため、通常サイズの完全sourceで未固定のdeclaration境界へ移る。開発中はNative約6秒と
+    対応する小型probeを使い、長いenum call/declarator群はその領域を変更した場合の焦点gateまたはbatch末尾の全件だけで実行する。

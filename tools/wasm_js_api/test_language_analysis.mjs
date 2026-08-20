@@ -1038,6 +1038,41 @@ const macroDefinitionFormsSource = {
     "         SPLIT_DEFINE_MACRO + BRANCH_MACRO + REDEFINED_MACRO;\n" +
     "}\n",
 };
+const conditionalLogicalLineSource = {
+  name: "conditional-logical-lines.c",
+  source: "#define CONDITIONAL_FALSE_MACRO 0\n" +
+    "#i\\\n" +
+    "f 0\n" +
+    "int conditional_elif_split_opener_first_hidden;\n" +
+    "#elif CONDITIONAL_FALSE_MACRO\n" +
+    "int conditional_elif_split_opener_hidden_value;\n" +
+    "#endif\n" +
+    "# /* opener gap */ if 0\n" +
+    "int conditional_elif_comment_opener_first_hidden;\n" +
+    "#elif CONDITIONAL_FALSE_MACRO\n" +
+    "int conditional_elif_comment_opener_hidden_value;\n" +
+    "#endif\n" +
+    "# \\\r\n" +
+    "if 0\n" +
+    "int conditional_elif_spliced_opener_first_hidden;\n" +
+    "#elif CONDITIONAL_FALSE_MACRO\n" +
+    "int conditional_elif_spliced_opener_hidden_value;\n" +
+    "#endif\n" +
+    "#if 0\n" +
+    "#if 1\n" +
+    "int conditional_elif_split_endif_first_hidden;\n" +
+    "#end\\\n" +
+    "if\n" +
+    "#elif CONDITIONAL_FALSE_MACRO\n" +
+    "int conditional_elif_split_endif_hidden_value;\n" +
+    "#endif\n" +
+    "#if 0\n" +
+    "int conditional_elif_split_current_first_hidden;\n" +
+    "#el\\\n" +
+    "if CONDITIONAL_FALSE_MACRO\n" +
+    "int conditional_elif_split_current_hidden_value;\n" +
+    "#endif\n",
+};
 const macroDefinitionCases = [
   {
     name: "SIMPLE_MACRO", definition: "#define SIMPLE_MACRO 1",
@@ -1446,6 +1481,38 @@ const conditionalDirectiveMacroCases = [
     laterObject: "conditional_elif_nested_value",
   },
   {
+    fragment: "#i\\\nf 0\n" +
+      "int conditional_elif_split_opener_first_hidden;\n" +
+      "#elif CONDITIONAL_FALSE_MACRO",
+    name: "CONDITIONAL_FALSE_MACRO", replacement: "0",
+    laterObject: "conditional_elif_split_opener_hidden_value",
+    input: conditionalLogicalLineSource,
+  },
+  {
+    fragment: "# /* opener gap */ if 0\n" +
+      "int conditional_elif_comment_opener_first_hidden;\n" +
+      "#elif CONDITIONAL_FALSE_MACRO",
+    name: "CONDITIONAL_FALSE_MACRO", replacement: "0",
+    laterObject: "conditional_elif_comment_opener_hidden_value",
+    input: conditionalLogicalLineSource,
+  },
+  {
+    fragment: "# \\\r\nif 0\n" +
+      "int conditional_elif_spliced_opener_first_hidden;\n" +
+      "#elif CONDITIONAL_FALSE_MACRO",
+    name: "CONDITIONAL_FALSE_MACRO", replacement: "0",
+    laterObject: "conditional_elif_spliced_opener_hidden_value",
+    input: conditionalLogicalLineSource,
+  },
+  {
+    fragment: "#if 0\n#if 1\n" +
+      "int conditional_elif_split_endif_first_hidden;\n" +
+      "#end\\\nif\n#elif CONDITIONAL_FALSE_MACRO",
+    name: "CONDITIONAL_FALSE_MACRO", replacement: "0",
+    laterObject: "conditional_elif_split_endif_hidden_value",
+    input: conditionalLogicalLineSource,
+  },
+  {
     fragment: "#if CONDITIONAL_FALSE_MACRO\n" +
       "int conditional_false_hidden_value",
     name: "CONDITIONAL_FALSE_MACRO", replacement: "0",
@@ -1473,24 +1540,28 @@ const conditionalDirectiveMacroCases = [
 ];
 const conditionalDirectiveOffsets = [];
 for (const macroCase of conditionalDirectiveMacroCases) {
-  const fragmentIndex = macroDefinitionFormsSource.source.indexOf(
+  const input = macroCase.input ?? macroDefinitionFormsSource;
+  const nativeParityFlag = macroCase.input
+    ? "--conditional-logical-line-parity-json"
+    : "--macro-definition-parity-json";
+  const fragmentIndex = input.source.indexOf(
     macroCase.fragment,
   );
-  const operandIndex = macroDefinitionFormsSource.source.indexOf(
+  const operandIndex = input.source.indexOf(
     macroCase.name, fragmentIndex,
   );
   const definitionFragment = macroCase.name === "CONDITIONAL_FALSE_MACRO"
     ? "#define CONDITIONAL_FALSE_MACRO 0"
     : "#define SIMPLE_MACRO 1";
-  const definitionIndex = macroDefinitionFormsSource.source.indexOf(
+  const definitionIndex = input.source.indexOf(
     macroCase.name,
-    macroDefinitionFormsSource.source.indexOf(definitionFragment),
+    input.source.indexOf(definitionFragment),
   );
   assert.notEqual(fragmentIndex, -1, `missing ${macroCase.fragment} fragment`);
   assert.notEqual(operandIndex, -1, `missing ${macroCase.name} operand`);
   assert.notEqual(definitionIndex, -1, `missing ${macroCase.name} definition`);
   const definitionOffset = byteOffsetForIndex(
-    macroDefinitionFormsSource.source, definitionIndex,
+    input.source, definitionIndex,
   );
   const nameBytes = Buffer.byteLength(macroCase.name);
   const middleDelta = Math.floor(nameBytes / 2);
@@ -1498,21 +1569,21 @@ for (const macroCase of conditionalDirectiveMacroCases) {
     ? [0, middleDelta, nameBytes]
     : [middleDelta];
   const offsets = deltas.map((delta) =>
-    byteOffsetForIndex(macroDefinitionFormsSource.source, operandIndex) + delta
+    byteOffsetForIndex(input.source, operandIndex) + delta
   );
   conditionalDirectiveOffsets.push(
-    byteOffsetForIndex(macroDefinitionFormsSource.source, operandIndex) +
+    byteOffsetForIndex(input.source, operandIndex) +
       middleDelta,
   );
   for (const byteOffset of offsets) {
-    const wasmResult = compiler.analyzeSource(macroDefinitionFormsSource, {
-      cursor: { sourceName: macroDefinitionFormsSource.name, byteOffset },
+    const wasmResult = compiler.analyzeSource(input, {
+      cursor: { sourceName: input.name, byteOffset },
     });
     assertMacroDefinitionSnapshot(wasmResult, {
       name: macroCase.name, replacement: macroCase.replacement, parameters: [],
     }, `${macroCase.name} conditional directive byte ${byteOffset}`);
     assert.equal(wasmResult.hover.declaration.sourceName,
-      macroDefinitionFormsSource.name);
+      input.name);
     assert.equal(wasmResult.hover.declaration.start.offset, definitionOffset);
     assert.equal(wasmResult.hover.declaration.end.offset,
       definitionOffset + nameBytes);
@@ -1522,7 +1593,7 @@ for (const macroCase of conditionalDirectiveMacroCases) {
     }
     const nativeResult = JSON.parse(execFileSync(
       nativeAnalysisPath,
-      ["--macro-definition-parity-json", String(byteOffset)],
+      [nativeParityFlag, String(byteOffset)],
       { encoding: "utf8" },
     ));
     assert.deepStrictEqual(wasmResult, nativeResult,
@@ -1534,18 +1605,22 @@ for (let caseIndex = 0;
      caseIndex++) {
   const macroCase = conditionalDirectiveMacroCases[caseIndex];
   if (!macroCase.checkFresh) continue;
+  const input = macroCase.input ?? macroDefinitionFormsSource;
+  const nativeParityFlag = macroCase.input
+    ? "--conditional-logical-line-parity-json"
+    : "--macro-definition-parity-json";
   const byteOffset = conditionalDirectiveOffsets[caseIndex];
   const freshCompiler = await createCompiler(wasmModule);
   try {
-    const freshResult = freshCompiler.analyzeSource(macroDefinitionFormsSource, {
-      cursor: { sourceName: macroDefinitionFormsSource.name, byteOffset },
+    const freshResult = freshCompiler.analyzeSource(input, {
+      cursor: { sourceName: input.name, byteOffset },
     });
     assertMacroDefinitionSnapshot(freshResult, {
       name: macroCase.name, replacement: macroCase.replacement, parameters: [],
     }, `${macroCase.name} fresh conditional directive`);
     assert.deepStrictEqual(freshResult, JSON.parse(execFileSync(
       nativeAnalysisPath,
-      ["--macro-definition-parity-json", String(byteOffset)],
+      [nativeParityFlag, String(byteOffset)],
       { encoding: "utf8" },
     )), `native and fresh Wasm ${macroCase.name} conditional directive differ`);
   } finally {

@@ -567,55 +567,108 @@ static int analysis_directive_operand_starts_at_mode(
 typedef enum {
   ANALYSIS_CONDITIONAL_LINE_OTHER = 0,
   ANALYSIS_CONDITIONAL_LINE_OPEN,
+  ANALYSIS_CONDITIONAL_LINE_BRANCH,
   ANALYSIS_CONDITIONAL_LINE_ENDIF,
 } analysis_conditional_line_kind_t;
 
+static size_t analysis_skip_conditional_directive_spacing_mode(
+    const char *source, size_t length, size_t cursor, size_t end,
+    int enable_trigraphs) {
+  while (cursor < end) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, cursor, enable_trigraphs);
+    if (splice_size) {
+      cursor += splice_size;
+      continue;
+    }
+    if (source[cursor] == ' ' || source[cursor] == '\t' ||
+        source[cursor] == '\r') {
+      cursor++;
+      continue;
+    }
+    if (cursor + 1 < end && source[cursor] == '/' &&
+        source[cursor + 1] == '*') {
+      cursor += 2;
+      while (cursor + 1 < end &&
+             !(source[cursor] == '*' && source[cursor + 1] == '/'))
+        cursor++;
+      if (cursor + 1 >= end) return end;
+      cursor += 2;
+      continue;
+    }
+    break;
+  }
+  return cursor;
+}
+
+static int analysis_conditional_directive_word_is_mode(
+    const char *source, size_t length, size_t start, size_t end,
+    int enable_trigraphs, const char *word, size_t word_length) {
+  size_t after_word = 0;
+  if (!analysis_match_directive_word_mode(
+          source, length, start, end, enable_trigraphs,
+          word, word_length, &after_word))
+    return 0;
+  while (after_word < end) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, after_word, enable_trigraphs);
+    if (!splice_size) break;
+    after_word += splice_size;
+  }
+  return after_word >= end ||
+         !is_identifier_byte((unsigned char)source[after_word]);
+}
+
 static analysis_conditional_line_kind_t
-analysis_conditional_physical_line_kind(
-    const char *source, size_t start, size_t end) {
-  while (start < end &&
-         (source[start] == ' ' || source[start] == '\t' ||
-          source[start] == '\r'))
-    start++;
+analysis_conditional_logical_line_kind_mode(
+    const char *source, size_t length, size_t start, size_t end,
+    int enable_trigraphs) {
+  start = analysis_skip_conditional_directive_spacing_mode(
+      source, length, start, end, enable_trigraphs);
   if (start >= end || source[start++] != '#')
     return ANALYSIS_CONDITIONAL_LINE_OTHER;
-  while (start < end &&
-         (source[start] == ' ' || source[start] == '\t' ||
-          source[start] == '\r'))
-    start++;
-  size_t word_start = start;
-  while (start < end &&
-         is_identifier_byte((unsigned char)source[start]))
-    start++;
-  size_t word_length = start - word_start;
-  if ((word_length == sizeof("if") - 1 &&
-       memcmp(source + word_start, "if", word_length) == 0) ||
-      (word_length == sizeof("ifdef") - 1 &&
-       memcmp(source + word_start, "ifdef", word_length) == 0) ||
-      (word_length == sizeof("ifndef") - 1 &&
-       memcmp(source + word_start, "ifndef", word_length) == 0))
-    return ANALYSIS_CONDITIONAL_LINE_OPEN;
-  if (word_length == sizeof("endif") - 1 &&
-      memcmp(source + word_start, "endif", word_length) == 0)
-    return ANALYSIS_CONDITIONAL_LINE_ENDIF;
+  start = analysis_skip_conditional_directive_spacing_mode(
+      source, length, start, end, enable_trigraphs);
+  static const struct {
+    const char *word;
+    size_t length;
+    analysis_conditional_line_kind_t kind;
+  } directives[] = {
+      {"if", sizeof("if") - 1, ANALYSIS_CONDITIONAL_LINE_OPEN},
+      {"ifdef", sizeof("ifdef") - 1, ANALYSIS_CONDITIONAL_LINE_OPEN},
+      {"ifndef", sizeof("ifndef") - 1, ANALYSIS_CONDITIONAL_LINE_OPEN},
+      {"elif", sizeof("elif") - 1, ANALYSIS_CONDITIONAL_LINE_BRANCH},
+      {"else", sizeof("else") - 1, ANALYSIS_CONDITIONAL_LINE_BRANCH},
+      {"endif", sizeof("endif") - 1, ANALYSIS_CONDITIONAL_LINE_ENDIF},
+  };
+  for (size_t i = 0; i < sizeof(directives) / sizeof(directives[0]); i++)
+    if (analysis_conditional_directive_word_is_mode(
+            source, length, start, end, enable_trigraphs,
+            directives[i].word, directives[i].length))
+      return directives[i].kind;
   return ANALYSIS_CONDITIONAL_LINE_OTHER;
 }
 
 static int analysis_matching_conditional_opener_line_start(
-    const char *source, size_t current_line_start,
+    const char *source, size_t length, size_t current_line_start,
+    int enable_trigraphs,
     size_t *out_line_start) {
   if (out_line_start) *out_line_start = 0;
   size_t scan = current_line_start;
   size_t nested_count = 0;
   while (scan > 0) {
-    size_t line_end = scan;
-    if (line_end > 0 && source[line_end - 1] == '\n') line_end--;
-    size_t line_start = line_end;
-    while (line_start > 0 && source[line_start - 1] != '\n')
-      line_start--;
+    size_t physical_end = scan;
+    if (source[physical_end - 1] == '\n') physical_end--;
+    size_t physical_start = physical_end;
+    while (physical_start > 0 && source[physical_start - 1] != '\n')
+      physical_start--;
+    size_t line_start = analysis_logical_line_start_mode(
+        source, length, physical_start, enable_trigraphs);
+    size_t line_end = analysis_preprocessor_directive_line_end_mode(
+        source, length, line_start, enable_trigraphs);
     analysis_conditional_line_kind_t kind =
-        analysis_conditional_physical_line_kind(
-            source, line_start, line_end);
+        analysis_conditional_logical_line_kind_mode(
+            source, length, line_start, line_end, enable_trigraphs);
     if (kind == ANALYSIS_CONDITIONAL_LINE_ENDIF) {
       nested_count++;
     } else if (kind == ANALYSIS_CONDITIONAL_LINE_OPEN) {
@@ -696,7 +749,8 @@ static int analysis_preprocessor_operand_line_start_at_cursor(
       continue;
     if (directives[i].use_conditional_group_start &&
         !analysis_matching_conditional_opener_line_start(
-            source, line_start, &recovery_line_start))
+            source, length, line_start, enable_trigraphs,
+            &recovery_line_start))
       continue;
     matched = 1;
     break;
@@ -2653,64 +2707,21 @@ static char *build_declarator_array_bound_recovery_source(
   return result;
 }
 
-static int is_conditional_directive_line(
-    const char *source, size_t start, size_t end) {
-  while (start < end &&
-         (source[start] == ' ' || source[start] == '\t' ||
-          source[start] == '\r'))
-    start++;
-  if (start >= end || source[start++] != '#') return 0;
-  while (start < end &&
-         (source[start] == ' ' || source[start] == '\t' ||
-          source[start] == '\r'))
-    start++;
-  size_t word_start = start;
-  while (start < end &&
-         is_identifier_byte((unsigned char)source[start]))
-    start++;
-  size_t word_length = start - word_start;
-  static const char *const directives[] = {
-      "if", "ifdef", "ifndef", "elif", "else", "endif",
-  };
-  for (size_t i = 0; i < sizeof(directives) / sizeof(directives[0]); i++)
-    if (analysis_word_is(
-            source, word_start, word_length, directives[i]))
-      return 1;
-  return 0;
-}
-
-static size_t analysis_logical_line_end(
-    const char *source, size_t length, size_t start) {
-  size_t cursor = start;
-  for (;;) {
-    while (cursor < length && source[cursor] != '\n') cursor++;
-    size_t content_end = cursor;
-    if (content_end > start && source[content_end - 1] == '\r')
-      content_end--;
-    int continued =
-        content_end > start && source[content_end - 1] == '\\';
-    if (cursor < length) cursor++;
-    if (!continued || cursor >= length) return cursor;
-    start = cursor;
-  }
-}
-
 static char *append_conditional_validation_tail(
     char *recovery, const char *source, size_t source_length,
-    size_t source_consumed) {
+    size_t source_consumed, int enable_trigraphs) {
   if (!recovery || source_consumed >= source_length) return recovery;
   size_t scan = source_consumed;
   if (scan > 0 && source[scan - 1] != '\n')
-    scan = analysis_logical_line_end(source, source_length, scan);
+    scan = analysis_preprocessor_directive_line_end_mode(
+        source, source_length, scan, enable_trigraphs);
   int has_conditional = 0;
   for (size_t line = scan; line < source_length;) {
-    size_t physical_end = line;
-    while (physical_end < source_length && source[physical_end] != '\n')
-      physical_end++;
-    size_t logical_end = analysis_logical_line_end(
-        source, source_length, line);
-    if (is_conditional_directive_line(
-            source, line, physical_end)) {
+    size_t logical_end = analysis_preprocessor_directive_line_end_mode(
+        source, source_length, line, enable_trigraphs);
+    if (analysis_conditional_logical_line_kind_mode(
+            source, source_length, line, logical_end,
+            enable_trigraphs) != ANALYSIS_CONDITIONAL_LINE_OTHER) {
       has_conditional = 1;
       break;
     }
@@ -2741,13 +2752,11 @@ static char *append_conditional_validation_tail(
     if (source[i] == '\n')
       result[output + i - source_consumed] = '\n';
   for (size_t line = scan; line < source_length;) {
-    size_t physical_end = line;
-    while (physical_end < source_length && source[physical_end] != '\n')
-      physical_end++;
-    size_t logical_end = analysis_logical_line_end(
-        source, source_length, line);
-    if (is_conditional_directive_line(
-            source, line, physical_end))
+    size_t logical_end = analysis_preprocessor_directive_line_end_mode(
+        source, source_length, line, enable_trigraphs);
+    if (analysis_conditional_logical_line_kind_mode(
+            source, source_length, line, logical_end,
+            enable_trigraphs) != ANALYSIS_CONDITIONAL_LINE_OTHER)
       memcpy(result + output + line - source_consumed,
              source + line, logical_end - line);
     line = logical_end;
@@ -3208,21 +3217,22 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (function_parameter_recovery)
       return append_conditional_validation_tail(
           function_parameter_recovery, source, source_length,
-          source_consumed);
+          source_consumed, enable_trigraphs);
     char *enum_recovery = build_enum_declaration_recovery_source(
         source, source_length, recovery_cursor,
         enable_trigraphs, preserve_ambiguous_eof_identifier, changed,
         &source_consumed);
     if (enum_recovery)
       return append_conditional_validation_tail(
-          enum_recovery, source, source_length, source_consumed);
+          enum_recovery, source, source_length, source_consumed,
+          enable_trigraphs);
     char *record_member_recovery = build_record_member_recovery_source(
         source, source_length, recovery_cursor, changed,
         &source_consumed);
     if (record_member_recovery)
       return append_conditional_validation_tail(
           record_member_recovery, source, source_length,
-          source_consumed);
+          source_consumed, enable_trigraphs);
     char *declarator_array_bound_recovery =
         build_declarator_array_bound_recovery_source(
             source, source_length, recovery_cursor, changed,
@@ -3230,7 +3240,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
     if (declarator_array_bound_recovery)
       return append_conditional_validation_tail(
           declarator_array_bound_recovery, source, source_length,
-          source_consumed);
+          source_consumed, enable_trigraphs);
     char *jump_label_recovery = build_jump_label_recovery_source(
         source, source_length, recovery_cursor, changed);
     if (jump_label_recovery) return jump_label_recovery;
@@ -3240,13 +3250,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
             &source_consumed);
     if (function_recovery)
       return append_conditional_validation_tail(
-          function_recovery, source, source_length, source_consumed);
+          function_recovery, source, source_length, source_consumed,
+          enable_trigraphs);
     char *object_recovery = build_object_declaration_recovery_source(
         source, source_length, recovery_cursor, changed,
         &source_consumed);
     if (object_recovery)
       return append_conditional_validation_tail(
-          object_recovery, source, source_length, source_consumed);
+          object_recovery, source, source_length, source_consumed,
+          enable_trigraphs);
   }
   int has_complete_identifier = 0;
   analysis_identifier_span_t cursor_identifier = {0};
@@ -3617,7 +3629,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
       free(result);
       return append_conditional_validation_tail(
           compound_literal_initializer_recovery, source,
-          source_length, compound_literal_consumed);
+          source_length, compound_literal_consumed,
+          enable_trigraphs);
     }
   }
   if (!cursor_on_complete_macro_definition) {
@@ -3631,7 +3644,7 @@ static char *build_recovery_source(const char *source, size_t source_length,
       free(result);
       return append_conditional_validation_tail(
           object_initializer_recovery, source, source_length,
-          object_initializer_consumed);
+          object_initializer_consumed, enable_trigraphs);
     }
   }
   size_t length = recovery_cursor;
@@ -3887,7 +3900,8 @@ static char *build_recovery_source(const char *source, size_t source_length,
     }
   }
   return append_conditional_validation_tail(
-      result, source, source_length, recovery_tail_consumed);
+      result, source, source_length, recovery_tail_consumed,
+      enable_trigraphs);
 }
 
 static uint32_t read_u32_le(const unsigned char *bytes) {

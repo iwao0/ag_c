@@ -1563,6 +1563,40 @@ static const char macro_definition_forms_source[] =
     "         TRIGRAPH_HASH_MACRO + SPLICED_NAME_MACRO +\n"
     "         SPLIT_DEFINE_MACRO + BRANCH_MACRO + REDEFINED_MACRO;\n"
     "}\n";
+
+static const char conditional_logical_line_source[] =
+    "#define CONDITIONAL_FALSE_MACRO 0\n"
+    "#i\\\n"
+    "f 0\n"
+    "int conditional_elif_split_opener_first_hidden;\n"
+    "#elif CONDITIONAL_FALSE_MACRO\n"
+    "int conditional_elif_split_opener_hidden_value;\n"
+    "#endif\n"
+    "# /* opener gap */ if 0\n"
+    "int conditional_elif_comment_opener_first_hidden;\n"
+    "#elif CONDITIONAL_FALSE_MACRO\n"
+    "int conditional_elif_comment_opener_hidden_value;\n"
+    "#endif\n"
+    "# \\\r\n"
+    "if 0\n"
+    "int conditional_elif_spliced_opener_first_hidden;\n"
+    "#elif CONDITIONAL_FALSE_MACRO\n"
+    "int conditional_elif_spliced_opener_hidden_value;\n"
+    "#endif\n"
+    "#if 0\n"
+    "#if 1\n"
+    "int conditional_elif_split_endif_first_hidden;\n"
+    "#end\\\n"
+    "if\n"
+    "#elif CONDITIONAL_FALSE_MACRO\n"
+    "int conditional_elif_split_endif_hidden_value;\n"
+    "#endif\n"
+    "#if 0\n"
+    "int conditional_elif_split_current_first_hidden;\n"
+    "#el\\\n"
+    "if CONDITIONAL_FALSE_MACRO\n"
+    "int conditional_elif_split_current_hidden_value;\n"
+    "#endif\n";
 static const char *const macro_definition_project_sources[] = {
     "/// project definition v1\n#define PROJECT_DEFINITION 21\n"
     "int project_value(void) { return PROJECT_DEFINITION; }\n",
@@ -2868,6 +2902,19 @@ static int print_macro_definition_forms_parity_snapshot(
     return 1;
   return print_macro_definition_source_snapshot(
       "macro-definition.c", macro_definition_forms_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_conditional_logical_line_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(conditional_logical_line_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "conditional-logical-lines.c", conditional_logical_line_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -9579,6 +9626,31 @@ static int test_macro_definition_hover(ag_target_info_t target) {
        "int conditional_elif_nested_first_hidden;\n"
        "#endif\n#elif SIMPLE_MACRO",
        "SIMPLE_MACRO", "1", "conditional_elif_nested_value"},
+      {"#i\\\nf 0\n"
+       "int conditional_elif_split_opener_first_hidden;\n"
+       "#elif CONDITIONAL_FALSE_MACRO",
+       "CONDITIONAL_FALSE_MACRO", "0",
+       "conditional_elif_split_opener_hidden_value"},
+      {"# /* opener gap */ if 0\n"
+       "int conditional_elif_comment_opener_first_hidden;\n"
+       "#elif CONDITIONAL_FALSE_MACRO",
+       "CONDITIONAL_FALSE_MACRO", "0",
+       "conditional_elif_comment_opener_hidden_value"},
+      {"# \\\r\nif 0\n"
+       "int conditional_elif_spliced_opener_first_hidden;\n"
+       "#elif CONDITIONAL_FALSE_MACRO",
+       "CONDITIONAL_FALSE_MACRO", "0",
+       "conditional_elif_spliced_opener_hidden_value"},
+      {"#if 0\n#if 1\n"
+       "int conditional_elif_split_endif_first_hidden;\n"
+       "#end\\\nif\n#elif CONDITIONAL_FALSE_MACRO",
+       "CONDITIONAL_FALSE_MACRO", "0",
+       "conditional_elif_split_endif_hidden_value"},
+      {"#if 0\n"
+       "int conditional_elif_split_current_first_hidden;\n"
+       "#el\\\nif CONDITIONAL_FALSE_MACRO",
+       "CONDITIONAL_FALSE_MACRO", "0",
+       "conditional_elif_split_current_hidden_value"},
       {"#if CONDITIONAL_FALSE_MACRO\nint conditional_false_hidden_value",
        "CONDITIONAL_FALSE_MACRO", "0",
        "conditional_false_hidden_value"},
@@ -9597,9 +9669,17 @@ static int test_macro_definition_hover(ag_target_info_t target) {
        case_index < sizeof(conditional_cases) /
                         sizeof(conditional_cases[0]);
        case_index++) {
+    int uses_logical_line_source = strstr(
+        conditional_logical_line_source,
+        conditional_cases[case_index].fragment) != NULL;
+    const char *case_source = uses_logical_line_source
+                                  ? conditional_logical_line_source
+                                  : macro_definition_forms_source;
+    const char *case_source_name = uses_logical_line_source
+                                       ? "conditional-logical-lines.c"
+                                       : "macro-definition.c";
     const char *fragment = strstr(
-        macro_definition_forms_source,
-        conditional_cases[case_index].fragment);
+        case_source, conditional_cases[case_index].fragment);
     const char *operand = fragment
                               ? strstr(fragment,
                                        conditional_cases[case_index].name)
@@ -9610,7 +9690,7 @@ static int test_macro_definition_hover(ag_target_info_t target) {
             ? "#define CONDITIONAL_FALSE_MACRO 0"
             : "#define SIMPLE_MACRO 1";
     const char *definition = strstr(
-        macro_definition_forms_source, definition_fragment);
+        case_source, definition_fragment);
     definition = definition
                      ? strstr(definition,
                               conditional_cases[case_index].name)
@@ -9628,9 +9708,8 @@ static int test_macro_definition_hover(ag_target_info_t target) {
         CHECK(analysis_session != NULL,
               "conditional directive macro fresh session");
         CHECK(analyze_named(
-                  analysis_session, "macro-definition.c",
-                  macro_definition_forms_source,
-                  (size_t)(operand - macro_definition_forms_source) +
+                  analysis_session, case_source_name, case_source,
+                  (size_t)(operand - case_source) +
                       deltas[delta_index],
                   (header_bundle_t){0}, defaults, &snapshot, &error),
               "conditional directive macro analysis");
@@ -9641,11 +9720,11 @@ static int test_macro_definition_hover(ag_target_info_t target) {
                 conditional_cases[case_index].replacement, 0) &&
             hover->declaration.source_name &&
             strcmp(hover->declaration.source_name,
-                   "macro-definition.c") == 0 &&
+                   case_source_name) == 0 &&
             hover->declaration.start.offset ==
-                (int)(definition - macro_definition_forms_source) &&
+                (int)(definition - case_source) &&
             hover->declaration.end.offset ==
-                (int)(definition - macro_definition_forms_source) +
+                (int)(definition - case_source) +
                     (int)name_length &&
             (!conditional_cases[case_index].later_object ||
              !find_symbol(
@@ -9662,8 +9741,8 @@ static int test_macro_definition_hover(ag_target_info_t target) {
               snapshot.partial, snapshot.diagnostic_count,
               hover ? hover->declaration.start.offset : -1,
               hover ? hover->declaration.end.offset : -1,
-              definition - macro_definition_forms_source,
-              definition - macro_definition_forms_source +
+              definition - case_source,
+              definition - case_source +
                   (ptrdiff_t)name_length,
               conditional_cases[case_index].later_object &&
                   find_symbol(
@@ -10855,6 +10934,9 @@ int main(int argc, char **argv) {
   if (argc == 3 &&
       strcmp(argv[1], "--macro-definition-parity-json") == 0)
     return print_macro_definition_forms_parity_snapshot(argv[2]);
+  if (argc == 3 &&
+      strcmp(argv[1], "--conditional-logical-line-parity-json") == 0)
+    return print_conditional_logical_line_parity_snapshot(argv[2]);
   if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
