@@ -3287,6 +3287,7 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   int has_parenthesized_declarator = 0;
   int has_parenthesized_pointer = 0;
   int has_parenthesized_pointer_qualifier = 0;
+  int has_parenthesized_restrict_pointer_qualifier = 0;
   int has_parenthesized_atomic_pointer_qualifier = 0;
   size_t declarator_pointer_count = 0;
   while (scan < length) {
@@ -3319,7 +3320,7 @@ static char *build_file_typedef_block_extern_type_recovery_source(
             source, word_start, word_length, "_Atomic")) {
       if (!has_parenthesized_declarator ||
           !has_parenthesized_pointer ||
-          has_parenthesized_pointer_qualifier ||
+          has_parenthesized_restrict_pointer_qualifier ||
           has_parenthesized_atomic_pointer_qualifier)
         return NULL;
       has_parenthesized_atomic_pointer_qualifier = 1;
@@ -3328,9 +3329,14 @@ static char *build_file_typedef_block_extern_type_recovery_source(
     if (analysis_type_name_qualifier_word(
             source, word_start, word_length)) {
       if (has_parenthesized_declarator) {
-        if (!has_parenthesized_pointer ||
-            has_parenthesized_atomic_pointer_qualifier)
+        if (!has_parenthesized_pointer)
           return NULL;
+        if (analysis_word_is(
+                source, word_start, word_length, "restrict")) {
+          if (has_parenthesized_atomic_pointer_qualifier)
+            return NULL;
+          has_parenthesized_restrict_pointer_qualifier = 1;
+        }
         has_parenthesized_pointer_qualifier = 1;
       }
       continue;

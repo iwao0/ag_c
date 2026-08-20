@@ -2387,6 +2387,11 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int ExternObjectParenthesizedAtomicPointerType;\n" +
     "typedef int ExternObjectParenthesizedAtomicCommentType;\n" +
     "typedef int ExternObjectParenthesizedAtomicSpliceType;\n" +
+    "typedef int ExternObjectParenthesizedConstAtomicPointerType;\n" +
+    "typedef int ExternObjectParenthesizedAtomicConstPointerType;\n" +
+    "typedef int ExternObjectParenthesizedAtomicQualifierChainType;\n" +
+    "typedef int ExternObjectParenthesizedAtomicQualifierCommentType;\n" +
+    "typedef int ExternObjectParenthesizedAtomicQualifierSpliceType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2432,6 +2437,11 @@ const sameTypedefDeclaratorHoverSource = {
     "  { extern ExternObjectParenthesizedAtomicPointerType (* _Atomic ExternObjectParenthesizedAtomicPointerType); }\n" +
     "  { extern ExternObjectParenthesizedAtomicCommentType (* /* before atomic */ _Atomic /* after atomic */ ExternObjectParenthesizedAtomicCommentType); }\n" +
     "  { extern ExternObjectParenthesizedAtomicSpliceType (* _Atomic \\\nExternObjectParenthesizedAtomicSpliceType); }\n" +
+    "  { extern ExternObjectParenthesizedConstAtomicPointerType (* const _Atomic ExternObjectParenthesizedConstAtomicPointerType); }\n" +
+    "  { extern ExternObjectParenthesizedAtomicConstPointerType (* _Atomic const ExternObjectParenthesizedAtomicConstPointerType); }\n" +
+    "  { extern ExternObjectParenthesizedAtomicQualifierChainType (* volatile _Atomic const ExternObjectParenthesizedAtomicQualifierChainType); }\n" +
+    "  { extern ExternObjectParenthesizedAtomicQualifierCommentType (* const /* before atomic */ _Atomic /* after atomic */ volatile ExternObjectParenthesizedAtomicQualifierCommentType); }\n" +
+    "  { extern ExternObjectParenthesizedAtomicQualifierSpliceType (* const \\\n_Atomic volatile ExternObjectParenthesizedAtomicQualifierSpliceType); }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
@@ -2519,6 +2529,18 @@ const externTypedefShadowConflictSources = [
   }, "SameBlockParenthesizedAtomicExternType",
   "extern SameBlockParenthesizedAtomicExternType " +
     "(* _Atomic SameBlockParenthesizedAtomicExternType)"],
+  [{
+    name: "same-block-parenthesized-atomic-qualified-extern-typedef-conflict.c",
+    source:
+      "int same_block_parenthesized_atomic_qualified_extern_typedef_conflict(void) {\n" +
+      "  typedef int SameBlockParenthesizedAtomicQualifiedExternType;\n" +
+      "  extern SameBlockParenthesizedAtomicQualifiedExternType " +
+      "(* const _Atomic SameBlockParenthesizedAtomicQualifiedExternType);\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "SameBlockParenthesizedAtomicQualifiedExternType",
+  "extern SameBlockParenthesizedAtomicQualifiedExternType " +
+    "(* const _Atomic SameBlockParenthesizedAtomicQualifiedExternType)"],
 ];
 const externTypedefSemanticTypeSources = [
   [{
@@ -2578,6 +2600,17 @@ const externTypedefSemanticTypeSources = [
   }, "extern FunctionRestrictParenthesizedType " +
     "(* restrict FunctionRestrictParenthesizedType)",
   "FunctionRestrictParenthesizedType", false],
+  [{
+    name: "atomic-restrict-parenthesized-extern-typedef.c",
+    source: "typedef int AtomicRestrictParenthesizedType;\n" +
+      "int probe(void) {\n" +
+      "  { extern AtomicRestrictParenthesizedType " +
+      "(* _Atomic restrict AtomicRestrictParenthesizedType); }\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "extern AtomicRestrictParenthesizedType " +
+    "(* _Atomic restrict AtomicRestrictParenthesizedType)",
+  "AtomicRestrictParenthesizedType", false, false],
 ];
 const sameTypedefDeclaratorCases = [
   ["typedef FirstFileBase FirstFileCopy", "FirstFileBase", "FirstFileCopy",
@@ -2771,6 +2804,16 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "ExternObjectParenthesizedAtomicCommentType", false],
     ["extern ExternObjectParenthesizedAtomicSpliceType (* _Atomic \\\nExternObjectParenthesizedAtomicSpliceType)",
       "ExternObjectParenthesizedAtomicSpliceType", true],
+    ["extern ExternObjectParenthesizedConstAtomicPointerType (* const _Atomic ExternObjectParenthesizedConstAtomicPointerType)",
+      "ExternObjectParenthesizedConstAtomicPointerType", true],
+    ["extern ExternObjectParenthesizedAtomicConstPointerType (* _Atomic const ExternObjectParenthesizedAtomicConstPointerType)",
+      "ExternObjectParenthesizedAtomicConstPointerType", true],
+    ["extern ExternObjectParenthesizedAtomicQualifierChainType (* volatile _Atomic const ExternObjectParenthesizedAtomicQualifierChainType)",
+      "ExternObjectParenthesizedAtomicQualifierChainType", false],
+    ["extern ExternObjectParenthesizedAtomicQualifierCommentType (* const /* before atomic */ _Atomic /* after atomic */ volatile ExternObjectParenthesizedAtomicQualifierCommentType)",
+      "ExternObjectParenthesizedAtomicQualifierCommentType", false],
+    ["extern ExternObjectParenthesizedAtomicQualifierSpliceType (* const \\\n_Atomic volatile ExternObjectParenthesizedAtomicQualifierSpliceType)",
+      "ExternObjectParenthesizedAtomicQualifierSpliceType", true],
   ];
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
@@ -2891,7 +2934,8 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
   for (let semanticIndex = 0;
     semanticIndex < externTypedefSemanticTypeSources.length;
     semanticIndex++) {
-    const [semanticSource, fragmentText, name, valid] =
+    const [semanticSource, fragmentText, name, valid,
+      hardFailure = !valid] =
       externTypedefSemanticTypeSources[semanticIndex];
     const fragmentIndex = semanticSource.source.indexOf(fragmentText);
     const useIndex = semanticSource.source.indexOf(name, fragmentIndex);
@@ -2922,7 +2966,7 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       assert.equal(symbol(result, name, "object"), undefined);
       assert.deepStrictEqual(result, nativeResult,
         `native and Wasm extern typedef semantic type differ for ${name}`);
-    } else {
+    } else if (hardFailure) {
       assert.equal(nativeResult.partial, true,
         `${name} invalid Native extern typedef semantic type remains partial`);
       const invalidCompiler = await createCompiler(wasmModule);
@@ -2941,6 +2985,18 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       } finally {
         invalidCompiler.dispose();
       }
+    } else {
+      const result = compiler.analyzeSource(
+        semanticSource,
+        { cursor: { sourceName: semanticSource.name, byteOffset } },
+      );
+      assert.equal(result.partial, true,
+        `${name} excluded extern typedef recovery remains partial`);
+      assert.ok(result.diagnostics.some((diagnostic) =>
+        diagnostic.severity === "error"),
+      `${name} excluded extern typedef recovery remains diagnosed`);
+      assert.deepStrictEqual(result, nativeResult,
+        `native and Wasm excluded extern typedef recovery differ for ${name}`);
     }
   }
   const shadowFragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
