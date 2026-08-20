@@ -1933,6 +1933,10 @@ static const char same_typedef_declarator_hover_source[] =
     "typedef int ExternObjectParenthesizedDoublePointerType;\n"
     "typedef int ExternObjectParenthesizedDoublePointerCommentType;\n"
     "typedef int ExternObjectParenthesizedDoublePointerSpliceType;\n"
+    "typedef int ExternObjectParenthesizedOuterConstDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedInnerConstDoublePointerType;\n"
+    "typedef int ExternObjectParenthesizedDoublePointerConstCommentType;\n"
+    "typedef int ExternObjectParenthesizedDoublePointerConstSpliceType;\n"
     "static int same_typedef_block(void) {\n"
     "  typedef int FirstBlockBase;\n"
     "  typedef int FirstBlockAtomicBase;\n"
@@ -2035,6 +2039,16 @@ static const char same_typedef_declarator_hover_source[] =
     "  { extern ExternObjectParenthesizedDoublePointerSpliceType "
     "(*\\\n"
     "*ExternObjectParenthesizedDoublePointerSpliceType); }\n"
+    "  { extern ExternObjectParenthesizedOuterConstDoublePointerType "
+    "(* const *ExternObjectParenthesizedOuterConstDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedInnerConstDoublePointerType "
+    "(** const ExternObjectParenthesizedInnerConstDoublePointerType); }\n"
+    "  { extern ExternObjectParenthesizedDoublePointerConstCommentType "
+    "(* /* before const */ const /* between pointers */ * "
+    "ExternObjectParenthesizedDoublePointerConstCommentType); }\n"
+    "  { extern ExternObjectParenthesizedDoublePointerConstSpliceType "
+    "(** \\\n"
+    "const ExternObjectParenthesizedDoublePointerConstSpliceType); }\n"
     "  { typedef int FirstNestedBase; "
     "typedef FirstNestedBase FirstNestedArray[4]; "
     "typedef FirstBlockShadow FirstBlockShadow; "
@@ -2101,6 +2115,15 @@ static const char
     "  typedef int SameBlockParenthesizedDoublePointerExternType;\n"
     "  extern SameBlockParenthesizedDoublePointerExternType "
     "(**SameBlockParenthesizedDoublePointerExternType);\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char
+    same_block_parenthesized_const_double_pointer_extern_typedef_conflict_source[] =
+    "int same_block_parenthesized_const_double_pointer_extern_typedef_conflict(void) {\n"
+    "  typedef int SameBlockParenthesizedConstDoublePointerExternType;\n"
+    "  extern SameBlockParenthesizedConstDoublePointerExternType "
+    "(* const *SameBlockParenthesizedConstDoublePointerExternType);\n"
     "  return 0;\n"
     "}\n";
 
@@ -4376,6 +4399,7 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       same_block_parenthesized_atomic_extern_typedef_conflict_source,
       same_block_parenthesized_atomic_qualified_extern_typedef_conflict_source,
       same_block_parenthesized_double_pointer_extern_typedef_conflict_source,
+      same_block_parenthesized_const_double_pointer_extern_typedef_conflict_source,
   };
   static const char *source_names[] = {
       "same-block-extern-typedef-conflict.c",
@@ -4388,6 +4412,7 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       "same-block-parenthesized-atomic-extern-typedef-conflict.c",
       "same-block-parenthesized-atomic-qualified-extern-typedef-conflict.c",
       "same-block-parenthesized-double-pointer-extern-typedef-conflict.c",
+      "same-block-parenthesized-const-double-pointer-extern-typedef-conflict.c",
   };
   char *variant_end = NULL;
   unsigned long variant = strtoul(variant_text, &variant_end, 10);
@@ -10873,6 +10898,19 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
       {"extern ExternObjectParenthesizedDoublePointerSpliceType "
        "(*\\\n*ExternObjectParenthesizedDoublePointerSpliceType)",
        "ExternObjectParenthesizedDoublePointerSpliceType", 1},
+      {"extern ExternObjectParenthesizedOuterConstDoublePointerType "
+       "(* const *ExternObjectParenthesizedOuterConstDoublePointerType)",
+       "ExternObjectParenthesizedOuterConstDoublePointerType", 1},
+      {"extern ExternObjectParenthesizedInnerConstDoublePointerType "
+       "(** const ExternObjectParenthesizedInnerConstDoublePointerType)",
+       "ExternObjectParenthesizedInnerConstDoublePointerType", 1},
+      {"extern ExternObjectParenthesizedDoublePointerConstCommentType "
+       "(* /* before const */ const /* between pointers */ * "
+       "ExternObjectParenthesizedDoublePointerConstCommentType)",
+       "ExternObjectParenthesizedDoublePointerConstCommentType", 0},
+      {"extern ExternObjectParenthesizedDoublePointerConstSpliceType "
+       "(** \\\nconst ExternObjectParenthesizedDoublePointerConstSpliceType)",
+       "ExternObjectParenthesizedDoublePointerConstSpliceType", 1},
   };
   for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
     for (size_t case_index = 0;
@@ -11000,6 +11038,11 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "extern SameBlockParenthesizedDoublePointerExternType "
        "(**SameBlockParenthesizedDoublePointerExternType)",
        "SameBlockParenthesizedDoublePointerExternType"},
+      {"same-block-parenthesized-const-double-pointer-extern-typedef-conflict.c",
+       same_block_parenthesized_const_double_pointer_extern_typedef_conflict_source,
+       "extern SameBlockParenthesizedConstDoublePointerExternType "
+       "(* const *SameBlockParenthesizedConstDoublePointerExternType)",
+       "SameBlockParenthesizedConstDoublePointerExternType"},
   };
   for (size_t conflict_index = 0;
        conflict_index < sizeof(extern_typedef_conflicts) /

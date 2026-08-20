@@ -37224,3 +37224,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 修飾子付き2段pointer、3段以上のpointer、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - Clang strictが受理する`extern T (* const *T);`と`extern T (** const T);`は小型Wasm probeでE3088・`partial:true`を残す。今回のpointer数上限とshadow境界は再探索せず、次は2段pointerのどちらか一方に`const` 1個だけを置く浅い2形を扱えるか調べる。
+
+### このセッション（続き1253）: parenthesized block extern同名objectの2段pointerに単一`const`を回復した
+- 対象選定:
+  - 続き1252の浅い次候補`extern T (* const *T);`と`extern T (** const T);`を、両位置の直接形、comment、LF spliceの4形で確認した。Clang C11 strictはすべて受理したが、language analysisはE3088・`partial:true`を残していた。
+  - 括弧1組・pointer 2個・同名identifier・`;`直結と既存lookup経路は再探索せず、どちらか一方のpointerに`const` 1個だけを置く形へ限定した。`volatile`・`restrict`・`_Atomic`、両pointerへの修飾、3段以上、suffix付き複合宣言子、深い式、security監査系には広げていない。
+- 変更:
+  - `build_file_typedef_block_extern_type_recovery_source`でparenthesized pointer qualifierの個数と`const`以外の有無を追跡する。2個目の`*`より前にある修飾子は`const` 1個だけなら許し、2個目の`*`より後でも、それ以前に修飾子がなく現在wordが`const`なら1個だけ許す。
+  - 2段pointerの`volatile`・`restrict`・`_Atomic`、修飾子2個目は専用回復に一致させない。単一`const`形は既存retained declaration経路で現在宣言の意味確認とlookup-point巻き戻しを共有する。
+  - same-typedef Native/Wasm共通fixtureへ`* const *`、`** const`、comment、LF spliceの4形を統合した。名前境界、再利用/fresh session、外側typedefの正確なrange、現在object非可視、diagnostics空・`partial:false`、Native/Wasm snapshot一致を固定した。
+  - 同一block typedefを単一`const`付き2段pointerのparenthesized `extern`で再利用する不正shadowも追加し、E3088・partialとNative/Wasm snapshot一致を維持した。
+- テスト時間の改善:
+  - 新targetは増やさず、既存`make test-wasm-language-analysis-same-typedef-declarators`へ統合し、既存valid/invalid境界を含む焦点gateは**real 22.62秒 / user 22.83秒 / sys 0.55秒**だった。
+  - prototype bound、declarator array bound、local member array boundの隣接3 targetだけを`make -j3`で並列実行し、**real 6.78秒 / user 9.76秒 / sys 0.66秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 7.42秒 / user 5.55秒 / sys 1.55秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.87秒 / user 42.64秒 / sys 1.23秒**。更新後の焦点Wasm gateで単一`const` 4形とshadow境界を確認した。
+  - 小型Wasm probeでは無修飾形と`const` 1個の両位置だけがdiagnostics空・`partial:false`になり、`volatile`の両位置、両pointerへの`const`、`_Atomic`付き2段pointer、3段pointerはE3088・partialのままだった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.39秒 / user 3.07秒 / sys 0.24秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.34秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 22.62秒のNative parity付き焦点gateで同じJS本体を確認できるため、1354秒規模の`make test-wasm-js-api`は実行しない。code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eも反復しない。
+  - `volatile`・`restrict`・`_Atomic`付き2段pointer、両pointerへの修飾、3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - Clang strictが受理する`extern T (* volatile *T);`と`extern T (** volatile T);`は小型Wasm probeでE3088・`partial:true`を残す。今回のqualifier個数とpointer位置追跡を再利用し、次はどちらか一方に`volatile` 1個だけを置く浅い2形を扱えるか調べる。

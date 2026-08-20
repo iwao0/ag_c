@@ -2395,6 +2395,10 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int ExternObjectParenthesizedDoublePointerType;\n" +
     "typedef int ExternObjectParenthesizedDoublePointerCommentType;\n" +
     "typedef int ExternObjectParenthesizedDoublePointerSpliceType;\n" +
+    "typedef int ExternObjectParenthesizedOuterConstDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedInnerConstDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedDoublePointerConstCommentType;\n" +
+    "typedef int ExternObjectParenthesizedDoublePointerConstSpliceType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2448,6 +2452,10 @@ const sameTypedefDeclaratorHoverSource = {
     "  { extern ExternObjectParenthesizedDoublePointerType (**ExternObjectParenthesizedDoublePointerType); }\n" +
     "  { extern ExternObjectParenthesizedDoublePointerCommentType (* /* between pointers */ * ExternObjectParenthesizedDoublePointerCommentType); }\n" +
     "  { extern ExternObjectParenthesizedDoublePointerSpliceType (*\\\n*ExternObjectParenthesizedDoublePointerSpliceType); }\n" +
+    "  { extern ExternObjectParenthesizedOuterConstDoublePointerType (* const *ExternObjectParenthesizedOuterConstDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedInnerConstDoublePointerType (** const ExternObjectParenthesizedInnerConstDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedDoublePointerConstCommentType (* /* before const */ const /* between pointers */ * ExternObjectParenthesizedDoublePointerConstCommentType); }\n" +
+    "  { extern ExternObjectParenthesizedDoublePointerConstSpliceType (** \\\nconst ExternObjectParenthesizedDoublePointerConstSpliceType); }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
@@ -2559,6 +2567,18 @@ const externTypedefShadowConflictSources = [
   }, "SameBlockParenthesizedDoublePointerExternType",
   "extern SameBlockParenthesizedDoublePointerExternType " +
     "(**SameBlockParenthesizedDoublePointerExternType)"],
+  [{
+    name: "same-block-parenthesized-const-double-pointer-extern-typedef-conflict.c",
+    source:
+      "int same_block_parenthesized_const_double_pointer_extern_typedef_conflict(void) {\n" +
+      "  typedef int SameBlockParenthesizedConstDoublePointerExternType;\n" +
+      "  extern SameBlockParenthesizedConstDoublePointerExternType " +
+      "(* const *SameBlockParenthesizedConstDoublePointerExternType);\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "SameBlockParenthesizedConstDoublePointerExternType",
+  "extern SameBlockParenthesizedConstDoublePointerExternType " +
+    "(* const *SameBlockParenthesizedConstDoublePointerExternType)"],
 ];
 const externTypedefSemanticTypeSources = [
   [{
@@ -2838,6 +2858,14 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "ExternObjectParenthesizedDoublePointerCommentType", false],
     ["extern ExternObjectParenthesizedDoublePointerSpliceType (*\\\n*ExternObjectParenthesizedDoublePointerSpliceType)",
       "ExternObjectParenthesizedDoublePointerSpliceType", true],
+    ["extern ExternObjectParenthesizedOuterConstDoublePointerType (* const *ExternObjectParenthesizedOuterConstDoublePointerType)",
+      "ExternObjectParenthesizedOuterConstDoublePointerType", true],
+    ["extern ExternObjectParenthesizedInnerConstDoublePointerType (** const ExternObjectParenthesizedInnerConstDoublePointerType)",
+      "ExternObjectParenthesizedInnerConstDoublePointerType", true],
+    ["extern ExternObjectParenthesizedDoublePointerConstCommentType (* /* before const */ const /* between pointers */ * ExternObjectParenthesizedDoublePointerConstCommentType)",
+      "ExternObjectParenthesizedDoublePointerConstCommentType", false],
+    ["extern ExternObjectParenthesizedDoublePointerConstSpliceType (** \\\nconst ExternObjectParenthesizedDoublePointerConstSpliceType)",
+      "ExternObjectParenthesizedDoublePointerConstSpliceType", true],
   ];
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
