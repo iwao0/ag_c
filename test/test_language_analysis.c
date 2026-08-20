@@ -366,7 +366,7 @@ static const char prototype_parameter_bound_hover_source[] =
     "/// prototype bound macro documentation\n"
     "#define PROTO_BOUND_MACRO 7\n"
     "#define CALLBACK_DECL_NOISE (\n"
-    "enum { PROTO_BOUND_ENUM = 5 };\n"
+    "enum { PROTO_BOUND_ENUM = 5, CURRENT_PARAMETER_FIRST = 5, CURRENT_PARAMETER_SECOND = 5, CURRENT_PARAMETER_COMMENT = 5, CURRENT_PARAMETER_SPLICE = 5, CURRENT_PARAMETER_DEFINITION = 5, CURRENT_CALLBACK_FIRST = 5, CURRENT_CALLBACK_SECOND = 5 };\n"
     "int proto_bound_file = 4;\n"
     "int proto_direct(int direct_count, int direct_values[direct_count], int direct_later);\n"
     "int proto_static(int static_count, int static_values[static static_count], int static_later);\n"
@@ -385,11 +385,19 @@ static const char prototype_parameter_bound_hover_source[] =
     "int proto_file_object(int file_values[proto_bound_file], int file_later);\n"
     "int proto_enum(int enum_values[PROTO_BOUND_ENUM], int enum_later);\n"
     "int proto_macro(int macro_values[PROTO_BOUND_MACRO], int macro_later);\n"
+    "int proto_current_first(int CURRENT_PARAMETER_FIRST[CURRENT_PARAMETER_FIRST], int current_first_later);\n"
+    "int proto_current_second(int current_second_prior, int CURRENT_PARAMETER_SECOND[CURRENT_PARAMETER_SECOND], int current_second_later);\n"
+    "int proto_current_comment(int CURRENT_PARAMETER_COMMENT[/* current gap */ CURRENT_PARAMETER_COMMENT], int current_comment_later);\n"
+    "int proto_current_splice(int CURRENT_PARAMETER_SPLICE[\\\n"
+    "CURRENT_PARAMETER_SPLICE], int current_splice_later);\n"
+    "int proto_current_definition(int CURRENT_PARAMETER_DEFINITION[CURRENT_PARAMETER_DEFINITION], int current_definition_later) { int current_definition_body; return current_definition_later + current_definition_body; }\n"
     "void (*proto_callback_object)(int callback_object_count, int callback_object_values[callback_object_count], int callback_object_later);\n"
     "void (*proto_callback_static)(int callback_static_count, int callback_static_values[static callback_static_count], int callback_static_later);\n"
     "void (*proto_callback_comment)(int callback_comment_count, int callback_comment_values[/* gap */ callback_comment_count], int callback_comment_later);\n"
     "void (*proto_callback_splice_lf)(int callback_splice_lf_count, int callback_splice_lf_values[\\\ncallback_splice_lf_count], int callback_splice_lf_later);\n"
     "void (*proto_callback_splice_crlf)(int callback_splice_crlf_count, int callback_splice_crlf_values[\\\r\ncallback_splice_crlf_count], int callback_splice_crlf_later);\r\n"
+    "void (*proto_current_callback_first)(int CURRENT_CALLBACK_FIRST[CURRENT_CALLBACK_FIRST], int current_callback_first_later);\n"
+    "void (*proto_current_callback_second)(int current_callback_second_prior, int CURRENT_CALLBACK_SECOND[CURRENT_CALLBACK_SECOND], int current_callback_second_later);\n"
     "typedef void ProtoCallbackTypedef(int callback_typedef_count, int callback_typedef_values[callback_typedef_count], int callback_typedef_later);\n"
     "int proto_callback_local(void) {\n"
     "  void (*callback_local_object)(int callback_local_count, int callback_local_values[callback_local_count], int callback_local_later);\n"
@@ -403,6 +411,9 @@ static const char prototype_parameter_bound_hover_source[] =
     "  typedef int ProtoBlockFunction(int block_typedef_count, int block_typedef_values[block_typedef_count], int block_typedef_later);\n"
     "  { int proto_block_nested(int block_nested_count, int block_nested_values[block_nested_count], int block_nested_later); }\n"
     "  ProtoBlockResult /* return gap */ proto_block_comment(int block_comment_count, int block_comment_values[/* bound gap */ block_comment_count], int block_comment_later);\n"
+    "  enum { CURRENT_BLOCK_PARAMETER = 5, CURRENT_BLOCK_CALLBACK = 5 };\n"
+    "  int proto_current_block(int CURRENT_BLOCK_PARAMETER[CURRENT_BLOCK_PARAMETER], int current_block_later);\n"
+    "  void (*proto_current_block_callback)(int CURRENT_BLOCK_CALLBACK[CURRENT_BLOCK_CALLBACK], int current_block_callback_later);\n"
     "  int proto_block_after;\n"
     "  return proto_block_before + (int)sizeof(ProtoBlockFunction *);\n"
     "}\n"
@@ -10685,6 +10696,17 @@ static int test_prototype_parameter_bound_hover(
        AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "enum_later"},
       {"macro_values[PROTO_BOUND_MACRO]", "PROTO_BOUND_MACRO",
        AG_LANGUAGE_SYMBOL_MACRO, "macro_later"},
+      {"[CURRENT_PARAMETER_FIRST]", "CURRENT_PARAMETER_FIRST",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "current_first_later"},
+      {"[CURRENT_PARAMETER_SECOND]", "CURRENT_PARAMETER_SECOND",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "current_second_later"},
+      {"[/* current gap */ CURRENT_PARAMETER_COMMENT]",
+       "CURRENT_PARAMETER_COMMENT", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "current_comment_later"},
+      {"[\\\nCURRENT_PARAMETER_SPLICE]", "CURRENT_PARAMETER_SPLICE",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "current_splice_later"},
+      {"[CURRENT_PARAMETER_DEFINITION]", "CURRENT_PARAMETER_DEFINITION",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "current_definition_later"},
       {"callback_object_values[callback_object_count]",
        "callback_object_count", AG_LANGUAGE_SYMBOL_PARAMETER,
        "callback_object_later"},
@@ -10700,6 +10722,10 @@ static int test_prototype_parameter_bound_hover(
       {"callback_splice_crlf_values[\\\r\ncallback_splice_crlf_count]",
        "callback_splice_crlf_count", AG_LANGUAGE_SYMBOL_PARAMETER,
        "callback_splice_crlf_later"},
+      {"[CURRENT_CALLBACK_FIRST]", "CURRENT_CALLBACK_FIRST",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "current_callback_first_later"},
+      {"[CURRENT_CALLBACK_SECOND]", "CURRENT_CALLBACK_SECOND",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "current_callback_second_later"},
       {"callback_typedef_values[callback_typedef_count]",
        "callback_typedef_count", AG_LANGUAGE_SYMBOL_PARAMETER,
        "callback_typedef_later"},
@@ -10717,6 +10743,11 @@ static int test_prototype_parameter_bound_hover(
       {"block_comment_values[/* bound gap */ block_comment_count]",
        "block_comment_count", AG_LANGUAGE_SYMBOL_PARAMETER,
        "block_comment_later"},
+      {"[CURRENT_BLOCK_PARAMETER]", "CURRENT_BLOCK_PARAMETER",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, "current_block_later"},
+      {"[CURRENT_BLOCK_CALLBACK]", "CURRENT_BLOCK_CALLBACK",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
+       "current_block_callback_later"},
   };
   ag_compilation_session_t *session =
       ag_compilation_session_create(&target);
@@ -10763,6 +10794,13 @@ static int test_prototype_parameter_bound_hover(
         const ag_language_symbol_t *hover = hover_symbol(&snapshot);
         const ag_language_symbol_t *completion = find_symbol(
             &snapshot, cases[case_index].name, cases[case_index].kind);
+        const char *prior_parameter = NULL;
+        if (strcmp(cases[case_index].name,
+                   "CURRENT_PARAMETER_SECOND") == 0)
+          prior_parameter = "current_second_prior";
+        else if (strcmp(cases[case_index].name,
+                        "CURRENT_CALLBACK_SECOND") == 0)
+          prior_parameter = "current_callback_second_prior";
         CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
                   hover && completion &&
                   strcmp(hover->name, cases[case_index].name) == 0 &&
@@ -10782,6 +10820,12 @@ static int test_prototype_parameter_bound_hover(
                   !find_symbol(&snapshot,
                                cases[case_index].later_parameter,
                                AG_LANGUAGE_SYMBOL_PARAMETER) &&
+                  (strncmp(cases[case_index].name, "CURRENT_", 8) != 0 ||
+                   !find_symbol(&snapshot, cases[case_index].name,
+                                AG_LANGUAGE_SYMBOL_PARAMETER)) &&
+                  (!prior_parameter ||
+                   find_symbol(&snapshot, prior_parameter,
+                               AG_LANGUAGE_SYMBOL_PARAMETER)) &&
                   !find_symbol(&snapshot, "proto_bound_after",
                                AG_LANGUAGE_SYMBOL_OBJECT) &&
                   !find_symbol(&snapshot, "callback_after_local",
@@ -10791,6 +10835,10 @@ static int test_prototype_parameter_bound_hover(
                   (strcmp(cases[case_index].name,
                           "definition_count") != 0 ||
                    !find_symbol(&snapshot, "definition_body",
+                                AG_LANGUAGE_SYMBOL_OBJECT)) &&
+                  (strcmp(cases[case_index].name,
+                          "CURRENT_PARAMETER_DEFINITION") != 0 ||
+                   !find_symbol(&snapshot, "current_definition_body",
                                 AG_LANGUAGE_SYMBOL_OBJECT)),
               "prototype parameter bound snapshot");
         if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)

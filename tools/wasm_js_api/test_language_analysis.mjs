@@ -254,7 +254,7 @@ const prototypeParameterBoundSource = {
   source: "/// prototype bound macro documentation\n" +
     "#define PROTO_BOUND_MACRO 7\n" +
     "#define CALLBACK_DECL_NOISE (\n" +
-    "enum { PROTO_BOUND_ENUM = 5 };\n" +
+    "enum { PROTO_BOUND_ENUM = 5, CURRENT_PARAMETER_FIRST = 5, CURRENT_PARAMETER_SECOND = 5, CURRENT_PARAMETER_COMMENT = 5, CURRENT_PARAMETER_SPLICE = 5, CURRENT_PARAMETER_DEFINITION = 5, CURRENT_CALLBACK_FIRST = 5, CURRENT_CALLBACK_SECOND = 5 };\n" +
     "int proto_bound_file = 4;\n" +
     "int proto_direct(int direct_count, int direct_values[direct_count], int direct_later);\n" +
     "int proto_static(int static_count, int static_values[static static_count], int static_later);\n" +
@@ -273,6 +273,12 @@ const prototypeParameterBoundSource = {
     "int proto_file_object(int file_values[proto_bound_file], int file_later);\n" +
     "int proto_enum(int enum_values[PROTO_BOUND_ENUM], int enum_later);\n" +
     "int proto_macro(int macro_values[PROTO_BOUND_MACRO], int macro_later);\n" +
+    "int proto_current_first(int CURRENT_PARAMETER_FIRST[CURRENT_PARAMETER_FIRST], int current_first_later);\n" +
+    "int proto_current_second(int current_second_prior, int CURRENT_PARAMETER_SECOND[CURRENT_PARAMETER_SECOND], int current_second_later);\n" +
+    "int proto_current_comment(int CURRENT_PARAMETER_COMMENT[/* current gap */ CURRENT_PARAMETER_COMMENT], int current_comment_later);\n" +
+    "int proto_current_splice(int CURRENT_PARAMETER_SPLICE[\\\n" +
+    "CURRENT_PARAMETER_SPLICE], int current_splice_later);\n" +
+    "int proto_current_definition(int CURRENT_PARAMETER_DEFINITION[CURRENT_PARAMETER_DEFINITION], int current_definition_later) { int current_definition_body; return current_definition_later + current_definition_body; }\n" +
     "void (*proto_callback_object)(int callback_object_count, int callback_object_values[callback_object_count], int callback_object_later);\n" +
     "void (*proto_callback_static)(int callback_static_count, int callback_static_values[static callback_static_count], int callback_static_later);\n" +
     "void (*proto_callback_comment)(int callback_comment_count, int callback_comment_values[/* gap */ callback_comment_count], int callback_comment_later);\n" +
@@ -280,6 +286,8 @@ const prototypeParameterBoundSource = {
     "callback_splice_lf_count], int callback_splice_lf_later);\n" +
     "void (*proto_callback_splice_crlf)(int callback_splice_crlf_count, int callback_splice_crlf_values[\\\r\n" +
     "callback_splice_crlf_count], int callback_splice_crlf_later);\r\n" +
+    "void (*proto_current_callback_first)(int CURRENT_CALLBACK_FIRST[CURRENT_CALLBACK_FIRST], int current_callback_first_later);\n" +
+    "void (*proto_current_callback_second)(int current_callback_second_prior, int CURRENT_CALLBACK_SECOND[CURRENT_CALLBACK_SECOND], int current_callback_second_later);\n" +
     "typedef void ProtoCallbackTypedef(int callback_typedef_count, int callback_typedef_values[callback_typedef_count], int callback_typedef_later);\n" +
     "int proto_callback_local(void) {\n" +
     "  void (*callback_local_object)(int callback_local_count, int callback_local_values[callback_local_count], int callback_local_later);\n" +
@@ -293,6 +301,9 @@ const prototypeParameterBoundSource = {
     "  typedef int ProtoBlockFunction(int block_typedef_count, int block_typedef_values[block_typedef_count], int block_typedef_later);\n" +
     "  { int proto_block_nested(int block_nested_count, int block_nested_values[block_nested_count], int block_nested_later); }\n" +
     "  ProtoBlockResult /* return gap */ proto_block_comment(int block_comment_count, int block_comment_values[/* bound gap */ block_comment_count], int block_comment_later);\n" +
+    "  enum { CURRENT_BLOCK_PARAMETER = 5, CURRENT_BLOCK_CALLBACK = 5 };\n" +
+    "  int proto_current_block(int CURRENT_BLOCK_PARAMETER[CURRENT_BLOCK_PARAMETER], int current_block_later);\n" +
+    "  void (*proto_current_block_callback)(int CURRENT_BLOCK_CALLBACK[CURRENT_BLOCK_CALLBACK], int current_block_callback_later);\n" +
     "  int proto_block_after;\n" +
     "  return proto_block_before + (int)sizeof(ProtoBlockFunction *);\n" +
     "}\n" +
@@ -367,6 +378,32 @@ const prototypeParameterBoundCases = [
     kind: "macro", later: "macro_later", checkBoundaries: true,
   },
   {
+    fragment: "[CURRENT_PARAMETER_FIRST]", name: "CURRENT_PARAMETER_FIRST",
+    kind: "enumConstant", later: "current_first_later", current: true,
+    expectedValue: "5", checkBoundaries: true,
+  },
+  {
+    fragment: "[CURRENT_PARAMETER_SECOND]",
+    name: "CURRENT_PARAMETER_SECOND", kind: "enumConstant",
+    later: "current_second_later", current: true,
+    prior: "current_second_prior", expectedValue: "5",
+  },
+  {
+    fragment: "[/* current gap */ CURRENT_PARAMETER_COMMENT]",
+    name: "CURRENT_PARAMETER_COMMENT", kind: "enumConstant",
+    later: "current_comment_later", current: true, expectedValue: "5",
+  },
+  {
+    fragment: "[\\\nCURRENT_PARAMETER_SPLICE]",
+    name: "CURRENT_PARAMETER_SPLICE", kind: "enumConstant",
+    later: "current_splice_later", current: true, expectedValue: "5",
+  },
+  {
+    fragment: "[CURRENT_PARAMETER_DEFINITION]",
+    name: "CURRENT_PARAMETER_DEFINITION", kind: "enumConstant",
+    later: "current_definition_later", current: true, expectedValue: "5",
+  },
+  {
     fragment: "callback_object_values[callback_object_count]",
     name: "callback_object_count", kind: "parameter",
     later: "callback_object_later", checkBoundaries: true,
@@ -390,6 +427,17 @@ const prototypeParameterBoundCases = [
     fragment: "callback_splice_crlf_values[\\\r\ncallback_splice_crlf_count]",
     name: "callback_splice_crlf_count", kind: "parameter",
     later: "callback_splice_crlf_later",
+  },
+  {
+    fragment: "[CURRENT_CALLBACK_FIRST]", name: "CURRENT_CALLBACK_FIRST",
+    kind: "enumConstant", later: "current_callback_first_later",
+    current: true, expectedValue: "5",
+  },
+  {
+    fragment: "[CURRENT_CALLBACK_SECOND]", name: "CURRENT_CALLBACK_SECOND",
+    kind: "enumConstant", later: "current_callback_second_later",
+    current: true, prior: "current_callback_second_prior",
+    expectedValue: "5", checkBoundaries: true,
   },
   {
     fragment: "callback_typedef_values[callback_typedef_count]",
@@ -419,6 +467,16 @@ const prototypeParameterBoundCases = [
     fragment: "block_comment_values[/* bound gap */ block_comment_count]",
     name: "block_comment_count", kind: "parameter",
     later: "block_comment_later",
+  },
+  {
+    fragment: "[CURRENT_BLOCK_PARAMETER]", name: "CURRENT_BLOCK_PARAMETER",
+    kind: "enumConstant", later: "current_block_later", current: true,
+    expectedValue: "5", checkBoundaries: true,
+  },
+  {
+    fragment: "[CURRENT_BLOCK_CALLBACK]", name: "CURRENT_BLOCK_CALLBACK",
+    kind: "enumConstant", later: "current_block_callback_later",
+    current: true, expectedValue: "5",
   },
 ];
 if (!languageAnalysisFocus ||
@@ -469,6 +527,14 @@ if (!languageAnalysisFocus ||
         declarationIndex + nameBytes);
       assert.equal(symbol(wasmResult, boundCase.later, "parameter"),
         undefined, `${boundCase.name} later parameter hidden`);
+      if (boundCase.current) {
+        assert.equal(symbol(wasmResult, boundCase.name, "parameter"),
+          undefined, `${boundCase.name} current parameter hidden`);
+      }
+      if (boundCase.prior) {
+        assert.ok(symbol(wasmResult, boundCase.prior, "parameter"),
+          `${boundCase.name} prior parameter visible`);
+      }
       assert.equal(symbol(wasmResult, "proto_bound_after", "object"),
         undefined, `${boundCase.name} later file object hidden`);
       assert.equal(symbol(wasmResult, "callback_after_local", "object"),
@@ -479,9 +545,17 @@ if (!languageAnalysisFocus ||
         assert.equal(symbol(wasmResult, "definition_body", "object"),
           undefined, "definition body local hidden at parameter bound");
       }
+      if (boundCase.name === "CURRENT_PARAMETER_DEFINITION") {
+        assert.equal(symbol(wasmResult, "current_definition_body", "object"),
+          undefined, "current parameter definition body hidden");
+      }
       if (boundCase.name === "PROTO_BOUND_ENUM") {
         assert.equal(wasmResult.hover.initializer?.constantValue, "5",
           "prototype bound enum value");
+      }
+      if (boundCase.expectedValue) {
+        assert.equal(wasmResult.hover.initializer?.constantValue,
+          boundCase.expectedValue, `${boundCase.name} outer enum value`);
       }
       if (boundCase.name === "PROTO_BOUND_MACRO") {
         assert.equal(wasmResult.hover.macro?.replacement, "7",

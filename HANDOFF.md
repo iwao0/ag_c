@@ -36938,3 +36938,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。current parameter/function宣言、`sizeof`を含むbound、tagのscope-aware分類、複合式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - parameter/function宣言は既存prototype recoveryを壊さない専用のcurrent-declarator分類が必要と分かったため、次は小型probeで現在parameterの開始位置と先行parameter保持境界を分離する。直接object配列は再探索せず、Native約6秒と0.83秒の既存焦点gateを使う。
+
+### このセッション（続き1242）: parameter配列境界内のcurrent parameter lookup pointを回復した
+- 対象選定:
+  - 続き1241で残したcurrent parameterから、深い式を含まない直接配列境界だけを小型Wasm probeで分類した。
+  - 通常prototypeの第1/第2parameter、comment、LF splice、function definition、直接function-pointer objectの第1/第2parameter、block-scopeの通常prototype/callback objectの9形すべてで、配列境界の同名identifierが外側enumではなく、まだ宣言点に達していない現在parameterへ誤解決していた。
+  - `sizeof`を含むbound、nested callback、factory-return callback、current function宣言、複合式、深い宣言子、security監査系には入っていない。
+- 原因:
+  - 通常function parameter回復と直接callback parameter回復は、選択parameterの配列宣言子を完結した後へsynthetic marker parameterを追加していた。
+  - marker lookup pointが現在parameterの宣言点を越えるため、同名の外側enumはlookup結果から失われ、completion後処理だけでは正しいshadow先を復元できなかった。
+- 変更:
+  - 既存の直接parameter配列境界scannerでtop-level comma直後のparameter開始位置も記録し、選択boundの終端と同時にcallerへ返す。
+  - 通常prototypeは現在parameter開始位置までのprefixと元parameter listの閉じ`)`以降だけを保持し、現在parameterと後続parameterを`int __ag_language_cursor_marker`へ置き換える。先行parameterは同じprototype scopeへ残す。
+  - function definitionはbodyを保持すると除去したparameterの使用が診断になるため、選択parameter前のprefixを保持したままsynthetic prototypeへ閉じる。直接function-pointer objectも現在parameter以降を除き、元のparameter list閉じ`)`と宣言終端`;`だけを保持する。
+  - record member callbackの既存callerはparameter開始位置を要求せず従来offsetだけを使うため、既存経路を変更しない。
+  - 9形を既存prototype-bound Native/Wasm共通fixtureへ統合した。外側enumの正確なkind・定数値・宣言range、現在parameterと後続parameterの非可視、先行parameterの可視、definition body localと後続local/file objectの非可視を固定した。
+- テスト時間の改善:
+  - 新しいtargetは追加せず、既存`make test-wasm-language-analysis-prototype-bounds`へ統合した。Native snapshot parityと代表的な名前境界を含む最終実測は**real 3.55秒 / user 3.73秒 / sys 0.22秒**だった。
+  - declarator array-bound、same-typedef、local member array-boundの隣接3 targetは`make -j3`で並列実行し、**real 3.04秒 / user 6.08秒 / sys 0.85秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 6.48秒 / user 4.59秒 / sys 1.48秒**。修正前6.21秒からの増加は0.27秒で、追加9形を名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.50秒 / user 42.48秒 / sys 1.09秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-prototype-bounds` = 成功、**real 3.55秒 / user 3.73秒 / sys 0.22秒**。
+  - 更新後の小型Wasm probeでは9形すべてがdiagnostics空・`partial:false`で外側enumの正確なrangeへ戻り、現在parameterのcompletion entryも消えた。第2parameter形では先行parameterを保持した。
+  - 代表9形は`clang -std=c11 -pedantic-errors -fsyntax-only`で成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 3.86秒 / user 3.17秒 / sys 0.44秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.52秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体を3.55秒のNative parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行しない。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。`sizeof`を含むbound、nested/factory callback、current function宣言、複合式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - current parameter配列境界は再探索せず、続き1241の比較で残ったblock-scope functionのparameter型側`typedef int LocalType; int LocalType(LocalType);`にあるcurrent function宣言点を、通常サイズ・完全sourceの浅い直接functionだけへ限定できるか小型probeで調べる。全Wasm integrationを反復せず、Native約6.5秒と3.55秒のprototype-bound焦点gateを使う。

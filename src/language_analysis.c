@@ -1263,12 +1263,12 @@ static int analysis_delimited_tail_end_mode(
 static int analysis_direct_parameter_array_bound_marker_offset(
     const char *source, size_t length, size_t parameter_open,
     size_t parameter_close, size_t selected_start,
-    size_t *marker_offset);
+    size_t *marker_offset, size_t *selected_parameter_start);
 
 static int analysis_direct_callback_parameter_bound_marker_offset(
     const char *source, size_t length, size_t scan_start,
     size_t selected_start, int enable_trigraphs, size_t *marker_offset,
-    size_t *parameter_close) {
+    size_t *parameter_close, size_t *selected_parameter_start) {
   if (!source || !marker_offset || !parameter_close ||
       scan_start >= selected_start || selected_start >= length)
     return 0;
@@ -1386,7 +1386,7 @@ static int analysis_direct_callback_parameter_bound_marker_offset(
     return 0;
   if (!analysis_direct_parameter_array_bound_marker_offset(
           source, length, parameter_open, close, selected_start,
-          marker_offset))
+          marker_offset, selected_parameter_start))
     return 0;
   *parameter_close = close;
   return 1;
@@ -1445,7 +1445,7 @@ static char *build_record_member_recovery_source(
   if (direct_record &&
       analysis_direct_callback_parameter_bound_marker_offset(
           source, length, record_open, name_start, enable_trigraphs,
-          &parameter_marker_offset, &parameter_close)) {
+          &parameter_marker_offset, &parameter_close, NULL)) {
     size_t parameter_member_end = skip_analysis_space_and_comments_mode(
         source, length, parameter_close + 1, enable_trigraphs);
     if (parameter_member_end >= length ||
@@ -1559,9 +1559,11 @@ static char *build_direct_callback_parameter_bound_recovery_source(
   if (record_body_open_at(source, name_start, &record_open)) return NULL;
   size_t marker_offset = 0;
   size_t parameter_close = 0;
+  size_t selected_parameter_start = 0;
   if (!analysis_direct_callback_parameter_bound_marker_offset(
           source, length, 0, name_start, enable_trigraphs,
-          &marker_offset, &parameter_close))
+          &marker_offset, &parameter_close,
+          &selected_parameter_start))
     return NULL;
   size_t declaration_end = skip_analysis_space_and_comments_mode(
       source, length, parameter_close + 1, enable_trigraphs);
@@ -1575,24 +1577,32 @@ static char *build_direct_callback_parameter_bound_recovery_source(
     return NULL;
   size_t outer_brace_count = (size_t)prefix.brace_depth;
   static const char parameter_marker[] =
-      ", int " AG_LANGUAGE_CURSOR_MARKER;
+      "int " AG_LANGUAGE_CURSOR_MARKER;
   size_t prefix_length = declaration_end + 1;
-  if (prefix_length > SIZE_MAX - sizeof(parameter_marker) ||
+  if (selected_parameter_start >= marker_offset ||
+      marker_offset > parameter_close ||
+      selected_parameter_start > SIZE_MAX - sizeof(parameter_marker) ||
+      selected_parameter_start + sizeof(parameter_marker) >
+          SIZE_MAX - (prefix_length - parameter_close) ||
       outer_brace_count >
-          (SIZE_MAX - prefix_length - sizeof(parameter_marker)) / 2)
+          (SIZE_MAX - selected_parameter_start -
+           sizeof(parameter_marker) -
+           (prefix_length - parameter_close)) / 2)
     return NULL;
-  size_t result_length = prefix_length + sizeof(parameter_marker) - 1 +
+  size_t result_length = selected_parameter_start +
+                         sizeof(parameter_marker) - 1 +
+                         (prefix_length - parameter_close) +
                          outer_brace_count * 2;
   char *result = malloc(result_length + 1);
   if (!result) return NULL;
-  memcpy(result, source, marker_offset);
-  size_t output = marker_offset;
+  memcpy(result, source, selected_parameter_start);
+  size_t output = selected_parameter_start;
   memcpy(result + output, parameter_marker,
          sizeof(parameter_marker) - 1);
   output += sizeof(parameter_marker) - 1;
-  memcpy(result + output, source + marker_offset,
-         prefix_length - marker_offset);
-  output += prefix_length - marker_offset;
+  memcpy(result + output, source + parameter_close,
+         prefix_length - parameter_close);
+  output += prefix_length - parameter_close;
   for (size_t i = 0; i < outer_brace_count; i++) {
     result[output++] = '}';
     result[output++] = '\n';
@@ -3118,7 +3128,7 @@ static int function_declaration_recovery_end(
 static int analysis_direct_parameter_array_bound_marker_offset(
     const char *source, size_t length, size_t parameter_open,
     size_t parameter_close, size_t selected_start,
-    size_t *marker_offset) {
+    size_t *marker_offset, size_t *selected_parameter_start) {
   if (!source || !marker_offset || parameter_open >= selected_start ||
       selected_start >= parameter_close || parameter_close >= length ||
       source[parameter_open] != '(' || source[parameter_close] != ')')
@@ -3127,6 +3137,8 @@ static int analysis_direct_parameter_array_bound_marker_offset(
   size_t bracket_depth = 0;
   size_t brace_depth = 0;
   size_t array_bound_paren_depth = SIZE_MAX;
+  size_t parameter_start = parameter_open + 1;
+  size_t cursor_parameter_start = SIZE_MAX;
   int cursor_in_direct_array_bound = 0;
   int line_comment = 0;
   int block_comment = 0;
@@ -3143,9 +3155,11 @@ static int analysis_direct_parameter_array_bound_marker_offset(
     }
     char c = source[i];
     char next = i + 1 < length ? source[i + 1] : 0;
-    if (i == selected_start)
+    if (i == selected_start) {
       cursor_in_direct_array_bound = bracket_depth > 0 &&
                                      array_bound_paren_depth == 1;
+      cursor_parameter_start = parameter_start;
+    }
     if (line_comment) {
       if (c == '\n') {
         line_comment = 0;
@@ -3196,6 +3210,8 @@ static int analysis_direct_parameter_array_bound_marker_offset(
         paren_depth == 1 && bracket_depth == 0 && brace_depth == 0 &&
         (c == ',' || c == ')')) {
       *marker_offset = i;
+      if (selected_parameter_start)
+        *selected_parameter_start = cursor_parameter_start;
       return 1;
     }
     if (c == '(') {
@@ -3213,6 +3229,9 @@ static int analysis_direct_parameter_array_bound_marker_offset(
       brace_depth++;
     } else if (c == '}' && brace_depth > 0) {
       brace_depth--;
+    } else if (c == ',' && paren_depth == 1 && bracket_depth == 0 &&
+               brace_depth == 0) {
+      parameter_start = i + 1;
     }
   }
   return 0;
@@ -3514,32 +3533,49 @@ static char *build_function_parameter_recovery_source(
             size_t parameter_open = skip_analysis_space_and_comments(
                 source, length, candidate_end);
             size_t parameter_marker_offset = 0;
+            size_t selected_parameter_start = 0;
             if (analysis_direct_parameter_array_bound_marker_offset(
                     source, length, parameter_open,
                     parameter_list_close, selected_start,
-                    &parameter_marker_offset)) {
+                    &parameter_marker_offset,
+                    &selected_parameter_start)) {
               static const char parameter_marker[] =
-                  ", int " AG_LANGUAGE_CURSOR_MARKER;
+                  "int " AG_LANGUAGE_CURSOR_MARKER;
+              static const char definition_tail[] = ");\n";
+              if (selected_parameter_start >= parameter_marker_offset ||
+                  parameter_marker_offset > parameter_list_close ||
+                  declaration_end < parameter_list_close)
+                return NULL;
+              size_t tail_start = parameter_list_close;
+              size_t tail_length = declaration_end - tail_start;
+              const char *tail = source + tail_start;
+              if (is_definition) {
+                tail = definition_tail;
+                tail_length = sizeof(definition_tail) - 1;
+              }
               if (candidate_outer_brace_count > SIZE_MAX / 2 ||
-                  declaration_end >
+                  selected_parameter_start >
                       SIZE_MAX - sizeof(parameter_marker) ||
-                  declaration_end + sizeof(parameter_marker) >
+                  selected_parameter_start + sizeof(parameter_marker) >
+                      SIZE_MAX - tail_length ||
+                  selected_parameter_start + sizeof(parameter_marker) +
+                          tail_length >
                       SIZE_MAX - candidate_outer_brace_count * 2)
                 return NULL;
               size_t result_length =
-                  declaration_end + sizeof(parameter_marker) - 1 +
+                  selected_parameter_start +
+                  sizeof(parameter_marker) - 1 + tail_length +
                   candidate_outer_brace_count * 2;
               char *result = malloc(result_length + 1);
               if (!result) return NULL;
-              memcpy(result, source, parameter_marker_offset);
-              memcpy(result + parameter_marker_offset,
+              memcpy(result, source, selected_parameter_start);
+              memcpy(result + selected_parameter_start,
                      parameter_marker, sizeof(parameter_marker) - 1);
-              memcpy(result + parameter_marker_offset +
-                         sizeof(parameter_marker) - 1,
-                     source + parameter_marker_offset,
-                     declaration_end - parameter_marker_offset);
               size_t output =
-                  declaration_end + sizeof(parameter_marker) - 1;
+                  selected_parameter_start +
+                  sizeof(parameter_marker) - 1;
+              memcpy(result + output, tail, tail_length);
+              output += tail_length;
               for (size_t close = 0;
                    close < candidate_outer_brace_count; close++) {
                 result[output++] = '}';
