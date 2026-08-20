@@ -3285,6 +3285,8 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   size_t scan = selected_start + selected_length;
   size_t candidate_start = SIZE_MAX;
   int has_parenthesized_declarator = 0;
+  int has_parenthesized_pointer = 0;
+  int has_parenthesized_pointer_qualifier = 0;
   size_t declarator_pointer_count = 0;
   while (scan < length) {
     scan = skip_analysis_space_and_comments_mode(
@@ -3301,6 +3303,8 @@ static char *build_file_typedef_block_extern_type_recovery_source(
       if (has_parenthesized_declarator &&
           declarator_pointer_count > 1)
         return NULL;
+      if (has_parenthesized_declarator)
+        has_parenthesized_pointer = 1;
       scan++;
       continue;
     }
@@ -3312,7 +3316,10 @@ static char *build_file_typedef_block_extern_type_recovery_source(
     size_t word_length = scan - word_start;
     if (analysis_type_name_qualifier_word(
             source, word_start, word_length)) {
-      if (has_parenthesized_declarator) return NULL;
+      if (has_parenthesized_declarator) {
+        if (!has_parenthesized_pointer) return NULL;
+        has_parenthesized_pointer_qualifier = 1;
+      }
       continue;
     }
     if (word_length != selected_length ||
@@ -3421,7 +3428,8 @@ static char *build_file_typedef_block_extern_type_recovery_source(
   free(current_path);
   if (visible != ANALYSIS_VISIBLE_DIRECT_DECLARATION_FILE_TYPEDEF)
     return NULL;
-  if (has_array_suffix)
+  if (has_array_suffix ||
+      has_parenthesized_pointer_qualifier)
     return build_retained_declaration_lookup_recovery_source(
         source, declaration_end + 1, outer_brace_count,
         changed, source_consumed);

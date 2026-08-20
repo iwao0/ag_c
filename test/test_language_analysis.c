@@ -1916,6 +1916,12 @@ static const char same_typedef_declarator_hover_source[] =
     "typedef int ExternObjectParenthesizedPointerType;\n"
     "typedef int ExternObjectParenthesizedCommentType;\n"
     "typedef int ExternObjectParenthesizedSpliceType;\n"
+    "typedef int ExternObjectParenthesizedConstPointerType;\n"
+    "typedef int ExternObjectParenthesizedVolatilePointerType;\n"
+    "typedef int ExternObjectParenthesizedRestrictPointerType;\n"
+    "typedef int ExternObjectParenthesizedQualifiedChainType;\n"
+    "typedef int ExternObjectParenthesizedQualifierCommentType;\n"
+    "typedef int ExternObjectParenthesizedQualifierSpliceType;\n"
     "static int same_typedef_block(void) {\n"
     "  typedef int FirstBlockBase;\n"
     "  typedef int FirstBlockAtomicBase;\n"
@@ -1972,6 +1978,22 @@ static const char same_typedef_declarator_hover_source[] =
     "/* after object */); }\n"
     "  { extern ExternObjectParenthesizedSpliceType (\\\n"
     "ExternObjectParenthesizedSpliceType); }\n"
+    "  { extern ExternObjectParenthesizedConstPointerType "
+    "(* const ExternObjectParenthesizedConstPointerType); }\n"
+    "  { extern ExternObjectParenthesizedVolatilePointerType "
+    "(* volatile ExternObjectParenthesizedVolatilePointerType); }\n"
+    "  { extern ExternObjectParenthesizedRestrictPointerType "
+    "(* restrict ExternObjectParenthesizedRestrictPointerType); }\n"
+    "  { extern ExternObjectParenthesizedQualifiedChainType "
+    "(* const volatile restrict "
+    "ExternObjectParenthesizedQualifiedChainType); }\n"
+    "  { extern ExternObjectParenthesizedQualifierCommentType "
+    "(* /* before qualifier */ const /* between qualifiers */ volatile "
+    "/* after qualifier */ "
+    "ExternObjectParenthesizedQualifierCommentType); }\n"
+    "  { extern ExternObjectParenthesizedQualifierSpliceType "
+    "(* const \\\n"
+    "volatile ExternObjectParenthesizedQualifierSpliceType); }\n"
     "  { typedef int FirstNestedBase; "
     "typedef FirstNestedBase FirstNestedArray[4]; "
     "typedef FirstBlockShadow FirstBlockShadow; "
@@ -2002,6 +2024,15 @@ static const char same_block_parenthesized_extern_typedef_conflict_source[] =
     "  typedef int SameBlockParenthesizedExternType;\n"
     "  extern SameBlockParenthesizedExternType "
     "(SameBlockParenthesizedExternType);\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char
+    same_block_parenthesized_qualified_extern_typedef_conflict_source[] =
+    "int same_block_parenthesized_qualified_extern_typedef_conflict(void) {\n"
+    "  typedef int SameBlockParenthesizedQualifiedExternType;\n"
+    "  extern SameBlockParenthesizedQualifiedExternType "
+    "(* const SameBlockParenthesizedQualifiedExternType);\n"
     "  return 0;\n"
     "}\n";
 
@@ -2072,6 +2103,14 @@ static const char void_decimal_array_extern_typedef_source[] =
     "typedef void VoidDecimalArrayType;\n"
     "int probe(void) {\n"
     "  { extern VoidDecimalArrayType VoidDecimalArrayType[4]; }\n"
+    "  return 0;\n"
+    "}\n";
+
+static const char function_restrict_parenthesized_extern_typedef_source[] =
+    "typedef int FunctionRestrictParenthesizedType(void);\n"
+    "int probe(void) {\n"
+    "  { extern FunctionRestrictParenthesizedType "
+    "(* restrict FunctionRestrictParenthesizedType); }\n"
     "  return 0;\n"
     "}\n";
 
@@ -4257,6 +4296,7 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       outer_enum_extern_typedef_conflict_source,
       for_init_extern_typedef_conflict_source,
       same_block_parenthesized_extern_typedef_conflict_source,
+      same_block_parenthesized_qualified_extern_typedef_conflict_source,
   };
   static const char *source_names[] = {
       "same-block-extern-typedef-conflict.c",
@@ -4265,6 +4305,7 @@ static int print_extern_typedef_shadow_conflict_parity_snapshot(
       "outer-enum-extern-typedef-conflict.c",
       "for-init-extern-typedef-conflict.c",
       "same-block-parenthesized-extern-typedef-conflict.c",
+      "same-block-parenthesized-qualified-extern-typedef-conflict.c",
   };
   char *variant_end = NULL;
   unsigned long variant = strtoul(variant_text, &variant_end, 10);
@@ -4290,6 +4331,7 @@ static int print_extern_typedef_semantic_type_parity_snapshot(
       incomplete_decimal_array_extern_typedef_source,
       void_array_extern_typedef_source,
       void_decimal_array_extern_typedef_source,
+      function_restrict_parenthesized_extern_typedef_source,
   };
   static const char *source_names[] = {
       "incomplete-direct-extern-typedef.c",
@@ -4297,6 +4339,7 @@ static int print_extern_typedef_semantic_type_parity_snapshot(
       "incomplete-decimal-array-extern-typedef.c",
       "void-array-extern-typedef.c",
       "void-decimal-array-extern-typedef.c",
+      "function-restrict-parenthesized-extern-typedef.c",
   };
   char *variant_end = NULL;
   unsigned long variant = strtoul(variant_text, &variant_end, 10);
@@ -10686,6 +10729,28 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
       {"extern ExternObjectParenthesizedSpliceType (\\\n"
        "ExternObjectParenthesizedSpliceType)",
        "ExternObjectParenthesizedSpliceType", 1},
+      {"extern ExternObjectParenthesizedConstPointerType "
+       "(* const ExternObjectParenthesizedConstPointerType)",
+       "ExternObjectParenthesizedConstPointerType", 1},
+      {"extern ExternObjectParenthesizedVolatilePointerType "
+       "(* volatile ExternObjectParenthesizedVolatilePointerType)",
+       "ExternObjectParenthesizedVolatilePointerType", 0},
+      {"extern ExternObjectParenthesizedRestrictPointerType "
+       "(* restrict ExternObjectParenthesizedRestrictPointerType)",
+       "ExternObjectParenthesizedRestrictPointerType", 0},
+      {"extern ExternObjectParenthesizedQualifiedChainType "
+       "(* const volatile restrict "
+       "ExternObjectParenthesizedQualifiedChainType)",
+       "ExternObjectParenthesizedQualifiedChainType", 0},
+      {"extern ExternObjectParenthesizedQualifierCommentType "
+       "(* /* before qualifier */ const /* between qualifiers */ volatile "
+       "/* after qualifier */ "
+       "ExternObjectParenthesizedQualifierCommentType)",
+       "ExternObjectParenthesizedQualifierCommentType", 0},
+      {"extern ExternObjectParenthesizedQualifierSpliceType "
+       "(* const \\\nvolatile "
+       "ExternObjectParenthesizedQualifierSpliceType)",
+       "ExternObjectParenthesizedQualifierSpliceType", 1},
   };
   for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
     for (size_t case_index = 0;
@@ -10793,6 +10858,11 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "extern SameBlockParenthesizedExternType "
        "(SameBlockParenthesizedExternType)",
        "SameBlockParenthesizedExternType"},
+      {"same-block-parenthesized-qualified-extern-typedef-conflict.c",
+       same_block_parenthesized_qualified_extern_typedef_conflict_source,
+       "extern SameBlockParenthesizedQualifiedExternType "
+       "(* const SameBlockParenthesizedQualifiedExternType)",
+       "SameBlockParenthesizedQualifiedExternType"},
   };
   for (size_t conflict_index = 0;
        conflict_index < sizeof(extern_typedef_conflicts) /
@@ -10849,6 +10919,11 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        void_decimal_array_extern_typedef_source,
        "extern VoidDecimalArrayType VoidDecimalArrayType[4]",
        "VoidDecimalArrayType", 0},
+      {"function-restrict-parenthesized-extern-typedef.c",
+       function_restrict_parenthesized_extern_typedef_source,
+       "extern FunctionRestrictParenthesizedType "
+       "(* restrict FunctionRestrictParenthesizedType)",
+       "FunctionRestrictParenthesizedType", 0},
   };
   for (size_t semantic_index = 0;
        semantic_index < sizeof(extern_typedef_semantic_types) /

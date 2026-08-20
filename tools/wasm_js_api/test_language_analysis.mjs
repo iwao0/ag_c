@@ -2378,6 +2378,12 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int ExternObjectParenthesizedPointerType;\n" +
     "typedef int ExternObjectParenthesizedCommentType;\n" +
     "typedef int ExternObjectParenthesizedSpliceType;\n" +
+    "typedef int ExternObjectParenthesizedConstPointerType;\n" +
+    "typedef int ExternObjectParenthesizedVolatilePointerType;\n" +
+    "typedef int ExternObjectParenthesizedRestrictPointerType;\n" +
+    "typedef int ExternObjectParenthesizedQualifiedChainType;\n" +
+    "typedef int ExternObjectParenthesizedQualifierCommentType;\n" +
+    "typedef int ExternObjectParenthesizedQualifierSpliceType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2414,6 +2420,12 @@ const sameTypedefDeclaratorHoverSource = {
     "  { extern ExternObjectParenthesizedPointerType (*ExternObjectParenthesizedPointerType); }\n" +
     "  { extern ExternObjectParenthesizedCommentType (/* before object */ ExternObjectParenthesizedCommentType /* after object */); }\n" +
     "  { extern ExternObjectParenthesizedSpliceType (\\\nExternObjectParenthesizedSpliceType); }\n" +
+    "  { extern ExternObjectParenthesizedConstPointerType (* const ExternObjectParenthesizedConstPointerType); }\n" +
+    "  { extern ExternObjectParenthesizedVolatilePointerType (* volatile ExternObjectParenthesizedVolatilePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedRestrictPointerType (* restrict ExternObjectParenthesizedRestrictPointerType); }\n" +
+    "  { extern ExternObjectParenthesizedQualifiedChainType (* const volatile restrict ExternObjectParenthesizedQualifiedChainType); }\n" +
+    "  { extern ExternObjectParenthesizedQualifierCommentType (* /* before qualifier */ const /* between qualifiers */ volatile /* after qualifier */ ExternObjectParenthesizedQualifierCommentType); }\n" +
+    "  { extern ExternObjectParenthesizedQualifierSpliceType (* const \\\nvolatile ExternObjectParenthesizedQualifierSpliceType); }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
@@ -2477,6 +2489,18 @@ const externTypedefShadowConflictSources = [
   }, "SameBlockParenthesizedExternType",
   "extern SameBlockParenthesizedExternType " +
     "(SameBlockParenthesizedExternType)"],
+  [{
+    name: "same-block-parenthesized-qualified-extern-typedef-conflict.c",
+    source:
+      "int same_block_parenthesized_qualified_extern_typedef_conflict(void) {\n" +
+      "  typedef int SameBlockParenthesizedQualifiedExternType;\n" +
+      "  extern SameBlockParenthesizedQualifiedExternType " +
+      "(* const SameBlockParenthesizedQualifiedExternType);\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "SameBlockParenthesizedQualifiedExternType",
+  "extern SameBlockParenthesizedQualifiedExternType " +
+    "(* const SameBlockParenthesizedQualifiedExternType)"],
 ];
 const externTypedefSemanticTypeSources = [
   [{
@@ -2525,6 +2549,17 @@ const externTypedefSemanticTypeSources = [
       "}\n",
   }, "extern VoidDecimalArrayType VoidDecimalArrayType[4]",
   "VoidDecimalArrayType", false],
+  [{
+    name: "function-restrict-parenthesized-extern-typedef.c",
+    source: "typedef int FunctionRestrictParenthesizedType(void);\n" +
+      "int probe(void) {\n" +
+      "  { extern FunctionRestrictParenthesizedType " +
+      "(* restrict FunctionRestrictParenthesizedType); }\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "extern FunctionRestrictParenthesizedType " +
+    "(* restrict FunctionRestrictParenthesizedType)",
+  "FunctionRestrictParenthesizedType", false],
 ];
 const sameTypedefDeclaratorCases = [
   ["typedef FirstFileBase FirstFileCopy", "FirstFileBase", "FirstFileCopy",
@@ -2700,6 +2735,18 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "ExternObjectParenthesizedCommentType", false],
     ["extern ExternObjectParenthesizedSpliceType (\\\nExternObjectParenthesizedSpliceType)",
       "ExternObjectParenthesizedSpliceType", true],
+    ["extern ExternObjectParenthesizedConstPointerType (* const ExternObjectParenthesizedConstPointerType)",
+      "ExternObjectParenthesizedConstPointerType", true],
+    ["extern ExternObjectParenthesizedVolatilePointerType (* volatile ExternObjectParenthesizedVolatilePointerType)",
+      "ExternObjectParenthesizedVolatilePointerType", false],
+    ["extern ExternObjectParenthesizedRestrictPointerType (* restrict ExternObjectParenthesizedRestrictPointerType)",
+      "ExternObjectParenthesizedRestrictPointerType", false],
+    ["extern ExternObjectParenthesizedQualifiedChainType (* const volatile restrict ExternObjectParenthesizedQualifiedChainType)",
+      "ExternObjectParenthesizedQualifiedChainType", false],
+    ["extern ExternObjectParenthesizedQualifierCommentType (* /* before qualifier */ const /* between qualifiers */ volatile /* after qualifier */ ExternObjectParenthesizedQualifierCommentType)",
+      "ExternObjectParenthesizedQualifierCommentType", false],
+    ["extern ExternObjectParenthesizedQualifierSpliceType (* const \\\nvolatile ExternObjectParenthesizedQualifierSpliceType)",
+      "ExternObjectParenthesizedQualifierSpliceType", true],
   ];
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(

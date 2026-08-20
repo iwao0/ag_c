@@ -37128,3 +37128,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 二重括弧、複数pointer、括弧内pointer qualifier、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - Clang strictが受理する`extern T (* const T);`は小型Wasm probeでE3088・`partial:true`を残す。今回の括弧1組とshadow境界は再探索せず、次は括弧内の単一pointerに続く`const`/`volatile`/`restrict` qualifier listだけを浅い宣言として扱えるか調べる。
+
+### このセッション（続き1249）: parenthesized block extern同名pointerのqualifier listを回復した
+- 対象選定:
+  - 続き1248の浅い次候補`typedef int T; { extern T (* const T); }`を、`const`、`volatile`、`restrict`、3 qualifier複合、comment、LF spliceの6形で確認した。Clang C11 strictはすべて受理したが、language analysisはE3088・`partial:true`を残していた。
+  - 括弧1組・単一pointer・同名identifier・`;`直結という続き1248の境界は再探索せず、pointer直後のC11 qualifierを`const`/`volatile`/`restrict`だけへ限定した。pointerなしqualifier、`_Atomic`、複数pointer、function/array suffix、pointer-to-array、深い宣言子、深い式、security監査系には広げていない。
+- 変更:
+  - `build_file_typedef_block_extern_type_recovery_source`で、括弧内の単一`*`を確認した後だけ、comment・空白・行継続を挟む`const`/`volatile`/`restrict`の任意長listを認める。括弧内pointerより前のqualifier、別word、2個目のpointerは一致しない。
+  - qualifier付きpointer宣言は`restrict`の意味制約を持つため、現在宣言を削除せず`;`まで保持してmarkerを後置する。続き1247のretained declaration経路とblock linkage alias直前へのlookup-point巻き戻しを共有し、型名hoverでは外側typedefを返しつつ宣言自体の意味検証を維持する。
+  - same-typedef Native/Wasm共通fixtureへ`const`、`volatile`、`restrict`、3 qualifier複合、comment、LF spliceの6形を統合した。名前境界、再利用/fresh session、外側typedefの正確なrange、現在object非可視、diagnostics空・`partial:false`、Native/Wasm snapshot一致を固定した。
+  - 同一block typedefをqualified parenthesized `extern`で再利用する不正shadowを追加し、E3088・partialを維持した。さらにfunction pointerへ`restrict`を付ける不正形をClang strictと照合し、Nativeのpartial snapshotとWasmの構造化E3064 failureでcomplete扱いしないことを固定した。
+- テスト時間の改善:
+  - 新targetは増やさず、既存`make test-wasm-language-analysis-same-typedef-declarators`へ統合し、既存valid/invalid境界を含む焦点gateは**real 9.92秒 / user 10.23秒 / sys 0.37秒**だった。
+  - prototype bound、declarator array bound、local member array boundの隣接3 targetだけを`make -j3`で並列実行し、**real 7.06秒 / user 10.15秒 / sys 0.80秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 7.06秒 / user 5.14秒 / sys 1.48秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.97秒 / user 42.65秒 / sys 1.21秒**。更新後の焦点Wasm gateでqualifier 6形、shadow、意味エラー境界を確認した。
+  - 小型Wasm probeでは上記6形だけがdiagnostics空・`partial:false`へ変わり、二重括弧、複数pointer、pointerなしqualifier、`_Atomic` qualifier、function/array suffix、pointer-to-arrayはE3088・partialのまま専用回復に一致しない。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.78秒 / user 3.18秒 / sys 0.37秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.55秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 9.92秒のNative parity付き焦点gateで同じJS本体を確認できるため、1354秒規模の`make test-wasm-js-api`は実行しない。code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eも反復しない。
+  - `_Atomic` pointer qualifier、二重括弧、複数pointer、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - Clang strictが受理する`extern T (* _Atomic T);`は小型Wasm probeでE3088・`partial:true`を残す。今回の3 qualifierと意味エラー保持を再探索せず、次は括弧内の単一pointer直後にある`_Atomic` qualifier 1個だけを浅い宣言として扱えるか調べる。
