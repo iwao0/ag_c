@@ -19996,6 +19996,30 @@ static void test_parse_invalid(
       "enum { KIND_ZERO }; int main(void) { "
       "union Local; enum { KIND_ONE = 1 }; "
       "return KIND_ZERO + KIND_ONE - 1; }");
+  expect_parse_fail(test_suite_session,
+      "struct Empty {}; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "union Empty {} value; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "typedef struct Empty {} Empty; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "int main(void) { struct Local {} value; return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Check { _Static_assert(1, \"ok\"); }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Bits { unsigned int : 1; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Outer { struct { unsigned int : 1; }; }; "
+      "int main(void) { return 0; }");
+  expect_parse_ok(test_suite_session,
+      "struct Item { _Static_assert(sizeof(int) >= 2, \"int\"); "
+      "unsigned int : 1; int value; }; "
+      "struct Outer { struct { int promoted; }; }; "
+      "int main(void) { struct Item item={.value=1}; "
+      "struct Outer outer={.promoted=1}; "
+      "return item.value != outer.promoted; }");
   expect_parse_ok(test_suite_session,
       "struct record; typedef int reader(struct record); "
       "reader read; struct record { int value; }; "

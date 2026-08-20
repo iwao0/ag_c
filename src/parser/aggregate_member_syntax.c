@@ -66,6 +66,42 @@ static psx_parsed_declarator_t *append_aggregate_declarator(
   return declarator;
 }
 
+typedef enum {
+  PSX_AGGREGATE_NAMED_MEMBER_INVALID_DECLARATION = -1,
+  PSX_AGGREGATE_NAMED_MEMBER_NONE = 0,
+  PSX_AGGREGATE_NAMED_MEMBER_PRESENT = 1,
+} psx_aggregate_named_member_status_t;
+
+static psx_aggregate_named_member_status_t aggregate_body_named_member_status(
+    const psx_parsed_aggregate_body_t *body) {
+  if (!body) return PSX_AGGREGATE_NAMED_MEMBER_INVALID_DECLARATION;
+  for (int i = 0; i < body->item_count; i++) {
+    const psx_parsed_aggregate_item_t *item = &body->items[i];
+    if (item->kind != PSX_PARSED_AGGREGATE_MEMBER_DECLARATION)
+      continue;
+    const psx_parsed_aggregate_member_declaration_t *declaration =
+        &item->value.member_declaration;
+    for (int j = 0; j < declaration->declarator_count; j++) {
+      if (declaration->declarators[j].identifier)
+        return PSX_AGGREGATE_NAMED_MEMBER_PRESENT;
+    }
+    const psx_parsed_tag_action_t *tag =
+        &declaration->specifier.tag_action;
+    if (tag->is_anonymous &&
+        (tag->kind == TK_STRUCT || tag->kind == TK_UNION)) {
+      psx_aggregate_named_member_status_t nested =
+          aggregate_body_named_member_status(tag->aggregate_body);
+      if (nested != PSX_AGGREGATE_NAMED_MEMBER_NONE) return nested;
+      continue;
+    }
+    for (int j = 0; j < declaration->declarator_count; j++) {
+      if (!declaration->declarators[j].has_bitfield)
+        return PSX_AGGREGATE_NAMED_MEMBER_INVALID_DECLARATION;
+    }
+  }
+  return PSX_AGGREGATE_NAMED_MEMBER_NONE;
+}
+
 void psx_parse_aggregate_body_with_options(
     psx_parsed_aggregate_body_t *body,
     const psx_decl_specifier_syntax_options_t *options) {
@@ -77,6 +113,7 @@ void psx_parse_aggregate_body_with_options(
   psx_parser_runtime_context_t *runtime_context = options->runtime_context;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   memset(body, 0, sizeof(*body));
+  token_t *diagnostic_token = current_token(runtime_context);
   while (!tk_consume_ctx(tk_ctx, '}')) {
     psx_parsed_aggregate_item_t *item =
         append_aggregate_item(body, runtime_context);
@@ -113,6 +150,13 @@ void psx_parse_aggregate_body_with_options(
       if (!has_comma) break;
     }
     tk_expect_ctx(tk_ctx, ';');
+  }
+  if (aggregate_body_named_member_status(body) ==
+      PSX_AGGREGATE_NAMED_MEMBER_NONE) {
+    ps_diag_ctx_in(
+        diagnostics(runtime_context), diagnostic_token,
+        "aggregate-declaration",
+        "structure or union definition requires at least one named member");
   }
 }
 

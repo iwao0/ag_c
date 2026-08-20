@@ -37665,3 +37665,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規7 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないtag宣言制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深いtag/宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - standalone tagのspecifierと宣言対象境界はfile/block/phaseまで閉じた。anonymous aggregate layoutやtag互換性へ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1272）: aggregate定義にnamed memberを必須化した
+- 対象選定:
+  - 前回のstandalone tag specifierからaggregate layoutへ深入りせず、通常サイズの空定義をClang C11 strictと照合した。`struct Empty {};`、空union object、空struct typedef、block-local空struct、anonymous空structをClang strictは拒否する一方、ag_cはstandalone/typedefを受理し、object形は後段のsize 0/incomplete扱いまで進んで一貫しない失敗になっていた。
+  - 非空だがnamed memberを持たない`_Static_assert`のみ、unnamed bit-fieldのみのstructもClang strictが拒否する一方、ag_cは受理した。named memberを昇格するanonymous aggregateだけを持つ外側struct、static assertion＋named member、unnamed bit-field＋named member、通常struct/union、flexible array memberは双方が受理した。
+  - file/block/typedefと一段のanonymous aggregateだけを対象にし、layout計算、initializer、深いtag互換性・式、security監査系には広げていない。
+- 原因と変更:
+  - `psx_parse_aggregate_body_with_options`のloopは先頭`}`をそのまま消費し、空の`struct-declaration-list`を成功としていた。またbodyが非空かだけでなくnamed memberを持つかのstrict境界も検査していなかった。
+  - 構文bodyの共通`aggregate_body_named_member_status`を追加し、直接identifierを持つmember、またはnamed memberを再帰的に持つanonymous struct/unionを成功とする。`_Static_assert`とunnamed bit-fieldはbody itemとしては有効だがnamed memberには数えない。
+  - 三値判定のinvalid状態を設け、`Inner;`のような別の不正な宣言子欠落memberは新検査で先取りせず既存semantic E3065へ委ねる。design invariantでidentifier・anonymous aggregate再帰・unnamed bit-field・loop後診断の関係を固定し、user-facing文言のexact-match testは追加せず診断IDだけを固定した。
+- coverage:
+  - parser unitへ不正7形（空struct/union、typedef、block、static assertionのみ、unnamed bit-fieldのみ、anonymous aggregate再帰）と、static assertion/unnamed bit-field＋named member、named memberを昇格するanonymous aggregateの合法対照を追加した。
+  - should_rejectへ`empty_struct_definition`、`empty_union_object`、`empty_struct_typedef`、`local_empty_struct_object`、`static_assert_only_struct`、`unnamed_bitfield_only_struct`、`anonymous_unnamed_bitfield_only`を追加し、Native/Wasm compile-fail registryへすべてE3064で登録した。
+- 確認:
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.61秒 / user 3.03秒 / sys 0.24秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.40秒 / user 0.75秒 / sys 0.47秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.39秒 / user 42.55秒 / sys 1.12秒**。`make -q wasm-selfhost-api`もcurrentを確認した。
+  - 新規7 fixtureはhost Clang strict、Native、Wasm objectが全件拒否し、Native/WasmはすべてE3064で一致した。通常struct/union、static assertion＋named member、unnamed bit-field＋named member、named memberを昇格するanonymous aggregate、flexible array memberの5対照はClang strict・Native・Wasm objectともstatus 0を維持した。
+  - 既存`anonymous_member_typedef_struct`はNative/WasmともE3065を維持した。`build/test_e2e`をwarningなしでビルドし、`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 新規7 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないaggregate構文制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深いanonymous aggregate/layout/initializer、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - aggregateのnamed member境界は空・static assertion・unnamed bit-field・一段anonymous昇格まで閉じた。layoutや深いanonymous nestingへ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。
