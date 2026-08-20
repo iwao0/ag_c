@@ -36782,3 +36782,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。tag/`_Atomic`型指定子、attribute、宣言子内部、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - 最初のtypedef宣言子内部にある先行alias参照を小型probeで確認したところ、`typedef int (*Callback)(Parameter);`と`typedef int Array[sizeof(Count)];`では正しいalias hoverを返す一方、現在の`Callback`/`Array`がまだ早期公開されている。次はこの2形を起点に、通常サイズ・完全sourceの浅い直接宣言子だけを分類し、Native約7秒と0.62秒の既存焦点gateを使う。
+
+### このセッション（続き1237）: 最初のtypedef宣言子内部のlookup pointを回復した
+- 対象選定:
+  - 続き1236の小型probeで見つけた`typedef int (*Callback)(Parameter);`と`typedef int Array[sizeof(Count)];`を起点に、直接function、function pointer、単一/多次元配列、file/block/nested scope、comment、LF spliceを通常サイズの完全sourceで分類した。
+  - 先行typedefのhoverはdiagnostics空・`partial:false`で正しかった一方、まだpoint of declarationへ達していない現在の`Callback`/`Array`がcompletionへ公開されていた。
+  - nested blockの`typedef int (*InternalBlockShadow)(InternalBlockShadow);`では、parameter型側の`InternalBlockShadow`も外側typedefではなく未到達の内側typedefへ誤解決していた。
+- 原因:
+  - 既存のfunction parameter回復とdeclarator array-bound回復は現在のtypedef宣言子を完結してからmarkerを置くため、先行型名を解決できてもlookup pointが現在typedef名の宣言点を越えていた。
+  - 最初の試行で「最初の宣言名があり、選択位置で括弧または角括弧が開いている」という条件だけにすると、通常prototypeのparameter配列境界までtypedef宣言開始回復へ誤誘導し、既存prototype-bound snapshotを退行させた。
+- 変更:
+  - 続き1236で重複していた「宣言開始へmarkerを置き、外側braceを閉じる」処理を共通helperへ抽出した。
+  - 同一宣言の選択位置までを既存のcomment・quote・preprocessor line・LF/CRLF splice対応scannerで走査し、top-level commaより前に既存`object_declaration_prefix()`が確定する最初の宣言名と、その後で最初に現れる`(`/`[`を記録する。
+  - 先頭delimiterが`(`の場合は選択位置がそのparameter list内かつ配列境界外、先頭delimiterが`[`の場合は選択位置が直接配列境界内の場合だけ、現在typedef宣言全体を回復sourceから除いて宣言直前へmarkerを置く。
+  - このdelimiter条件により、直接function/function-pointerのparameter型と直接配列宣言子だけを回復し、先頭delimiterが`(`なのに選択位置が`[]`内となるprototype parameter配列境界は既存のscope-aware回復へ残した。
+  - file/block/nestedの直接function、function pointer、単一/多次元配列、comment、LF spliceと、同名shadowを既存same-typedef fixtureへ統合した。現在typedef名、後続nested/block/file objectは可視にしない。
+- テスト時間の改善:
+  - 新しいtargetは増やさず、既存`make test-wasm-language-analysis-same-typedef-declarators`へ統合した。Native snapshot parity、代表境界、再利用/fresh instance、同名shadowを含むJS本体は**1.01秒**、target全体は**real 1.19秒 / user 1.28秒 / sys 0.19秒**だった。
+  - prototype bound、declarator array-bound、initializer operandの隣接3 targetは`make -j3`で並列実行し、**real 1.90秒 / user 5.24秒 / sys 0.67秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 5.99秒 / user 4.45秒 / sys 1.51秒**。追加形を名前先頭・中央・末尾、再利用/fresh Native sessionで確認し、同名shadowは外側宣言rangeへ戻ることを固定した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.62秒 / user 42.31秒 / sys 1.29秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-same-typedef-declarators` = 成功、**real 1.19秒 / user 1.28秒 / sys 0.19秒**。
+  - prototype bound、declarator array-bound、initializer operandの隣接3 targetはすべて成功し、実装中に検出したprototype parameter配列境界の退行が解消されたことを確認した。
+  - 更新後の小型Wasm probeでは直接function-pointer parameter型と直接配列境界で正しいtypedef hoverを返し、現在宣言子と後続objectは非可視になった。代表sourceは`clang -std=c11 -pedantic-errors -fsyntax-only`と`./build/ag_c`で成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 3.25秒 / user 2.98秒 / sys 0.21秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、並列build込み**real 3.30秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体を1.01秒のfresh instance・Native parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行しない。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。prototype parameter内の配列境界、nested callback declarator、複合bound式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回の直接function/function-pointer parameter型と直接配列境界は再探索せず、`typedef struct Tag Alias;`や`typedef _Atomic(Base) AtomicBase;`の浅い型指定子lookup pointを小型probeで比較する。全Wasm integrationを反復せず、Native約6秒と1.01秒のsame-typedef焦点gateを使う。

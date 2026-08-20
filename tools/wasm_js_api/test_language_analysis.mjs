@@ -2187,6 +2187,14 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef FirstFileBase FirstFileFunction(void);\n" +
     "typedef FirstFileBase (*FirstFileCallback)(void);\n" +
     "typedef FirstFileBase FirstFileFirst, FirstFileSecond;\n" +
+    "typedef int PrimaryFileParam;\n" +
+    "typedef int InternalFileFunction(PrimaryFileParam);\n" +
+    "typedef int (*InternalFileCallback)(PrimaryFileParam);\n" +
+    "typedef int PrimaryFileExtent;\n" +
+    "typedef int InternalFileArray[sizeof(PrimaryFileExtent)];\n" +
+    "typedef int InternalFileRows[sizeof(PrimaryFileExtent)][2];\n" +
+    "typedef int (*InternalFileCommentCallback)(/* parameter gap */ PrimaryFileParam);\n" +
+    "typedef int InternalFileSpliceArray[sizeof(\\\nPrimaryFileExtent)];\n" +
     "typedef int FileAlias, FileArray[sizeof(FileAlias)];\n" +
     "typedef int FileParameter, FileFunction(FileParameter);\n" +
     "typedef int FilePointerParameter, (*FileCallback)(FilePointerParameter);\n" +
@@ -2196,9 +2204,14 @@ const sameTypedefDeclaratorHoverSource = {
     "  typedef FirstBlockBase *FirstBlockPointer;\n" +
     "  typedef FirstBlockBase (*FirstBlockCallback)(void);\n" +
     "  typedef FirstBlockBase FirstBlockShadow;\n" +
+    "  typedef int PrimaryBlockParam;\n" +
+    "  typedef int (*InternalBlockCallback)(PrimaryBlockParam);\n" +
+    "  typedef int PrimaryBlockExtent;\n" +
+    "  typedef int InternalBlockArray[sizeof(PrimaryBlockExtent)];\n" +
+    "  typedef int InternalBlockShadow;\n" +
     "  typedef int BlockAlias, BlockArray[sizeof(BlockAlias)];\n" +
     "  typedef int BlockParameter, (*BlockCallback)(BlockParameter);\n" +
-    "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
+    "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
     "}\n" +
@@ -2225,6 +2238,24 @@ const sameTypedefDeclaratorCases = [
     "FirstBlockCallback", 1, true],
   ["typedef FirstNestedBase FirstNestedArray", "FirstNestedBase",
     "FirstNestedArray", 2, true],
+  ["InternalFileFunction(PrimaryFileParam)", "PrimaryFileParam",
+    "InternalFileFunction", 0, false],
+  ["InternalFileCallback)(PrimaryFileParam)", "PrimaryFileParam",
+    "InternalFileCallback", 0, true],
+  ["InternalFileArray[sizeof(PrimaryFileExtent)]", "PrimaryFileExtent",
+    "InternalFileArray", 0, true],
+  ["InternalFileRows[sizeof(PrimaryFileExtent)][2]", "PrimaryFileExtent",
+    "InternalFileRows", 0, false],
+  ["InternalFileCommentCallback)(/* parameter gap */ PrimaryFileParam)",
+    "PrimaryFileParam", "InternalFileCommentCallback", 0, false],
+  ["InternalFileSpliceArray[sizeof(\\\nPrimaryFileExtent)]",
+    "PrimaryFileExtent", "InternalFileSpliceArray", 0, true],
+  ["InternalBlockCallback)(PrimaryBlockParam)", "PrimaryBlockParam",
+    "InternalBlockCallback", 1, true],
+  ["InternalBlockArray[sizeof(PrimaryBlockExtent)]", "PrimaryBlockExtent",
+    "InternalBlockArray", 1, false],
+  ["InternalNestedArray[sizeof(PrimaryNestedExtent)]",
+    "PrimaryNestedExtent", "InternalNestedArray", 2, true],
   ["FileArray[sizeof(FileAlias)]", "FileAlias", "FileArray", 0, true],
   ["FileFunction(FileParameter)", "FileParameter", "FileFunction", 0,
     false],
@@ -2347,12 +2378,74 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       { encoding: "utf8" },
     )), "native and Wasm first typedef shadow differ");
   }
+  const internalShadowFragmentIndex =
+    sameTypedefDeclaratorHoverSource.source.indexOf(
+      "typedef int (*InternalBlockShadow)(InternalBlockShadow)",
+    );
+  const internalShadowCurrentIndex =
+    sameTypedefDeclaratorHoverSource.source.indexOf(
+      "InternalBlockShadow", internalShadowFragmentIndex,
+    );
+  const internalShadowUseIndex =
+    sameTypedefDeclaratorHoverSource.source.indexOf(
+      "InternalBlockShadow",
+      internalShadowCurrentIndex + "InternalBlockShadow".length,
+    );
+  const internalShadowDeclarationIndex =
+    sameTypedefDeclaratorHoverSource.source.indexOf("InternalBlockShadow");
+  assert.ok(internalShadowFragmentIndex >= 0 &&
+    internalShadowCurrentIndex >= 0 &&
+    internalShadowUseIndex > internalShadowCurrentIndex &&
+    internalShadowDeclarationIndex < internalShadowCurrentIndex,
+  "missing internal typedef shadow anchors");
+  const internalShadowNameBytes = Buffer.byteLength("InternalBlockShadow");
+  for (const delta of [
+    0, Math.floor(internalShadowNameBytes / 2), internalShadowNameBytes,
+  ]) {
+    const byteOffset = byteOffsetForIndex(
+      sameTypedefDeclaratorHoverSource.source, internalShadowUseIndex,
+    ) + delta;
+    const result = compiler.analyzeSource(
+      sameTypedefDeclaratorHoverSource,
+      { cursor: {
+        sourceName: sameTypedefDeclaratorHoverSource.name,
+        byteOffset,
+      } },
+    );
+    const shadowSymbol = symbol(result, "InternalBlockShadow", "typedef");
+    assert.equal(result.partial, false, "internal typedef shadow partial");
+    assert.deepStrictEqual(result.diagnostics, [],
+      "internal typedef shadow diagnostics");
+    assert.equal(result.hover?.name, "InternalBlockShadow");
+    assert.equal(result.hover?.kind, "typedef");
+    assert.equal(result.hover?.declaration.start.offset,
+      byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source,
+        internalShadowDeclarationIndex,
+      ), "internal typedef shadow resolves outer declaration");
+    assert.deepStrictEqual(result.hover?.declaration,
+      shadowSymbol?.declaration);
+    assert.notEqual(result.hover?.declaration.start.offset,
+      byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source, internalShadowCurrentIndex,
+      ), "current internal shadowing typedef remains invisible");
+    assert.equal(symbol(result, "nested_after", "object"), undefined);
+    assert.equal(symbol(result, "block_after", "object"), undefined);
+    assert.equal(symbol(result, "file_after", "object"), undefined);
+    assert.deepStrictEqual(result, JSON.parse(execFileSync(
+      nativeAnalysisPath,
+      ["--same-typedef-declarator-hover-parity-json", String(byteOffset)],
+      { encoding: "utf8" },
+    )), "native and Wasm internal typedef shadow differ");
+  }
   for (const [fragmentText, name, currentDeclarator] of [
     sameTypedefDeclaratorCases[0],
     sameTypedefDeclaratorCases[3],
-    sameTypedefDeclaratorCases[8],
-    sameTypedefDeclaratorCases[9],
-    sameTypedefDeclaratorCases[10],
+    sameTypedefDeclaratorCases[11],
+    sameTypedefDeclaratorCases[12],
+    sameTypedefDeclaratorCases[16],
+    sameTypedefDeclaratorCases[18],
+    sameTypedefDeclaratorCases[19],
   ]) {
     const freshCompiler = await createCompiler(wasmModule);
     try {
@@ -2406,6 +2499,32 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       ));
   } finally {
     freshShadowCompiler.dispose();
+  }
+  const freshInternalShadowCompiler = await createCompiler(wasmModule);
+  try {
+    const byteOffset = byteOffsetForIndex(
+      sameTypedefDeclaratorHoverSource.source, internalShadowUseIndex,
+    ) + Math.floor(internalShadowNameBytes / 2);
+    const result = freshInternalShadowCompiler.analyzeSource(
+      sameTypedefDeclaratorHoverSource,
+      { cursor: {
+        sourceName: sameTypedefDeclaratorHoverSource.name,
+        byteOffset,
+      } },
+    );
+    assert.equal(result.partial, false,
+      "fresh internal typedef shadow partial");
+    assert.deepStrictEqual(result.diagnostics, [],
+      "fresh internal typedef shadow diagnostics");
+    assert.equal(result.hover?.name, "InternalBlockShadow");
+    assert.equal(result.hover?.kind, "typedef");
+    assert.equal(result.hover?.declaration.start.offset,
+      byteOffsetForIndex(
+        sameTypedefDeclaratorHoverSource.source,
+        internalShadowDeclarationIndex,
+      ));
+  } finally {
+    freshInternalShadowCompiler.dispose();
   }
   reportTestTiming("same typedef declarators");
 }

@@ -1814,6 +1814,16 @@ static const char same_typedef_declarator_hover_source[] =
     "typedef FirstFileBase FirstFileFunction(void);\n"
     "typedef FirstFileBase (*FirstFileCallback)(void);\n"
     "typedef FirstFileBase FirstFileFirst, FirstFileSecond;\n"
+    "typedef int PrimaryFileParam;\n"
+    "typedef int InternalFileFunction(PrimaryFileParam);\n"
+    "typedef int (*InternalFileCallback)(PrimaryFileParam);\n"
+    "typedef int PrimaryFileExtent;\n"
+    "typedef int InternalFileArray[sizeof(PrimaryFileExtent)];\n"
+    "typedef int InternalFileRows[sizeof(PrimaryFileExtent)][2];\n"
+    "typedef int (*InternalFileCommentCallback)("
+    "/* parameter gap */ PrimaryFileParam);\n"
+    "typedef int InternalFileSpliceArray[sizeof(\\\n"
+    "PrimaryFileExtent)];\n"
     "typedef int FileAlias, FileArray[sizeof(FileAlias)];\n"
     "typedef int FileParameter, FileFunction(FileParameter);\n"
     "typedef int FilePointerParameter, "
@@ -1825,11 +1835,19 @@ static const char same_typedef_declarator_hover_source[] =
     "  typedef FirstBlockBase *FirstBlockPointer;\n"
     "  typedef FirstBlockBase (*FirstBlockCallback)(void);\n"
     "  typedef FirstBlockBase FirstBlockShadow;\n"
+    "  typedef int PrimaryBlockParam;\n"
+    "  typedef int (*InternalBlockCallback)(PrimaryBlockParam);\n"
+    "  typedef int PrimaryBlockExtent;\n"
+    "  typedef int InternalBlockArray[sizeof(PrimaryBlockExtent)];\n"
+    "  typedef int InternalBlockShadow;\n"
     "  typedef int BlockAlias, BlockArray[sizeof(BlockAlias)];\n"
     "  typedef int BlockParameter, (*BlockCallback)(BlockParameter);\n"
     "  { typedef int FirstNestedBase; "
     "typedef FirstNestedBase FirstNestedArray[4]; "
     "typedef FirstBlockShadow FirstBlockShadow; "
+    "typedef int (*InternalBlockShadow)(InternalBlockShadow); "
+    "typedef int PrimaryNestedExtent; "
+    "typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; "
     "typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; "
     "int nested_after; }\n"
     "  int block_after;\n"
@@ -10017,6 +10035,26 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
        "FirstBlockCallback", NULL, 1, 1},
       {"typedef FirstNestedBase FirstNestedArray", "FirstNestedBase",
        "FirstNestedArray", NULL, 2, 1},
+      {"InternalFileFunction(PrimaryFileParam)",
+       "PrimaryFileParam", "InternalFileFunction", NULL, 0, 0},
+      {"InternalFileCallback)(PrimaryFileParam)",
+       "PrimaryFileParam", "InternalFileCallback", NULL, 0, 1},
+      {"InternalFileArray[sizeof(PrimaryFileExtent)]",
+       "PrimaryFileExtent", "InternalFileArray", NULL, 0, 1},
+      {"InternalFileRows[sizeof(PrimaryFileExtent)][2]",
+       "PrimaryFileExtent", "InternalFileRows", NULL, 0, 0},
+      {"InternalFileCommentCallback)(/* parameter gap */ "
+       "PrimaryFileParam)",
+       "PrimaryFileParam", "InternalFileCommentCallback", NULL, 0,
+       0},
+      {"InternalFileSpliceArray[sizeof(\\\nPrimaryFileExtent)]",
+       "PrimaryFileExtent", "InternalFileSpliceArray", NULL, 0, 1},
+      {"InternalBlockCallback)(PrimaryBlockParam)",
+       "PrimaryBlockParam", "InternalBlockCallback", NULL, 1, 1},
+      {"InternalBlockArray[sizeof(PrimaryBlockExtent)]",
+       "PrimaryBlockExtent", "InternalBlockArray", NULL, 1, 0},
+      {"InternalNestedArray[sizeof(PrimaryNestedExtent)]",
+       "PrimaryNestedExtent", "InternalNestedArray", NULL, 2, 1},
       {"FileArray[sizeof(FileAlias)]", "FileAlias", "FileArray", NULL, 0,
        1},
       {"FileFunction(FileParameter)", "FileParameter", "FileFunction",
@@ -10113,76 +10151,104 @@ static int test_same_typedef_declarator_hover(ag_target_info_t target) {
       }
     }
   }
-  const char *shadow_fragment = strstr(
-      same_typedef_declarator_hover_source,
-      "typedef FirstBlockShadow FirstBlockShadow");
-  const char *shadow_use = shadow_fragment
-                               ? strstr(shadow_fragment, "FirstBlockShadow")
-                               : NULL;
-  const char *shadow_current = shadow_use
-                                   ? strstr(shadow_use +
-                                                strlen("FirstBlockShadow"),
-                                            "FirstBlockShadow")
-                                   : NULL;
-  const char *shadow_declaration = strstr(
-      same_typedef_declarator_hover_source, "FirstBlockShadow");
-  CHECK(shadow_use && shadow_current && shadow_declaration &&
-            shadow_use != shadow_declaration,
-        "first typedef shadow anchors");
-  size_t shadow_length = strlen("FirstBlockShadow");
-  size_t shadow_deltas[] = {0, shadow_length / 2, shadow_length};
-  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
-    for (size_t delta_index = 0;
-         delta_index < sizeof(shadow_deltas) / sizeof(shadow_deltas[0]);
-         delta_index++) {
-      ag_compilation_session_t *analysis_session = session;
-      if (fresh_session) {
-        analysis_session = ag_compilation_session_create(&target);
-        CHECK(analysis_session != NULL,
-              "fresh first typedef shadow session");
+  static const struct {
+    const char *fragment;
+    const char *name;
+    int use_first_occurrence;
+  } shadow_cases[] = {
+      {"typedef FirstBlockShadow FirstBlockShadow", "FirstBlockShadow", 1},
+      {"typedef int (*InternalBlockShadow)(InternalBlockShadow)",
+       "InternalBlockShadow", 0},
+  };
+  for (size_t shadow_index = 0;
+       shadow_index < sizeof(shadow_cases) / sizeof(shadow_cases[0]);
+       shadow_index++) {
+    const char *shadow_fragment = strstr(
+        same_typedef_declarator_hover_source,
+        shadow_cases[shadow_index].fragment);
+    const char *shadow_first =
+        shadow_fragment
+            ? strstr(shadow_fragment, shadow_cases[shadow_index].name)
+            : NULL;
+    size_t shadow_length = strlen(shadow_cases[shadow_index].name);
+    const char *shadow_second =
+        shadow_first
+            ? strstr(shadow_first + shadow_length,
+                     shadow_cases[shadow_index].name)
+            : NULL;
+    const char *shadow_use = shadow_cases[shadow_index].use_first_occurrence
+                                 ? shadow_first
+                                 : shadow_second;
+    const char *shadow_current =
+        shadow_cases[shadow_index].use_first_occurrence
+            ? shadow_second
+            : shadow_first;
+    const char *shadow_declaration = strstr(
+        same_typedef_declarator_hover_source,
+        shadow_cases[shadow_index].name);
+    CHECK(shadow_use && shadow_current && shadow_declaration &&
+              shadow_use != shadow_declaration,
+          "typedef shadow anchors");
+    size_t shadow_deltas[] = {0, shadow_length / 2, shadow_length};
+    for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+      for (size_t delta_index = 0;
+           delta_index < sizeof(shadow_deltas) / sizeof(shadow_deltas[0]);
+           delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "fresh typedef shadow session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "same-typedef-declarator-hover.c",
+                  same_typedef_declarator_hover_source,
+                  (size_t)(shadow_use -
+                           same_typedef_declarator_hover_source) +
+                      shadow_deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "typedef shadow analysis");
+        const ag_language_symbol_t *shadow_hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *shadow_completion = find_symbol(
+            &snapshot, shadow_cases[shadow_index].name,
+            AG_LANGUAGE_SYMBOL_TYPEDEF);
+        CHECK(shadow_hover && shadow_completion && !snapshot.partial &&
+                  snapshot.diagnostic_count == 0 &&
+                  shadow_hover->kind == AG_LANGUAGE_SYMBOL_TYPEDEF &&
+                  strcmp(shadow_hover->name,
+                         shadow_cases[shadow_index].name) == 0 &&
+                  shadow_hover->declaration.start.offset ==
+                      (int)(shadow_declaration -
+                            same_typedef_declarator_hover_source) &&
+                  shadow_hover->declaration.end.offset ==
+                      (int)(shadow_declaration -
+                            same_typedef_declarator_hover_source +
+                            shadow_length) &&
+                  same_range(&shadow_hover->declaration,
+                             &shadow_completion->declaration) &&
+                  shadow_hover->declaration.start.offset !=
+                      (int)(shadow_current -
+                            same_typedef_declarator_hover_source),
+              "typedef shadow resolves outer declaration");
+        CHECK(!find_symbol(
+                    &snapshot, "nested_after", AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(
+                      &snapshot, "block_after", AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(
+                      &snapshot, "file_after", AG_LANGUAGE_SYMBOL_OBJECT),
+              "typedef shadow later objects remain invisible");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
       }
-      CHECK(analyze_named(
-                analysis_session, "same-typedef-declarator-hover.c",
-                same_typedef_declarator_hover_source,
-                (size_t)(shadow_use -
-                         same_typedef_declarator_hover_source) +
-                    shadow_deltas[delta_index],
-                (header_bundle_t){0}, defaults, &snapshot, &error),
-            "first typedef shadow analysis");
-      const ag_language_symbol_t *shadow_hover = hover_symbol(&snapshot);
-      const ag_language_symbol_t *shadow_completion = find_symbol(
-          &snapshot, "FirstBlockShadow", AG_LANGUAGE_SYMBOL_TYPEDEF);
-      CHECK(shadow_hover && shadow_completion && !snapshot.partial &&
-                snapshot.diagnostic_count == 0 &&
-                shadow_hover->kind == AG_LANGUAGE_SYMBOL_TYPEDEF &&
-                strcmp(shadow_hover->name, "FirstBlockShadow") == 0 &&
-                shadow_hover->declaration.start.offset ==
-                    (int)(shadow_declaration -
-                          same_typedef_declarator_hover_source) &&
-                shadow_hover->declaration.end.offset ==
-                    (int)(shadow_declaration -
-                          same_typedef_declarator_hover_source +
-                          shadow_length) &&
-                same_range(&shadow_hover->declaration,
-                           &shadow_completion->declaration) &&
-                shadow_hover->declaration.start.offset !=
-                    (int)(shadow_current -
-                          same_typedef_declarator_hover_source),
-            "first typedef shadow resolves outer declaration");
-      CHECK(!find_symbol(
-                  &snapshot, "nested_after", AG_LANGUAGE_SYMBOL_OBJECT) &&
-                !find_symbol(
-                    &snapshot, "block_after", AG_LANGUAGE_SYMBOL_OBJECT) &&
-                !find_symbol(
-                    &snapshot, "file_after", AG_LANGUAGE_SYMBOL_OBJECT),
-            "first typedef shadow later objects remain invisible");
-      ag_language_analysis_snapshot_dispose(&snapshot);
-      if (fresh_session)
-        ag_compilation_session_destroy(analysis_session);
     }
   }
-  const char *current_declaration = strstr(
-      same_typedef_declarator_hover_source, "FileArray");
+  const char *current_declaration_fragment = strstr(
+      same_typedef_declarator_hover_source, "FileAlias, FileArray");
+  const char *current_declaration =
+      current_declaration_fragment
+          ? strstr(current_declaration_fragment, "FileArray")
+          : NULL;
   CHECK(current_declaration != NULL,
         "current typedef declarator declaration anchor");
   CHECK(analyze_named(
