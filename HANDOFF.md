@@ -36288,3 +36288,37 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 今回greenになった26 initializer/type-query文脈は再探索せず、通常サイズの完全sourceで未固定の浅いexpression statementまたはreturn operandの
     aggregate lookup境界を小型probeから探す。開発中はNative約6秒と0.7秒のinitializer焦点gateを使い、全Wasm integrationは次の関連batch末尾まで
     繰り返さない。
+
+### このセッション（続き1222）: 直接aggregate operandのpartial解析を回復した
+- 対象選定:
+  - 通常サイズの完全valid Cで浅いaggregate operand 7形を小型Wasm probeへまとめた。`return return_parameter;`、
+    `operand_target = operand_source;`、`aggregate_sink(operand_source);`の3形は正しいhoverを返す一方、順にrejection 52・38・44の
+    `AGC_PARTIAL_SEMANTIC`になった。単独expression statement、address-of、`sizeof`、member accessの4形は既にgreenだった。
+- 原因:
+  - 汎用recoveryがcursor上の完全な識別子を除き、式位置へ整数`0`を補っていた。そのためaggregate値をintへ置換した一時sourceが、return型不一致、
+    assignment型不一致、call argument型不一致を起こしていた。
+- 変更:
+  - 選択識別子の直後を既存の空白・comment・LF/CRLF splice対応scannerで進め、現在開いている非brace delimiterに対応する`)`/`]`だけを内側から
+    順に閉じ、そのまま`;`へ達する完全な直接operandの場合だけ元識別子を保持する。型推論、式評価、再帰探索は追加しない。
+  - struct/union return、local/parameter assignment、union assignment、最後のcall argument、2重closing call、comment、LF/CRLF spliceと、
+    既存green比較のexpression statement/address/`sizeof`/member accessの14形を専用sourceへまとめた。後続local/file objectはlookup対象に入れない。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=direct-operands`と`make test-wasm-language-analysis-direct-operands`を追加した。全14形の中央と代表5形の
+    名前先頭・末尾、runtime manifest、Native snapshot parityを含む最終実測は**real 0.74秒 / user 1.12秒 / sys 0.16秒**だった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = compile warningなし、
+    **language analysis tests passed (66 scenarios)**。14形すべてを名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.48秒 / user 42.24秒 / sys 0.91秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-direct-operands` = 成功、
+    **real 0.74秒 / user 1.12秒 / sys 0.16秒**。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 続き1221で関連initializer/type-query batch末尾の全Wasm JS API integrationが1354.54秒で成功した直後の次batch最初の浅い増分なので、
+    同じJS本体の0.74秒焦点gateを使い、`make test-wasm-js-api`は次の関連増分を含むbatch末尾へまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。途中のcall argument、演算tail、
+    conditional/comma式、不完全source、深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 今回固定した14形は再探索せず、通常サイズの完全sourceで未固定の浅いoperand境界を小型probeから探す。開発中はNative約6秒と0.74秒の
+    direct operand焦点gateを使い、全Wasm integrationは次の関連batch末尾まで繰り返さない。

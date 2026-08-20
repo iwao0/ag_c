@@ -3024,6 +3024,30 @@ typedef struct {
   size_t pending_conditional_count;
 } recovery_delimiter_t;
 
+static int analysis_complete_direct_expression_operand_tail(
+    const char *source, size_t source_length,
+    const recovery_delimiter_t *stack, size_t stack_count,
+    const analysis_identifier_span_t *identifier, int enable_trigraphs,
+    size_t *statement_end) {
+  if (!source || !stack || !identifier || identifier->logical_length == 0 ||
+      identifier->end > source_length)
+    return 0;
+  size_t cursor = skip_analysis_space_and_comments_mode(
+      source, source_length, identifier->end, enable_trigraphs);
+  for (size_t i = stack_count; i > 0; i--) {
+    char open = stack[i - 1].open;
+    if (open == '{') break;
+    char close = open == '(' ? ')' : open == '[' ? ']' : 0;
+    if (!close || cursor >= source_length || source[cursor] != close)
+      return 0;
+    cursor = skip_analysis_space_and_comments_mode(
+        source, source_length, cursor + 1, enable_trigraphs);
+  }
+  if (cursor >= source_length || source[cursor] != ';') return 0;
+  if (statement_end) *statement_end = cursor;
+  return 1;
+}
+
 static int analysis_type_name_qualifier_word(
     const char *source, size_t start, size_t length) {
   static const char *const words[] = {
@@ -4090,6 +4114,12 @@ static char *build_recovery_source(const char *source, size_t source_length,
           direct_initializer_candidate_end, &cursor_identifier,
           enable_trigraphs,
           &direct_initializer_end);
+  size_t direct_expression_end = 0;
+  int cursor_has_complete_direct_expression_tail =
+      has_complete_identifier &&
+      analysis_complete_direct_expression_operand_tail(
+          source, source_length, stack, stack_count,
+          &cursor_identifier, enable_trigraphs, &direct_expression_end);
   int cursor_on_complete_tag_name =
       has_complete_identifier && previous_token_is_tag_keyword;
   size_t cursor_tag_tail_end = cursor_name_end;
@@ -4129,6 +4159,22 @@ static char *build_recovery_source(const char *source, size_t source_length,
       analysis_case_label_end_mode(
           source, source_length, case_expression_start,
           enable_trigraphs, &cursor_case_label_end);
+  int cursor_needs_expression_placeholder =
+      !cursor_in_generic_association_type &&
+      (cursor_identifier_starts_conditional ||
+       cursor_after_complete_type_name_cast ||
+       (previous_token_requires_expression &&
+        (!cursor_identifier_starts_parenthesized_suffix ||
+         cursor_identifier_has_complete_parenthesized_suffix)) ||
+       last_significant == '=' || last_significant == ',' ||
+       last_significant == '(' || last_significant == '[' ||
+       last_significant == '+' || last_significant == '-' ||
+       last_significant == '*' || last_significant == '/' ||
+       last_significant == '%' || last_significant == '&' ||
+       last_significant == '|' || last_significant == '^' ||
+       last_significant == '!' || last_significant == '~' ||
+       last_significant == '<' || last_significant == '>' ||
+       last_significant == '?' || last_significant == ':');
   size_t recovery_tail_consumed = recovery_cursor;
   if (complete_static_assert_frame != SIZE_MAX) {
     APPEND_BYTES(
@@ -4230,22 +4276,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
       APPEND_LITERAL("0");
     }
     APPEND_LITERAL(": 0");
-  } else if (!cursor_in_generic_association_type &&
-      (cursor_identifier_starts_conditional ||
-      cursor_after_complete_type_name_cast ||
-      (previous_token_requires_expression &&
-       (!cursor_identifier_starts_parenthesized_suffix ||
-        cursor_identifier_has_complete_parenthesized_suffix)) ||
-      last_significant == '=' || last_significant == ',' ||
-      last_significant == '(' || last_significant == '[' ||
-      last_significant == '+' || last_significant == '-' ||
-      last_significant == '*' || last_significant == '/' ||
-      last_significant == '%' || last_significant == '&' ||
-      last_significant == '|' || last_significant == '^' ||
-      last_significant == '!' || last_significant == '~' ||
-      last_significant == '<' || last_significant == '>' ||
-      last_significant == '?' || last_significant == ':'))
+  } else if (cursor_has_complete_direct_expression_tail &&
+             cursor_needs_expression_placeholder) {
+    APPEND_BYTES(source + cursor_identifier.start,
+                 cursor_identifier.end - cursor_identifier.start);
+    recovery_tail_consumed = direct_expression_end + 1;
+    last_significant = 'x';
+  } else if (cursor_needs_expression_placeholder) {
     APPEND_LITERAL(" 0");
+  }
 #define APPEND_PENDING_CONDITIONALS(count)                                      \
   do {                                                                           \
     size_t pending_count = (count);                                               \

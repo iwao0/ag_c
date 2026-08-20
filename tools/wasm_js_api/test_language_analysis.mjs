@@ -1044,6 +1044,167 @@ if (languageAnalysisFocus === "initializer-operands") {
   process.exit(0);
 }
 
+const directAggregateOperandHoverSource = {
+  name: "direct-aggregate-operand-hover.c",
+  source: "struct DirectAggregateRecord { int member; };\n" +
+    "union DirectAggregateUnion { int member; long other; };\n" +
+    "typedef struct DirectAggregateRecord DirectAggregateType;\n" +
+    "typedef union DirectAggregateUnion DirectAggregateUnionType;\n" +
+    "int direct_aggregate_sink(DirectAggregateType value);\n" +
+    "DirectAggregateType direct_aggregate_identity(DirectAggregateType value);\n" +
+    "DirectAggregateType direct_aggregate_return(DirectAggregateType direct_return_parameter) {\n" +
+    "  return direct_return_parameter;\n" +
+    "}\n" +
+    "DirectAggregateUnionType direct_union_return(DirectAggregateUnionType direct_union_return_parameter) {\n" +
+    "  return direct_union_return_parameter;\n" +
+    "}\n" +
+    "int direct_aggregate_operands(DirectAggregateType direct_operand_parameter, DirectAggregateUnionType direct_operand_union_parameter) {\n" +
+    "  DirectAggregateType direct_source = direct_operand_parameter;\n" +
+    "  DirectAggregateType direct_target = (DirectAggregateType){ .member = 0 };\n" +
+    "  DirectAggregateUnionType direct_union_source = direct_operand_union_parameter;\n" +
+    "  DirectAggregateUnionType direct_union_target = (DirectAggregateUnionType){ .member = 0 };\n" +
+    "  direct_target = direct_source;\n" +
+    "  direct_target = direct_operand_parameter;\n" +
+    "  direct_union_target = direct_union_source;\n" +
+    "  int direct_call = direct_aggregate_sink(direct_source);\n" +
+    "  int direct_nested = direct_aggregate_sink(direct_aggregate_identity(direct_source));\n" +
+    "  int direct_comment = direct_aggregate_sink(direct_source /* tail */);\n" +
+    "  int direct_lf = direct_aggregate_sink(direct_source \\\n);\n" +
+    "  int direct_crlf = direct_aggregate_sink(direct_source \\\r\n);\r\n" +
+    "  direct_source;\n" +
+    "  DirectAggregateType *direct_address = &direct_source;\n" +
+    "  int direct_size = sizeof direct_source;\n" +
+    "  int direct_member = direct_source.member;\n" +
+    "  int direct_after;\n" +
+    "  return direct_call + direct_nested + direct_comment + direct_lf +\n" +
+    "         direct_crlf + direct_size + direct_member +\n" +
+    "         direct_address->member + direct_target.member + direct_union_target.member;\n" +
+    "}\n" +
+    "int direct_file_after;\n",
+};
+const directAggregateOperandHoverCases = [
+  {
+    fragment: "return direct_return_parameter",
+    name: "direct_return_parameter", kind: "parameter", checkBoundaries: true,
+  },
+  {
+    fragment: "return direct_union_return_parameter",
+    name: "direct_union_return_parameter", kind: "parameter",
+  },
+  {
+    fragment: "direct_target = direct_source",
+    name: "direct_source", kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "direct_target = direct_operand_parameter",
+    name: "direct_operand_parameter", kind: "parameter",
+  },
+  {
+    fragment: "direct_union_target = direct_union_source",
+    name: "direct_union_source", kind: "object",
+  },
+  {
+    fragment: "direct_aggregate_sink(direct_source",
+    name: "direct_source", kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "direct_aggregate_identity(direct_source",
+    name: "direct_source", kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "direct_source /* tail */",
+    name: "direct_source", kind: "object",
+  },
+  {
+    fragment: "direct_source \\\n);",
+    name: "direct_source", kind: "object",
+  },
+  {
+    fragment: "direct_source \\\r\n);",
+    name: "direct_source", kind: "object",
+  },
+  {
+    fragment: "  direct_source;",
+    name: "direct_source", kind: "object",
+  },
+  {
+    fragment: "&direct_source",
+    name: "direct_source", kind: "object",
+  },
+  {
+    fragment: "sizeof direct_source",
+    name: "direct_source", kind: "object",
+  },
+  {
+    fragment: "direct_source.member",
+    name: "direct_source", kind: "object", checkBoundaries: true,
+  },
+];
+if (!languageAnalysisFocus || languageAnalysisFocus === "direct-operands") {
+  for (const directCase of directAggregateOperandHoverCases) {
+    const fragmentIndex = directAggregateOperandHoverSource.source.indexOf(
+      directCase.fragment,
+    );
+    const useIndex = directAggregateOperandHoverSource.source.indexOf(
+      directCase.name, fragmentIndex,
+    );
+    const declarationIndex = directAggregateOperandHoverSource.source.indexOf(
+      directCase.name,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${directCase.name} direct aggregate operand anchor`);
+    const nameBytes = Buffer.byteLength(directCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = directCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        directAggregateOperandHoverSource.source.slice(0, useIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(
+        directAggregateOperandHoverSource,
+        {
+          cursor: {
+            sourceName: directAggregateOperandHoverSource.name, byteOffset,
+          },
+        },
+      );
+      assert.equal(wasmResult.partial, false,
+        `${directCase.name} direct aggregate operand partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${directCase.name} direct aggregate operand diagnostics`);
+      assert.equal(wasmResult.hover?.name, directCase.name,
+        `${directCase.name} direct aggregate operand hover name`);
+      assert.equal(wasmResult.hover?.kind, directCase.kind,
+        `${directCase.name} direct aggregate operand hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        directAggregateOperandHoverSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.equal(symbol(
+        wasmResult, "direct_after", "object",
+      ), undefined, `${directCase.name} later local object hidden`);
+      assert.equal(symbol(
+        wasmResult, "direct_file_after", "object",
+      ), undefined, `${directCase.name} later file object hidden`);
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--direct-aggregate-operand-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${directCase.name} direct aggregate operand differ`);
+    }
+  }
+  reportTestTiming("direct aggregate operands");
+}
+if (languageAnalysisFocus === "direct-operands") {
+  compiler.dispose();
+  console.log("wasm language analysis direct aggregate operand tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",

@@ -494,6 +494,42 @@ static const char initializer_operand_hover_source[] =
     "         initializer_scalar_copy;\n"
     "}\n"
     "int initializer_file_after;\n";
+static const char direct_aggregate_operand_hover_source[] =
+    "struct DirectAggregateRecord { int member; };\n"
+    "union DirectAggregateUnion { int member; long other; };\n"
+    "typedef struct DirectAggregateRecord DirectAggregateType;\n"
+    "typedef union DirectAggregateUnion DirectAggregateUnionType;\n"
+    "int direct_aggregate_sink(DirectAggregateType value);\n"
+    "DirectAggregateType direct_aggregate_identity(DirectAggregateType value);\n"
+    "DirectAggregateType direct_aggregate_return(DirectAggregateType direct_return_parameter) {\n"
+    "  return direct_return_parameter;\n"
+    "}\n"
+    "DirectAggregateUnionType direct_union_return(DirectAggregateUnionType direct_union_return_parameter) {\n"
+    "  return direct_union_return_parameter;\n"
+    "}\n"
+    "int direct_aggregate_operands(DirectAggregateType direct_operand_parameter, DirectAggregateUnionType direct_operand_union_parameter) {\n"
+    "  DirectAggregateType direct_source = direct_operand_parameter;\n"
+    "  DirectAggregateType direct_target = (DirectAggregateType){ .member = 0 };\n"
+    "  DirectAggregateUnionType direct_union_source = direct_operand_union_parameter;\n"
+    "  DirectAggregateUnionType direct_union_target = (DirectAggregateUnionType){ .member = 0 };\n"
+    "  direct_target = direct_source;\n"
+    "  direct_target = direct_operand_parameter;\n"
+    "  direct_union_target = direct_union_source;\n"
+    "  int direct_call = direct_aggregate_sink(direct_source);\n"
+    "  int direct_nested = direct_aggregate_sink(direct_aggregate_identity(direct_source));\n"
+    "  int direct_comment = direct_aggregate_sink(direct_source /* tail */);\n"
+    "  int direct_lf = direct_aggregate_sink(direct_source \\\n);\n"
+    "  int direct_crlf = direct_aggregate_sink(direct_source \\\r\n);\r\n"
+    "  direct_source;\n"
+    "  DirectAggregateType *direct_address = &direct_source;\n"
+    "  int direct_size = sizeof direct_source;\n"
+    "  int direct_member = direct_source.member;\n"
+    "  int direct_after;\n"
+    "  return direct_call + direct_nested + direct_comment + direct_lf +\n"
+    "         direct_crlf + direct_size + direct_member +\n"
+    "         direct_address->member + direct_target.member + direct_union_target.member;\n"
+    "}\n"
+    "int direct_file_after;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -3176,6 +3212,20 @@ static int print_initializer_operand_hover_parity_snapshot(
     return 1;
   return print_macro_definition_source_snapshot(
       "initializer-operand-hover.c", initializer_operand_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_direct_aggregate_operand_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(direct_aggregate_operand_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "direct-aggregate-operand-hover.c",
+      direct_aggregate_operand_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -10409,6 +10459,106 @@ static int test_initializer_operand_hover(ag_target_info_t target) {
   return 0;
 }
 
+static int test_direct_aggregate_operand_hover(ag_target_info_t target) {
+  static const struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+  } cases[] = {
+      {"return direct_return_parameter", "direct_return_parameter",
+       AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"return direct_union_return_parameter",
+       "direct_union_return_parameter", AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"direct_target = direct_source", "direct_source",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"direct_target = direct_operand_parameter",
+       "direct_operand_parameter", AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"direct_union_target = direct_union_source", "direct_union_source",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"direct_aggregate_sink(direct_source", "direct_source",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"direct_aggregate_identity(direct_source", "direct_source",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"direct_source /* tail */", "direct_source",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"direct_source \\\n);", "direct_source", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"direct_source \\\r\n);", "direct_source",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"  direct_source;", "direct_source", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"&direct_source", "direct_source", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"sizeof direct_source", "direct_source", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"direct_source.member", "direct_source", AG_LANGUAGE_SYMBOL_OBJECT},
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "direct aggregate operand hover session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          direct_aggregate_operand_hover_source,
+          cases[case_index].fragment);
+      const char *use = fragment ? strstr(fragment, cases[case_index].name)
+                                 : NULL;
+      const char *declaration = strstr(
+          direct_aggregate_operand_hover_source, cases[case_index].name);
+      CHECK(use && declaration, "direct aggregate operand hover anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]);
+           delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "direct aggregate operand hover fresh session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "direct-aggregate-operand-hover.c",
+                  direct_aggregate_operand_hover_source,
+                  (size_t)(use - direct_aggregate_operand_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "direct aggregate operand hover analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover && completion &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "direct-aggregate-operand-hover.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            direct_aggregate_operand_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            direct_aggregate_operand_hover_source) +
+                          (int)name_length &&
+                  same_range(&hover->declaration,
+                             &completion->declaration) &&
+                  !find_symbol(&snapshot, "direct_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "direct_file_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT),
+              "direct aggregate operand hover snapshot");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -12031,6 +12181,9 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--initializer-operand-hover-parity-json") == 0)
     return print_initializer_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--direct-aggregate-operand-hover-parity-json") == 0)
+    return print_direct_aggregate_operand_hover_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -12192,6 +12345,8 @@ int main(int argc, char **argv) {
         "offsetof type hover scenarios");
   CHECK(test_initializer_operand_hover(target) == 0,
         "initializer operand hover scenarios");
+  CHECK(test_direct_aggregate_operand_hover(target) == 0,
+        "direct aggregate operand hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -15292,6 +15447,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (65 scenarios)");
+  puts("language analysis tests passed (66 scenarios)");
   return 0;
 }

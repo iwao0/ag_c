@@ -52,6 +52,7 @@ build scriptのいずれかが更新された場合だけ再生成される。
 | `make test-wasm-language-analysis-do-body` | 小型の`do` body sourceだけをcompound／浅い単一statement、body-local lookup、宣言名境界、Native parity付きで実行する。 | `do { object--; } while (...)`のbody内hover修正時の短い反復確認。 |
 | `make test-wasm-language-analysis-offsetof-types` | 小型の`__builtin_offsetof`／`offsetof` sourceだけを第1型引数、file/block lookup、宣言名境界、Native parity付きで実行する。 | offsetofのtag/typedef hover修正時の短い反復確認。 |
 | `make test-wasm-language-analysis-initializer-operands` | 小型の完全なinitializer sourceだけをcompound literal型名、直接copy operand、file/block/for lookup、宣言名境界、Native parity付きで実行する。 | aggregate initializerのhoverが部分解析になる修正時の短い反復確認。 |
+| `make test-wasm-language-analysis-direct-operands` | 小型の完全なaggregate operand sourceだけをreturn、assignment、最後のcall argument、comment/splice、lookup point、宣言名境界、Native parity付きで実行する。 | aggregate operandのhoverが部分解析になる修正時の短い反復確認。 |
 | `make test-wasm-linker-selfhost` | wasm 化したリンカーの JS API smoke。 | wasm linker API 修正時。 |
 | `make test-wasm-js-pipeline` | wasm 化したコンパイラの `compileObject()` と wasm 化したリンカーの `link()` を JS 上で直結する smoke。 | browser 上の compile+link 経路修正時。 |
 | `make test-wasm-js-e2e` | `test_e2e.c` 登録 fixture を、wasm 化したコンパイラと wasm 化したリンカーで linked wasm にして実行。 | selfhost compile+link 経路の広い確認。 |
