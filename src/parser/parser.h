@@ -37,6 +37,7 @@ typedef struct {
   psx_parser_runtime_context_t *runtime_context;
   psx_parser_syntax_services_t syntax;
   psx_parser_name_environment_t name_environment;
+  size_t external_declaration_count;
 } psx_parser_stream_t;
 
 typedef enum {
@@ -64,6 +65,8 @@ void ps_parser_stream_begin_with_syntax(
     const psx_parser_syntax_services_t *syntax);
 int ps_parse_next_toplevel_item(
     psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item);
+int ps_parser_stream_has_external_declaration(
+    const psx_parser_stream_t *stream);
 int ps_parse_function_definition_body(
     psx_parser_stream_t *stream,
     psx_parsed_function_definition_t *definition,

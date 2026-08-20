@@ -16,6 +16,7 @@
 #include "../parser/arena.h"
 #include "../parser/declaration_binding_events.h"
 #include "../parser/decl.h"
+#include "../parser/diag.h"
 #include "../parser/expr.h"
 #include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
@@ -335,6 +336,16 @@ int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   if (!stream || !stream->is_started ||
       !frontend_session_is_complete(stream->session))
     return 0;
+  ag_diagnostic_context_t *diagnostics =
+      ag_compilation_session_diagnostic_context(stream->session);
+  if (!ps_parser_stream_has_external_declaration(&stream->parser) &&
+      !diag_has_error_records_in(diagnostics)) {
+    ps_diag_ctx_in(
+        diagnostics,
+        tk_get_current_token_ctx(stream->parser.tk_ctx),
+        "translation-unit",
+        "translation unit requires at least one external declaration");
+  }
   psx_semantic_context_t *semantic_context =
       ag_compilation_session_semantic_context(stream->session);
   int finalized = psx_finalize_tentative_globals_in(

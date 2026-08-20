@@ -329,6 +329,7 @@ void ps_parser_stream_begin_with_syntax(
       ps_parser_name_environment_classifier(
           &stream->name_environment);
   stream->runtime_context = syntax->runtime_context;
+  stream->external_declaration_count = 0;
   tokenizer_context_t *runtime_tokenizer =
       tk_ctx ? tk_ctx
              : ps_parser_runtime_tokenizer(syntax->runtime_context);
@@ -395,6 +396,7 @@ int ps_parse_next_toplevel_item(
               &item->value.static_assertion,
               &stream->syntax.name_classifier))
         return 0;
+      stream->external_declaration_count++;
       return 1;
     }
     psx_parsed_toplevel_declaration_t declaration = {0};
@@ -450,10 +452,16 @@ int ps_parse_next_toplevel_item(
         continue;
       }
     }
+    stream->external_declaration_count++;
     return 1;
   }
   item->kind = PSX_TOPLEVEL_ITEM_EOF;
   return 0;
+}
+
+int ps_parser_stream_has_external_declaration(
+    const psx_parser_stream_t *stream) {
+  return stream && stream->external_declaration_count > 0;
 }
 
 void ps_parser_stream_end(psx_parser_stream_t *stream) {

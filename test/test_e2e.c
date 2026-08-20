@@ -2783,6 +2783,13 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "anonymous_unnamed_bitfield_only.c",
      "E3064"},
+    {"empty_translation_unit_rejected",
+     "fixture:test/fixtures/should_reject/empty_translation_unit.c",
+     "E3064"},
+    {"preprocessor_only_translation_unit_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "preprocessor_only_translation_unit.c",
+     "E3064"},
     {"variably_modified_typedef_array_member_rejected",
      "fixture:test/fixtures/should_reject/"
      "variably_modified_typedef_array_member.c",

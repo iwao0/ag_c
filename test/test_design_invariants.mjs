@@ -3979,6 +3979,28 @@ if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test
     "frontend stream core must use only the explicitly supplied CompilationSession",
   );
 }
+if (!/size_t\s+external_declaration_count\s*;/.test(
+      parserStreamDefinition,
+    ) ||
+    !/stream->external_declaration_count\s*=\s*0\s*;/.test(
+      parserStreamSource,
+    ) ||
+    (parserStreamSource.match(
+      /stream->external_declaration_count\+\+\s*;/g,
+    )?.length ?? 0) !== 2 ||
+    !/ps_parser_stream_has_external_declaration\s*\(/.test(
+      parserStreamHeader,
+    ) ||
+    !/ps_parser_stream_has_external_declaration\s*\([^]*?external_declaration_count\s*>\s*0/.test(
+      parserStreamSource,
+    ) ||
+    !/psx_frontend_stream_end\s*\([^]*?!ps_parser_stream_has_external_declaration\s*\(&stream->parser\)[^]*?!diag_has_error_records_in\s*\(diagnostics\)[^]*?translation unit requires at least one external declaration/.test(
+      frontendTranslationUnitSource,
+    )) {
+  throw new Error(
+    "translation-unit validation must count parsed external declarations rather than source tokens",
+  );
+}
 if (!/frontend_session_is_complete\s*\([^)]*\)\s*\{\s*return\s+ag_compilation_session_is_complete\s*\(session\)\s*;\s*\}/.test(
       frontendTranslationUnitSource,
     ) ||

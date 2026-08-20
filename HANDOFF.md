@@ -37688,3 +37688,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規7 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないaggregate構文制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深いanonymous aggregate/layout/initializer、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - aggregateのnamed member境界は空・static assertion・unnamed bit-field・一段anonymous昇格まで閉じた。layoutや深いanonymous nestingへ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1273）: external declarationのないtranslation unitを拒否した
+- 対象選定:
+  - aggregateから離れ、array parameter bound、initializerを持てない宣言category、重複member、file/block-scope array再宣言を少数ずつClang C11 strictと照合した。array parameter、function/typedef initializer、member重複、array bound互換性はいずれもag_cと一致したため変更していない。
+  - commentのみ、またはmacro定義のみのtranslation unitはpreprocess後にexternal declarationが1件もないためClang strictが拒否する一方、ag_cは成功扱いしていた。`_Static_assert`だけ、tag前方宣言だけ、object宣言だけのtranslation unitは双方が受理した。
+  - source/tokenの深さや複雑な式へ進まず、translation-unit文法の個数境界だけを対象とした。security監査、巨大入力、fuzz、資源stressには広げていない。
+- 原因と変更:
+  - top-level parserはEOFまでitemを返さなくてもfrontend終了処理を成功させ、translation-unit文法が要求する1件以上のexternal declarationを確認していなかった。
+  - parser streamへ返却済みexternal declarationのcounterを追加した。top-level `_Static_assert`、通常宣言、関数定義headerを同じcounterで数え、pragma markerは数えない。frontend終了時にcounterがゼロで、かつ既存errorもない場合だけE3064を出す。
+  - source長やraw token数では判定しないため、comment/macro/preprocess directiveをexternal declarationと誤認せず、include展開後の宣言や`_Static_assert`は通常どおり数えられる。design invariantでcounterの初期化、3種itemを覆う2つのincrement点、frontend終了時検査を固定した。
+- coverage:
+  - parser unitへcomment-onlyのE3064拒否と、`_Static_assert`・tag・object各1件の合法対照を追加した。
+  - should_rejectへ`empty_translation_unit`と`preprocessor_only_translation_unit`を追加し、Native/Wasm compile-fail registryへ両方をE3064で登録した。
+- 確認:
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.80秒 / user 3.04秒 / sys 0.25秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.38秒 / user 0.74秒 / sys 0.46秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.57秒 / user 11.54秒 / sys 1.59秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.63秒 / user 42.72秒 / sys 1.17秒**。`make -q wasm-selfhost-api`もcurrentを確認した。
+  - 新規2 fixtureはhost Clang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3064で一致した。`_Static_assert`とobject宣言の合法対照はNative/Wasm objectともstatus 0を維持した。`build/test_e2e`もwarningなしでビルドした。
+- 未実施:
+  - 新規2 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないtranslation-unit構文制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深い式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - translation-unitの空/宣言あり境界はpreprocess後item countで閉じた。include graphやpreprocessor internalsへ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。

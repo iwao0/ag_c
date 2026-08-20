@@ -12470,6 +12470,19 @@ static void test_frontend_stream_lifecycle_boundary(
   ASSERT_TRUE(ag_compilation_session_dispose(&session_context));
 }
 
+static void test_translation_unit_external_declaration_boundary(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_translation_unit_external_declaration_boundary...\n");
+  expect_parse_fail_with_message(
+      test_suite_session, "/* no external declaration */", "E3064");
+  expect_parse_ok(
+      test_suite_session, "_Static_assert(1, \"ok\");");
+  expect_parse_ok(
+      test_suite_session, "struct ExternalDeclarationTag;");
+  expect_parse_ok(
+      test_suite_session, "int external_declaration_object;");
+}
+
 static void test_complex_initializer_semantic_lowering_boundary(
     ag_compilation_session_t *test_suite_session) {
   printf("test_complex_initializer_semantic_lowering_boundary...\n");
@@ -23204,6 +23217,7 @@ int main() {
   test_toplevel_point_of_declaration_boundary(test_suite_session);
   test_toplevel_single_parse_classification_boundary(test_suite_session);
   test_frontend_stream_lifecycle_boundary(test_suite_session);
+  test_translation_unit_external_declaration_boundary(test_suite_session);
   test_local_declaration_frontend_boundary(test_suite_session);
   test_function_parameter_point_of_declaration_boundary(test_suite_session);
   test_identifier_resolution_boundary(test_suite_session);
