@@ -37364,3 +37364,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 同じpointer内の複数修飾、`_Atomic`付き2段pointer、3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
 - 浅い次候補:
   - Clang strictとag_c本体が受理する`extern T (* const volatile *T);`と`extern T (** const volatile T);`は小型Wasm probeでE3088・`partial:true`を残す。次は2段pointerのどちらか一方だけに重複なしのCV qualifierを2個置く浅い2形を扱えるか調べる。
+
+### このセッション（続き1259）: parenthesized block extern同名objectの2段pointer片段に`const volatile`を回復した
+- 対象選定:
+  - 続き1258の浅い次候補を、1段目/2段目への配置と`const volatile`/`volatile const`の語順を組み合わせた4形、comment、LF spliceの6形で確認した。Clang C11 strictとag_c本体はすべて受理したが、language analysisはE3088・`partial:true`を残していた。
+  - 括弧1組・pointer 2個・同名identifier・`;`直結と既存lookup経路は再探索せず、片方のpointerだけに重複なしのCV qualifierを2個置く形へ限定した。同一qualifierの重複、`restrict`との同段複合、もう一方のpointerへの追加修飾、`_Atomic`、3段以上、suffix付き複合宣言子、深い式、security監査系には広げていない。
+- 変更:
+  - `build_file_typedef_block_extern_type_recovery_source`でpointer段ごとのCV qualifier bit maskを追跡する。1段目では2個目の`*`を読む時点、2段目では2個目のqualifierを読む時点で、`const`と`volatile`が各1回だけ揃い、他段が無修飾である場合だけ許す。
+  - 同一CVの重複、CVと`restrict`の同段複合、片段`const volatile`と他段qualifierの複合は一致させず、既存の両段単一CVR、`_Atomic`拒否、pointer上限を維持した。
+  - same-typedef Native/Wasm共通fixtureへ配置・語順4形、comment、LF spliceの6形を統合した。全65形の中央cursor Native/Wasm parity、Native側の全形の名前端点・shared/fresh session、15カテゴリ代表のWasm名前端点・第2compiler instanceを維持した。
+  - 同一block typedefを片段`const volatile`付き2段pointerのparenthesized `extern`で再利用する不正shadowも追加し、E3088・partialとNative/Wasm snapshot一致を維持した。
+- テスト時間:
+  - 最適化済み`make test-wasm-language-analysis-same-typedef-declarators`へ統合した。全65形の中央cursorと15カテゴリ代表を含む焦点gateは、内部計測**39.02秒**、**real 39.15秒 / user 39.32秒 / sys 0.55秒**で成功した。
+  - prototype bound、declarator array bound、local member array boundの隣接3 targetだけを`make -j3`で並列実行し、**real 6.91秒 / user 10.14秒 / sys 0.72秒**だった。
+- 確認:
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 8.27秒 / user 6.39秒 / sys 1.50秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 44.07秒 / user 42.59秒 / sys 1.09秒**。更新後の焦点Wasm gateで片段CV2個の6形とshadow境界を確認した。
+  - 小型Wasm probeでは配置・語順4形だけがdiagnostics空・`partial:false`になり、同一CVの重複、`restrict`との同段複合、他段への追加修飾、`_Atomic`付き2段pointer、3段pointerはE3088・partialのままだった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.69秒 / user 3.16秒 / sys 0.35秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.41秒 / user 0.82秒 / sys 0.47秒**。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 39.15秒のNative parity付き焦点gateで同じJS本体を確認できるため、1354秒規模の`make test-wasm-js-api`は実行しない。code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eも反復しない。
+  - 同一qualifierの重複、片段で`restrict`を含む複数qualifier、片段`const volatile`と他段qualifierの複合、`_Atomic`付き2段pointer、3段以上、`_Atomic(type)`、二重括弧、function/array suffix、pointer-to-array、attribute、initializer、複合式、深い宣言子、深い式、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - 焦点gateは続き1258の31.84秒から39.15秒へ伸びた。compiler修正は止めず、次は全65形の中央Native/Wasm parityを維持したまま、巨大な共通fixtureを各cursorごとに再解析する構成をカテゴリ単位の小型fixtureまたは同等のbatch方式へ整理し、追加形に対する線形増加を先に抑える。

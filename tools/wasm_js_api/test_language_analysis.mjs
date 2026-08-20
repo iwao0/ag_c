@@ -2420,6 +2420,12 @@ const sameTypedefDeclaratorHoverSource = {
     "typedef int ExternObjectParenthesizedBothRestrictDoublePointerType;\n" +
     "typedef int ExternObjectParenthesizedDoublePointerDualCvrCommentType;\n" +
     "typedef int ExternObjectParenthesizedDoublePointerDualCvrSpliceType;\n" +
+    "typedef int ExternObjectParenthesizedOuterConstVolatileDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedInnerConstVolatileDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedOuterVolatileConstDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedInnerVolatileConstDoublePointerType;\n" +
+    "typedef int ExternObjectParenthesizedDoublePointerSingleLevelCvCommentType;\n" +
+    "typedef int ExternObjectParenthesizedDoublePointerSingleLevelCvSpliceType;\n" +
     "static int same_typedef_block(void) {\n" +
     "  typedef int FirstBlockBase;\n" +
     "  typedef int FirstBlockAtomicBase;\n" +
@@ -2498,6 +2504,12 @@ const sameTypedefDeclaratorHoverSource = {
     "  { extern ExternObjectParenthesizedBothRestrictDoublePointerType (* restrict * restrict ExternObjectParenthesizedBothRestrictDoublePointerType); }\n" +
     "  { extern ExternObjectParenthesizedDoublePointerDualCvrCommentType (* restrict /* between pointers */ * /* before second qualifier */ restrict ExternObjectParenthesizedDoublePointerDualCvrCommentType); }\n" +
     "  { extern ExternObjectParenthesizedDoublePointerDualCvrSpliceType (* volatile * \\\nrestrict ExternObjectParenthesizedDoublePointerDualCvrSpliceType); }\n" +
+    "  { extern ExternObjectParenthesizedOuterConstVolatileDoublePointerType (* const volatile *ExternObjectParenthesizedOuterConstVolatileDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedInnerConstVolatileDoublePointerType (** const volatile ExternObjectParenthesizedInnerConstVolatileDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedOuterVolatileConstDoublePointerType (* volatile const *ExternObjectParenthesizedOuterVolatileConstDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedInnerVolatileConstDoublePointerType (** volatile const ExternObjectParenthesizedInnerVolatileConstDoublePointerType); }\n" +
+    "  { extern ExternObjectParenthesizedDoublePointerSingleLevelCvCommentType (* const /* between qualifiers */ volatile /* before pointer */ * ExternObjectParenthesizedDoublePointerSingleLevelCvCommentType); }\n" +
+    "  { extern ExternObjectParenthesizedDoublePointerSingleLevelCvSpliceType (** volatile \\\nconst ExternObjectParenthesizedDoublePointerSingleLevelCvSpliceType); }\n" +
     "  { typedef int FirstNestedBase; typedef FirstNestedBase FirstNestedArray[4]; typedef FirstBlockShadow FirstBlockShadow; typedef _Atomic(FirstBlockAtomicShadow) FirstBlockAtomicShadow; typedef _Atomic(FirstBlockAtomicPointerShadow *) FirstBlockAtomicPointerShadow; typedef _Atomic(FirstBlockAtomicQualifiedShadow * const *) FirstBlockAtomicQualifiedShadow; typedef int (*InternalBlockShadow)(InternalBlockShadow); typedef int PrimaryNestedExtent; typedef int InternalNestedArray[sizeof(PrimaryNestedExtent)]; typedef int NestedAlias, NestedArray[sizeof(NestedAlias)]; int nested_after; }\n" +
     "  int block_after;\n" +
     "  return 0;\n" +
@@ -2671,6 +2683,19 @@ const externTypedefShadowConflictSources = [
   "extern SameBlockParenthesizedDualCvrDoublePointerExternType " +
     "(* const * restrict " +
     "SameBlockParenthesizedDualCvrDoublePointerExternType)"],
+  [{
+    name: "same-block-parenthesized-single-level-cv-double-pointer-extern-typedef-conflict.c",
+    source:
+      "int same_block_parenthesized_single_level_cv_double_pointer_extern_typedef_conflict(void) {\n" +
+      "  typedef int SameBlockParenthesizedSingleLevelCvDoublePointerExternType;\n" +
+      "  extern SameBlockParenthesizedSingleLevelCvDoublePointerExternType " +
+      "(* const volatile *SameBlockParenthesizedSingleLevelCvDoublePointerExternType);\n" +
+      "  return 0;\n" +
+      "}\n",
+  }, "SameBlockParenthesizedSingleLevelCvDoublePointerExternType",
+  "extern SameBlockParenthesizedSingleLevelCvDoublePointerExternType " +
+    "(* const volatile *" +
+    "SameBlockParenthesizedSingleLevelCvDoublePointerExternType)"],
 ];
 const externTypedefSemanticTypeSources = [
   [{
@@ -3003,6 +3028,18 @@ if (!languageAnalysisFocus || languageAnalysisFocus === "same-typedef-declarator
       "ExternObjectParenthesizedDoublePointerDualCvrCommentType", false],
     ["extern ExternObjectParenthesizedDoublePointerDualCvrSpliceType (* volatile * \\\nrestrict ExternObjectParenthesizedDoublePointerDualCvrSpliceType)",
       "ExternObjectParenthesizedDoublePointerDualCvrSpliceType", false],
+    ["extern ExternObjectParenthesizedOuterConstVolatileDoublePointerType (* const volatile *ExternObjectParenthesizedOuterConstVolatileDoublePointerType)",
+      "ExternObjectParenthesizedOuterConstVolatileDoublePointerType", true],
+    ["extern ExternObjectParenthesizedInnerConstVolatileDoublePointerType (** const volatile ExternObjectParenthesizedInnerConstVolatileDoublePointerType)",
+      "ExternObjectParenthesizedInnerConstVolatileDoublePointerType", false],
+    ["extern ExternObjectParenthesizedOuterVolatileConstDoublePointerType (* volatile const *ExternObjectParenthesizedOuterVolatileConstDoublePointerType)",
+      "ExternObjectParenthesizedOuterVolatileConstDoublePointerType", false],
+    ["extern ExternObjectParenthesizedInnerVolatileConstDoublePointerType (** volatile const ExternObjectParenthesizedInnerVolatileConstDoublePointerType)",
+      "ExternObjectParenthesizedInnerVolatileConstDoublePointerType", false],
+    ["extern ExternObjectParenthesizedDoublePointerSingleLevelCvCommentType (* const /* between qualifiers */ volatile /* before pointer */ * ExternObjectParenthesizedDoublePointerSingleLevelCvCommentType)",
+      "ExternObjectParenthesizedDoublePointerSingleLevelCvCommentType", false],
+    ["extern ExternObjectParenthesizedDoublePointerSingleLevelCvSpliceType (** volatile \\\nconst ExternObjectParenthesizedDoublePointerSingleLevelCvSpliceType)",
+      "ExternObjectParenthesizedDoublePointerSingleLevelCvSpliceType", false],
   ];
   for (const [fragmentText, name, checkBoundaries] of externObjectTypeCases) {
     const fragmentIndex = sameTypedefDeclaratorHoverSource.source.indexOf(
