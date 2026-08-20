@@ -19960,6 +19960,26 @@ static void test_parse_invalid(
       "struct Holder { static int member; }; "
       "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
+      "void probe(int count) { typedef int Row[count]; "
+      "struct Item { Row values; }; }");
+  expect_parse_fail(test_suite_session,
+      "void probe(int count) { typedef int Row[count]; "
+      "struct Item { Row *values; }; }");
+  expect_parse_fail(test_suite_session,
+      "void probe(int count) { typedef int (*RowPointer)[count]; "
+      "struct Item { RowPointer values; }; }");
+  expect_parse_fail(test_suite_session,
+      "void probe(int count) { typedef int Row[count]; "
+      "struct Item { Row **values; }; }");
+  expect_parse_fail(test_suite_session,
+      "void probe(int count) { typedef int Row[count]; "
+      "union Item { Row *values; }; }");
+  expect_parse_ok(test_suite_session,
+      "void probe(int count) { typedef int Row[count]; "
+      "typedef int Fixed[4]; Row *local_pointer=0; "
+      "struct Item { Fixed *values; }; struct Item item={0}; "
+      "(void)local_pointer; (void)item; }");
+  expect_parse_fail(test_suite_session,
       "inline int object; int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
       "int main(void) { _Thread_local int object; return 0; }");
@@ -20125,6 +20145,10 @@ static void test_parse_invalid_diagnostics(
   expect_parse_fail_with_message(test_suite_session, "int main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
   expect_parse_fail_with_message(test_suite_session, "int main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message(test_suite_session, "int main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
+  expect_parse_fail_with_message(test_suite_session,
+      "void probe(int count) { typedef int Row[count]; "
+      "struct Item { Row *values; }; }",
+      "E3064");
   expect_parse_fail_with_message(test_suite_session,
       "int main() { struct S { int *p:1; }; return 0; }",
       "bit-field has non-integer canonical type");

@@ -2708,6 +2708,22 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"function_returning_function_rejected",
      "fixture:test/fixtures/should_reject/function_returning_function.c",
      "E3064"},
+    {"variably_modified_typedef_array_member_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "variably_modified_typedef_array_member.c",
+     "E3064"},
+    {"variably_modified_typedef_pointer_member_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "variably_modified_typedef_pointer_member.c",
+     "E3064"},
+    {"variably_modified_pointer_typedef_member_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "variably_modified_pointer_typedef_member.c",
+     "E3064"},
+    {"variably_modified_typedef_union_member_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "variably_modified_typedef_union_member.c",
+     "E3064"},
     {"atomic_const_type_rejected",
      "fixture:test/fixtures/should_reject/atomic_const_type.c",
      "E3064"},

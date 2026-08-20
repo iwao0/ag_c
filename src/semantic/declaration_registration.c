@@ -219,6 +219,12 @@ int psx_apply_aggregate_member_declaration(
                      DIAG_ERR_PARSER_FUNCTION_MEMBER_FORBIDDEN));
   }
   if (resolution.status ==
+      PSX_AGGREGATE_MEMBER_VARIABLY_MODIFIED_TYPE) {
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "decl",
+        "aggregate member cannot have a variably modified type");
+  }
+  if (resolution.status ==
       PSX_AGGREGATE_MEMBER_BIT_WIDTH_EXCEEDS_STORAGE) {
     ps_diag_ctx_in(diagnostics, diag_tok, "member",
                  "bit-field width %d exceeds its %d-bit storage type",

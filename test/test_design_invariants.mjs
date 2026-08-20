@@ -4448,6 +4448,13 @@ if (!aggregateMemberResolutionType ||
     "aggregate member resolution must separate RecordDecl completeness from QualType target layout",
   );
 }
+if (!/validate_aggregate_member_type\s*\([^]*?psx_semantic_type_table_contains_vla_array\s*\([^]*?PSX_AGGREGATE_MEMBER_VARIABLY_MODIFIED_TYPE[^]*?stored\.kind\s*==\s*PSX_TYPE_POINTER/.test(
+      aggregateMemberResolutionSource,
+    )) {
+  throw new Error(
+    "aggregate member resolution must reject variably modified canonical types before pointer layout",
+  );
+}
 if (!/finish_aggregate_bitfield_run\s*\([^]*?\(\s*state->bitfield_bits_used\s*\+\s*7\s*\)\s*\/\s*8[^]*?state->bitfield_storage_offset\s*\+\s*occupied_bytes/.test(
       aggregateMemberResolutionSource,
     ) ||

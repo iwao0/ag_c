@@ -37552,3 +37552,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規7 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。1354秒規模の`make test-wasm-js-api`、全E2E、深い宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - `restrict _Atomic(int *)`と`_Atomic(int * restrict)`は今回のcentral検査と既存atomic type-specifier検査でClang同様に拒否でき、block extern同名objectの2段pointer familyもCVR/Atomicまで閉じた。3段以上や二重括弧へ広げず、次は別の既知の浅いClang差分をHANDOFF/coverageから選ぶ。
+
+### このセッション（続き1267）: record memberのvariably modified typedef型を拒否した
+- 対象選定:
+  - 続き1266後のHANDOFF/coverageを再確認し、古い「未修正」記録は直後の続きで既に解消済みと確認した。新しい通常サイズの宣言probeから、`typedef int Row[count]; struct Item { Row *values; };`をClang C11 strictは拒否する一方、ag_c本体が受理する差分を見つけた。
+  - 配列typedefそのもの、VLAへのpointer、VLAへのpointer typedef、多段pointer、union memberの5形はすべて同じ差分を再現した。通常のlocal `Row *` objectと固定長配列へのmember pointerはClang/ag_cとも受理した。単一のmember宣言制約に限定し、深い宣言子・式・security監査系には広げていない。
+- 原因と変更:
+  - `validate_aggregate_member_type`はcanonical member型のarray leafがpointerなら、pointer先へVLA arrayを含んでいてもlayout可能として早期に成功していた。直接member declaratorのruntime boundは別の整数定数式検査で拒否されるため、block-local VLA typedefをbase typeとして使う経路だけが検査を抜けていた。
+  - aggregate memberの中央型検査で、pointer判定より先に`psx_semantic_type_table_contains_vla_array`を適用した。再帰canonical TypeId内にVLA arrayを含む型を専用`PSX_AGGREGATE_MEMBER_VARIABLY_MODIFIED_TYPE`として拒否し、E3064診断を発行する。
+  - design invariantにも、variably modified検査がpointer早期受理より前にあることを追加した。user-facing文言のexact-match testは追加せず、parser/compile-failでは診断IDだけを固定した。
+- coverage:
+  - parser unitへ配列typedef、VLAへのpointer、pointer typedef、多段pointer、unionの不正5形と、local VLA pointer・固定長配列member pointerの合法対照を追加した。
+  - should_rejectへ`variably_modified_typedef_array_member`、`variably_modified_typedef_pointer_member`、`variably_modified_pointer_typedef_member`、`variably_modified_typedef_union_member`の4 fixtureを追加し、同じ正本をNative/Wasm compile-fail registryへE3064で登録した。
+- 確認:
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.48秒 / user 2.98秒 / sys 0.20秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.35秒 / user 0.73秒 / sys 0.48秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.85秒 / user 42.34秒 / sys 0.94秒**。`make -q wasm-selfhost-api`もcurrentを確認した。
+  - 新規4 fixtureはhost Clang strict、Native、Wasm objectが全件拒否し、Native/WasmはすべてE3064で一致した。通常のlocal VLA pointerと固定長配列member pointerの対照はNative/Wasm objectともstatus 0を維持した。
+  - `build/test_e2e`をwarningなしでビルドし、`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - 新規4 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないmember型制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深い宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - variably modified memberはcanonical型の配列/pointer/typedef/struct/union境界まで閉じた。nested callbackや複雑なVLA式へ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。

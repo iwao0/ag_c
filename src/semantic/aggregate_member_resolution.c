@@ -51,6 +51,9 @@ static psx_aggregate_member_status_t validate_aggregate_member_type(
     psx_semantic_context_t *semantic_context, psx_type_id_t type_id) {
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(semantic_context);
+  if (psx_semantic_type_table_contains_vla_array(
+          semantic_types, type_id))
+    return PSX_AGGREGATE_MEMBER_VARIABLY_MODIFIED_TYPE;
   psx_type_shape_t type = {0};
   if (!psx_semantic_type_table_describe(semantic_types, type_id, &type))
     return PSX_AGGREGATE_MEMBER_INVALID;
