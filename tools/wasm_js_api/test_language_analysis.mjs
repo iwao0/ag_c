@@ -963,6 +963,44 @@ const macroDefinitionFormsSource = {
     "#elif SIMPLE_MACRO\n" +
     "int conditional_elif_value;\n" +
     "#endif\n" +
+    "#if 0\n" +
+    "int conditional_elif_false_first_hidden;\n" +
+    "#elif CONDITIONAL_FALSE_MACRO\n" +
+    "int conditional_elif_false_hidden_value;\n" +
+    "#endif\n" +
+    "#if 0\n" +
+    "int conditional_elif_defined_first_hidden;\n" +
+    "#elif defined(SIMPLE_MACRO)\n" +
+    "int conditional_elif_defined_value;\n" +
+    "#endif\n" +
+    "#if 0\n" +
+    "int conditional_elif_comment_first_hidden;\n" +
+    "#elif /* condition gap */ SIMPLE_MACRO\n" +
+    "int conditional_elif_comment_value;\n" +
+    "#endif\n" +
+    "#if 0\n" +
+    "int conditional_elif_spliced_first_hidden;\n" +
+    "#elif \\\n" +
+    "  SIMPLE_MACRO\n" +
+    "int conditional_elif_spliced_value;\n" +
+    "#endif\n" +
+    "#if 0\n" +
+    "#if 1\n" +
+    "int conditional_elif_nested_first_hidden;\n" +
+    "#endif\n" +
+    "#elif SIMPLE_MACRO\n" +
+    "int conditional_elif_nested_value;\n" +
+    "#endif\n" +
+    "#if 0\n" +
+    "int conditional_elif_undefined_first_hidden;\n" +
+    "#elif NEVER_DEFINED_ELIF_MACRO\n" +
+    "int conditional_elif_undefined_hidden_value;\n" +
+    "#endif\n" +
+    "#if 0\n" +
+    "int conditional_elif_defined_undefined_first_hidden;\n" +
+    "#elif defined(NEVER_DEFINED_ELIF_MACRO)\n" +
+    "int conditional_elif_defined_undefined_hidden_value;\n" +
+    "#endif\n" +
     "#if CONDITIONAL_FALSE_MACRO\n" +
     "int conditional_false_hidden_value;\n" +
     "#endif\n" +
@@ -976,6 +1014,15 @@ const macroDefinitionFormsSource = {
     "static int conditional_false_block(void) {\n" +
     "#if CONDITIONAL_FALSE_MACRO\n" +
     "  return 1;\n" +
+    "#else\n" +
+    "  return 0;\n" +
+    "#endif\n" +
+    "}\n" +
+    "static int conditional_elif_false_block(void) {\n" +
+    "#if 0\n" +
+    "  return 1;\n" +
+    "#elif CONDITIONAL_FALSE_MACRO\n" +
+    "  return 2;\n" +
     "#else\n" +
     "  return 0;\n" +
     "#endif\n" +
@@ -1219,6 +1266,18 @@ for (const macroCase of [
     name: "NEVER_DEFINED_CONDITIONAL_MACRO",
     laterObject: "conditional_ifndef_undefined_value",
   },
+  {
+    fragment: "#elif NEVER_DEFINED_ELIF_MACRO\n" +
+      "int conditional_elif_undefined_hidden_value",
+    name: "NEVER_DEFINED_ELIF_MACRO",
+    laterObject: "conditional_elif_undefined_hidden_value",
+  },
+  {
+    fragment: "#elif defined(NEVER_DEFINED_ELIF_MACRO)\n" +
+      "int conditional_elif_defined_undefined_hidden_value",
+    name: "NEVER_DEFINED_ELIF_MACRO",
+    laterObject: "conditional_elif_defined_undefined_hidden_value",
+  },
 ]) {
   const fragmentIndex = macroDefinitionFormsSource.source.indexOf(
     macroCase.fragment,
@@ -1352,7 +1411,39 @@ const conditionalDirectiveMacroCases = [
   },
   {
     fragment: "#elif SIMPLE_MACRO\nint conditional_elif_value",
-    name: "SIMPLE_MACRO", replacement: "1", laterObject: null,
+    name: "SIMPLE_MACRO", replacement: "1",
+    laterObject: "conditional_elif_value",
+  },
+  {
+    fragment: "#elif CONDITIONAL_FALSE_MACRO\n" +
+      "int conditional_elif_false_hidden_value",
+    name: "CONDITIONAL_FALSE_MACRO", replacement: "0",
+    laterObject: "conditional_elif_false_hidden_value",
+    checkBoundaries: true,
+    checkFresh: true,
+  },
+  {
+    fragment: "#elif defined(SIMPLE_MACRO)\n" +
+      "int conditional_elif_defined_value",
+    name: "SIMPLE_MACRO", replacement: "1",
+    laterObject: "conditional_elif_defined_value",
+  },
+  {
+    fragment: "#elif /* condition gap */ SIMPLE_MACRO",
+    name: "SIMPLE_MACRO", replacement: "1",
+    laterObject: "conditional_elif_comment_value",
+  },
+  {
+    fragment: "#elif \\\n  SIMPLE_MACRO",
+    name: "SIMPLE_MACRO", replacement: "1",
+    laterObject: "conditional_elif_spliced_value",
+  },
+  {
+    fragment: "#if 0\n#if 1\n" +
+      "int conditional_elif_nested_first_hidden;\n" +
+      "#endif\n#elif SIMPLE_MACRO",
+    name: "SIMPLE_MACRO", replacement: "1",
+    laterObject: "conditional_elif_nested_value",
   },
   {
     fragment: "#if CONDITIONAL_FALSE_MACRO\n" +
@@ -1371,6 +1462,13 @@ const conditionalDirectiveMacroCases = [
     name: "CONDITIONAL_FALSE_MACRO", replacement: "0", laterObject: null,
     checkBoundaries: true,
     checkFresh: true,
+  },
+  {
+    fragment: "static int conditional_elif_false_block(void) {\n" +
+      "#if 0\n" +
+      "  return 1;\n" +
+      "#elif CONDITIONAL_FALSE_MACRO",
+    name: "CONDITIONAL_FALSE_MACRO", replacement: "0", laterObject: null,
   },
 ];
 const conditionalDirectiveOffsets = [];

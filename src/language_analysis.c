@@ -564,6 +564,72 @@ static int analysis_directive_operand_starts_at_mode(
   return 1;
 }
 
+typedef enum {
+  ANALYSIS_CONDITIONAL_LINE_OTHER = 0,
+  ANALYSIS_CONDITIONAL_LINE_OPEN,
+  ANALYSIS_CONDITIONAL_LINE_ENDIF,
+} analysis_conditional_line_kind_t;
+
+static analysis_conditional_line_kind_t
+analysis_conditional_physical_line_kind(
+    const char *source, size_t start, size_t end) {
+  while (start < end &&
+         (source[start] == ' ' || source[start] == '\t' ||
+          source[start] == '\r'))
+    start++;
+  if (start >= end || source[start++] != '#')
+    return ANALYSIS_CONDITIONAL_LINE_OTHER;
+  while (start < end &&
+         (source[start] == ' ' || source[start] == '\t' ||
+          source[start] == '\r'))
+    start++;
+  size_t word_start = start;
+  while (start < end &&
+         is_identifier_byte((unsigned char)source[start]))
+    start++;
+  size_t word_length = start - word_start;
+  if ((word_length == sizeof("if") - 1 &&
+       memcmp(source + word_start, "if", word_length) == 0) ||
+      (word_length == sizeof("ifdef") - 1 &&
+       memcmp(source + word_start, "ifdef", word_length) == 0) ||
+      (word_length == sizeof("ifndef") - 1 &&
+       memcmp(source + word_start, "ifndef", word_length) == 0))
+    return ANALYSIS_CONDITIONAL_LINE_OPEN;
+  if (word_length == sizeof("endif") - 1 &&
+      memcmp(source + word_start, "endif", word_length) == 0)
+    return ANALYSIS_CONDITIONAL_LINE_ENDIF;
+  return ANALYSIS_CONDITIONAL_LINE_OTHER;
+}
+
+static int analysis_matching_conditional_opener_line_start(
+    const char *source, size_t current_line_start,
+    size_t *out_line_start) {
+  if (out_line_start) *out_line_start = 0;
+  size_t scan = current_line_start;
+  size_t nested_count = 0;
+  while (scan > 0) {
+    size_t line_end = scan;
+    if (line_end > 0 && source[line_end - 1] == '\n') line_end--;
+    size_t line_start = line_end;
+    while (line_start > 0 && source[line_start - 1] != '\n')
+      line_start--;
+    analysis_conditional_line_kind_t kind =
+        analysis_conditional_physical_line_kind(
+            source, line_start, line_end);
+    if (kind == ANALYSIS_CONDITIONAL_LINE_ENDIF) {
+      nested_count++;
+    } else if (kind == ANALYSIS_CONDITIONAL_LINE_OPEN) {
+      if (nested_count == 0) {
+        if (out_line_start) *out_line_start = line_start;
+        return 1;
+      }
+      nested_count--;
+    }
+    scan = line_start;
+  }
+  return 0;
+}
+
 static int analysis_preprocessor_operand_line_start_at_cursor(
     const char *source, size_t length, size_t cursor,
     int enable_trigraphs, size_t *out_line_start) {
@@ -591,13 +657,16 @@ static int analysis_preprocessor_operand_line_start_at_cursor(
     const char *name;
     size_t length;
     int direct_operand;
+    int use_conditional_group_start;
   } directives[] = {
-      {"if", sizeof("if") - 1, 0},
-      {"ifdef", sizeof("ifdef") - 1, 1},
-      {"ifndef", sizeof("ifndef") - 1, 1},
-      {"undef", sizeof("undef") - 1, 1},
+      {"if", sizeof("if") - 1, 0, 0},
+      {"ifdef", sizeof("ifdef") - 1, 1, 0},
+      {"ifndef", sizeof("ifndef") - 1, 1, 0},
+      {"elif", sizeof("elif") - 1, 0, 1},
+      {"undef", sizeof("undef") - 1, 1, 0},
   };
   int matched = 0;
+  size_t recovery_line_start = line_start;
   for (size_t i = 0; i < sizeof(directives) / sizeof(directives[0]);
        i++) {
     size_t after_directive = 0;
@@ -625,11 +694,15 @@ static int analysis_preprocessor_operand_line_start_at_cursor(
                   source, length, after_directive, identifier.start,
                   enable_trigraphs))
       continue;
+    if (directives[i].use_conditional_group_start &&
+        !analysis_matching_conditional_opener_line_start(
+            source, line_start, &recovery_line_start))
+      continue;
     matched = 1;
     break;
   }
   if (!matched) return 0;
-  if (out_line_start) *out_line_start = line_start;
+  if (out_line_start) *out_line_start = recovery_line_start;
   return 1;
 }
 

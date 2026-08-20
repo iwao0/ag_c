@@ -1489,6 +1489,44 @@ static const char macro_definition_forms_source[] =
     "#elif SIMPLE_MACRO\n"
     "int conditional_elif_value;\n"
     "#endif\n"
+    "#if 0\n"
+    "int conditional_elif_false_first_hidden;\n"
+    "#elif CONDITIONAL_FALSE_MACRO\n"
+    "int conditional_elif_false_hidden_value;\n"
+    "#endif\n"
+    "#if 0\n"
+    "int conditional_elif_defined_first_hidden;\n"
+    "#elif defined(SIMPLE_MACRO)\n"
+    "int conditional_elif_defined_value;\n"
+    "#endif\n"
+    "#if 0\n"
+    "int conditional_elif_comment_first_hidden;\n"
+    "#elif /* condition gap */ SIMPLE_MACRO\n"
+    "int conditional_elif_comment_value;\n"
+    "#endif\n"
+    "#if 0\n"
+    "int conditional_elif_spliced_first_hidden;\n"
+    "#elif \\\n"
+    "  SIMPLE_MACRO\n"
+    "int conditional_elif_spliced_value;\n"
+    "#endif\n"
+    "#if 0\n"
+    "#if 1\n"
+    "int conditional_elif_nested_first_hidden;\n"
+    "#endif\n"
+    "#elif SIMPLE_MACRO\n"
+    "int conditional_elif_nested_value;\n"
+    "#endif\n"
+    "#if 0\n"
+    "int conditional_elif_undefined_first_hidden;\n"
+    "#elif NEVER_DEFINED_ELIF_MACRO\n"
+    "int conditional_elif_undefined_hidden_value;\n"
+    "#endif\n"
+    "#if 0\n"
+    "int conditional_elif_defined_undefined_first_hidden;\n"
+    "#elif defined(NEVER_DEFINED_ELIF_MACRO)\n"
+    "int conditional_elif_defined_undefined_hidden_value;\n"
+    "#endif\n"
     "#if CONDITIONAL_FALSE_MACRO\n"
     "int conditional_false_hidden_value;\n"
     "#endif\n"
@@ -1502,6 +1540,15 @@ static const char macro_definition_forms_source[] =
     "static int conditional_false_block(void) {\n"
     "#if CONDITIONAL_FALSE_MACRO\n"
     "  return 1;\n"
+    "#else\n"
+    "  return 0;\n"
+    "#endif\n"
+    "}\n"
+    "static int conditional_elif_false_block(void) {\n"
+    "#if 0\n"
+    "  return 1;\n"
+    "#elif CONDITIONAL_FALSE_MACRO\n"
+    "  return 2;\n"
     "#else\n"
     "  return 0;\n"
     "#endif\n"
@@ -9404,6 +9451,14 @@ static int test_macro_definition_hover(ag_target_info_t target) {
        "int conditional_ifndef_undefined_value",
        "NEVER_DEFINED_CONDITIONAL_MACRO",
        "conditional_ifndef_undefined_value"},
+      {"#elif NEVER_DEFINED_ELIF_MACRO\n"
+       "int conditional_elif_undefined_hidden_value",
+       "NEVER_DEFINED_ELIF_MACRO",
+       "conditional_elif_undefined_hidden_value"},
+      {"#elif defined(NEVER_DEFINED_ELIF_MACRO)\n"
+       "int conditional_elif_defined_undefined_hidden_value",
+       "NEVER_DEFINED_ELIF_MACRO",
+       "conditional_elif_defined_undefined_hidden_value"},
   };
   for (size_t case_index = 0;
        case_index < sizeof(undefined_directive_cases) /
@@ -9508,7 +9563,22 @@ static int test_macro_definition_hover(ag_target_info_t target) {
       {"#if \\\n  SIMPLE_MACRO", "SIMPLE_MACRO", "1",
        "conditional_spliced_value"},
       {"#elif SIMPLE_MACRO\nint conditional_elif_value",
-       "SIMPLE_MACRO", "1", NULL},
+       "SIMPLE_MACRO", "1", "conditional_elif_value"},
+      {"#elif CONDITIONAL_FALSE_MACRO\n"
+       "int conditional_elif_false_hidden_value",
+       "CONDITIONAL_FALSE_MACRO", "0",
+       "conditional_elif_false_hidden_value"},
+      {"#elif defined(SIMPLE_MACRO)\n"
+       "int conditional_elif_defined_value",
+       "SIMPLE_MACRO", "1", "conditional_elif_defined_value"},
+      {"#elif /* condition gap */ SIMPLE_MACRO",
+       "SIMPLE_MACRO", "1", "conditional_elif_comment_value"},
+      {"#elif \\\n  SIMPLE_MACRO", "SIMPLE_MACRO", "1",
+       "conditional_elif_spliced_value"},
+      {"#if 0\n#if 1\n"
+       "int conditional_elif_nested_first_hidden;\n"
+       "#endif\n#elif SIMPLE_MACRO",
+       "SIMPLE_MACRO", "1", "conditional_elif_nested_value"},
       {"#if CONDITIONAL_FALSE_MACRO\nint conditional_false_hidden_value",
        "CONDITIONAL_FALSE_MACRO", "0",
        "conditional_false_hidden_value"},
@@ -9516,6 +9586,11 @@ static int test_macro_definition_hover(ag_target_info_t target) {
        "SIMPLE_MACRO", "1", NULL},
       {"static int conditional_false_block(void) {\n"
        "#if CONDITIONAL_FALSE_MACRO",
+       "CONDITIONAL_FALSE_MACRO", "0", NULL},
+      {"static int conditional_elif_false_block(void) {\n"
+       "#if 0\n"
+       "  return 1;\n"
+       "#elif CONDITIONAL_FALSE_MACRO",
        "CONDITIONAL_FALSE_MACRO", "0", NULL},
   };
   for (size_t case_index = 0;

@@ -35938,3 +35938,42 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - 今回greenだった文脈は再探索せず、通常サイズの完全sourceで未固定のpreprocessor operandまたはdeclaration境界を小さいprobeから探す。
     開発中はNative約6秒と30秒のmacro焦点Wasm gateを使い、全Wasm parityは関連batch末尾に一度だけ実行する。
+
+### このセッション（続き1213）: `#elif`条件内のmacro operand hoverを回復した
+- 対象選定:
+  - 通常サイズのvalid Cだけを使う小さいWasm probeで、偽macroまたは未定義名の`#elif`が正しいhover/null hoverを返しながら
+    `partial:true`になり、`#elif defined(DEFINED_MACRO)`と`defined(UNDEFINED_MACRO)`がE1010になることを確認した。8文脈を名前の
+    先頭・中央・末尾で調べ、問題の4文脈だけが計12件失敗した。深い条件式、巨大入力、fuzz、資源stress、security監査系には広げなかった。
+- 原因:
+  - 続き1211/1212のoperand recoveryは現在のdirective行から回復を始める。`#elif`では先行branchまたは現在条件が偽だと、その前へ置くべき
+    cursor markerとC scope終端が非active branch内に入りpreprocessで除去される。括弧付き`defined`はcursor位置で切れ、閉じ括弧欠落の
+    E1010にもなっていた。
+- 変更:
+  - 通常`#`から始まる物理行のdirective keywordだけを分類し、現在の`#elif`から後方へ線形走査して対応する`#if/#ifdef/#ifndef`の行先頭を
+    求めるhelperを追加した。走査中は`#endif`とopening directiveで閉じた内側groupだけを数え、式の評価、再帰探索、深い構文解析はしない。
+    split directive keywordとtrigraph hashは既存fallbackに残した。
+  - `#elif` operandだけ回復開始点を対応するgroup openerへ戻し、既存conditional validation tailで元のgroup構造を保持する。既存の`#if`、
+    `#ifdef/#ifndef`、`#undef`回復経路は変更しない。
+  - Native/Wasmへ真/偽macro、未定義名、括弧付き`defined`、comment、LF行継続、file/block scope、閉じた内側group 1段を追加した。Nativeは
+    全ケースの名前先頭・中央・末尾を同一/fresh sessionで固定し、Wasmは全形の中央、偽macroの3位置と代表fresh instanceをNative snapshotと
+    完全照合する。正確なmacro declaration range、未定義名のnull hover、後続object非可視、diagnostics空、`partial:false`も固定した。
+- テスト時間の改善:
+  - 最初のmacro焦点Wasm gateは今回追加したfresh instance 3件を含み**real 82.27秒**だった。同じ`#elif`回復経路の重複初期化だったため、
+    Wasm freshは偽macroの代表1件へ集約し、全ケース・全位置・freshの網羅は高速なNative側に維持した。再実行は
+    **real 59.40秒 / user 59.30秒 / sys 0.83秒**で、Native/Wasm parityを保ったまま22.87秒短縮した。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = 警告なし、**language analysis tests passed (58 scenarios)**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-macros` = runtime manifestとNative/Wasm macro snapshot parityを含めて成功、
+    **real 59.40秒 / user 59.30秒 / sys 0.83秒**。
+  - self-host再生成後の小さいWasm probe 8文脈×名前先頭・中央・末尾が全green。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 前回の全Wasm gate後に続く関連preprocessor小増分で、同じJS本体のmacro焦点gateでNative/Wasm parityを確認したため、1200秒規模の
+    `make test-wasm-js-api`はこの増分でも再実行せず、関連batch末尾のintegration gateへまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。深い条件式、巨大入力、fuzz、
+    資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - 通常サイズの完全sourceで未固定のpreprocessor operandまたはdeclaration境界を小さいprobeから探す。開発中はNative約8秒と約1分の
+    macro焦点Wasm gateを使い、全Wasm parityは関連batch末尾に一度だけ実行する。
