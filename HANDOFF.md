@@ -36468,3 +36468,41 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 浅い次候補:
   - local bit-field幅10形と既にgreenだった`_Alignas`/`_Atomic`宣言は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。
     全Wasm integrationの反復は避け、Native約6秒と0.39秒のlocal bit-field焦点gateを使う。
+
+### このセッション（続き1227）: local record member配列境界のenum hoverを回復した
+- 対象選定:
+  - file/local recordの配列境界、member `_Alignas`、member `_Atomic`を含む通常サイズの完全valid宣言9形を小型Wasm probeで分類した。
+    file enum、macro、member `_Alignas`のlocal enum、member `_Atomic`のlocal typedefはdiagnosticsなし・`partial:false`で正しいhoverだった。
+  - `enum { LOCAL_BOUND=5 }; struct Local { int values[LOCAL_BOUND]; };`だけはdiagnosticsなし・`partial:false`なのにhoverとcompletionがnullだった。
+    named struct/union、anonymous recordでもblock-local enumだけが欠落し、file enumとmacroは同じlocal record内でもgreenだった。
+- 原因:
+  - record member専用recoveryがgeneric declarator array-bound recoveryより先に選ばれ、完全source全体を保持した後にcursor markerをtranslation unit末尾へ
+    追加していた。generic側はrecord bodyを明示的に対象外としており、順序を変えるだけでは回復できなかった。
+  - member配列境界から参照されるblock-local enumはfile scopeのmarkerからlookupできず、bit-field幅と同じlookup point欠落になっていた。
+- 変更:
+  - bit-field専用だったrecord operand tailを共通化し、選択識別子の直前の有意tokenが`[`、直後が`]`から空白/commentを挟んで`;`へ直結する場合を
+    追加した。最内の直接struct/union bodyだけで、境界識別子までのprefixを保持してmember配列とrecordをreserved synthetic objectとして閉じ、
+    markerを直後の外側scopeへ置く。元recordの残りsourceは読まない。
+  - named struct/union、anonymous record、nested block、file enum、macro、comment、LF/CRLF splice、local shadowingと、既存greenのmember
+    `_Alignas`／`_Atomic`比較を含む12形を専用sourceへまとめた。後続enum/local/file objectをlookup対象に入れない。
+- テスト時間の改善:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=local-member-array-bounds`と`make test-wasm-language-analysis-local-member-array-bounds`を追加した。全12形の中央と
+    代表5形の名前先頭・末尾、runtime manifest、Native snapshot parityを含む最終実測は
+    **real 0.48秒 / user 0.59秒 / sys 0.10秒**だった。
+- 確認:
+  - `make -j4 build/test_language_analysis && ./build/test_language_analysis` = compile warningなし、
+    **language analysis tests passed (69 scenarios)**。12形すべてを名前先頭・中央・末尾、再利用/fresh Native sessionで確認した。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.63秒 / user 42.04秒 / sys 0.98秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-local-member-array-bounds` = 成功、
+    **real 0.48秒 / user 0.59秒 / sys 0.10秒**。
+  - 隣接回帰を直列実行した`make test-wasm-language-analysis-local-bitfield-widths test-wasm-language-analysis-local-member-array-bounds` = 両方成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功。
+  - `node --check tools/wasm_js_api/test_language_analysis.mjs`と`git diff --check`問題なし。
+- 未実施:
+  - 同じJS本体の12形を0.48秒のNative parity付き焦点gateで確認できるため、1354秒規模の`make test-wasm-js-api`は再実行せず、関連batch gateへまとめる。
+  - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。多次元tail、複合境界式、nested record body、
+    深い式、巨大入力、fuzz、資源stress、security監査系も対象外とした。
+- 浅い次候補:
+  - local member配列境界12形とgreen比較の`_Alignas`/`_Atomic`は再探索せず、別の通常サイズ・完全sourceにある浅いlookup境界を小型probeから探す。
+    全Wasm integrationの反復は避け、Native約6秒と0.48秒のlocal member配列境界焦点gateを使う。

@@ -1596,6 +1596,179 @@ if (languageAnalysisFocus === "local-bitfield-widths") {
   process.exit(0);
 }
 
+const localMemberArrayBoundSource = {
+  name: "local-member-array-bound-hover.c",
+  source: "typedef int FileMemberType;\n" +
+    "enum FileMemberConstants { FILE_MEMBER_BOUND = 3, SHADOW_MEMBER_BOUND = 2 };\n" +
+    "#define MEMBER_BOUND_MACRO 4\n" +
+    "int local_member_array_bounds(void) {\n" +
+    "  typedef int LocalMemberType;\n" +
+    "  enum LocalMemberConstants { LOCAL_MEMBER_BOUND = 5, LOCAL_MEMBER_ALIGN = 8, SHADOW_MEMBER_BOUND = 6 };\n" +
+    "  struct LocalMemberNamed { int local_array[LOCAL_MEMBER_BOUND]; };\n" +
+    "  union LocalMemberUnion { int local_array[LOCAL_MEMBER_BOUND]; };\n" +
+    "  struct { int local_array[LOCAL_MEMBER_BOUND]; } local_member_anonymous;\n" +
+    "  { struct LocalMemberNested { int local_array[LOCAL_MEMBER_BOUND]; }; }\n" +
+    "  struct LocalMemberFile { int file_array[FILE_MEMBER_BOUND]; };\n" +
+    "  struct LocalMemberMacro { int macro_array[MEMBER_BOUND_MACRO]; };\n" +
+    "  struct LocalMemberComment { int comment_array[/* bound */ LOCAL_MEMBER_BOUND]; };\n" +
+    "  struct LocalMemberLf { int lf_array[\\\nLOCAL_MEMBER_BOUND]; };\n" +
+    "  struct LocalMemberCrlf { int crlf_array[\\\r\nLOCAL_MEMBER_BOUND]; };\r\n" +
+    "  struct LocalMemberShadow { int shadow_array[SHADOW_MEMBER_BOUND]; };\n" +
+    "  struct LocalMemberAlign { _Alignas(LOCAL_MEMBER_ALIGN) int aligned; };\n" +
+    "  struct LocalMemberAtomic { _Atomic(LocalMemberType) atomic_member; };\n" +
+    "  enum { MEMBER_BOUND_AFTER = 7 };\n" +
+    "  int member_bound_after_local;\n" +
+    "  return (int)sizeof(struct LocalMemberNamed) +\n" +
+    "         (int)sizeof(union LocalMemberUnion) +\n" +
+    "         (int)sizeof(local_member_anonymous) + member_bound_after_local;\n" +
+    "}\n" +
+    "int member_bound_after_file;\n",
+};
+const localMemberArrayBoundCases = [
+  {
+    fragment: "local_array[LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant",
+    constantValue: "5", checkBoundaries: true,
+  },
+  {
+    fragment: "LocalMemberUnion { int local_array[LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant",
+    constantValue: "5", checkBoundaries: true,
+  },
+  {
+    fragment: "struct { int local_array[LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "LocalMemberNested { int local_array[LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "file_array[FILE_MEMBER_BOUND",
+    name: "FILE_MEMBER_BOUND", kind: "enumConstant",
+    constantValue: "3", checkBoundaries: true,
+  },
+  {
+    fragment: "macro_array[MEMBER_BOUND_MACRO",
+    name: "MEMBER_BOUND_MACRO", kind: "macro",
+    macroReplacement: "4", checkBoundaries: true,
+  },
+  {
+    fragment: "/* bound */ LOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "lf_array[\\\nLOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "crlf_array[\\\r\nLOCAL_MEMBER_BOUND",
+    name: "LOCAL_MEMBER_BOUND", kind: "enumConstant", constantValue: "5",
+  },
+  {
+    fragment: "shadow_array[SHADOW_MEMBER_BOUND",
+    name: "SHADOW_MEMBER_BOUND", kind: "enumConstant",
+    declarationFragment: "enum LocalMemberConstants", constantValue: "6",
+    checkBoundaries: true,
+  },
+  {
+    fragment: "_Alignas(LOCAL_MEMBER_ALIGN",
+    name: "LOCAL_MEMBER_ALIGN", kind: "enumConstant", constantValue: "8",
+  },
+  {
+    fragment: "_Atomic(LocalMemberType",
+    name: "LocalMemberType", kind: "typedef",
+  },
+];
+if (!languageAnalysisFocus ||
+    languageAnalysisFocus === "local-member-array-bounds") {
+  for (const memberCase of localMemberArrayBoundCases) {
+    const fragmentIndex = localMemberArrayBoundSource.source.indexOf(
+      memberCase.fragment,
+    );
+    const useIndex = localMemberArrayBoundSource.source.indexOf(
+      memberCase.name, fragmentIndex,
+    );
+    const declarationRoot = memberCase.declarationFragment
+      ? localMemberArrayBoundSource.source.indexOf(
+        memberCase.declarationFragment,
+      )
+      : 0;
+    const declarationIndex = localMemberArrayBoundSource.source.indexOf(
+      memberCase.name, declarationRoot,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${memberCase.name} local member array bound anchor`);
+    const nameBytes = Buffer.byteLength(memberCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = memberCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        localMemberArrayBoundSource.source.slice(0, useIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(localMemberArrayBoundSource, {
+        cursor: {
+          sourceName: localMemberArrayBoundSource.name, byteOffset,
+        },
+      });
+      const completion = symbol(
+        wasmResult, memberCase.name, memberCase.kind,
+      );
+      assert.equal(wasmResult.partial, false,
+        `${memberCase.name} local member array bound partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${memberCase.name} local member array bound diagnostics`);
+      assert.equal(wasmResult.hover?.name, memberCase.name,
+        `${memberCase.name} local member array bound hover name`);
+      assert.equal(wasmResult.hover?.kind, memberCase.kind,
+        `${memberCase.name} local member array bound hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        localMemberArrayBoundSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.deepStrictEqual(wasmResult.hover.declaration,
+        completion?.declaration,
+        `${memberCase.name} local member array bound completion range`);
+      if (memberCase.constantValue) {
+        assert.equal(wasmResult.hover.initializer?.constantValue,
+          memberCase.constantValue);
+        assert.equal(completion?.initializer?.constantValue,
+          memberCase.constantValue);
+      }
+      if (memberCase.macroReplacement) {
+        assert.equal(wasmResult.hover.macro?.replacement,
+          memberCase.macroReplacement);
+        assert.equal(completion?.macro?.replacement,
+          memberCase.macroReplacement);
+      }
+      assert.equal(symbol(
+        wasmResult, "MEMBER_BOUND_AFTER", "enumConstant",
+      ), undefined, `${memberCase.name} later enum hidden`);
+      assert.equal(symbol(
+        wasmResult, "member_bound_after_local", "object",
+      ), undefined, `${memberCase.name} later local object hidden`);
+      assert.equal(symbol(
+        wasmResult, "member_bound_after_file", "object",
+      ), undefined, `${memberCase.name} later file object hidden`);
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--local-member-array-bound-hover-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${memberCase.name} member array bound differ`);
+    }
+  }
+  reportTestTiming("local member array bounds");
+}
+if (languageAnalysisFocus === "local-member-array-bounds") {
+  compiler.dispose();
+  console.log("wasm language analysis local member array bound tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",

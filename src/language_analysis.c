@@ -1262,10 +1262,31 @@ static char *build_record_member_recovery_source(
       record_open >= name_start ||
       !analysis_source_delimiters_are_balanced(source, length))
     return NULL;
-  if (source[after_name] == ';' &&
-      analysis_last_significant_between(
-          source, record_open + 1, name_start,
-          enable_trigraphs) == ':') {
+  char prefix_last = analysis_last_significant_between(
+      source, record_open + 1, name_start, enable_trigraphs);
+  const char *record_operand_tail = NULL;
+  size_t record_operand_tail_length = 0;
+  size_t operand_source_consumed = 0;
+  static const char bitfield_tail[] =
+      "; } __agc_record_operand;\n"
+      "int " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  static const char array_bound_tail[] =
+      "]; } __agc_record_operand;\n"
+      "int " AG_LANGUAGE_CURSOR_MARKER ";\n";
+  if (source[after_name] == ';' && prefix_last == ':') {
+    record_operand_tail = bitfield_tail;
+    record_operand_tail_length = sizeof(bitfield_tail) - 1;
+    operand_source_consumed = after_name + 1;
+  } else if (source[after_name] == ']' && prefix_last == '[') {
+    size_t member_end = skip_analysis_space_and_comments_mode(
+        source, length, after_name + 1, enable_trigraphs);
+    if (member_end < length && source[member_end] == ';') {
+      record_operand_tail = array_bound_tail;
+      record_operand_tail_length = sizeof(array_bound_tail) - 1;
+      operand_source_consumed = member_end + 1;
+    }
+  }
+  if (record_operand_tail) {
     size_t direct_open = 0;
     size_t outer_brace_count = 0;
     int direct_record =
@@ -1276,30 +1297,27 @@ static char *build_record_member_recovery_source(
              source, name_start, "union", &direct_open,
              &outer_brace_count)) &&
         direct_open == record_open;
-    static const char bitfield_tail[] =
-        "; } __agc_bitfield_record;\n"
-        "int " AG_LANGUAGE_CURSOR_MARKER ";\n";
     size_t prefix_length = name_start + name_length;
     if (direct_record &&
-        prefix_length <= SIZE_MAX - (sizeof(bitfield_tail) - 1) &&
+        prefix_length <= SIZE_MAX - record_operand_tail_length &&
         outer_brace_count <=
-            (SIZE_MAX - prefix_length -
-             (sizeof(bitfield_tail) - 1)) / 2) {
-      size_t result_length = prefix_length + sizeof(bitfield_tail) - 1 +
+            (SIZE_MAX - prefix_length - record_operand_tail_length) / 2) {
+      size_t result_length = prefix_length + record_operand_tail_length +
                              outer_brace_count * 2;
       char *result = malloc(result_length + 1);
       if (!result) return NULL;
       memcpy(result, source, prefix_length);
       size_t output = prefix_length;
-      memcpy(result + output, bitfield_tail, sizeof(bitfield_tail) - 1);
-      output += sizeof(bitfield_tail) - 1;
+      memcpy(result + output, record_operand_tail,
+             record_operand_tail_length);
+      output += record_operand_tail_length;
       for (size_t i = 0; i < outer_brace_count; i++) {
         result[output++] = '}';
         result[output++] = '\n';
       }
       result[output] = '\0';
       if (changed) *changed = 1;
-      if (source_consumed) *source_consumed = after_name + 1;
+      if (source_consumed) *source_consumed = operand_source_consumed;
       return result;
     }
   }
