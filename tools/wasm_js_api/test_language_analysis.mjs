@@ -295,6 +295,15 @@ const prototypeParameterBoundSource = {
     "  return callback_local_object != 0;\n" +
     "}\n" +
     "typedef int ProtoBlockResult;\n" +
+    "typedef int CurrentFunctionDirectType;\n" +
+    "typedef int CurrentFunctionNamedType;\n" +
+    "typedef int CurrentFunctionQualifiedType;\n" +
+    "typedef int CurrentFunctionCommentType;\n" +
+    "typedef int CurrentFunctionSpliceType;\n" +
+    "typedef int CurrentFunctionPointerReturnType;\n" +
+    "typedef int CurrentFunctionExternType;\n" +
+    "typedef int CurrentFunctionParenthesizedType;\n" +
+    "typedef int CurrentCallbackObjectType;\n" +
     "int proto_block_scope(void) {\n" +
     "  int proto_block_before = 1;\n" +
     "  int proto_block_function(int block_count, int block_values[block_count], int block_later);\n" +
@@ -304,6 +313,16 @@ const prototypeParameterBoundSource = {
     "  enum { CURRENT_BLOCK_PARAMETER = 5, CURRENT_BLOCK_CALLBACK = 5 };\n" +
     "  int proto_current_block(int CURRENT_BLOCK_PARAMETER[CURRENT_BLOCK_PARAMETER], int current_block_later);\n" +
     "  void (*proto_current_block_callback)(int CURRENT_BLOCK_CALLBACK[CURRENT_BLOCK_CALLBACK], int current_block_callback_later);\n" +
+    "  { int CurrentFunctionDirectType(CurrentFunctionDirectType, int current_function_direct_later); }\n" +
+    "  { int CurrentFunctionNamedType(CurrentFunctionNamedType current_function_named_value, int current_function_named_later); }\n" +
+    "  { int CurrentFunctionQualifiedType(const CurrentFunctionQualifiedType, int current_function_qualified_later); }\n" +
+    "  { int CurrentFunctionCommentType(/* parameter type */ CurrentFunctionCommentType, int current_function_comment_later); }\n" +
+    "  { int CurrentFunctionSpliceType(\\\n" +
+    "CurrentFunctionSpliceType, int current_function_splice_later); }\n" +
+    "  { int *CurrentFunctionPointerReturnType(CurrentFunctionPointerReturnType, int current_function_pointer_later); }\n" +
+    "  { extern int CurrentFunctionExternType(CurrentFunctionExternType, int current_function_extern_later); }\n" +
+    "  { int (CurrentFunctionParenthesizedType)(CurrentFunctionParenthesizedType, int current_function_parenthesized_later); }\n" +
+    "  { int (*CurrentCallbackObjectType)(CurrentCallbackObjectType, int current_callback_object_type_later); }\n" +
     "  int proto_block_after;\n" +
     "  return proto_block_before + (int)sizeof(ProtoBlockFunction *);\n" +
     "}\n" +
@@ -478,6 +497,54 @@ const prototypeParameterBoundCases = [
     kind: "enumConstant", later: "current_block_callback_later",
     current: true, expectedValue: "5",
   },
+  {
+    fragment: "CurrentFunctionDirectType, int current_function_direct_later",
+    name: "CurrentFunctionDirectType", kind: "typedef",
+    later: "current_function_direct_later", currentFunction: true,
+    checkBoundaries: true,
+  },
+  {
+    fragment: "CurrentFunctionNamedType current_function_named_value",
+    name: "CurrentFunctionNamedType", kind: "typedef",
+    later: "current_function_named_later", currentFunction: true,
+  },
+  {
+    fragment: "const CurrentFunctionQualifiedType",
+    name: "CurrentFunctionQualifiedType", kind: "typedef",
+    later: "current_function_qualified_later", currentFunction: true,
+  },
+  {
+    fragment: "/* parameter type */ CurrentFunctionCommentType",
+    name: "CurrentFunctionCommentType", kind: "typedef",
+    later: "current_function_comment_later", currentFunction: true,
+  },
+  {
+    fragment: "(\\\nCurrentFunctionSpliceType",
+    name: "CurrentFunctionSpliceType", kind: "typedef",
+    later: "current_function_splice_later", currentFunction: true,
+  },
+  {
+    fragment: "CurrentFunctionPointerReturnType, int current_function_pointer_later",
+    name: "CurrentFunctionPointerReturnType", kind: "typedef",
+    later: "current_function_pointer_later", currentFunction: true,
+  },
+  {
+    fragment: "CurrentFunctionExternType, int current_function_extern_later",
+    name: "CurrentFunctionExternType", kind: "typedef",
+    later: "current_function_extern_later", currentFunction: true,
+  },
+  {
+    fragment: "CurrentFunctionParenthesizedType, int current_function_parenthesized_later",
+    name: "CurrentFunctionParenthesizedType", kind: "typedef",
+    later: "current_function_parenthesized_later", currentFunction: true,
+    checkBoundaries: true,
+  },
+  {
+    fragment: "CurrentCallbackObjectType, int current_callback_object_type_later",
+    name: "CurrentCallbackObjectType", kind: "typedef",
+    later: "current_callback_object_type_later", currentObject: true,
+    checkBoundaries: true,
+  },
 ];
 if (!languageAnalysisFocus ||
     languageAnalysisFocus === "prototype-bounds") {
@@ -530,6 +597,14 @@ if (!languageAnalysisFocus ||
       if (boundCase.current) {
         assert.equal(symbol(wasmResult, boundCase.name, "parameter"),
           undefined, `${boundCase.name} current parameter hidden`);
+      }
+      if (boundCase.currentFunction) {
+        assert.equal(symbol(wasmResult, boundCase.name, "function"),
+          undefined, `${boundCase.name} current function hidden`);
+      }
+      if (boundCase.currentObject) {
+        assert.equal(symbol(wasmResult, boundCase.name, "object"),
+          undefined, `${boundCase.name} current object hidden`);
       }
       if (boundCase.prior) {
         assert.ok(symbol(wasmResult, boundCase.prior, "parameter"),

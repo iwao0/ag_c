@@ -36969,3 +36969,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - code generation pipelineを変更しないlanguage-analysis専用回復のためNative/Wasm E2Eは未実施とした。`sizeof`を含むbound、nested/factory callback、current function宣言、複合式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系も対象外とした。
 - 浅い次候補:
   - current parameter配列境界は再探索せず、続き1241の比較で残ったblock-scope functionのparameter型側`typedef int LocalType; int LocalType(LocalType);`にあるcurrent function宣言点を、通常サイズ・完全sourceの浅い直接functionだけへ限定できるか小型probeで調べる。全Wasm integrationを反復せず、Native約6.5秒と3.55秒のprototype-bound焦点gateを使う。
+
+### このセッション（続き1243）: file no-linkage名を隠すblock functionとcurrent callable lookup pointを回復した
+- 対象選定:
+  - 続き1242の浅い次候補`typedef int T; { int T(T); }`を、直接/named parameter/comment/LF splice/pointer return/明示`extern`/括弧付きfunctionと直接function-pointer object、比較用function typedefへ限定して小型Wasm probeで分類した。
+  - 7つのblock-scope function形はhover以前に全てE3064で解析不能になり、直接function-pointer objectはparameter型の`T`をまだ宣言点へ達していない現在objectへ誤解決した。function typedefの比較形は従来どおりgreenだった。
+  - Clang strictとの比較でblock function形は有効と確認し、language-analysisだけでなく、外部linkage backingをtranslation-unit ordinary namespaceへ登録するcore経路がfile-scope typedef/enum constantと不正に衝突する問題を分離した。深い式、nested/factory callback、attribute、security監査系には入っていない。
+- core側の原因と変更:
+  - block-scope functionはblock内にlinkage aliasを置く一方、同一関数を再宣言間で共有するtranslation-unit backingも必要になる。従来の関数registryはbackingを通常lookup対象として作るため、合法に隠されるfile typedef/enum constantとordinary namespaceで衝突してE3064になった。
+  - function declaration resolution requestへ`is_block_scope`を伝え、block宣言で既存translation-unit宣言がtypedef/enum constantの場合だけ、lookupから隠したfunction backingを別宣言として作る。通常lookupは外側typedef/enumを返し続け、scope限定registry lookupとblock aliasはhidden backingを参照する。
+  - file-scope function解決は同名の過去のtranslation-unit non-function宣言を逆走査するため、hidden backingが最新でも、後続file functionが本来衝突するtypedef/enum/global objectを見逃さない。global objectとのblock function衝突も従来どおり拒否する。
+  - 直接/named/comment/LF splice/pointer return/明示`extern`/括弧付き/repeated compatible declaration/enum shadowの10形をpositive fixtureへ登録し、block後に外側typedef/enumへ戻ることとblock内でfunctionが見えることを実行確認する。hidden backing作成後の後続file functionは専用should-reject fixtureでE3064を固定する。
+- language-analysis側の原因と変更:
+  - generic recoveryは現在のfunction/function-pointer object宣言を完結してからmarkerを置くため、parameter型にある外側typedefと同名の識別子を現在callableへ早期解決していた。
+  - 選択位置を含む直接parameter segmentの先頭型identifierだけを、前置型修飾子・comment・LF/CRLF splice対応で分類する。block-scopeの直接function、括弧付きfunction名、直接`(*name)(...)` objectで宣言名と選択typedefが同名の場合だけ、現在宣言全体を除いて宣言開始位置へmarkerを置く。
+  - 通常/named/`const`/comment/LF splice/pointer return/明示`extern`/括弧付きfunction/直接callback objectの9形を既存prototype-bound Native/Wasm fixtureへ統合した。外側typedefの正確なrange、現在function/objectと後続parameterの非可視、diagnostics空・`partial:false`を固定する。
+- テスト時間の改善:
+  - core positiveは1791件のWasm E2E登録から対象index 1446の1件だけを実行し、link/validate/run込み**real 0.66秒 / user 0.68秒 / sys 0.06秒**で確認した。全E2Eを反復しない。
+  - language-analysisは新targetを増やさず、既存`make test-wasm-language-analysis-prototype-bounds`へ統合した。Native snapshot parityと代表名前境界を含む最終実測は**real 6.64秒 / user 6.79秒 / sys 0.24秒**だった。
+  - declarator array-bound、same-typedef、local member array-boundの隣接3 targetは`make -j3`で並列実行し、**real 3.02秒 / user 6.29秒 / sys 0.76秒**だった。
+- 確認:
+  - Native ag_cでpositive fixtureをassembly化し実行終了0、`clang -std=c11 -pedantic-errors -Wall -Wextra -fsyntax-only`も成功した。最新self-host Wasmで同fixtureをlink/validate/runして成功した。
+  - `file_function_after_block_typedef_backing.c`はNative/Wasm objectの両方で期待どおりE3064。file-scope global objectとのblock function衝突もE3064を維持した。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 7.36秒 / user 5.09秒 / sys 1.57秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 45.00秒 / user 42.74秒 / sys 1.23秒**。更新後の小型Wasm probeは対象8 callable形と比較function typedefで外側typedefの正確なrange、diagnostics空、`partial:false`を確認した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 4.16秒 / user 3.21秒 / sys 0.51秒**。`make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.50秒**。
+  - `make build/test_e2e`、`node --check tools/wasm_js_api/test_language_analysis.mjs`、`git diff --check`も成功した。
+- 未実施:
+  - 同じJS本体を6.64秒のNative parity付き焦点gateで確認し、core positiveも0.66秒の単一Wasm E2Eで実行できるため、1354秒規模の`make test-wasm-js-api`と全1791件のWasm E2Eは再実行しない。
+  - nested/factory callback、parameter名側、配列/attribute、複合式、深い宣言子、深い式、意味評価、巨大入力、fuzz、資源stress、security監査系は対象外とした。
+- 浅い次候補:
+  - 比較probeでは`typedef int T; { extern int T; }`もClang strictが受理する一方、ag_cはtypedef衝突のE3064で拒否した。block function backingとはstorage/global object registryが異なるため本差分へ混ぜず、次はこのblock-scope `extern` objectがfile typedef/enum constantを隠す通常サイズの直接宣言を調べる。今回のcurrent callableとfunction backingは再探索しない。

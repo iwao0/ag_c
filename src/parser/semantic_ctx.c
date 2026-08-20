@@ -1783,9 +1783,56 @@ int ps_ctx_is_function_defined_in(
   return f && f->is_defined;
 }
 
+static const psx_function_symbol_t *
+register_function_qual_type_in_mode(
+    psx_semantic_context_t *context, char *name, int len,
+    psx_qual_type_t function_type,
+    int allow_nonlinkage_translation_unit_shadow);
+
 const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
     psx_semantic_context_t *context, char *name, int len,
     psx_qual_type_t function_type) {
+  return register_function_qual_type_in_mode(
+      context, name, len, function_type, 0);
+}
+
+static psx_function_symbol_t *
+define_block_function_name_over_nonlinkage_declaration_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  if (!context || !context->scope_graph || !name || len <= 0)
+    return NULL;
+  const psx_scope_declaration_t *existing =
+      psx_scope_graph_lookup_declaration_in_scope(
+          context->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, name, len);
+  if (!existing ||
+      (existing->kind != PSX_DECL_TYPEDEF &&
+       existing->kind != PSX_DECL_ENUM_CONSTANT))
+    return NULL;
+  psx_function_symbol_t *function =
+      ctx_calloc_in(context, 1, sizeof(*function));
+  if (!function) return NULL;
+  psx_decl_id_t declaration_id = psx_scope_graph_declare_at(
+      context->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+      PSX_NAMESPACE_ORDINARY, PSX_DECL_FUNCTION,
+      name, len, function);
+  if (declaration_id == PSX_DECL_ID_INVALID ||
+      !psx_scope_graph_set_declaration_hidden_from_lookup(
+          context->scope_graph, declaration_id, 1)) {
+    if (declaration_id != PSX_DECL_ID_INVALID)
+      psx_scope_graph_forget_declaration(
+          context->scope_graph, declaration_id);
+    ctx_release_in(context, function);
+    return NULL;
+  }
+  return function;
+}
+
+static const psx_function_symbol_t *
+register_function_qual_type_in_mode(
+    psx_semantic_context_t *context, char *name, int len,
+    psx_qual_type_t function_type,
+    int allow_nonlinkage_translation_unit_shadow) {
   psx_type_shape_t shape = {0};
   if (!context || !name || len <= 0 ||
       function_type.type_id == PSX_TYPE_ID_INVALID ||
@@ -1797,8 +1844,13 @@ const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
   psx_function_symbol_t *f =
       find_function_name_mut_in(context, name, len);
   if (!f) {
-    define_function_name_in(context, name, len);
-    f = find_function_name_mut_in(context, name, len);
+    if (allow_nonlinkage_translation_unit_shadow)
+      f = define_block_function_name_over_nonlinkage_declaration_in(
+          context, name, len);
+    if (!f) {
+      define_function_name_in(context, name, len);
+      f = find_function_name_mut_in(context, name, len);
+    }
   }
   if (!f) return NULL;
   if (f->function_qual_type.type_id != PSX_TYPE_ID_INVALID) {
@@ -1812,6 +1864,13 @@ const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
   }
   f->function_qual_type = function_type;
   return f;
+}
+
+const psx_function_symbol_t *ps_ctx_register_block_function_qual_type_in(
+    psx_semantic_context_t *context, char *name, int len,
+    psx_qual_type_t function_type) {
+  return register_function_qual_type_in_mode(
+      context, name, len, function_type, 1);
 }
 
 int ps_ctx_mark_function_internal_linkage_in(

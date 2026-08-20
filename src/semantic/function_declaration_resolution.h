@@ -23,6 +23,7 @@ typedef struct {
   int is_static;
   int is_extern;
   int is_noreturn;
+  int is_block_scope;
 } psx_function_declaration_resolution_request_t;
 
 typedef struct {

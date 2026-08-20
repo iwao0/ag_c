@@ -405,6 +405,15 @@ static const char prototype_parameter_bound_hover_source[] =
     "  return callback_local_object != 0;\n"
     "}\n"
     "typedef int ProtoBlockResult;\n"
+    "typedef int CurrentFunctionDirectType;\n"
+    "typedef int CurrentFunctionNamedType;\n"
+    "typedef int CurrentFunctionQualifiedType;\n"
+    "typedef int CurrentFunctionCommentType;\n"
+    "typedef int CurrentFunctionSpliceType;\n"
+    "typedef int CurrentFunctionPointerReturnType;\n"
+    "typedef int CurrentFunctionExternType;\n"
+    "typedef int CurrentFunctionParenthesizedType;\n"
+    "typedef int CurrentCallbackObjectType;\n"
     "int proto_block_scope(void) {\n"
     "  int proto_block_before = 1;\n"
     "  int proto_block_function(int block_count, int block_values[block_count], int block_later);\n"
@@ -414,6 +423,16 @@ static const char prototype_parameter_bound_hover_source[] =
     "  enum { CURRENT_BLOCK_PARAMETER = 5, CURRENT_BLOCK_CALLBACK = 5 };\n"
     "  int proto_current_block(int CURRENT_BLOCK_PARAMETER[CURRENT_BLOCK_PARAMETER], int current_block_later);\n"
     "  void (*proto_current_block_callback)(int CURRENT_BLOCK_CALLBACK[CURRENT_BLOCK_CALLBACK], int current_block_callback_later);\n"
+    "  { int CurrentFunctionDirectType(CurrentFunctionDirectType, int current_function_direct_later); }\n"
+    "  { int CurrentFunctionNamedType(CurrentFunctionNamedType current_function_named_value, int current_function_named_later); }\n"
+    "  { int CurrentFunctionQualifiedType(const CurrentFunctionQualifiedType, int current_function_qualified_later); }\n"
+    "  { int CurrentFunctionCommentType(/* parameter type */ CurrentFunctionCommentType, int current_function_comment_later); }\n"
+    "  { int CurrentFunctionSpliceType(\\\n"
+    "CurrentFunctionSpliceType, int current_function_splice_later); }\n"
+    "  { int *CurrentFunctionPointerReturnType(CurrentFunctionPointerReturnType, int current_function_pointer_later); }\n"
+    "  { extern int CurrentFunctionExternType(CurrentFunctionExternType, int current_function_extern_later); }\n"
+    "  { int (CurrentFunctionParenthesizedType)(CurrentFunctionParenthesizedType, int current_function_parenthesized_later); }\n"
+    "  { int (*CurrentCallbackObjectType)(CurrentCallbackObjectType, int current_callback_object_type_later); }\n"
     "  int proto_block_after;\n"
     "  return proto_block_before + (int)sizeof(ProtoBlockFunction *);\n"
     "}\n"
@@ -10748,6 +10767,33 @@ static int test_prototype_parameter_bound_hover(
       {"[CURRENT_BLOCK_CALLBACK]", "CURRENT_BLOCK_CALLBACK",
        AG_LANGUAGE_SYMBOL_ENUM_CONSTANT,
        "current_block_callback_later"},
+      {"CurrentFunctionDirectType, int current_function_direct_later",
+       "CurrentFunctionDirectType", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "current_function_direct_later"},
+      {"CurrentFunctionNamedType current_function_named_value",
+       "CurrentFunctionNamedType", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "current_function_named_later"},
+      {"const CurrentFunctionQualifiedType",
+       "CurrentFunctionQualifiedType", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "current_function_qualified_later"},
+      {"/* parameter type */ CurrentFunctionCommentType",
+       "CurrentFunctionCommentType", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "current_function_comment_later"},
+      {"(\\\nCurrentFunctionSpliceType",
+       "CurrentFunctionSpliceType", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "current_function_splice_later"},
+      {"CurrentFunctionPointerReturnType, int current_function_pointer_later",
+       "CurrentFunctionPointerReturnType", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "current_function_pointer_later"},
+      {"CurrentFunctionExternType, int current_function_extern_later",
+       "CurrentFunctionExternType", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "current_function_extern_later"},
+      {"CurrentFunctionParenthesizedType, int current_function_parenthesized_later",
+       "CurrentFunctionParenthesizedType", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "current_function_parenthesized_later"},
+      {"CurrentCallbackObjectType, int current_callback_object_type_later",
+       "CurrentCallbackObjectType", AG_LANGUAGE_SYMBOL_TYPEDEF,
+       "current_callback_object_type_later"},
   };
   ag_compilation_session_t *session =
       ag_compilation_session_create(&target);
@@ -10823,6 +10869,14 @@ static int test_prototype_parameter_bound_hover(
                   (strncmp(cases[case_index].name, "CURRENT_", 8) != 0 ||
                    !find_symbol(&snapshot, cases[case_index].name,
                                 AG_LANGUAGE_SYMBOL_PARAMETER)) &&
+                  (strncmp(cases[case_index].name, "CurrentFunction", 15) !=
+                           0 ||
+                   !find_symbol(&snapshot, cases[case_index].name,
+                                AG_LANGUAGE_SYMBOL_FUNCTION)) &&
+                  (strcmp(cases[case_index].name,
+                          "CurrentCallbackObjectType") != 0 ||
+                   !find_symbol(&snapshot, cases[case_index].name,
+                                AG_LANGUAGE_SYMBOL_OBJECT)) &&
                   (!prior_parameter ||
                    find_symbol(&snapshot, prior_parameter,
                                AG_LANGUAGE_SYMBOL_PARAMETER)) &&

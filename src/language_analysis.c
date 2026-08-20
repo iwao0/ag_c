@@ -3237,6 +3237,265 @@ static int analysis_direct_parameter_array_bound_marker_offset(
   return 0;
 }
 
+static int analysis_direct_parameter_type_identifier(
+    const char *source, size_t length, size_t parameter_open,
+    size_t parameter_close, size_t selected_start,
+    int enable_trigraphs) {
+  if (!source || parameter_open >= selected_start ||
+      selected_start >= parameter_close || parameter_close >= length ||
+      source[parameter_open] != '(' || source[parameter_close] != ')')
+    return 0;
+  size_t parameter_start = parameter_open + 1;
+  size_t paren_depth = 1;
+  size_t bracket_depth = 0;
+  size_t brace_depth = 0;
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  for (size_t i = parameter_open + 1; i < selected_start; i++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, i, enable_trigraphs);
+    if (splice_size > 0) {
+      i += splice_size - 1;
+      continue;
+    }
+    char c = source[i];
+    char next = i + 1 < length ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') line_comment = 0;
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      continue;
+    }
+    if (c == '(') paren_depth++;
+    else if (c == ')' && paren_depth > 1) paren_depth--;
+    else if (c == '[') bracket_depth++;
+    else if (c == ']' && bracket_depth > 0) bracket_depth--;
+    else if (c == '{') brace_depth++;
+    else if (c == '}' && brace_depth > 0) brace_depth--;
+    else if (c == ',' && paren_depth == 1 && bracket_depth == 0 &&
+             brace_depth == 0)
+      parameter_start = i + 1;
+  }
+  if (paren_depth != 1 || bracket_depth != 0 || brace_depth != 0)
+    return 0;
+  size_t scan = parameter_start;
+  while (scan < selected_start) {
+    scan = skip_analysis_space_and_comments_mode(
+        source, selected_start, scan, enable_trigraphs);
+    if (scan >= selected_start) break;
+    if (!is_identifier_byte((unsigned char)source[scan])) return 0;
+    size_t word_start = scan;
+    while (scan < selected_start &&
+           is_identifier_byte((unsigned char)source[scan]))
+      scan++;
+    if (!analysis_declaration_modifier_word(
+            source, word_start, scan - word_start))
+      return 0;
+  }
+  return 1;
+}
+
+static char *build_current_callable_parameter_type_recovery_source(
+    const char *source, size_t length, size_t cursor,
+    int enable_trigraphs, int *changed, size_t *source_consumed) {
+  const char *selected_name = NULL;
+  size_t selected_length = 0;
+  identifier_at(
+      source, length, cursor, &selected_name, &selected_length);
+  if (!selected_name || selected_length == 0) return NULL;
+  size_t selected_start = (size_t)(selected_name - source);
+  size_t outer_brace_count = 0;
+  size_t declaration_start = 0;
+  int selected_paren_depth = 0;
+  int selected_bracket_depth = 0;
+  int selected_brace_depth = 0;
+  int definite_declaration = 0;
+  int for_init_declaration = 0;
+  if (!object_declaration_prefix(
+          source, selected_start, &outer_brace_count,
+          &selected_paren_depth, &selected_bracket_depth,
+          &selected_brace_depth, &definite_declaration,
+          &for_init_declaration, &declaration_start) ||
+      outer_brace_count == 0 || !definite_declaration ||
+      for_init_declaration || selected_brace_depth != 0)
+    return NULL;
+
+  int line_comment = 0;
+  int block_comment = 0;
+  int quote = 0;
+  int escaped = 0;
+  int at_line_start = declaration_start == 0 ||
+                      source[declaration_start - 1] == '\n';
+  int preprocessor_line = 0;
+  int has_typedef_keyword = 0;
+  for (size_t i = declaration_start; i < selected_start; i++) {
+    size_t splice_size = analysis_line_splice_size_mode(
+        source, length, i, enable_trigraphs);
+    if (splice_size > 0) {
+      i += splice_size - 1;
+      continue;
+    }
+    char c = source[i];
+    char next = i + 1 < length ? source[i + 1] : 0;
+    if (line_comment) {
+      if (c == '\n') {
+        line_comment = 0;
+        at_line_start = 1;
+        preprocessor_line = 0;
+      }
+      continue;
+    }
+    if (block_comment) {
+      if (c == '*' && next == '/') {
+        block_comment = 0;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = 0;
+      else if (c == '\\') escaped = 1;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '/' && next == '/') {
+      line_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '/' && next == '*') {
+      block_comment = 1;
+      i++;
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      quote = c;
+      at_line_start = 0;
+      continue;
+    }
+    if (c == '\n') {
+      at_line_start = 1;
+      preprocessor_line = 0;
+      continue;
+    }
+    if (at_line_start && (c == ' ' || c == '\t' || c == '\r'))
+      continue;
+    if (at_line_start && c == '#') preprocessor_line = 1;
+    at_line_start = 0;
+    if (preprocessor_line) continue;
+    if (!is_identifier_byte((unsigned char)c)) continue;
+    size_t candidate_start = i;
+    while (i + 1 < selected_start &&
+           is_identifier_byte((unsigned char)source[i + 1]))
+      i++;
+    size_t candidate_length = i + 1 - candidate_start;
+    if (analysis_word_is(
+            source, candidate_start, candidate_length, "typedef")) {
+      has_typedef_keyword = 1;
+      continue;
+    }
+    if (has_typedef_keyword || candidate_length != selected_length ||
+        memcmp(source + candidate_start, selected_name,
+               selected_length) != 0)
+      continue;
+
+    size_t candidate_outer_brace_count = 0;
+    size_t candidate_declaration_start = 0;
+    int candidate_paren_depth = 0;
+    int candidate_bracket_depth = 0;
+    int candidate_brace_depth = 0;
+    int candidate_definite_declaration = 0;
+    int candidate_for_init_declaration = 0;
+    if (!object_declaration_prefix(
+            source, candidate_start, &candidate_outer_brace_count,
+            &candidate_paren_depth, &candidate_bracket_depth,
+            &candidate_brace_depth, &candidate_definite_declaration,
+            &candidate_for_init_declaration,
+            &candidate_declaration_start) ||
+        !candidate_definite_declaration ||
+        candidate_for_init_declaration || candidate_bracket_depth != 0 ||
+        candidate_brace_depth != 0 ||
+        candidate_declaration_start != declaration_start ||
+        candidate_outer_brace_count != outer_brace_count)
+      continue;
+
+    size_t after_candidate = skip_analysis_space_and_comments_mode(
+        source, length, candidate_start + candidate_length,
+        enable_trigraphs);
+    size_t parameter_open = SIZE_MAX;
+    if (candidate_paren_depth == 0 && after_candidate < length &&
+        source[after_candidate] == '(') {
+      parameter_open = after_candidate;
+    } else if (candidate_paren_depth == 1 &&
+               after_candidate < length && source[after_candidate] == ')') {
+      size_t prefix_last_offset = SIZE_MAX;
+      char prefix_last = analysis_last_significant_between(
+          source, declaration_start, candidate_start,
+          enable_trigraphs, &prefix_last_offset);
+      int parenthesized_function_name = prefix_last == '(';
+      int direct_callback_object =
+          prefix_last == '*' && prefix_last_offset != SIZE_MAX &&
+          analysis_last_significant_between(
+              source, declaration_start, prefix_last_offset,
+              enable_trigraphs, NULL) == '(';
+      if (!parenthesized_function_name && !direct_callback_object)
+        continue;
+      after_candidate = skip_analysis_space_and_comments_mode(
+          source, length, after_candidate + 1, enable_trigraphs);
+      if (after_candidate < length && source[after_candidate] == '(')
+        parameter_open = after_candidate;
+    }
+    if (parameter_open == SIZE_MAX) continue;
+    size_t parameter_close = 0;
+    if (!analysis_delimited_tail_end_mode(
+            source, length, parameter_open + 1, ')', 1,
+            enable_trigraphs, &parameter_close) ||
+        !analysis_direct_parameter_type_identifier(
+            source, length, parameter_open, parameter_close,
+            selected_start, enable_trigraphs))
+      continue;
+    size_t declaration_end = 0;
+    int is_definition = 0;
+    if (!function_declaration_recovery_end(
+            source, length, candidate_start + candidate_length,
+            candidate_paren_depth, candidate_bracket_depth,
+            &declaration_end, &is_definition, NULL, NULL) ||
+        is_definition || declaration_end <= parameter_close)
+      continue;
+    return build_declaration_start_lookup_recovery_source(
+        source, declaration_start, outer_brace_count, 0,
+        changed, source_consumed);
+  }
+  return NULL;
+}
+
 typedef struct {
   char open;
   size_t open_offset;
@@ -4571,6 +4830,15 @@ static char *build_recovery_source(const char *source, size_t source_length,
       return append_conditional_validation_tail(
           prior_declarator_lookup_recovery, source, source_length,
           source_consumed, enable_trigraphs);
+    char *current_callable_parameter_type_recovery =
+        build_current_callable_parameter_type_recovery_source(
+            source, source_length, recovery_cursor, enable_trigraphs,
+            changed, &source_consumed);
+    if (current_callable_parameter_type_recovery)
+      return append_conditional_validation_tail(
+          current_callable_parameter_type_recovery,
+          source, source_length, source_consumed,
+          enable_trigraphs);
     char *callback_parameter_bound_recovery =
         build_direct_callback_parameter_bound_recovery_source(
             source, source_length, recovery_cursor, enable_trigraphs,

@@ -6,6 +6,27 @@
 
 #include <string.h>
 
+static const psx_scope_declaration_t *
+translation_unit_nonfunction_declaration(
+    const psx_scope_graph_t *scope_graph,
+    const char *name, int name_len) {
+  size_t declaration_count =
+      psx_scope_graph_declaration_count(scope_graph);
+  for (size_t index = declaration_count; index > 0; index--) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(scope_graph, index - 1);
+    if (!declaration ||
+        declaration->scope_id != PSX_SCOPE_ID_TRANSLATION_UNIT ||
+        declaration->name_space != PSX_NAMESPACE_ORDINARY ||
+        declaration->kind == PSX_DECL_FUNCTION ||
+        !declaration->name || declaration->name_len != name_len ||
+        memcmp(declaration->name, name, (size_t)name_len) != 0)
+      continue;
+    return declaration;
+  }
+  return NULL;
+}
+
 void psx_resolve_function_declaration(
     const psx_function_declaration_resolution_request_t *request,
     psx_function_declaration_resolution_t *resolution) {
@@ -35,12 +56,27 @@ void psx_resolve_function_declaration(
       psx_scope_graph_lookup_declaration_in_scope(
           scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
           PSX_NAMESPACE_ORDINARY, request->name, request->name_len);
+  const psx_scope_declaration_t *file_scope_conflict =
+      translation_unit_nonfunction_declaration(
+          scope_graph, request->name, request->name_len);
+  if (!request->is_block_scope && file_scope_conflict) {
+    resolution->status =
+        file_scope_conflict->kind == PSX_DECL_GLOBAL_OBJECT
+            ? PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT
+            : PSX_FUNCTION_DECLARATION_TYPE_CONFLICT;
+    return;
+  }
   if (existing && (existing->kind == PSX_DECL_GLOBAL_OBJECT ||
                    existing->kind == PSX_DECL_LOCAL_OBJECT)) {
     resolution->status = PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT;
     return;
   }
-  if (existing && existing->kind != PSX_DECL_FUNCTION) {
+  int block_scope_nonlinkage_shadow =
+      request->is_block_scope && existing &&
+      (existing->kind == PSX_DECL_TYPEDEF ||
+       existing->kind == PSX_DECL_ENUM_CONSTANT);
+  if (existing && existing->kind != PSX_DECL_FUNCTION &&
+      !block_scope_nonlinkage_shadow) {
     resolution->status = PSX_FUNCTION_DECLARATION_TYPE_CONFLICT;
     return;
   }
@@ -52,9 +88,14 @@ void psx_resolve_function_declaration(
     resolution->status = PSX_FUNCTION_DECLARATION_LINKAGE_CONFLICT;
     return;
   }
-  resolution->function = ps_ctx_register_function_qual_type_in(
-      semantic_context, request->name, request->name_len,
-      request->function_qual_type);
+  resolution->function =
+      request->is_block_scope
+          ? ps_ctx_register_block_function_qual_type_in(
+                semantic_context, request->name, request->name_len,
+                request->function_qual_type)
+          : ps_ctx_register_function_qual_type_in(
+                semantic_context, request->name, request->name_len,
+                request->function_qual_type);
   if (!resolution->function) {
     resolution->status = PSX_FUNCTION_DECLARATION_TYPE_CONFLICT;
     return;

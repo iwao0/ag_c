@@ -761,6 +761,7 @@ int psx_apply_function_declaration_pipeline(
           .is_static = request->is_static,
           .is_extern = request->is_extern,
           .is_noreturn = request->is_noreturn,
+          .is_block_scope = request->is_block_scope,
       },
       &resolution);
   if (resolution.status != PSX_FUNCTION_DECLARATION_OK)
