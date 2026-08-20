@@ -3065,6 +3065,14 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"enum_floating_expression_cast_rejected",
      "fixture:test/fixtures/should_reject/enum_floating_expression_cast.c",
      "E3064"},
+    {"enum_implicit_value_overflow_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "enum_implicit_value_overflow.c",
+     "E3064"},
+    {"local_enum_implicit_value_overflow_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "local_enum_implicit_value_overflow.c",
+     "E3064"},
     {"enumerator_self_reference_rejected",
      "fixture:test/fixtures/should_reject/enumerator_self_reference.c",
      "E3066"},

@@ -273,12 +273,11 @@ static psx_decl_specifier_value_status_t resolve_enum_body_value(
   for (int i = 0; i < action->enum_body->member_count; i++) {
     const psx_parsed_enum_member_t *member =
         &action->enum_body->members[i];
-    long long value = next_value;
-    if (member->initializer &&
-        !psx_resolve_enum_initializer_syntax_in_contexts(
+    long long value = 0;
+    if (!psx_resolve_enum_member_value_in_contexts(
             context->semantic_context, context->global_registry,
             context->local_registry, member->initializer,
-            (token_t *)member->enumerator, &value))
+            (token_t *)member->enumerator, next_value, &value))
       return PSX_DECL_SPECIFIER_VALUE_INVALID;
     psx_apply_parsed_enum_constant_in(
         context->semantic_context, member->enumerator->str,

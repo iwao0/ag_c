@@ -37597,3 +37597,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規4 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないmember構文制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、深いtag/宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - anonymous memberのtypedef/tag/direct specifier境界は閉じた。複雑なanonymous record layoutへ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1269）: enum暗黙採番にも`int`表現範囲を適用した
+- 対象選定:
+  - anonymous recordの複雑なlayoutへ進まず、通常サイズのenum宣言をClang C11 strictと照合した。明示的な`2147483648`と明示式overflowは既に双方が拒否していたが、`enum Boundary { MAX = 2147483647, NEXT };`はClang strictが暗黙値overflowで拒否する一方、ag_cは受理していた。
+  - file-scopeとblock-scopeの双方で差分を再現した。`2147483646`から`INT_MAX`への暗黙採番、`INT_MIN`から`-2147483647`への暗黙採番、範囲内unsigned literalはClang/ag_cとも受理した。深い式、macro、巨大enum、security監査系には広げていない。
+- 原因と変更:
+  - `psx_resolve_enum_initializer_syntax_in_contexts`は明示initializerの結果を`INT_MIN..INT_MAX`で検査していたが、`psx_apply_parsed_enum_body_in_contexts`と`resolve_enum_body_value`はinitializerがないmemberについて各loopの`next_value`を無検査で登録していた。
+  - `resolve_representable_enum_value`へ明示・暗黙候補のrange検査と診断を集約し、公開`psx_resolve_enum_member_value_in_contexts`がinitializerの有無を吸収する。通常適用とdirect declaration-specifier解決の両entry pathをこのAPIへ統一し、暗黙値overflowを既存E3064へ戻した。
+  - design invariantで単一range helperが明示値・暗黙値の双方を受け、両entry pathが共通member-value APIへ`next_value`を渡すことを固定した。user-facing文言のexact-match testは追加せず、診断IDだけを固定した。
+- coverage:
+  - parser unitへfile/block-scopeの不正2形と、正側・負側の暗黙採番境界を追加した。
+  - should_rejectへ`enum_implicit_value_overflow`と`local_enum_implicit_value_overflow`を追加し、Native/Wasm compile-fail registryへE3064で登録した。
+- 確認:
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、最終実行は**real 3.78秒 / user 3.10秒 / sys 0.21秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.08秒 / user 0.73秒 / sys 0.39秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 43.56秒 / user 42.19秒 / sys 0.88秒**。
+  - 新規2 fixtureはhost Clang strict、Native、Wasm objectが全件拒否し、Native/WasmはすべてE3064で一致した。正側・負側の境界と範囲内unsigned literalの3対照はNative/Wasm objectともstatus 0を維持した。
+  - `build/test_e2e`をwarningなしでビルドし、`node --check test/test_design_invariants.mjs`も成功した。
+- 未実施:
+  - 新規2 fixtureを3 compilerで直接確認済みのため、全should_rejectと全Native/Wasm compile-fail registryは反復しない。code generationを変更しないenum宣言制約のため、全E2E、1354秒規模の`make test-wasm-js-api`、複雑なenum式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - enumの明示・暗黙値rangeはfile/block両経路で閉じた。複雑な定数式へ広げず、次も別の通常サイズの宣言・型制約をClang strictとの差分probeから選ぶ。

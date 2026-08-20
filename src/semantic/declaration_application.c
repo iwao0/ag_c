@@ -40,12 +40,11 @@ int psx_apply_parsed_enum_body_in_contexts(
   int is_unsigned = 1;
   for (int i = 0; i < body->member_count; i++) {
     const psx_parsed_enum_member_t *member = &body->members[i];
-    long long value = next_value;
-    if (member->initializer &&
-        !psx_resolve_enum_initializer_syntax_in_contexts(
+    long long value = 0;
+    if (!psx_resolve_enum_member_value_in_contexts(
             semantic_context, global_registry, local_registry,
             member->initializer, (token_t *)member->enumerator,
-            &value))
+            next_value, &value))
       return i;
     psx_apply_parsed_enum_constant_in(
         semantic_context,

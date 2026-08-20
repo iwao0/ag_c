@@ -16083,6 +16083,23 @@ static void test_enum_constant_resolution_boundary(
   expect_parse_fail(test_suite_session,
       "enum { SignedLongLongShiftOverflow = "
       "(int)(2LL << 63) };");
+  expect_parse_fail_with_message(test_suite_session,
+      "enum ImplicitOverflow { ImplicitMaximum = 2147483647, "
+      "ImplicitNext };",
+      "E3064");
+  expect_parse_fail(test_suite_session,
+      "int main(void) { enum LocalImplicitOverflow { "
+      "LocalImplicitMaximum = 2147483647, LocalImplicitNext }; "
+      "return 0; }");
+  expect_parse_ok(test_suite_session,
+      "enum PositiveImplicitBoundary { "
+      "PositiveImplicitBeforeMaximum = 2147483646, "
+      "PositiveImplicitMaximum }; "
+      "int main(void) { enum NegativeImplicitBoundary { "
+      "NegativeImplicitMinimum = -2147483647 - 1, "
+      "NegativeImplicitNext }; "
+      "return PositiveImplicitMaximum != 2147483647 || "
+      "NegativeImplicitNext != -2147483647; }");
   expect_parse_fail(test_suite_session,
       "_Static_assert((18446744073709551615ULL / 0ULL) == "
       "0ULL, \"division by zero\");");

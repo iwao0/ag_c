@@ -5327,6 +5327,25 @@ if (!/node_t\s*\*initializer\s*;/.test(enumConstHeader) ||
     "enum initializers must remain immutable Syntax AST until direct semantic resolution",
   );
 }
+if (!/resolve_representable_enum_value\s*\([^]*?candidate\s*<\s*INT_MIN\s*\|\|\s*candidate\s*>\s*INT_MAX/.test(
+      enumConstantResolutionSource,
+    ) ||
+    !/resolve_representable_enum_value\s*\([^]*?constant_result\.value\s*,\s*value/.test(
+      enumConstantResolutionSource,
+    ) ||
+    !/resolve_representable_enum_value\s*\([^]*?implicit_value\s*,\s*value/.test(
+      enumConstantResolutionSource,
+    ) ||
+    !/psx_resolve_enum_member_value_in_contexts\s*\([^]*?member->initializer[^]*?next_value/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_resolve_enum_member_value_in_contexts\s*\([^]*?member->initializer[^]*?next_value/.test(
+      declarationSpecifierResolutionSource,
+    )) {
+  throw new Error(
+    "explicit and implicit enumerator values must share the int-range check in both semantic entry paths",
+  );
+}
 const functionParameterResolutionSource = await readFile(
   "src/semantic/function_parameter_resolution.c",
   "utf8",

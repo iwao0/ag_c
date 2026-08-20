@@ -39,5 +39,13 @@ int psx_resolve_enum_initializer_syntax_in_contexts(
     const node_t *syntax_expression,
     const token_t *diagnostic_token,
     long long *value);
+int psx_resolve_enum_member_value_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const node_t *syntax_expression,
+    const token_t *diagnostic_token,
+    long long implicit_value,
+    long long *value);
 
 #endif

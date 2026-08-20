@@ -16,6 +16,23 @@
 #include <limits.h>
 #include <string.h>
 
+static int resolve_representable_enum_value(
+    psx_semantic_context_t *semantic_context,
+    const token_t *diagnostic_token,
+    long long candidate,
+    long long *value) {
+  if (!semantic_context || !diagnostic_token || !value) return 0;
+  if (candidate < INT_MIN || candidate > INT_MAX) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        (token_t *)diagnostic_token, "enum",
+        "enumerator value is not representable as int");
+    return 0;
+  }
+  *value = candidate;
+  return 1;
+}
+
 void psx_resolve_enum_constant(
     const psx_enum_constant_resolution_request_t *request,
     psx_enum_constant_resolution_t *resolution) {
@@ -94,16 +111,9 @@ int psx_resolve_enum_initializer_syntax_in_contexts(
           syntax_expression, &typed_hir, &constant_result, &failure);
   if (status == PSX_SYNTAX_TYPED_HIR_RESOLVED && typed_hir &&
       constant_result.is_constant) {
-    if (constant_result.value < INT_MIN ||
-        constant_result.value > INT_MAX) {
-      ps_diag_ctx_in(
-          ps_ctx_diagnostics(semantic_context),
-          (token_t *)diagnostic_token, "enum",
-          "enumerator value is not representable as int");
-      return 0;
-    }
-    *value = constant_result.value;
-    return 1;
+    return resolve_representable_enum_value(
+        semantic_context, diagnostic_token,
+        constant_result.value, value);
   }
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
@@ -125,4 +135,24 @@ int psx_resolve_enum_initializer_syntax_in_contexts(
       diagnostics, (token_t *)diagnostic_token, "enum",
       "enumerator value is not an integer constant expression");
   return 0;
+}
+
+int psx_resolve_enum_member_value_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const node_t *syntax_expression,
+    const token_t *diagnostic_token,
+    long long implicit_value,
+    long long *value) {
+  if (value) *value = 0;
+  if (!semantic_context || !global_registry || !local_registry ||
+      !diagnostic_token || !value)
+    return 0;
+  if (syntax_expression)
+    return psx_resolve_enum_initializer_syntax_in_contexts(
+        semantic_context, global_registry, local_registry,
+        syntax_expression, diagnostic_token, value);
+  return resolve_representable_enum_value(
+      semantic_context, diagnostic_token, implicit_value, value);
 }
