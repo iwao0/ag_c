@@ -422,6 +422,161 @@ if (languageAnalysisFocus === "prototype-bounds") {
   process.exit(0);
 }
 
+const blockStaticAssertSource = {
+  name: "block-static-assert.c",
+  source: "/// block static assert macro documentation\n" +
+    "#define BLOCK_ASSERT_MACRO 1\n" +
+    "int block_static_assert_hover(void) {\n" +
+    "  typedef unsigned long BlockAssertType;\n" +
+    "  struct BlockAssertRecord { int member; };\n" +
+    "  enum { BLOCK_ASSERT_ENUM = 4 };\n" +
+    "  _Static_assert(sizeof(BlockAssertType) >= 1, \"type\");\n" +
+    "  _Static_assert(_Alignof(BlockAssertType) >= 1, \"align\");\n" +
+    "  _Static_assert(sizeof(struct BlockAssertRecord) >= sizeof(int), \"tag\");\n" +
+    "  _Static_assert(sizeof(int[BLOCK_ASSERT_ENUM]) >= sizeof(int), \"bound\");\n" +
+    "  _Static_assert(BLOCK_ASSERT_ENUM == 4, \"enum\");\n" +
+    "  _Static_assert(BLOCK_ASSERT_MACRO, \"macro\");\n" +
+    "  _Static_assert((BlockAssertType)1 == 1, \"cast\");\n" +
+    "  _Static_assert((sizeof(BlockAssertType) /* ) , */) >= 1, \"quoted , ) ;\");\n" +
+    "  _Static_assert /* gap */ (sizeof(BlockAssertType) >= 1, \"keyword comment\");\n" +
+    "  _Static_assert(sizeof(\\\nBlockAssertType) >= 1, \"LF splice\");\n" +
+    "  _Static_assert(sizeof(\\\r\nBlockAssertType) >= 1, \"CRLF splice\");\r\n" +
+    "  {\n" +
+    "    _Static_assert(sizeof(BlockAssertType) >= 1, \"nested\");\n" +
+    "    int block_assert_nested_after;\n" +
+    "  }\n" +
+    "  int block_assert_after;\n" +
+    "  return 0;\n" +
+    "}\n" +
+    "int block_assert_file_after;\n",
+};
+const blockStaticAssertCases = [
+  {
+    fragment: "sizeof(BlockAssertType) >= 1, \"type\"",
+    name: "BlockAssertType", kind: "typedef", checkBoundaries: true,
+  },
+  {
+    fragment: "_Alignof(BlockAssertType)",
+    name: "BlockAssertType", kind: "typedef",
+  },
+  {
+    fragment: "sizeof(struct BlockAssertRecord)",
+    name: "BlockAssertRecord", kind: "tag", checkBoundaries: true,
+  },
+  {
+    fragment: "sizeof(int[BLOCK_ASSERT_ENUM])",
+    name: "BLOCK_ASSERT_ENUM", kind: "enumConstant",
+  },
+  {
+    fragment: "BLOCK_ASSERT_ENUM == 4",
+    name: "BLOCK_ASSERT_ENUM", kind: "enumConstant",
+  },
+  {
+    fragment: "_Static_assert(BLOCK_ASSERT_MACRO",
+    name: "BLOCK_ASSERT_MACRO", kind: "macro", checkBoundaries: true,
+  },
+  {
+    fragment: "(BlockAssertType)1 == 1",
+    name: "BlockAssertType", kind: "typedef",
+  },
+  {
+    fragment: "sizeof(BlockAssertType) /* ) , */",
+    name: "BlockAssertType", kind: "typedef",
+  },
+  {
+    fragment: "sizeof(BlockAssertType) >= 1, \"keyword comment\"",
+    name: "BlockAssertType", kind: "typedef",
+  },
+  {
+    fragment: "sizeof(\\\nBlockAssertType)",
+    name: "BlockAssertType", kind: "typedef",
+  },
+  {
+    fragment: "sizeof(\\\r\nBlockAssertType)",
+    name: "BlockAssertType", kind: "typedef",
+  },
+  {
+    fragment: "sizeof(BlockAssertType) >= 1, \"nested\"",
+    name: "BlockAssertType", kind: "typedef", nested: true,
+    checkBoundaries: true,
+  },
+];
+if (!languageAnalysisFocus || languageAnalysisFocus === "static-assert") {
+  for (const assertCase of blockStaticAssertCases) {
+    const fragmentIndex = blockStaticAssertSource.source.indexOf(
+      assertCase.fragment,
+    );
+    const useIndex = blockStaticAssertSource.source.indexOf(
+      assertCase.name, fragmentIndex,
+    );
+    const declarationIndex = blockStaticAssertSource.source.indexOf(
+      assertCase.name,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${assertCase.name} block static assert anchor`);
+    const nameBytes = Buffer.byteLength(assertCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = assertCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        blockStaticAssertSource.source.slice(0, useIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(blockStaticAssertSource, {
+        cursor: {
+          sourceName: blockStaticAssertSource.name,
+          byteOffset,
+        },
+      });
+      assert.equal(wasmResult.partial, false,
+        `${assertCase.name} block static assert partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${assertCase.name} block static assert diagnostics`);
+      assert.equal(wasmResult.hover?.name, assertCase.name,
+        `${assertCase.name} block static assert hover name`);
+      assert.equal(wasmResult.hover?.kind, assertCase.kind,
+        `${assertCase.name} block static assert hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        blockStaticAssertSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.equal(symbol(wasmResult, "block_assert_after", "object"),
+        undefined, `${assertCase.name} later block object hidden`);
+      assert.equal(symbol(wasmResult, "block_assert_file_after", "object"),
+        undefined, `${assertCase.name} later file object hidden`);
+      if (assertCase.nested) {
+        assert.equal(symbol(
+          wasmResult, "block_assert_nested_after", "object",
+        ), undefined, "nested static assert later object hidden");
+      }
+      if (assertCase.kind === "enumConstant") {
+        assert.equal(wasmResult.hover.initializer?.constantValue, "4",
+          "block static assert enum value");
+      }
+      if (assertCase.kind === "macro") {
+        assert.equal(wasmResult.hover.macro?.replacement, "1",
+          "block static assert macro replacement");
+        assert.equal(wasmResult.hover.documentation,
+          "block static assert macro documentation");
+      }
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--block-static-assert-parity-json", String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${assertCase.name} block static assert differ`);
+    }
+  }
+  reportTestTiming("block static assertions");
+}
+if (languageAnalysisFocus === "static-assert") {
+  compiler.dispose();
+  console.log("wasm language analysis block static assert tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",

@@ -385,6 +385,32 @@ static const char prototype_parameter_bound_hover_source[] =
     "int proto_enum(int enum_values[PROTO_BOUND_ENUM], int enum_later);\n"
     "int proto_macro(int macro_values[PROTO_BOUND_MACRO], int macro_later);\n"
     "int proto_bound_after;\n";
+static const char block_static_assert_hover_source[] =
+    "/// block static assert macro documentation\n"
+    "#define BLOCK_ASSERT_MACRO 1\n"
+    "int block_static_assert_hover(void) {\n"
+    "  typedef unsigned long BlockAssertType;\n"
+    "  struct BlockAssertRecord { int member; };\n"
+    "  enum { BLOCK_ASSERT_ENUM = 4 };\n"
+    "  _Static_assert(sizeof(BlockAssertType) >= 1, \"type\");\n"
+    "  _Static_assert(_Alignof(BlockAssertType) >= 1, \"align\");\n"
+    "  _Static_assert(sizeof(struct BlockAssertRecord) >= sizeof(int), \"tag\");\n"
+    "  _Static_assert(sizeof(int[BLOCK_ASSERT_ENUM]) >= sizeof(int), \"bound\");\n"
+    "  _Static_assert(BLOCK_ASSERT_ENUM == 4, \"enum\");\n"
+    "  _Static_assert(BLOCK_ASSERT_MACRO, \"macro\");\n"
+    "  _Static_assert((BlockAssertType)1 == 1, \"cast\");\n"
+    "  _Static_assert((sizeof(BlockAssertType) /* ) , */) >= 1, \"quoted , ) ;\");\n"
+    "  _Static_assert /* gap */ (sizeof(BlockAssertType) >= 1, \"keyword comment\");\n"
+    "  _Static_assert(sizeof(\\\nBlockAssertType) >= 1, \"LF splice\");\n"
+    "  _Static_assert(sizeof(\\\r\nBlockAssertType) >= 1, \"CRLF splice\");\r\n"
+    "  {\n"
+    "    _Static_assert(sizeof(BlockAssertType) >= 1, \"nested\");\n"
+    "    int block_assert_nested_after;\n"
+    "  }\n"
+    "  int block_assert_after;\n"
+    "  return 0;\n"
+    "}\n"
+    "int block_assert_file_after;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -3015,6 +3041,19 @@ static int print_prototype_parameter_bound_parity_snapshot(
   return print_macro_definition_source_snapshot(
       "prototype-parameter-bound.c",
       prototype_parameter_bound_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_block_static_assert_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length = strlen(block_static_assert_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "block-static-assert.c", block_static_assert_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -9792,6 +9831,129 @@ static int test_prototype_parameter_bound_hover(
   return 0;
 }
 
+static int test_block_static_assert_hover(ag_target_info_t target) {
+  static const struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+    int nested;
+  } cases[] = {
+      {"sizeof(BlockAssertType) >= 1, \"type\"", "BlockAssertType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF, 0},
+      {"_Alignof(BlockAssertType)", "BlockAssertType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF, 0},
+      {"sizeof(struct BlockAssertRecord)", "BlockAssertRecord",
+       AG_LANGUAGE_SYMBOL_TAG, 0},
+      {"sizeof(int[BLOCK_ASSERT_ENUM])", "BLOCK_ASSERT_ENUM",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, 0},
+      {"BLOCK_ASSERT_ENUM == 4", "BLOCK_ASSERT_ENUM",
+       AG_LANGUAGE_SYMBOL_ENUM_CONSTANT, 0},
+      {"_Static_assert(BLOCK_ASSERT_MACRO", "BLOCK_ASSERT_MACRO",
+       AG_LANGUAGE_SYMBOL_MACRO, 0},
+      {"(BlockAssertType)1 == 1", "BlockAssertType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF, 0},
+      {"sizeof(BlockAssertType) /* ) , */", "BlockAssertType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF, 0},
+      {"sizeof(BlockAssertType) >= 1, \"keyword comment\"",
+       "BlockAssertType", AG_LANGUAGE_SYMBOL_TYPEDEF, 0},
+      {"sizeof(\\\nBlockAssertType)", "BlockAssertType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF, 0},
+      {"sizeof(\\\r\nBlockAssertType)", "BlockAssertType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF, 0},
+      {"sizeof(BlockAssertType) >= 1, \"nested\"", "BlockAssertType",
+       AG_LANGUAGE_SYMBOL_TYPEDEF, 1},
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "block static assert session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  const char *macro_comment = strstr(
+      block_static_assert_hover_source,
+      "/// block static assert macro documentation");
+  CHECK(macro_comment != NULL, "block static assert macro comment anchor");
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          block_static_assert_hover_source, cases[case_index].fragment);
+      const char *use = fragment ? strstr(
+          fragment, cases[case_index].name) : NULL;
+      const char *declaration = strstr(
+          block_static_assert_hover_source, cases[case_index].name);
+      CHECK(use && declaration, "block static assert hover anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]);
+           delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "block static assert fresh session");
+        }
+        CHECK(analyze_named(
+                  analysis_session, "block-static-assert.c",
+                  block_static_assert_hover_source,
+                  (size_t)(use - block_static_assert_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "block static assert analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover && completion &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "block-static-assert.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration - block_static_assert_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration - block_static_assert_hover_source) +
+                          (int)name_length &&
+                  same_range(&hover->declaration,
+                             &completion->declaration) &&
+                  !find_symbol(&snapshot, "block_assert_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "block_assert_file_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  (!cases[case_index].nested ||
+                   !find_symbol(&snapshot, "block_assert_nested_after",
+                                AG_LANGUAGE_SYMBOL_OBJECT)),
+              "block static assert hover snapshot");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_ENUM_CONSTANT)
+          CHECK(hover->constant_value &&
+                    strcmp(hover->constant_value, "4") == 0,
+                "block static assert enum value");
+        if (cases[case_index].kind == AG_LANGUAGE_SYMBOL_MACRO)
+          CHECK(hover->macro_replacement &&
+                    strcmp(hover->macro_replacement, "1") == 0 &&
+                    check_documentation_symbol(
+                        hover, "block static assert macro documentation",
+                        "block-static-assert.c",
+                        (size_t)(macro_comment -
+                                 block_static_assert_hover_source),
+                        (size_t)(macro_comment -
+                                 block_static_assert_hover_source) +
+                            strlen(
+                                "/// block static assert macro documentation")),
+                "block static assert macro fields");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -11402,6 +11564,9 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--prototype-parameter-bound-parity-json") == 0)
     return print_prototype_parameter_bound_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1], "--block-static-assert-parity-json") == 0)
+    return print_block_static_assert_parity_snapshot(argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -11555,6 +11720,8 @@ int main(int argc, char **argv) {
         "for init declaration hover scenarios");
   CHECK(test_prototype_parameter_bound_hover(target) == 0,
         "prototype parameter bound hover scenarios");
+  CHECK(test_block_static_assert_hover(target) == 0,
+        "block static assert hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -14655,6 +14822,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (61 scenarios)");
+  puts("language analysis tests passed (62 scenarios)");
   return 0;
 }

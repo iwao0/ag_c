@@ -48,6 +48,7 @@ build scriptのいずれかが更新された場合だけ再生成される。
 | `make test-wasm-language-analysis-inline-tags` | 小型のinline tag object宣言sourceだけを先頭・中央・末尾およびNative parity付きで実行する。最初のWasm解析をfresh instance、後続を同一instance再利用として確認する。 | `struct/union/enum { ... } object`の宣言位置hover修正時の短い反復確認。 |
 | `make test-wasm-language-analysis-for-init` | 小型の`for`初期宣言sourceだけを宣言名境界・lookup point・Native parity付きで実行する。最初のWasm解析をfresh instance、後続を同一instance再利用として確認する。 | `for (int object = ...; ...)`の宣言位置hover修正時の短い反復確認。 |
 | `make test-wasm-language-analysis-prototype-bounds` | 小型の直接function parameter listだけを配列境界operand・lookup point・Native parity付きで実行する。先行parameterやfile symbolを可視にし、後続parameterとdefinition body localを不可視に保つ。 | `int f(int count, int values[count]);`のbound内hover修正時の短い反復確認。 |
+| `make test-wasm-language-analysis-static-assert` | 小型のblock-scope `_Static_assert` sourceだけをtypedef/tag/enum/macro operand、宣言名境界、lookup point、Native parity付きで実行する。 | block内static assertionのoperand hover修正時の短い反復確認。 |
 | `make test-wasm-linker-selfhost` | wasm 化したリンカーの JS API smoke。 | wasm linker API 修正時。 |
 | `make test-wasm-js-pipeline` | wasm 化したコンパイラの `compileObject()` と wasm 化したリンカーの `link()` を JS 上で直結する smoke。 | browser 上の compile+link 経路修正時。 |
 | `make test-wasm-js-e2e` | `test_e2e.c` 登録 fixture を、wasm 化したコンパイラと wasm 化したリンカーで linked wasm にして実行。 | selfhost compile+link 経路の広い確認。 |
