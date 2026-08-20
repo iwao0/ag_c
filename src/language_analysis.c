@@ -3048,6 +3048,57 @@ static int analysis_complete_direct_expression_operand_tail(
   return 1;
 }
 
+static int analysis_complete_simple_remaining_call_tail(
+    const char *source, size_t source_length,
+    const recovery_delimiter_t *stack, size_t stack_count,
+    const analysis_identifier_span_t *identifier, int enable_trigraphs,
+    size_t *statement_end) {
+  if (!source || !stack || stack_count == 0 || !identifier ||
+      identifier->logical_length == 0 || identifier->end > source_length)
+    return 0;
+  const recovery_delimiter_t *call = &stack[stack_count - 1];
+  if (call->open != '(' || !call->is_postfix_parenthesized) return 0;
+  size_t cursor = skip_analysis_space_and_comments_mode(
+      source, source_length, identifier->end, enable_trigraphs);
+  if (cursor >= source_length || source[cursor] != ',') return 0;
+  size_t call_end = 0;
+  if (!analysis_delimited_tail_end_mode(
+          source, source_length, call->open_offset + 1, ')', 1,
+          enable_trigraphs, &call_end))
+    return 0;
+  cursor++;
+  for (;;) {
+    cursor = skip_analysis_space_and_comments_mode(
+        source, call_end, cursor, enable_trigraphs);
+    if (cursor >= call_end) return 0;
+    unsigned char first = (unsigned char)source[cursor];
+    if (!is_identifier_byte(first) && !isdigit(first)) return 0;
+    cursor++;
+    while (cursor < call_end &&
+           is_identifier_byte((unsigned char)source[cursor]))
+      cursor++;
+    cursor = skip_analysis_space_and_comments_mode(
+        source, call_end, cursor, enable_trigraphs);
+    if (cursor == call_end) break;
+    if (source[cursor] != ',') return 0;
+    cursor++;
+  }
+  cursor = skip_analysis_space_and_comments_mode(
+      source, source_length, call_end + 1, enable_trigraphs);
+  for (size_t i = stack_count - 1; i > 0; i--) {
+    char open = stack[i - 1].open;
+    if (open == '{') break;
+    char close = open == '(' ? ')' : open == '[' ? ']' : 0;
+    if (!close || cursor >= source_length || source[cursor] != close)
+      return 0;
+    cursor = skip_analysis_space_and_comments_mode(
+        source, source_length, cursor + 1, enable_trigraphs);
+  }
+  if (cursor >= source_length || source[cursor] != ';') return 0;
+  if (statement_end) *statement_end = cursor;
+  return 1;
+}
+
 static int analysis_type_name_qualifier_word(
     const char *source, size_t start, size_t length) {
   static const char *const words[] = {
@@ -4120,6 +4171,13 @@ static char *build_recovery_source(const char *source, size_t source_length,
       analysis_complete_direct_expression_operand_tail(
           source, source_length, stack, stack_count,
           &cursor_identifier, enable_trigraphs, &direct_expression_end);
+  size_t simple_remaining_call_end = 0;
+  int cursor_has_complete_simple_remaining_call_tail =
+      has_complete_identifier &&
+      analysis_complete_simple_remaining_call_tail(
+          source, source_length, stack, stack_count,
+          &cursor_identifier, enable_trigraphs,
+          &simple_remaining_call_end);
   int cursor_on_complete_tag_name =
       has_complete_identifier && previous_token_is_tag_keyword;
   size_t cursor_tag_tail_end = cursor_name_end;
@@ -4282,6 +4340,18 @@ static char *build_recovery_source(const char *source, size_t source_length,
                  cursor_identifier.end - cursor_identifier.start);
     recovery_tail_consumed = direct_expression_end + 1;
     last_significant = 'x';
+  } else if (cursor_has_complete_simple_remaining_call_tail &&
+             cursor_needs_expression_placeholder) {
+    APPEND_BYTES(source + cursor_identifier.start,
+                 simple_remaining_call_end + 1 -
+                     cursor_identifier.start);
+    recovery_tail_consumed = simple_remaining_call_end + 1;
+    size_t outer_brace_count = 0;
+    for (size_t i = 0; i < stack_count; i++)
+      if (stack[i].open == '{')
+        stack[outer_brace_count++] = stack[i];
+    stack_count = outer_brace_count;
+    last_significant = ';';
   } else if (cursor_needs_expression_placeholder) {
     APPEND_LITERAL(" 0");
   }

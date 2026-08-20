@@ -1205,6 +1205,160 @@ if (languageAnalysisFocus === "direct-operands") {
   process.exit(0);
 }
 
+const simpleRemainingCallArgumentSource = {
+  name: "simple-remaining-call-argument-hover.c",
+  source: "struct SimpleCallRecord { int member; };\n" +
+    "union SimpleCallUnion { int number; long wide; };\n" +
+    "typedef struct SimpleCallRecord SimpleCallType;\n" +
+    "enum SimpleCallNumber { SIMPLE_CALL_ENUM = 1 };\n" +
+    "#define SIMPLE_CALL_MACRO SIMPLE_CALL_ENUM\n" +
+    "int simple_take_pair(SimpleCallType value, int number);\n" +
+    "int simple_take_three(int first, SimpleCallType value, int last);\n" +
+    "int simple_take_scalars(int first, int second);\n" +
+    "int simple_take_union(union SimpleCallUnion value, int number);\n" +
+    "int simple_take_two_items(SimpleCallType first, SimpleCallType second);\n" +
+    "int simple_take_four(SimpleCallType first, int second, int third, int fourth);\n" +
+    "int simple_wrap_scalar(int value);\n" +
+    "int simple_remaining_call_arguments(SimpleCallType simple_parameter, union SimpleCallUnion simple_union_parameter, int simple_scalar_parameter) {\n" +
+    "  SimpleCallType simple_local = simple_parameter;\n" +
+    "  int simple_aggregate_first = simple_take_pair(simple_local, 1);\n" +
+    "  int simple_aggregate_middle = simple_take_three(1, simple_local, 2);\n" +
+    "  int simple_aggregate_tail = simple_take_two_items(simple_local, simple_parameter);\n" +
+    "  int simple_scalar_first = simple_take_scalars(simple_scalar_parameter, SIMPLE_CALL_ENUM);\n" +
+    "  int simple_enum_first = simple_take_scalars(SIMPLE_CALL_ENUM, simple_scalar_parameter);\n" +
+    "  int simple_macro_first = simple_take_scalars(SIMPLE_CALL_MACRO, simple_scalar_parameter);\n" +
+    "  int simple_union_first = simple_take_union(simple_union_parameter, simple_scalar_parameter);\n" +
+    "  int simple_comment = simple_take_pair(simple_local /* first */, simple_scalar_parameter);\n" +
+    "  int simple_lf = simple_take_pair(simple_local \\\n, simple_scalar_parameter);\n" +
+    "  int simple_crlf = simple_take_pair(simple_local \\\r\n, simple_scalar_parameter);\r\n" +
+    "  int simple_nested = simple_wrap_scalar(simple_take_pair(simple_local, simple_scalar_parameter));\n" +
+    "  int simple_many = simple_take_four(simple_local, simple_scalar_parameter, SIMPLE_CALL_ENUM, 3);\n" +
+    "  return simple_take_pair(simple_local, 3);\n" +
+    "  int simple_after;\n" +
+    "}\n" +
+    "int simple_file_after;\n",
+};
+const simpleRemainingCallArgumentCases = [
+  {
+    fragment: "simple_take_pair(simple_local, 1)",
+    name: "simple_local", kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "simple_take_three(1, simple_local, 2)",
+    name: "simple_local", kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "simple_take_two_items(simple_local, simple_parameter)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_take_scalars(simple_scalar_parameter, SIMPLE_CALL_ENUM)",
+    name: "simple_scalar_parameter", kind: "parameter",
+  },
+  {
+    fragment: "simple_take_scalars(SIMPLE_CALL_ENUM, simple_scalar_parameter)",
+    name: "SIMPLE_CALL_ENUM", kind: "enumConstant", checkBoundaries: true,
+  },
+  {
+    fragment: "simple_take_scalars(SIMPLE_CALL_MACRO, simple_scalar_parameter)",
+    name: "SIMPLE_CALL_MACRO", kind: "macro", checkBoundaries: true,
+  },
+  {
+    fragment: "simple_take_union(simple_union_parameter, simple_scalar_parameter)",
+    name: "simple_union_parameter", kind: "parameter",
+  },
+  {
+    fragment: "simple_local /* first */, simple_scalar_parameter",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_local \\\n, simple_scalar_parameter",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_local \\\r\n, simple_scalar_parameter",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "simple_wrap_scalar(simple_take_pair(simple_local, simple_scalar_parameter))",
+    name: "simple_local", kind: "object", checkBoundaries: true,
+  },
+  {
+    fragment: "simple_take_four(simple_local, simple_scalar_parameter, SIMPLE_CALL_ENUM, 3)",
+    name: "simple_local", kind: "object",
+  },
+  {
+    fragment: "return simple_take_pair(simple_local, 3)",
+    name: "simple_local", kind: "object",
+  },
+];
+if (!languageAnalysisFocus ||
+    languageAnalysisFocus === "simple-call-arguments") {
+  for (const simpleCase of simpleRemainingCallArgumentCases) {
+    const fragmentIndex = simpleRemainingCallArgumentSource.source.indexOf(
+      simpleCase.fragment,
+    );
+    const useIndex = simpleRemainingCallArgumentSource.source.indexOf(
+      simpleCase.name, fragmentIndex,
+    );
+    const declarationIndex = simpleRemainingCallArgumentSource.source.indexOf(
+      simpleCase.name,
+    );
+    assert.ok(fragmentIndex >= 0 && useIndex >= 0 && declarationIndex >= 0,
+      `missing ${simpleCase.name} simple call argument anchor`);
+    const nameBytes = Buffer.byteLength(simpleCase.name);
+    const middleDelta = Math.floor(nameBytes / 2);
+    const deltas = simpleCase.checkBoundaries
+      ? [0, middleDelta, nameBytes]
+      : [middleDelta];
+    for (const delta of deltas) {
+      const byteOffset = Buffer.byteLength(
+        simpleRemainingCallArgumentSource.source.slice(0, useIndex),
+      ) + delta;
+      const wasmResult = compiler.analyzeSource(
+        simpleRemainingCallArgumentSource,
+        {
+          cursor: {
+            sourceName: simpleRemainingCallArgumentSource.name, byteOffset,
+          },
+        },
+      );
+      assert.equal(wasmResult.partial, false,
+        `${simpleCase.name} simple call argument partial`);
+      assert.deepStrictEqual(wasmResult.diagnostics, [],
+        `${simpleCase.name} simple call argument diagnostics`);
+      assert.equal(wasmResult.hover?.name, simpleCase.name,
+        `${simpleCase.name} simple call argument hover name`);
+      assert.equal(wasmResult.hover?.kind, simpleCase.kind,
+        `${simpleCase.name} simple call argument hover kind`);
+      assert.equal(wasmResult.hover.declaration.sourceName,
+        simpleRemainingCallArgumentSource.name);
+      assert.equal(wasmResult.hover.declaration.start.offset,
+        declarationIndex);
+      assert.equal(wasmResult.hover.declaration.end.offset,
+        declarationIndex + nameBytes);
+      assert.equal(symbol(
+        wasmResult, "simple_after", "object",
+      ), undefined, `${simpleCase.name} later local object hidden`);
+      assert.equal(symbol(
+        wasmResult, "simple_file_after", "object",
+      ), undefined, `${simpleCase.name} later file object hidden`);
+      assert.deepStrictEqual(wasmResult, JSON.parse(execFileSync(
+        nativeAnalysisPath,
+        ["--simple-remaining-call-argument-hover-parity-json",
+          String(byteOffset)],
+        { encoding: "utf8" },
+      )), `native and Wasm ${simpleCase.name} simple call argument differ`);
+    }
+  }
+  reportTestTiming("simple remaining call arguments");
+}
+if (languageAnalysisFocus === "simple-call-arguments") {
+  compiler.dispose();
+  console.log("wasm language analysis simple call argument tests passed");
+  process.exit(0);
+}
+
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",

@@ -530,6 +530,37 @@ static const char direct_aggregate_operand_hover_source[] =
     "         direct_address->member + direct_target.member + direct_union_target.member;\n"
     "}\n"
     "int direct_file_after;\n";
+static const char simple_remaining_call_argument_hover_source[] =
+    "struct SimpleCallRecord { int member; };\n"
+    "union SimpleCallUnion { int number; long wide; };\n"
+    "typedef struct SimpleCallRecord SimpleCallType;\n"
+    "enum SimpleCallNumber { SIMPLE_CALL_ENUM = 1 };\n"
+    "#define SIMPLE_CALL_MACRO SIMPLE_CALL_ENUM\n"
+    "int simple_take_pair(SimpleCallType value, int number);\n"
+    "int simple_take_three(int first, SimpleCallType value, int last);\n"
+    "int simple_take_scalars(int first, int second);\n"
+    "int simple_take_union(union SimpleCallUnion value, int number);\n"
+    "int simple_take_two_items(SimpleCallType first, SimpleCallType second);\n"
+    "int simple_take_four(SimpleCallType first, int second, int third, int fourth);\n"
+    "int simple_wrap_scalar(int value);\n"
+    "int simple_remaining_call_arguments(SimpleCallType simple_parameter, union SimpleCallUnion simple_union_parameter, int simple_scalar_parameter) {\n"
+    "  SimpleCallType simple_local = simple_parameter;\n"
+    "  int simple_aggregate_first = simple_take_pair(simple_local, 1);\n"
+    "  int simple_aggregate_middle = simple_take_three(1, simple_local, 2);\n"
+    "  int simple_aggregate_tail = simple_take_two_items(simple_local, simple_parameter);\n"
+    "  int simple_scalar_first = simple_take_scalars(simple_scalar_parameter, SIMPLE_CALL_ENUM);\n"
+    "  int simple_enum_first = simple_take_scalars(SIMPLE_CALL_ENUM, simple_scalar_parameter);\n"
+    "  int simple_macro_first = simple_take_scalars(SIMPLE_CALL_MACRO, simple_scalar_parameter);\n"
+    "  int simple_union_first = simple_take_union(simple_union_parameter, simple_scalar_parameter);\n"
+    "  int simple_comment = simple_take_pair(simple_local /* first */, simple_scalar_parameter);\n"
+    "  int simple_lf = simple_take_pair(simple_local \\\n, simple_scalar_parameter);\n"
+    "  int simple_crlf = simple_take_pair(simple_local \\\r\n, simple_scalar_parameter);\r\n"
+    "  int simple_nested = simple_wrap_scalar(simple_take_pair(simple_local, simple_scalar_parameter));\n"
+    "  int simple_many = simple_take_four(simple_local, simple_scalar_parameter, SIMPLE_CALL_ENUM, 3);\n"
+    "  return simple_take_pair(simple_local, 3);\n"
+    "  int simple_after;\n"
+    "}\n"
+    "int simple_file_after;\n";
 static const char documentation_hover_source[] =
     "/** 敵の現在位置 */\n"
     "static int enemy_x;\n"
@@ -3226,6 +3257,21 @@ static int print_direct_aggregate_operand_hover_parity_snapshot(
   return print_macro_definition_source_snapshot(
       "direct-aggregate-operand-hover.c",
       direct_aggregate_operand_hover_source,
+      (size_t)parsed_cursor, (header_bundle_t){0});
+}
+
+static int print_simple_remaining_call_argument_hover_parity_snapshot(
+    const char *cursor_text) {
+  char *end = NULL;
+  unsigned long long parsed_cursor = strtoull(cursor_text, &end, 10);
+  size_t source_length =
+      strlen(simple_remaining_call_argument_hover_source);
+  if (!cursor_text[0] || !end || *end != '\0' ||
+      parsed_cursor > (unsigned long long)source_length)
+    return 1;
+  return print_macro_definition_source_snapshot(
+      "simple-remaining-call-argument-hover.c",
+      simple_remaining_call_argument_hover_source,
       (size_t)parsed_cursor, (header_bundle_t){0});
 }
 
@@ -10559,6 +10605,114 @@ static int test_direct_aggregate_operand_hover(ag_target_info_t target) {
   return 0;
 }
 
+static int test_simple_remaining_call_argument_hover(
+    ag_target_info_t target) {
+  static const struct {
+    const char *fragment;
+    const char *name;
+    ag_language_symbol_kind_t kind;
+  } cases[] = {
+      {"simple_take_pair(simple_local, 1)", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_take_three(1, simple_local, 2)", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_take_two_items(simple_local, simple_parameter)",
+       "simple_local", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_take_scalars(simple_scalar_parameter, SIMPLE_CALL_ENUM)",
+       "simple_scalar_parameter", AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"simple_take_scalars(SIMPLE_CALL_ENUM, simple_scalar_parameter)",
+       "SIMPLE_CALL_ENUM", AG_LANGUAGE_SYMBOL_ENUM_CONSTANT},
+      {"simple_take_scalars(SIMPLE_CALL_MACRO, simple_scalar_parameter)",
+       "SIMPLE_CALL_MACRO", AG_LANGUAGE_SYMBOL_MACRO},
+      {"simple_take_union(simple_union_parameter, simple_scalar_parameter)",
+       "simple_union_parameter", AG_LANGUAGE_SYMBOL_PARAMETER},
+      {"simple_local /* first */, simple_scalar_parameter", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_local \\\n, simple_scalar_parameter", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_local \\\r\n, simple_scalar_parameter", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_wrap_scalar(simple_take_pair(simple_local, simple_scalar_parameter))",
+       "simple_local", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"simple_take_four(simple_local, simple_scalar_parameter, SIMPLE_CALL_ENUM, 3)",
+       "simple_local", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"return simple_take_pair(simple_local, 3)", "simple_local",
+       AG_LANGUAGE_SYMBOL_OBJECT},
+  };
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  CHECK(session != NULL, "simple remaining call argument hover session");
+  ag_language_analysis_limits_t defaults =
+      ag_language_analysis_default_limits();
+  ag_language_analysis_snapshot_t snapshot = {0};
+  ag_language_analysis_error_t error = {0};
+  for (int fresh_session = 0; fresh_session < 2; fresh_session++) {
+    for (size_t case_index = 0;
+         case_index < sizeof(cases) / sizeof(cases[0]); case_index++) {
+      const char *fragment = strstr(
+          simple_remaining_call_argument_hover_source,
+          cases[case_index].fragment);
+      const char *use = fragment ? strstr(fragment, cases[case_index].name)
+                                 : NULL;
+      const char *declaration = strstr(
+          simple_remaining_call_argument_hover_source,
+          cases[case_index].name);
+      CHECK(use && declaration,
+            "simple remaining call argument hover anchors");
+      size_t name_length = strlen(cases[case_index].name);
+      size_t deltas[] = {0, name_length / 2, name_length};
+      for (size_t delta_index = 0;
+           delta_index < sizeof(deltas) / sizeof(deltas[0]);
+           delta_index++) {
+        ag_compilation_session_t *analysis_session = session;
+        if (fresh_session) {
+          analysis_session = ag_compilation_session_create(&target);
+          CHECK(analysis_session != NULL,
+                "simple remaining call argument hover fresh session");
+        }
+        CHECK(analyze_named(
+                  analysis_session,
+                  "simple-remaining-call-argument-hover.c",
+                  simple_remaining_call_argument_hover_source,
+                  (size_t)(use -
+                           simple_remaining_call_argument_hover_source) +
+                      deltas[delta_index],
+                  (header_bundle_t){0}, defaults, &snapshot, &error),
+              "simple remaining call argument hover analysis");
+        const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+        const ag_language_symbol_t *completion = find_symbol(
+            &snapshot, cases[case_index].name, cases[case_index].kind);
+        CHECK(!snapshot.partial && snapshot.diagnostic_count == 0 &&
+                  hover && completion &&
+                  strcmp(hover->name, cases[case_index].name) == 0 &&
+                  hover->kind == cases[case_index].kind &&
+                  hover->declaration.source_name &&
+                  strcmp(hover->declaration.source_name,
+                         "simple-remaining-call-argument-hover.c") == 0 &&
+                  hover->declaration.start.offset ==
+                      (int)(declaration -
+                            simple_remaining_call_argument_hover_source) &&
+                  hover->declaration.end.offset ==
+                      (int)(declaration -
+                            simple_remaining_call_argument_hover_source) +
+                          (int)name_length &&
+                  same_range(&hover->declaration,
+                             &completion->declaration) &&
+                  !find_symbol(&snapshot, "simple_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT) &&
+                  !find_symbol(&snapshot, "simple_file_after",
+                               AG_LANGUAGE_SYMBOL_OBJECT),
+              "simple remaining call argument hover snapshot");
+        ag_language_analysis_snapshot_dispose(&snapshot);
+        if (fresh_session)
+          ag_compilation_session_destroy(analysis_session);
+      }
+    }
+  }
+  ag_compilation_session_destroy(session);
+  return 0;
+}
+
 static int test_macro_definition_hover(ag_target_info_t target) {
   ag_compilation_session_t *session = ag_compilation_session_create(&target);
   CHECK(session != NULL, "macro definition session");
@@ -12184,6 +12338,11 @@ int main(int argc, char **argv) {
       strcmp(argv[1], "--direct-aggregate-operand-hover-parity-json") == 0)
     return print_direct_aggregate_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
+      strcmp(argv[1],
+             "--simple-remaining-call-argument-hover-parity-json") == 0)
+    return print_simple_remaining_call_argument_hover_parity_snapshot(
+        argv[2]);
+  if (argc == 3 &&
       strcmp(argv[1], "--cast-operand-hover-parity-json") == 0)
     return print_cast_operand_hover_parity_snapshot(argv[2]);
   if (argc == 3 &&
@@ -12347,6 +12506,8 @@ int main(int argc, char **argv) {
         "initializer operand hover scenarios");
   CHECK(test_direct_aggregate_operand_hover(target) == 0,
         "direct aggregate operand hover scenarios");
+  CHECK(test_simple_remaining_call_argument_hover(target) == 0,
+        "simple remaining call argument hover scenarios");
   CHECK(test_macro_definition_hover(target) == 0,
         "macro definition hover scenarios");
   CHECK(test_enum_documentation_analysis(target) == 0,
@@ -15447,6 +15608,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (66 scenarios)");
+  puts("language analysis tests passed (67 scenarios)");
   return 0;
 }
