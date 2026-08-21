@@ -39102,3 +39102,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象2 fixture、2 structured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。argument型変換、variadic、unprototyped call、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`break_outside_loop_or_switch`、`continue_outside_loop`、`case_outside_switch`、`default_outside_switch`の単純statement 4件だけをClang strictと比較し、statement keyword token選択だけで閉じる場合に限る。loop/switch CFG、VLA scope、nested control flow、deep expressionには入らない。
+
+### このセッション（続き1334）: loop/switch外statementのE3068 keyword位置を回帰固定した
+- 対象選定:
+  - 前回候補の`break_outside_loop_or_switch`、`continue_outside_loop`、`case_outside_switch`、`default_outside_switch`だけをClang C11 strict、Native、Wasmで比較した。
+  - loop/switch CFG、VLA scope、nested control flow、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 4件ともNative/Wasmは既にClangと同じ`break`、`continue`、`case`、`default` keyword先頭を指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへ4件のE3068 column 3を追加し、statement keywordから診断位置がずれないことを固定した。
+  - differential coverage表へloop/switch外statementのE3068 source位置方針を追記した。包含context判定、受理/拒否、E3068 ID・文言は変更していない。
+- 確認:
+  - 対象4 fixtureはClang strict、Native、Wasmの12/12経路がexit 1だった。Native/Wasm 8/8経路はE3068と対応するstatement keywordを報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.59秒 / user 2.96秒 / sys 0.29秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象4 fixtureの三系統比較と4 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。loop/switch CFG、VLA scope、nested control flow、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`duplicate_label`、`duplicate_default`、`goto_undefined_label`の単純label 3件だけをClang strictと比較し、label/default/goto target token選択だけで閉じる場合に限る。duplicate case値、case定数式、VLA goto scope、nested control flowには入らない。

@@ -20148,6 +20148,34 @@ static void test_parse_invalid(
       "E3103", 35);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) {\n"
+      "  break;\n"
+      "  return 0;\n"
+      "}",
+      "E3068", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  continue;\n"
+      "  return 0;\n"
+      "}",
+      "E3068", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  case 1:\n"
+      "    return 0;\n"
+      "}",
+      "E3068", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  default:\n"
+      "    return 0;\n"
+      "}",
+      "E3068", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
   expect_parse_fail_at_column(
       test_suite_session,
