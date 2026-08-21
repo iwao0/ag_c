@@ -6948,6 +6948,9 @@ const compoundLiteralNode = astSource.match(
 const genericAssociation = astSource.match(
   /typedef struct\s*\{([^{}]*)\}\s*psx_generic_association_t\s*;/,
 );
+const memberAccessNode = astSource.match(
+  /typedef struct\s*\{([^{}]*)\}\s*node_member_access_t\s*;/,
+);
 const sizeofQueryNode = astSource.match(
   /typedef struct\s*\{([^{}]*)\}\s*node_sizeof_query_t\s*;/,
 );
@@ -7035,6 +7038,28 @@ if (!/query->operand_token\s*=\s*curtok\(ctx\)->next\s*;\s*set_curtok\(ctx,\s*qu
     )?.length ?? 0) < 2) {
   throw new Error(
     "sizeof expression diagnostics must preserve the operand start token while type-name queries retain their operator source",
+  );
+}
+const directSizeofBitfieldCheck =
+  syntaxTypedHirResolutionSource.match(
+    /static\s+int\s+direct_sizeof_operand_is_bitfield\s*\([^]*?\n\}\n\nstatic\s+int\s+resolve_direct_sizeof_type_name/,
+  )?.[0] ?? "";
+if (!memberAccessNode ||
+    !/\btoken_t\s*\*\s*member_tok\s*;/.test(memberAccessNode[1]) ||
+    !/syntax->member_tok\s*=\s*\(token_t\s*\*\)member/.test(
+      parserExprSource,
+    ) ||
+    !/const\s+token_t\s*\*\*\s*member_token/.test(
+      directSizeofBitfieldCheck,
+    ) ||
+    !/is_bitfield\s*&&\s*member_token\s*&&\s*selected\s*==\s*operand[^]*?member_tok/.test(
+      directSizeofBitfieldCheck,
+    ) ||
+    !/const\s+token_t\s*\*\s*bitfield_member_token\s*=\s*NULL[^]*?direct_sizeof_operand_is_bitfield\s*\([^]*?&bitfield_member_token[^]*?note_direct_semantic_rejection_at_token\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_SIZEOF_BITFIELD[^]*?bitfield_member_token/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "direct sizeof bit-field diagnostics must retain the member token without changing generic-selection source policy",
   );
 }
 

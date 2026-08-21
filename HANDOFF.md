@@ -38552,3 +38552,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象13件のNative/Wasm直接拒否、対象expression/type-nameのClang strict source位置、positive 2件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。deep expression/declarator、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - incomplete/function型のtype-query位置は閉じた。次は直接memberの`sizeof(bit-field)` E3118だけを少数比較する。これはClangがoperand先頭でなくbit-field identifierを指すため、今回の`operand_token`を流用せず、既存member resolutionが保持するtokenだけで閉じる場合に限る。generic-selected bit-fieldや深い選択式には入らない。
+
+### このセッション（続き1310）: 直接bit-fieldのE3118をmember識別子へ移した
+- 対象選定:
+  - 既存`sizeof_bitfield` fixtureではClang C11 strictがmember名`value`を指す一方、Native/Wasmは`sizeof` keywordを指していた。pointer `->value`の単純probeでもClangはmember名を指した。
+  - multilineの`sizeof_generic_selected_bitfield`はClangが改行前の`(`直後を指す非token位置であり、generic selection内部のsource方針を変えず、直接dot/arrow memberだけを対象にした。bit-field値の派生式、深い選択式、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - `node_member_access_t`はmember文字列と`.` / `->` operator tokenを保持していたが、parse時に得ていたmember識別子tokenを捨てていた。そのためbit-field判定後にClangと同じtokenを選べず、E3118はqueryの`sizeof` tokenへfallbackしていた。
+  - member access Syntaxへ`member_tok`を保持する。direct `sizeof` bit-field判定はbit-field真偽に加えてtokenを返し、元operand自身がmember accessの場合だけtoken付きsemantic rejectionへ渡す。
+  - `direct_selected_expression()`でgeneric association内のmemberへ到達した場合は`selected != operand`なのでtokenを返さず、従来の`sizeof` sourceを維持する。bit-field判定、E3118 ID・文言、value category、integer promotion、未評価規則は変更していない。
+- coverage:
+  - parser member-access boundaryはmember名、識別子kind、byte offsetを直接固定した。structured diagnosticはdirect dotとarrowのE3118 columnをmember名位置で固定する。
+  - design invariantはmember token metadata、parse時保持、直接operandだけに限定したbit-field helperのtoken返却、token付きE3118 rejectionを固定し、user-facing文言のexact matchにはしていない。
+- 確認:
+  - `sizeof_bitfield` fixtureとarrow probeはClang strict、Native、Wasmがすべて拒否し、Native/WasmはE3118を維持してClangと同じ`value` tokenを指した。
+  - `sizeof_bitfield`と`sizeof_generic_selected_bitfield`のNative/Wasm 4/4経路はexit 1を維持し、generic-selected形はNative/Wasmとも従来の`sizeof`位置を維持した。
+  - positiveの`bitfield_derived_sizeof_boundaries`はClang strict、Native、Wasm objectの3/3経路ですべて受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.54秒 / user 2.99秒 / sys 0.28秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 14.01秒 / user 11.91秒 / sys 1.74秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.45秒 / user 0.78秒 / sys 0.48秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - direct dot/arrowのClang strict/Native/Wasm source位置、E3118正本2件、positive 1件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - direct `sizeof(bit-field)`位置は閉じた。次は既存`address_of_parenthesized_bitfield`の直接member E3113だけをClang strictと比較し、今回保持した`member_tok`を既存address bit-field rejectionへ渡すだけで閉じる場合に限る。`address_generic_selected_bitfield`や深いvalue-category伝播には入らない。

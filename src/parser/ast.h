@@ -93,6 +93,7 @@ typedef struct {
   node_t base;
   char *member_name;
   int member_name_len;
+  token_t *member_tok;
   unsigned char from_pointer;
 } node_member_access_t;
 

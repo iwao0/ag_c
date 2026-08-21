@@ -8434,6 +8434,9 @@ static void test_member_access_typed_hir_boundary(
   ASSERT_TRUE(!member_syntax->from_pointer);
   ASSERT_EQ(5, member_syntax->member_name_len);
   ASSERT_TRUE(strncmp(member_syntax->member_name, "value", 5) == 0);
+  ASSERT_TRUE(member_syntax->member_tok != NULL);
+  ASSERT_EQ(TK_IDENT, member_syntax->member_tok->kind);
+  ASSERT_EQ(7, member_syntax->member_tok->byte_offset);
   node_t *raw_base = member_syntax->base.lhs;
   psx_frontend_expression_hir_t access_expression =
       resolve_test_expression_hir(test_suite_session, raw_access);
@@ -20096,6 +20099,16 @@ static void test_parse_invalid(
       "struct incomplete; int main(void) { "
       "return _Alignof(struct incomplete); }",
       "E3117", 44);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct bits { unsigned int value:3; }; int main(void) { "
+      "struct bits object={0}; return sizeof object.value; }",
+      "E3118", 102);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct bits { unsigned int value:3; }; int main(void) { "
+      "struct bits *pointer=0; return sizeof pointer->value; }",
+      "E3118", 104);
   expect_parse_fail_at_column(
       test_suite_session,
       "_Static_assert(0, \"failure\"); int main(void) { return 0; }",

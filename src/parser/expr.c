@@ -144,6 +144,7 @@ static node_t *build_member_access(
   syntax->base.tok = op_tok;
   syntax->member_name = member->str;
   syntax->member_name_len = member->len;
+  syntax->member_tok = (token_t *)member;
   syntax->from_pointer = from_ptr ? 1 : 0;
   return (node_t *)syntax;
 }

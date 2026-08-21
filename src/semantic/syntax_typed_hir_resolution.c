@@ -1883,7 +1883,9 @@ static int validate_direct_type_query_type(
 
 static int direct_sizeof_operand_is_bitfield(
     direct_resolution_context_t *context,
-    const node_t *operand) {
+    const node_t *operand,
+    const token_t **member_token) {
+  if (member_token) *member_token = NULL;
   if (!context) return 0;
   context->unevaluated_depth++;
   context->suppress_value_decay_depth++;
@@ -1899,7 +1901,12 @@ static int direct_sizeof_operand_is_bitfield(
       1, &member);
   context->suppress_value_decay_depth--;
   context->unevaluated_depth--;
-  return resolved && member.member.declaration.bit_width > 0;
+  int is_bitfield =
+      resolved && member.member.declaration.bit_width > 0;
+  if (is_bitfield && member_token && selected == operand)
+    *member_token =
+        ((const node_member_access_t *)selected)->member_tok;
+  return is_bitfield;
 }
 
 static int resolve_direct_sizeof_type_name(
@@ -2414,12 +2421,14 @@ static int resolve_direct_type_query(
       resolved = resolve_direct_sizeof_type_name(
           context, query, binding);
     } else if (query->operand) {
+      const token_t *bitfield_member_token = NULL;
       if (direct_sizeof_operand_is_bitfield(
-              context, query->operand))
-        return note_direct_semantic_rejection(
+              context, query->operand,
+              &bitfield_member_token))
+        return note_direct_semantic_rejection_at_token(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_SIZEOF_BITFIELD,
-            syntax);
+            syntax, bitfield_member_token);
       const node_t *operand =
           direct_selected_expression(context, query->operand);
       if (!operand) return 0;
