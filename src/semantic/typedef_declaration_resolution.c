@@ -56,6 +56,14 @@ void psx_resolve_typedef_declaration(
     resolution->status = PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT;
     return;
   }
+  if (existing && existing->kind == PSX_DECL_TYPEDEF &&
+      psx_semantic_type_table_contains_vla_array(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          request->decl_qual_type.type_id)) {
+    resolution->status =
+        PSX_TYPEDEF_DECLARATION_VARIABLY_MODIFIED_REDECLARATION;
+    return;
+  }
   const psx_typedef_info_t info = {
       .decl_type_table = ps_ctx_semantic_type_table_in(semantic_context),
       .decl_qual_type = request->decl_qual_type,

@@ -43,6 +43,13 @@ void psx_diagnose_typedef_declaration_resolution_in(
                    "typedef名 '%.*s' の型が以前の宣言と異なります (C11 6.7p3)",
                    name_len, name);
     return;
+  case PSX_TYPEDEF_DECLARATION_VARIABLY_MODIFIED_REDECLARATION:
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "typedef",
+        "可変修飾型のtypedef名 '%.*s' は同じスコープで再宣言できません "
+        "(C11 6.7p3)",
+        name_len, name);
+    return;
   case PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT:
     ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
                    "'%.*s' はオブジェクトとして既に宣言されています (C11 6.7p4)",

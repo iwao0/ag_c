@@ -16005,6 +16005,20 @@ static void test_typedef_declaration_resolution_boundary(
       "typedef int ConflictType; "
       "typedef long ConflictType; "
       "int main(void) { return 0; }");
+  expect_parse_fail_with_message(test_suite_session,
+      "int function(int count) { typedef int Values[count]; "
+      "typedef int Values[count]; return 0; }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int function(int count) { typedef int (*Rows)[count]; "
+      "typedef int (*Rows)[count]; return 0; }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int function(int count) { typedef int Values[count]; "
+      "typedef Values Values; return 0; }", "E3064");
+  expect_parse_ok(test_suite_session,
+      "int function(int count) { typedef int Values[count]; "
+      "{ typedef int Values[count + 1]; Values inner; "
+      "inner[count] = 3; } Values outer; outer[count - 1] = 4; "
+      "return outer[count - 1]; }");
   expect_parse_fail(test_suite_session,
       "int TypeObject; typedef int TypeObject; "
       "int main(void) { return 0; }");

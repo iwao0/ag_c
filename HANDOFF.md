@@ -37833,3 +37833,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 正例を4経路、negative 5件を3 compilerで直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深い宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - singleton type-specifierの反復とfloating `long`個数は共通parser境界で閉じた。次も複雑なspecifier列へ広げず、通常サイズの別の宣言・型制約をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1279）: variably modified typedefの同一scope再宣言を拒否した
+- 対象選定:
+  - storage class、array、bit-fieldは既存coverageが厚いため避け、同一scopeのtypedef再宣言を通常サイズでClang C11 strictと比較した。scalar、同じsigned spelling、固定配列、function、alias経由、同一宣言内の同型typedefは双方が受理し、CV・配列bound・function parameter型が異なる再宣言は双方が拒否した。
+  - `typedef int Values[count]; typedef int Values[count];`とpointer-to-VLA版だけは、Clang strictが拒否する一方、ag_cが受理した。C11 6.7p3は同一scope・同型typedef再宣言の例外からvariably modified typeを除外している。
+  - 直接VLA、pointer-to-VLA、自身のtypedef alias経由と、内側scopeでの合法shadowまでに限定し、複雑なVLA bound式、goto、layout、security監査系には広げていない。
+- 原因と変更:
+  - 共通`psx_resolve_typedef_declaration`は同一scopeの既存typedefを見つけても、canonical TypeIdとqualifierが一致すれば一律再宣言として受理していた。型グラフがVLA arrayを含むかは登録後のruntime application保持とscope markerにだけ使われ、C11の再宣言制約には使われていなかった。
+  - 既存ordinary declarationがtypedefで、現在のcanonical型グラフがVLA arrayを含む場合は、登録前に専用`PSX_TYPEDEF_DECLARATION_VARIABLY_MODIFIED_REDECLARATION`へ戻す。file/blockのentry pathへ個別分岐を増やさず、共通resolverからE3064を発行する。
+  - 異なる内側scopeではcurrent-scope lookupに既存宣言がないため、同名VLA typedefの新規shadowを維持する。design invariantで既存typedef判定、canonical VLA検査、専用statusへの遷移を固定した。
+- coverage:
+  - parser unitへ直接VLA、pointer-to-VLA、alias経由の不正3形をE3064で追加し、内側scopeの同名VLA typedef shadowを合法対照として追加した。
+  - `typedef_redeclaration_boundaries`をNative/Wasm E2E一覧へ追加した。file/blockのscalar、固定配列、function typedefの同型再宣言と、外側/内側VLA typedefが別scopeで正しいruntime boundを持つことを実行確認する。
+  - should_rejectへ`repeated_vla_typedef`、`repeated_pointer_to_vla_typedef`、`repeated_vla_typedef_via_alias`を追加し、Native/Wasm compile-fail registryへE3064で登録した。
+- 確認:
+  - 正例fixtureはhost Clang strict、ag_c Native実行、WATの`wasm-interp`実行、Wasm object compile/validateがすべて成功し、WATは`main() => i32:0`だった。
+  - negative 3件はhost Clang strict、Native、Wasm objectがすべて拒否し、Native/Wasmは全件E3064で一致した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 4.84秒 / user 4.35秒 / sys 0.23秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、最終実行は**real 3.17秒 / user 0.75秒 / sys 0.45秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 19.19秒 / user 16.48秒 / sys 2.16秒**。
+  - self-host再生成`/usr/bin/time -p make wasm-selfhost-api` = **real 68.36秒 / user 66.00秒 / sys 1.45秒**。診断文の日本語調整後も対象を差分再生成してcurrentを確認した。`build/test_e2e`もwarningなしでビルドした。
+- 未実施:
+  - 正例を4経路、negative 3件を3 compilerで直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、複雑なVLA bound式、深い宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - typedefの通常同型再宣言とvariably modified例外は共通resolverで閉じた。次はVLA/gotoへ広げず、通常サイズの別の宣言または型制約をClang strictとの差分probeから選ぶ。

@@ -5050,6 +5050,13 @@ const typedefDeclarationResolutionHeader = await readFile(
   "src/semantic/typedef_declaration_resolution.h",
   "utf8",
 );
+if (!/existing\s*&&\s*existing->kind\s*==\s*PSX_DECL_TYPEDEF\s*&&\s*psx_semantic_type_table_contains_vla_array\s*\([^;]*request->decl_qual_type\.type_id\s*\)+\s*\{\s*resolution->status\s*=\s*PSX_TYPEDEF_DECLARATION_VARIABLY_MODIFIED_REDECLARATION\s*;\s*return\s*;\s*\}/.test(
+      typedefDeclarationResolutionSource,
+    )) {
+  throw new Error(
+    "same-scope typedef redefinition must reject variably modified canonical types",
+  );
+}
 const ordinarySemanticContextHeaderSource = await readFile(
   "src/parser/semantic_ctx.h",
   "utf8",
