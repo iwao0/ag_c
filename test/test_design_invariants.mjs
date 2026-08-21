@@ -7797,6 +7797,16 @@ const aggregateMemberSyntaxSource = await readFile(
   "src/parser/aggregate_member_syntax.c",
   "utf8",
 );
+if (!/find_type_name_forbidden_declaration_specifier\s*\([^]*?paren_depth[^]*?bracket_depth[^]*?brace_depth[^]*?type_name_declaration_specifier_is_forbidden\(token->kind\)[^]*?return\s+token/.test(
+      parserDeclarationSyntaxSource,
+    ) ||
+    !/type_name_has_forbidden_declaration_specifier\s*\([^]*?find_type_name_forbidden_declaration_specifier\s*\(\s*type_start,\s*current_token\(runtime_context\)\s*\)[^]*?source_token\s*\?\s*source_token\s*:\s*out->diagnostic_token/.test(
+      parserDeclarationSyntaxSource,
+    )) {
+  throw new Error(
+    "post-type storage and function specifier diagnostics must select the first top-level forbidden type-name token",
+  );
+}
 if (!/psx_aggregate_declaration_declares_only_enumerators\s*\([^]*?PSX_PARSED_TAG_DEFINITION[^]*?TK_ENUM[^]*?tag->is_anonymous[^]*?declarator->declarator_shape\.count\s*==\s*0/.test(
       aggregateMemberSyntaxSource,
     ) ||

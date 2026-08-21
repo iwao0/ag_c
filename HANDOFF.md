@@ -38362,3 +38362,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象2形をClang strict/Native/Wasmで直接確認し、既存3文脈を対照確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - block-scope extern voidの受理差はsource-token修正と分離した。次も既存identifier/keywordだけで閉じる通常サイズの宣言・statement制約をClang strictと少数比較し、式位置が必要なduplicate caseは保留する。
+
+### このセッション（続き1302）: post-type type-nameのE3064を禁止specifierへ移した
+- 対象選定:
+  - storage-class/function-specifier適用文脈の既存36fixtureをClang C11 strictとNativeで比較した。file/block/parameter/member/function definition、thread-local、typedef、function-pointer、hosted mainは既に同じidentifierまたはspecifier位置を指していた。
+  - `sizeof(int static)`だけはClangが`static`を指す一方、ag_cはtype-name先頭の`int`を指していた。通常サイズprobeで`extern`、`register`、`_Thread_local`、`typedef`、`inline`、`_Noreturn`、tag後置、typedef名後置も同じ差分と確認し、解析済みspecifier列だけで閉じた。
+  - `sizeof(int _Alignas(8))`はClangがwarningで受理しag_cが拒否する別の受理方針差なので、診断位置だけを`_Alignas`へ移して受理規則は変更していない。abstract declarator、式、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - type-nameが禁止specifierから始まる形は事前走査がkeywordを直接診断するが、builtin型・tag・typedef名から始まる形では事前走査が型tokenで停止し、解析後の禁止specifier判定が`out->diagnostic_token`へfallbackしていた。
+  - declaration specifier解析後の`type_start`から現在tokenまでをparen/bracket/brace depth付きで走査し、top-levelの最初のstorage/function specifierを選ぶ。tag bodyと`_Atomic(...)`内部は飛ばし、該当tokenがなければ従来のtype-name先頭へfallbackする。
+  - 診断ID・文言、型形成、受理可否、prefix形の専用診断は変更していない。design invariantはdepth境界と解析後source token選択を固定し、診断文言のexact matchにはしていない。
+- coverage:
+  - 既存`post_type_storage_class_in_type_name` fixtureがshould_reject正本とNative/Wasm共用compile-fail registryへ登録済みなので重複fixtureを追加していない。differential coverage表へpost-type固有の原因と非変更境界を追加した。
+- 確認:
+  - 既存post-static fixtureとpost-extern/inline/tag/typedef名probeはClang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3064を維持して実際の禁止specifier上で一致した。
+  - prefix-staticはNative/Wasmとも従来の`static`位置を維持した。匿名struct、`_Atomic(int)`、typedef arrayを含む合法type-nameはClang strict、Native、Wasm objectがすべて受理した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**3.52秒**。
+  - `make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**14.09秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**3.22秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 既存fixtureと通常サイズprobeをClang strict/Nativeで分類し、代表5形と合法対照をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - storage/function specifierの浅い診断位置はtype-name後置形まで閉じた。次も既存identifier/keywordだけで閉じる通常サイズの宣言・statement制約を比較し、`_Alignas`受理方針、block-scope extern void、duplicate caseの式位置は保留する。

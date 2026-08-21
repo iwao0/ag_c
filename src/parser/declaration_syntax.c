@@ -49,21 +49,47 @@ complete_decl_specifier_syntax_options(
   return storage;
 }
 
+static int type_name_declaration_specifier_is_forbidden(
+    token_kind_t kind) {
+  return kind == TK_THREAD_LOCAL || kind == TK_TYPEDEF ||
+         kind == TK_EXTERN || kind == TK_STATIC ||
+         kind == TK_AUTO || kind == TK_REGISTER ||
+         kind == TK_ALIGNAS || kind == TK_INLINE ||
+         kind == TK_NORETURN;
+}
+
 static void diagnose_type_name_storage_class(
     psx_parser_runtime_context_t *runtime_context, token_t *start) {
   for (token_t *token = start;
        token && psx_is_decl_prefix_token(token->kind);
        token = token->next) {
-    if (token->kind == TK_THREAD_LOCAL || token->kind == TK_TYPEDEF ||
-        token->kind == TK_EXTERN ||
-        token->kind == TK_STATIC || token->kind == TK_AUTO ||
-        token->kind == TK_REGISTER || token->kind == TK_ALIGNAS ||
-        token->kind == TK_INLINE || token->kind == TK_NORETURN) {
+    if (type_name_declaration_specifier_is_forbidden(token->kind)) {
       ps_diag_ctx_in(diagnostics(runtime_context),
           token, "cast", "%s",
           diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN));
     }
   }
+}
+
+static token_t *find_type_name_forbidden_declaration_specifier(
+    token_t *start, const token_t *end) {
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  for (token_t *token = start; token && token != end;
+       token = token->next) {
+    if (paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 &&
+        type_name_declaration_specifier_is_forbidden(token->kind))
+      return token;
+    if (token->kind == TK_LPAREN) paren_depth++;
+    else if (token->kind == TK_RPAREN && paren_depth > 0) paren_depth--;
+    else if (token->kind == TK_LBRACKET) bracket_depth++;
+    else if (token->kind == TK_RBRACKET && bracket_depth > 0)
+      bracket_depth--;
+    else if (token->kind == TK_LBRACE) brace_depth++;
+    else if (token->kind == TK_RBRACE && brace_depth > 0) brace_depth--;
+  }
+  return NULL;
 }
 
 static int type_name_has_forbidden_declaration_specifier(
@@ -327,8 +353,12 @@ static int parse_type_name_syntax_at(
     }
     if (type_name_has_forbidden_declaration_specifier(
             &out->specifier)) {
+      token_t *source_token =
+          find_type_name_forbidden_declaration_specifier(
+              type_start, current_token(runtime_context));
       ps_diag_ctx_in(
-          diagnostics(runtime_context), out->diagnostic_token,
+          diagnostics(runtime_context),
+          source_token ? source_token : out->diagnostic_token,
           "type-name", "%s",
           diag_message_for_in(
               diagnostics(runtime_context),
