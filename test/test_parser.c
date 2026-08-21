@@ -20817,12 +20817,17 @@ static void test_parse_invalid(
       "  return 0;\n"
       "}",
       "E3064", 2, 1);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* An atomic type specifier cannot name a const-qualified pointer "
+      "type. */\n"
       "int value;\n"
       "_Atomic(int * const) pointer = &value;\n"
-      "int main(void) { return 0; }",
-      "E3064", 1);
+      "\n"
+      "int main(void) {\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 3, 1);
   expect_parse_fail_at_column(
       test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);

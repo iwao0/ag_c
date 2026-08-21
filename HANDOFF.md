@@ -41011,3 +41011,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。incomplete pointer、recursive record、cross-translation-unit、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_const_pointer_type` fixtureの単一`_Atomic(int * const)` declarationだけをClang strict、Native、Wasmで比較し、const-qualified pointer拒否の診断IDと位置を行まで確認する。nested atomic pointer、typedef function qualifier、pointer target qualifierには入らない。
+
+### このセッション（続き1436）: atomic const-qualified pointerのE3064位置を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_const_pointer_type` fixtureにある、単一file-scope declaration `_Atomic(int * const) pointer = &value`だけをClang C11 strict、Native、Wasmで比較した。
+  - nested atomic pointer、typedef function qualifier、pointer target qualifier、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangはconst-qualified pointer typeを包む外側`_Atomic`を3行1列へ報告した。Native/Wasmも同じ`_Atomic`を3行1列でE3064と実トークン`_Atomic`として報告した。
+  - atomic type specifierのunqualified type要件を、内側pointer qualifierではなくspecifier開始位置で三系統が一致して報告することを確認した。
+  - 既存のE3064 column 1 assertionをfixtureと同じ先頭comment・value宣言・空行配置を持つE3064 position 3:1 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、pointer qualifier identity、atomic type resolution、initializer、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.64秒 / user 3.02秒 / sys 0.31秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。nested atomic pointer、typedef function qualifier、pointer target qualifier、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`nested_atomic_pointer_type` fixtureの単一`_Atomic(int * _Atomic)` declarationだけをClang strict、Native、Wasmで比較し、atomic-qualified pointer拒否の診断IDと位置を行まで確認する。restrict組合せ、typedef atomic pointer、function parameterには入らない。
