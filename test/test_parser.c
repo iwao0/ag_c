@@ -21843,10 +21843,13 @@ static void test_parse_invalid(
       "struct Item { enum { ITEM_READY=1 }; }; "
       "int main(void) { return 0; }",
       "E3064");
-  expect_parse_fail_with_message(test_suite_session,
-      "struct Item { enum State { STATE_READY=1 }; int value; }; "
-      "int main(void) { return 0; }",
-      "E3065");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Item {\n"
+      "  enum State { STATE_READY = 1 };\n"
+      "  int value;\n"
+      "};",
+      "E3065", 33);
   expect_parse_fail_with_message(test_suite_session,
       "struct Item { static enum { ITEM_READY=1 }; int value; }; "
       "int main(void) { return 0; }",

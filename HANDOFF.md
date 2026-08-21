@@ -40553,3 +40553,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。enumerator値式、nested enum、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`aggregate_named_enum_without_member` fixtureのnamed enum定義と後続の通常memberだけをClang strict、Native、Wasmで比較し、member declarator欠如制約の診断IDと位置を確認する。anonymous enum、nested aggregate、initializerには入らない。
+
+### このセッション（続き1412）: aggregate named enum without memberのE3065列を固定した
+- 対象選定:
+  - 前回候補の既存`aggregate_named_enum_without_member` fixtureにあるnamed enum定義 `enum State { STATE_READY = 1 };`と後続の通常memberだけをClang C11 strict、Native、Wasmで比較した。
+  - anonymous enum、nested aggregate、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangは宣言開始の`enum`を3行3列で「declaration does not declare anything」と報告した。Native/Wasmはmember declaratorがないことを確定する終端`;`を3行33列でE3065と実トークン`;`として報告した。
+  - 同種のnamed record/typedef型のmember declarator欠落もsemantic registrationが終端diagnostic tokenを使う設計なので、Clangの開始位置へ変えずNative/Wasm内部で一貫する欠落終端を固定した。
+  - 既存のIDだけを見る`expect_parse_fail_with_message`をfixture同様の改行と空白を持つE3065 column 33 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、enum identity、enumerator登録、通常member layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3065と実トークン`;`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.63秒 / user 3.02秒 / sys 0.29秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、同種診断source確認、structured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。anonymous enum、nested aggregate、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は対になる既存`aggregate_anonymous_enum_only` fixtureのanonymous enum定義だけをClang strict、Native、Wasmで比較し、enumerator宣言だけではaggregate named-member要件を満たさない診断のIDと位置を確認する。named enum、nested aggregate、initializerには入らない。
