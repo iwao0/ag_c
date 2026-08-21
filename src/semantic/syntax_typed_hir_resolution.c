@@ -4401,11 +4401,24 @@ static int preflight_direct_expression_impl(
         context->semantic_context, left_type, right_type,
         &resolution);
     if (resolution.status ==
-        PSX_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT)
-      return note_direct_semantic_rejection(
+        PSX_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT) {
+      const node_t *base =
+          resolution.swapped ? syntax->rhs : syntax->lhs;
+      psx_qual_type_t pointee =
+          psx_semantic_type_table_base(
+              direct_semantic_types(context),
+              resolution.base_qual_type.type_id);
+      if (!direct_qual_type_has_kind(
+              context, pointee, PSX_TYPE_FUNCTION))
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT,
+            syntax);
+      return note_direct_semantic_rejection_at_token(
           context,
           PSX_SYNTAX_TYPED_HIR_REJECTION_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT,
-          syntax);
+          syntax, base ? base->tok : NULL);
+    }
     if (resolution.status != PSX_SUBSCRIPT_OPERANDS_OK)
       return note_direct_semantic_rejection(
           context,

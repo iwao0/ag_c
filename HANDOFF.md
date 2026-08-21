@@ -38964,3 +38964,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3 fixture、float suffix 3 control、4つのstructured column、tokenizer/parserの直接gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。Unicode suffix、数値型体系、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 非Unicodeの単純tokenizer fixtureは一巡した。次は既存`address_of_rvalue`、`add_two_pointers`、`arrow_nonpointer_operand`の単純operator 3件だけをClang strictと比較し、operator token選択だけで閉じる場合に限る。pointer qualifier体系、複合式、deep expressionには入らない。
+
+### このセッション（続き1328）: function pointer subscriptのE3064を基底operandへ移した
+- 対象選定:
+  - 前回候補の`address_of_rvalue`、`add_two_pointers`、`arrow_nonpointer_operand`に続けて、`modulo_floating_operands`、`multiply_pointer`、`shift_floating_operand`、`unary_plus_pointer`、`subscript_int`、`subscript_function_pointer`の単一operator 9 fixtureだけをClang C11 strict、Native、Wasmで比較した。
+  - pointer qualifier体系、複合式、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - `&`、二項`+/%/*/<<`、`->`、単項`+`、両辺integerの`[`はNative/Wasmが既にClangと同じoperator tokenを指していたため、compiler sourceは変更しなかった。
+  - function pointer subscriptだけClangが実際のpointer-like operand `function`を指す一方、ag_cは共通subscript nodeの`[`を使っていた。subscript type resolutionの`swapped`で実際のbase operandを選び、pointeeがfunction型の場合だけ既存token override helperへbase tokenを渡す。
+  - `void *`と不完全object pointerはClangが`[`をcaretにするため、同じ`PSX_SUBSCRIPT_BASE_NOT_COMPLETE_OBJECT` statusでも従来のsubscript tokenを維持する。両辺integerの別statusも`[`を維持する。
+  - subscriptの受理/拒否、commutative operand解決、result型、E3064 ID・文言、他の単項・二項演算制約は変更していない。
+- coverage:
+  - structured diagnosticへ9 fixtureの`&`、`+`、`->`、`%`、`*`、`<<`、単項`+`、`[`、function operand各columnを追加した。
+  - function pointerの通常`function[0]`とreverse `0[function]`、`void *`、不完全object pointerを合わせた12列を固定し、後者2形と両辺integerが`[`を維持することも回帰化した。
+  - differential coverage表へfunction pointer subscriptだけ実base operand、void/incomplete/integer不正subscriptは`[`を指す境界を追記した。
+- 確認:
+  - 対象9 fixtureはClang strict、Native、Wasmの27/27経路がexit 1だった。Native/Wasm 18/18経路は期待するE3112/E3122/E3005/E3064とoperator/base tokenを報告した。
+  - 修正後のfunction/void/incomplete/integer subscriptとreverse function pointer probeはNative/Wasm 10/10経路がexit 1だった。function通常/reverse形は`function`、残り3形は`[`を維持した。probeファイルは確認後に削除した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_language_analysis`はwarningなしで成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、最終実行は**real 3.53秒**。
+  - `./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、並列実行は**real 13.66秒**。
+- 未実施:
+  - 対象9 fixture、subscript 4 control、12個のstructured column、parser/language-analysisの直接gateを確認したため、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer qualifier体系、複合式、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`deref_int`、`void_ptr_deref`、`logical_not_struct`の単純unary 3件だけをClang strictと比較し、operatorまたはoperand token選択だけで閉じる場合に限る。lvalue conversion全体、複合式、deep expressionには入らない。

@@ -20383,6 +20383,94 @@ static void test_parse_invalid(
       "E2020", 28);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) {\n"
+      "  int *invalid = &1;\n"
+      "  return *invalid;\n"
+      "}",
+      "E3112", 18);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int values[2];\n"
+      "  int *first = &values[0];\n"
+      "  int *second = &values[1];\n"
+      "  return (first + second) == 0;\n"
+      "}",
+      "E3122", 17);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct value { int member; };\n"
+      "int main(void) {\n"
+      "  struct value value = {1};\n"
+      "  return value->member;\n"
+      "}",
+      "E3005", 15);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  return (int)(5.0 % 2.0);\n"
+      "}",
+      "E3122", 20);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int value;\n"
+      "  int *pointer = &value;\n"
+      "  return (pointer * 2) == 0;\n"
+      "}",
+      "E3122", 19);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  return (int)(1.0 << 2);\n"
+      "}",
+      "E3122", 20);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int value;\n"
+      "  int *pointer = &value;\n"
+      "  return +pointer == 0;\n"
+      "}",
+      "E3064", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { int x = 5; return x[0]; }",
+      "E3064", 37);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "static int identity(int value) { return value; }\n"
+      "int main(void) {\n"
+      "  int (*function)(int) = identity;\n"
+      "  return function[0](7);\n"
+      "}",
+      "E3064", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "static int identity(int value) { return value; }\n"
+      "int main(void) {\n"
+      "  int (*function)(int) = identity;\n"
+      "  return 0[function](7);\n"
+      "}",
+      "E3064", 12);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  void *pointer = 0;\n"
+      "  pointer[0];\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Incomplete;\n"
+      "int main(void) {\n"
+      "  struct Incomplete *pointer = 0;\n"
+      "  return &pointer[0] == pointer;\n"
+      "}",
+      "E3064", 18);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Alignas((1, 16)) int value; int main(void) { return 0; }",
       "E3064", 10);
   expect_parse_fail_at_column(
