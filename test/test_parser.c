@@ -7220,6 +7220,15 @@ static void assert_direct_function_rejection(
                   ? TK_PLUSEQ
                   : TK_ASSIGN,
               failure.source_token->kind);
+  } else if (expected_rejection ==
+             PSX_SYNTAX_TYPED_HIR_REJECTION_DECLARATION_VOID_OBJECT) {
+    ASSERT_TRUE(failure.source_token != NULL);
+    ASSERT_EQ(TK_IDENT, failure.source_token->kind);
+    const token_ident_t *source_identifier =
+        (const token_ident_t *)failure.source_token;
+    ASSERT_EQ(failure.source_name_length, source_identifier->len);
+    ASSERT_TRUE(memcmp(failure.source_name, source_identifier->str,
+                       source_identifier->len) == 0);
   }
 
   ps_dispose_function_definition_syntax(

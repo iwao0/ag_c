@@ -38339,3 +38339,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新旧3fixtureと通常サイズprobeをClang strict/Nativeで分類し、対象8形と対照3形をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - void parameterのnamed/unqualified delimiter/qualified/sole marker診断位置は閉じた。次も既存tokenだけで閉じるparameter・statement制約を少数比較し、duplicate caseの式位置は保留する。
+
+### このセッション（続き1301）: local void objectのE3087を宣言名へ移した
+- 対象選定:
+  - 浅い宣言制約としてstandalone tagの不正specifier 6形とcomplete-object型制約をClang C11 strictとNativeで比較した。standalone tag、void array、未完成enum object/member、empty enumは既に同じspecifier・宣言子・brace位置を指していたため変更しなかった。
+  - `void value;`の通常localとtypedef-void localだけはClangが宣言名を指す一方、direct Syntax preflightがlocal declaration先頭の型tokenを指していた。file-scopeとstatic localは既に宣言名を指していたため、通常localの既存identifier tokenだけで閉じた。
+  - block-scope `extern void value;`はClang受理/ag_c拒否という別の受理差だったため分離した。declarator内部、initializer・式、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - direct local void-object rejectionは宣言名文字列をfailureへ保持していたが、汎用named rejectionがsource node先頭tokenを選んでいた。
+  - undefined goto用に既存のsource token明示helperへ保存済みdeclarator identifierを渡す。failure理由、source node kind、宣言名、型形成、受理可否、診断ID・文言は変更していない。
+  - parser unitはfailure sourceがidentifier tokenで、保持した宣言名と一致することを固定する。design invariantもvoid-object分岐がidentifierを渡すことを固定し、診断文言のexact matchにはしていない。
+- coverage:
+  - 通常localは既存`void_variable` fixtureがNative/Wasm共用compile-fail registryへ登録済みなので重複fixtureを追加していない。typedef-void localは同じdirect branchを一時probeで確認し、differential coverage表へsource token境界を追記した。
+- 確認:
+  - 通常localとtypedef-void localはClang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3087を維持して宣言名`x`/`value`上で一致した。
+  - file-scope、static local、void arrayはNativeで従来の宣言名位置を維持した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**3.52秒**。
+  - `make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**14.11秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**3.25秒**。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象2形をClang strict/Native/Wasmで直接確認し、既存3文脈を対照確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - block-scope extern voidの受理差はsource-token修正と分離した。次も既存identifier/keywordだけで閉じる通常サイズの宣言・statement制約をClang strictと少数比較し、式位置が必要なduplicate caseは保留する。

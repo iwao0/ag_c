@@ -9082,10 +9082,10 @@ static int preflight_direct_local_declaration(
         psx_semantic_type_table_contains_vla_array(
             semantic_types, decl_qual_type.type_id);
     if (has_type && type_shape.kind == PSX_TYPE_VOID)
-      return note_direct_named_rejection(
+      return note_direct_named_rejection_at_token(
           context,
           PSX_SYNTAX_TYPED_HIR_REJECTION_DECLARATION_VOID_OBJECT,
-          &syntax->base, name->str, name->len);
+          &syntax->base, (token_t *)name, name->str, name->len);
     if (!has_type || (!psx_type_kind_is_scalar(type_shape.kind) &&
                   !is_incomplete_fixed_array &&
                   !is_complete_fixed_array &&

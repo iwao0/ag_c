@@ -6201,6 +6201,13 @@ if (!/struct\s+direct_vm_scope_marker_t\s*\{[^]*?direct_vm_scope_marker_t\s*\*pa
     "goto validation must reject entry into scopes of variably modified identifiers while preserving label identity in the scope graph",
   );
 }
+if (!/type_shape\.kind\s*==\s*PSX_TYPE_VOID[^]*?note_direct_named_rejection_at_token\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DECLARATION_VOID_OBJECT,[^]*?&syntax->base,\s*\(token_t\s*\*\)name,\s*name->str,\s*name->len/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "direct local void-object rejection must preserve the declared identifier as its diagnostic source token",
+  );
+}
 if (!/struct\s+direct_switch_scope_t\s*\{[^]*?direct_vm_scope_marker_t\s*\*entry_vm_scope\s*;[^]*?\}/.test(
       syntaxTypedHirResolutionSource,
     ) ||
