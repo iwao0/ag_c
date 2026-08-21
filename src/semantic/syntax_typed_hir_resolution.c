@@ -4435,7 +4435,7 @@ static int preflight_direct_expression_impl(
       if (!resolve_direct_member_access(
               context,
               (const node_member_access_t *)operand_syntax,
-              1, &member))
+              operand_is_lvalue, &member))
         return 0;
       operand_is_bitfield =
           member.member.declaration.bit_width > 0;

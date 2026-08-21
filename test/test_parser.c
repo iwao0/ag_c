@@ -11483,6 +11483,14 @@ static void test_direct_function_typed_hir_resolution_boundary(
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
       ND_ADDRESS_OF);
   assert_direct_function_rejection(test_suite_session,
+      "struct __direct_address_pair { int value; } "
+      "__direct_make_pair(void) { "
+      "if (&__direct_make_pair().value) "
+      "return (struct __direct_address_pair){2}; "
+      "return (struct __direct_address_pair){3}; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
+      ND_ADDRESS_OF);
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_address_bitfield(void) { "
       "struct S { int bits:3; } value={1}; return &value.bits != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,

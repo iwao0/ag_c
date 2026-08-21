@@ -38046,3 +38046,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象negative 3件を3 compiler、positiveを3 compilerで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - Atomic aggregateの直接member accessは共通resolverで閉じた。次も通常サイズの別の宣言・statement制約を少数のClang strict probeから選び、長時間suiteは対応するfocused gateがない場合だけ追加を検討する。
+
+### このセッション（続き1288）: aggregate戻り値memberのaddress診断をE3112へ修正した
+- 対象選定:
+  - labeled statement、`for`初期宣言、return/jump/switch、`_Generic` association型は既存のClang strict・Native/Wasm coverageで閉じていたため重複修正しなかった。通常サイズのvalue-category probeへ移り、aggregate戻り値memberの代入と`++`は既にE3062で拒否し、読み取りは受理することを確認した。
+  - `&make_pair().value`だけはClang `-std=c11 -pedantic-errors`が非lvalueとして拒否する一方、ag_cは構造化診断を作れずE0006へ落ちた。compound literal memberのaddressはC11で合法な対照として双方が受理した。深い式、巨大入力、resource/security監査系へは広げていない。
+- 原因と変更:
+  - address-of preflightは最初のlvalue判定に失敗した後、operand型を得るためaggregate戻り値memberをrvalue式として正しく解決していた。しかしbit-field確認時だけmember resolverへ固定値`require_lvalue_object=1`を渡し、共通address-operand resolverがE3112を選ぶ前に無診断失敗していた。
+  - bit-field確認のmember再解決へ既に確定した`operand_is_lvalue`を渡す。rvalue memberはmember型・属性を取得した上で`PSX_ADDRESS_OPERAND_NOT_ADDRESSABLE`から既存`PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE`へ進み、`&` token上のE3112になる。lvalue memberのbit-field/register判定とcompound literal memberは従来経路を維持する。
+  - design invariantはaddress preflightがmember再解決へ同じvalue categoryを渡すことを固定し、診断文言のexact matchにはしていない。
+- coverage:
+  - parser direct Typed HIR unitへaggregateを返す再帰callのmember addressを追加し、構造化rejectionと`ND_ADDRESS_OF`を検査した。
+  - should_rejectへ`address_of_aggregate_return_member`を追加し、Native/Wasm共用compile-fail registryへE3112で登録した。differential coverage表とfixture一覧も更新した。
+- 確認:
+  - 新規negativeはhost Clang strict、ag_c Native、Wasm objectがすべて拒否し、Native/Wasmは`&` token上のE3112で一致した。
+  - aggregate戻り値memberの読み取りとcompound literal memberのaddressはClang strict、ag_c Native、Wasm objectがすべて受理した。
+  - 既存`bitfield_addr`と`address_generic_selected_bitfield`はNative/WasmともE3113、`address_of_register_struct_member`は両方E3119を維持した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、最終実行は**real 3.60秒 / user 3.11秒 / sys 0.24秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.20秒 / user 11.48秒 / sys 1.50秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.37秒 / user 0.76秒 / sys 0.49秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_e2e`はwarningなしで成功し、対象差分ビルドは**real 0.76秒**だった。
+- 未実施:
+  - 新規negativeと合法対照2件を3 compiler、隣接する既存negative 3件をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - address-ofのrvalue member分類は既存共通resolverへ接続した。次も通常サイズのvalue categoryまたは宣言制約を少数のClang strict probeから選び、既存coverage済みの領域は再実装しない。

@@ -5788,6 +5788,10 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "address_of_conditional_result.c",
      "E3112"},
+    {"address_of_aggregate_return_member_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "address_of_aggregate_return_member.c",
+     "E3112"},
     {"bitfield_addr_rejected",
      "fixture:test/fixtures/should_reject/bitfield_addr.c",
      "E3113"},

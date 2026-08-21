@@ -12010,6 +12010,9 @@ if (
   ) ||
   /syntax->lhs->kind\s*==\s*ND_GENERIC_SELECTION/.test(
     directAddressPreflight[0],
+  ) ||
+  !/resolve_direct_member_access\s*\(\s*context,\s*\(const node_member_access_t \*\)operand_syntax,\s*operand_is_lvalue,\s*&member\s*\)/.test(
+    directAddressPreflight[0],
   )
 ) {
   throw new Error(
