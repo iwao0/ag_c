@@ -39352,3 +39352,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。type-name operand、複数alignas、alignment評価、register/bit-field、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`alignas_register_object`と`alignas_bitfield`の単純object/member適用2件だけをClang strictと比較し、`_Alignas` keyword選択だけで閉じる場合に限る。複数alignas、alignment評価、anonymous bit-field、nested declaratorには入らない。
+
+### このセッション（続き1347）: register object/bit-field AlignasのE3064列を回帰固定した
+- 対象選定:
+  - 前回候補の`alignas_register_object`と`alignas_bitfield`だけをClang C11 strict、Native、Wasmで比較した。
+  - 複数alignas、alignment評価、anonymous bit-field、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 2件ともNative/Wasmは既にClangと同じ`_Alignas` keywordを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへregister object内`_Alignas`のE3064 column 12と、named bit-field内`_Alignas`のE3064 column 3を追加した。
+  - differential coverage表には不正適用時に`_Alignas` keywordを指す方針が既に記載済みだったため、重複する文書変更は加えていない。alignment制約、受理/拒否、診断ID・文言は変更していない。
+- 確認:
+  - 対象2 fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はE3064と`_Alignas`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.70秒 / user 3.02秒 / sys 0.33秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。複数alignas、alignment評価、anonymous bit-field、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`alignas_non_power_of_two`と`alignas_weaker_than_natural`の単純integer literal alignment 2件だけをClang strictと比較し、`_Alignas` keywordまたはliteral token選択だけで閉じる場合に限る。非ICE、overflow、comma/binary expression、type-name operandには入らない。

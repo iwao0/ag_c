@@ -20419,6 +20419,20 @@ static void test_parse_invalid(
       "E3064", 9);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) {\n"
+      "  register _Alignas(8) int value = 0;\n"
+      "  return value;\n"
+      "}",
+      "E3064", 12);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct record {\n"
+      "  _Alignas(8) unsigned int bit : 1;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
   expect_parse_fail_at_column(
       test_suite_session,
