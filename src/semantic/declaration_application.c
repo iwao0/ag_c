@@ -43,7 +43,10 @@ int psx_apply_parsed_enum_body_in_contexts(
     long long value = 0;
     if (!psx_resolve_enum_member_value_in_contexts(
             semantic_context, global_registry, local_registry,
-            member->initializer, (token_t *)member->enumerator,
+            member->initializer,
+            member->initializer_token
+                ? member->initializer_token
+                : (token_t *)member->enumerator,
             next_value, &value))
       return i;
     psx_apply_parsed_enum_constant_in(

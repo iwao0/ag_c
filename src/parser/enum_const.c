@@ -44,9 +44,12 @@ void psx_parse_enum_body_syntax(
           diag_text_for_in(
               context->diagnostics, DIAG_TEXT_ENUMERATOR_NAME));
     }
-    if (tk_consume_ctx(tokenizer_context, '='))
+    if (tk_consume_ctx(tokenizer_context, '=')) {
+      member->initializer_token =
+          tk_get_current_token_ctx(tokenizer_context);
       member->initializer = context->parse_assignment_expression(
           context->expression_context);
+    }
     ps_name_classifier_declare(
         context->name_classifier, (token_t *)member->enumerator, 0);
     if (tk_consume_ctx(tokenizer_context, '}')) break;

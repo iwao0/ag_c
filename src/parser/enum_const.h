@@ -10,6 +10,7 @@ typedef struct node_t node_t;
 
 typedef struct {
   token_ident_t *enumerator;
+  token_t *initializer_token;
   node_t *initializer;
 } psx_parsed_enum_member_t;
 

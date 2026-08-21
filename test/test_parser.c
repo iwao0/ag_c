@@ -14963,11 +14963,23 @@ static void test_aggregate_body_phase_boundary(
       body.items[4].value.member_declaration.specifier
           .tag_action.enum_body;
   ASSERT_EQ(2, phase_enum_body->member_count);
+  ASSERT_TRUE(phase_enum_body->members[0].initializer_token != NULL);
+  ASSERT_EQ(TK_NUM,
+            phase_enum_body->members[0].initializer_token->kind);
+  ASSERT_TRUE(phase_enum_body->members[0].initializer_token ==
+              phase_enum_body->members[0].initializer->tok);
   ASSERT_TRUE(phase_enum_body->members[1].initializer != NULL);
+  ASSERT_TRUE(phase_enum_body->members[1].initializer_token != NULL);
+  ASSERT_EQ(TK_IDENT,
+            phase_enum_body->members[1].initializer_token->kind);
   ASSERT_EQ(ND_ADD,
             phase_enum_body->members[1].initializer->kind);
   ASSERT_EQ(ND_IDENTIFIER,
             phase_enum_body->members[1].initializer->lhs->kind);
+  ASSERT_TRUE(phase_enum_body->members[1].initializer_token ==
+              phase_enum_body->members[1].initializer->lhs->tok);
+  ASSERT_TRUE(phase_enum_body->members[1].initializer_token !=
+              phase_enum_body->members[1].initializer->tok);
   const node_identifier_t *phase_enum_identifier =
       (const node_identifier_t *)
           phase_enum_body->members[1].initializer->lhs;
@@ -20128,6 +20140,23 @@ static void test_parse_invalid(
       test_suite_session,
       "int main(void) { switch (1) { case (1, 1): return 0; } }",
       "E3064", 36);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "enum values { VALUE = 1.0 }; int main(void) { return 0; }",
+      "E3064", 23);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "enum values { VALUE = (1, 2) }; int main(void) { return 0; }",
+      "E3064", 23);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "enum values { VALUE = (int)(1.0 + 2.0) }; "
+      "int main(void) { return 0; }",
+      "E3064", 23);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { enum values { VALUE = 1.0 }; return 0; }",
+      "E3064", 40);
   expect_parse_fail_at_column(
       test_suite_session,
       "_Static_assert(0, \"failure\"); int main(void) { return 0; }",

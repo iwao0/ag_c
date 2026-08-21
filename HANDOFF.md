@@ -38600,3 +38600,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3件のClang strict/Native/Wasm source位置、隣接control 2件、positive 2件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。duplicate case式、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 非整数・非定数caseの位置は閉じた。次は同じ整数定数式制約の既存`enum_{float,comma}_constant`と`enum_floating_expression_cast`だけを少数比較し、enumerator initializer先頭tokenの伝播だけで閉じる場合に限る。enumerator値の依存解決、重複、深い定数式には入らない。
+
+### このセッション（続き1312）: 不正な明示enumerator initializerのE3064を式先頭へ移した
+- 対象選定:
+  - `enum_float_constant`、`enum_comma_constant`、`enum_floating_expression_cast`だけをClang C11 strictと比較した。Clangはinitializer先頭の`1.0`または`(`を指す一方、Native/Wasmはenumerator名`VALUE`へ固定していた。
+  - enumerator値の依存解決・重複、signed overflow、深い定数式、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - `psx_parsed_enum_member_t`はenumerator tokenとinitializer ASTを保持していたが、`=`直後のinitializer先頭tokenを捨てていた。さらにfile-scope通常適用とblock/direct specifier解決の両call siteが、明示・暗黙を問わずenumerator tokenを共通resolverへ渡していた。
+  - enum body parseで`=`消費直後、assignment expressionをparseする前のcurrent tokenを`initializer_token`としてSyntaxへ保持する。両semantic entry pathは明示initializerならこのtoken、initializerなしなら従来のenumerator tokenを診断位置として選ぶ。
+  - enum initializer evaluator、依存lookup、値登録、重複判定、整数定数式適格性、`int`範囲検査、診断ID・文言は変更していない。暗黙採番のoverflow位置もenumerator名のまま維持する。
+- coverage:
+  - aggregate parser phase boundaryはliteral initializerのtokenが数値AST tokenと一致し、`PhaseEnumZero + 2`の先頭identifier tokenがAST rootの`+` tokenとは別に保持されることを直接固定した。
+  - structured diagnosticはfile-scopeのfloating、parenthesized comma、floating expression castと、block-scope floating initializerのE3064 columnをinitializer先頭で固定した。design invariantはparse前captureと両semantic entry pathの明示/暗黙token選択を固定し、Syntax ASTの不変境界を維持する。
+- 確認:
+  - 対象3件はClang strict、Native、Wasmがすべて拒否し、Native/WasmはE3064を維持してClangと同じ`1.0`、`(`、`(` tokenを指した。Native/Wasm 6/6経路はexit 1だった。
+  - `enum_implicit_value_overflow`と`local_enum_implicit_value_overflow`はNative/Wasm 4/4経路でE3064と従来の`BOUNDARY_NEXT` / `LOCAL_BOUNDARY_NEXT`位置を維持した。
+  - positiveの`control_flow_enum_compound_boundaries`はClang strict、Native、Wasm objectの3/3経路ですべて受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.67秒 / user 3.06秒 / sys 0.28秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.75秒 / user 11.88秒 / sys 1.68秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.18秒 / user 0.79秒 / sys 0.53秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象3件のClang strict/Native/Wasm source位置、暗黙overflow control 2件、positive 1件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。enumerator依存・重複、signed overflow、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - enum initializer位置は閉じた。次は既存`bitfield_{floating_type,nonconstant_width,comma_width}`の単純なwidth制約だけを少数比較し、width式先頭tokenの伝播だけで閉じる場合に限る。width overflow、bit-field型体系、深い定数式には入らない。

@@ -5469,13 +5469,16 @@ const enumBodySyntaxBoundary = enumConstSource.match(
   /void\s+psx_parse_enum_body_syntax\s*\([^]*?\n\}/,
 )?.[0] ?? "";
 if (!/node_t\s*\*initializer\s*;/.test(enumConstHeader) ||
+    !/token_t\s*\*initializer_token\s*;/.test(enumConstHeader) ||
     /psx_parsed_enum_expr_t|PSX_ENUM_EXPR_/.test(
       `${enumConstHeader}\n${enumBodySyntaxBoundary}`,
     ) ||
     /psx_semantic_context_t|ps_ctx_|psx_(?:parse|eval)_.*const_expr/.test(
       `${enumConstHeader}\n${enumConstSource}`,
     ) ||
-    !/parse_assignment_expression\s*\(/.test(enumBodySyntaxBoundary) ||
+    !/tk_consume_ctx\(\s*tokenizer_context,\s*'='\s*\)\s*\)\s*\{[^]*?member->initializer_token\s*=\s*tk_get_current_token_ctx\(tokenizer_context\)[^]*?member->initializer\s*=\s*context->parse_assignment_expression/.test(
+      enumBodySyntaxBoundary,
+    ) ||
     /psx_semantic_context_t|ps_ctx_|psx_resolve_/.test(
       enumBodySyntaxBoundary,
     ) ||
@@ -5498,7 +5501,13 @@ if (!/resolve_representable_enum_value\s*\([^]*?candidate\s*<\s*INT_MIN\s*\|\|\s
     !/psx_resolve_enum_member_value_in_contexts\s*\([^]*?member->initializer[^]*?next_value/.test(
       declarationApplicationSource,
     ) ||
+    !/member->initializer_token\s*\?\s*member->initializer_token\s*:\s*\(token_t\s*\*\)member->enumerator/.test(
+      declarationApplicationSource,
+    ) ||
     !/psx_resolve_enum_member_value_in_contexts\s*\([^]*?member->initializer[^]*?next_value/.test(
+      declarationSpecifierResolutionSource,
+    ) ||
+    !/member->initializer_token\s*\?\s*member->initializer_token\s*:\s*\(token_t\s*\*\)member->enumerator/.test(
       declarationSpecifierResolutionSource,
     )) {
   throw new Error(
