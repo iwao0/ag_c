@@ -663,7 +663,7 @@ int psx_validate_parsed_standalone_tag_specifier_constraints_in_context(
   return 1;
 }
 
-static token_t *declaration_specifier_token_for_kinds(
+token_t *psx_declaration_specifier_token_for_kinds(
     const psx_parsed_decl_specifier_t *specifier,
     token_t *fallback, const token_kind_t *kinds, int kind_count) {
   token_t *token = specifier ? specifier->diagnostic_token : NULL;
@@ -694,7 +694,7 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   if (psx_semantic_type_table_has_cv_qualified_function(
           ps_ctx_semantic_type_table_in(semantic_context),
           declared_type)) {
-    token_t *source_token = declaration_specifier_token_for_kinds(
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
         specifier, diagnostic_token,
         (const token_kind_t[]){TK_CONST, TK_VOLATILE}, 2);
     ps_diag_ctx_in(
@@ -706,7 +706,7 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   if (psx_semantic_type_table_has_invalid_restrict_qualification(
           ps_ctx_semantic_type_table_in(semantic_context),
           declared_type)) {
-    token_t *source_token = declaration_specifier_token_for_kinds(
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
         specifier, diagnostic_token,
         (const token_kind_t[]){TK_RESTRICT}, 1);
     ps_diag_ctx_in(
@@ -718,7 +718,7 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   }
   if (psx_semantic_type_has_invalid_atomic_qualification_in(
           semantic_context, declared_type)) {
-    token_t *source_token = declaration_specifier_token_for_kinds(
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
         specifier, diagnostic_token,
         (const token_kind_t[]){TK_ATOMIC}, 1);
     ps_diag_ctx_in(
@@ -781,7 +781,7 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   }
   if (declaration_context == PSX_DECLARATION_CONTEXT_MEMBER &&
       psx_decl_specifier_has_storage_class(specifier)) {
-    token_t *source_token = declaration_specifier_token_for_kinds(
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
         specifier, diagnostic_token,
         (const token_kind_t[]){
             TK_TYPEDEF, TK_EXTERN, TK_STATIC, TK_AUTO, TK_REGISTER,
@@ -796,7 +796,7 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   if (is_parameter &&
       (has_typedef || type_spec->is_extern || type_spec->is_static ||
        type_spec->is_auto || type_spec->is_thread_local)) {
-    token_t *source_token = declaration_specifier_token_for_kinds(
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
         specifier, diagnostic_token,
         (const token_kind_t[]){
             TK_TYPEDEF, TK_EXTERN, TK_STATIC, TK_AUTO, TK_THREAD_LOCAL},
@@ -810,7 +810,7 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   if (declaration_context == PSX_DECLARATION_CONTEXT_FILE &&
       (type_spec->is_auto || type_spec->is_register)) {
     token_t *source_token = is_function
-        ? declaration_specifier_token_for_kinds(
+        ? psx_declaration_specifier_token_for_kinds(
               specifier, diagnostic_token,
               (const token_kind_t[]){TK_AUTO, TK_REGISTER}, 2)
         : diagnostic_token;
@@ -829,7 +829,7 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
         TK_THREAD_LOCAL, TK_AUTO, TK_REGISTER};
     const token_kind_t block_kinds[] = {
         TK_THREAD_LOCAL, TK_AUTO, TK_REGISTER, TK_STATIC};
-    token_t *source_token = declaration_specifier_token_for_kinds(
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
         specifier, diagnostic_token,
         declaration_context == PSX_DECLARATION_CONTEXT_BLOCK
             ? block_kinds
@@ -845,7 +845,7 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
       declaration_context == PSX_DECLARATION_CONTEXT_BLOCK &&
       type_spec->is_thread_local &&
       !type_spec->is_static && !type_spec->is_extern) {
-    token_t *source_token = declaration_specifier_token_for_kinds(
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
         specifier, diagnostic_token,
         (const token_kind_t[]){TK_THREAD_LOCAL}, 1);
     ps_diag_ctx_in(
@@ -857,7 +857,7 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   if ((specifier->type_spec.is_inline ||
        specifier->type_spec.is_noreturn) &&
       (has_typedef || is_parameter || is_bitfield || !is_function)) {
-    token_t *source_token = declaration_specifier_token_for_kinds(
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
         specifier, diagnostic_token,
         (const token_kind_t[]){TK_INLINE, TK_NORETURN}, 2);
     ps_diag_ctx_in(
@@ -1187,8 +1187,15 @@ void psx_apply_parsed_function_parameters_in_contexts(
             semantic_context, global_registry, local_registry,
             &parameter->specifier);
     if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
-      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parameter->specifier.diagnostic_token, "param", "%s",
-                   diag_message_for_in(ps_ctx_diagnostics(semantic_context), DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
+      token_t *source_token = psx_declaration_specifier_token_for_kinds(
+          &parameter->specifier, parameter->declarator.diagnostic_token,
+          (const token_kind_t[]){TK_RESTRICT}, 1);
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context), source_token,
+          "param", "%s",
+          diag_message_for_in(
+              ps_ctx_diagnostics(semantic_context),
+              DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
     psx_type_shape_t base_shape = {0};
     if (!psx_semantic_type_table_describe(

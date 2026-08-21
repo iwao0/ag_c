@@ -74,6 +74,9 @@ int psx_resolve_parsed_decl_alignment_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_parsed_decl_specifier_t *specifier);
+token_t *psx_declaration_specifier_token_for_kinds(
+    const psx_parsed_decl_specifier_t *specifier,
+    token_t *fallback, const token_kind_t *kinds, int kind_count);
 int psx_validate_parsed_decl_specifier_constraints_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier,

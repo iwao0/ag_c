@@ -38248,3 +38248,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 既存19fixtureをClang strict/Nativeで分類し、変更対象10形と対照4形をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - parameterの`int restrict value`はparameter base-type resolution失敗がspecifier開始`int`へ粗く診断される。full parameter syntaxが保持するspecifierからdeclaratorまでの範囲だけで`restrict`を選べるかを確認する。
+
+### このセッション（続き1297）: scalar parameterのrestrict診断をqualifierへ移した
+- 対象選定:
+  - 前回分離した`int restrict value`を、prototype宣言、通常のfunction definition、旧形式definitionの3形でClang C11 strictと比較した。Clangは3形とも`restrict`を指して拒否したが、ag_c Nativeはprototype適用とdefinition pipelineの別fallbackからspecifier開始`int`を指していた。
+  - parameter syntaxはspecifier開始とdeclarator直前tokenを既に保持していたため、その限定範囲だけで閉じた。parameter declarator、式、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - scalarへの`restrict`はdeclarator適用前のbase qualifier形成でinvalid型になり、prototype側は汎用member-type診断、definition側はcanonical base-type診断へ変換していた。両方がspecifier開始tokenを無条件で使っていた。
+  - 前回まで共通declaration-specifier validatorだけで使っていた限定token走査helperを共有APIにし、両parameter fallbackがspecifier開始からparameter declarator直前までの`TK_RESTRICT`を選ぶ。対象kindがなければ従来tokenへfallbackするため、他のbase-type失敗は変更しない。
+  - 型形成、受理可否、parameter adjustment、pointerへの合法な`restrict`、CV/Atomic parameterの既存専用診断は変更していない。design invariantはprototype/definition双方の限定走査を固定し、診断文言のexact matchにはしていない。
+- coverage:
+  - 既存のdefinition fixture `restrict_nonpointer_parameter`に加え、別入口のprototype宣言を`restrict_nonpointer_parameter_declaration`としてshould_reject正本とNative/Wasm共用compile-fail registryへ追加した。旧形式definitionは通常definitionと同じappend pathを通るため重複fixtureにせず直接確認した。
+  - differential coverage表へparameter固有の原因、修正境界、非変更領域を追加した。
+- 確認:
+  - prototype宣言、通常definition、旧形式definitionはClang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3064を維持して実際の`restrict` token上で一致した。
+  - `restrict_nonpointer_prefix`、`const_function_typedef_parameter`、`atomic_typedef_function_parameter`はNative/Wasmとも従来の`restrict`、`const`、`_Atomic`位置を維持した。合法な`int *restrict` parameterはNative/Wasmとも受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.53秒 / user 3.05秒 / sys 0.22秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.09秒 / user 11.57秒 / sys 1.51秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.13秒 / user 0.74秒 / sys 0.38秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e`はwarningなしで成功した。
+- 未実施:
+  - 新旧2fixtureと旧形式probeをClang strict/Native/Wasm objectで直接確認し、隣接3対照もNative/Wasmで確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 共通specifierとparameter base-typeのqualifier診断位置は閉じた。次も通常サイズの宣言・statement制約を少数のClang strict probeから選び、declarator内部へ深掘りしない。

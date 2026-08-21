@@ -971,9 +971,12 @@ static int append_definition_parameter(
     int apply_default_argument_promotions,
     int result_index) {
   if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
+        &parameter->specifier, parameter->declarator.diagnostic_token,
+        (const token_kind_t[]){TK_RESTRICT}, 1);
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context),
-        parameter->specifier.diagnostic_token, "param",
+        source_token, "param",
         "canonical parameter base type resolution failed");
   }
   psx_type_shape_t base_shape = {0};

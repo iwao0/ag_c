@@ -2576,6 +2576,10 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"restrict_nonpointer_parameter_rejected",
      "fixture:test/fixtures/should_reject/restrict_nonpointer_parameter.c",
      "E3064"},
+    {"restrict_nonpointer_parameter_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "restrict_nonpointer_parameter_declaration.c",
+     "E3064"},
     {"restrict_function_pointer_rejected",
      "fixture:test/fixtures/should_reject/restrict_function_pointer.c",
      "E3064"},

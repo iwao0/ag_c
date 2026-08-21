@@ -9439,7 +9439,7 @@ const declarationSpecifierConstraintValidator =
   declarationApplicationSource.match(
     /int\s+psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?\n\}\n\nvoid\s+psx_apply_parsed_standalone_tag_in_contexts/,
   )?.[0] ?? "";
-if (!/static\s+token_t\s*\*declaration_specifier_token_for_kinds\s*\([^]*?specifier->diagnostic_token[^]*?token\s*!=\s*fallback[^]*?token->next[^]*?return\s+fallback/.test(
+if (!/token_t\s*\*psx_declaration_specifier_token_for_kinds\s*\([^]*?specifier->diagnostic_token[^]*?token\s*!=\s*fallback[^]*?token->next[^]*?return\s+fallback/.test(
       declarationApplicationSource,
     ) ||
     (declarationSpecifierConstraintValidator.match(
@@ -9468,6 +9468,16 @@ if (!/static\s+token_t\s*\*declaration_specifier_token_for_kinds\s*\([^]*?specif
     )) {
   throw new Error(
     "qualifier, storage, and function specifier constraint diagnostics must point to the offending declaration specifier while preserving file-object declarators",
+  );
+}
+if (!/base_qual_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID[^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?&parameter->specifier[^]*?parameter->declarator\.diagnostic_token[^]*?TK_RESTRICT[^]*?ps_ctx_diagnostics\(semantic_context\),\s*source_token,\s*"param"/.test(
+      declarationApplicationSource,
+    ) ||
+    !/base_qual_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID[^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?&parameter->specifier[^]*?parameter->declarator\.diagnostic_token[^]*?TK_RESTRICT[^]*?ps_ctx_diagnostics\(semantic_context\),[^]*?source_token,\s*"param"/.test(
+      declarationPipelineSource,
+    )) {
+  throw new Error(
+    "prototype and definition parameter base-type failures must point invalid restrict qualification at the restrict token",
   );
 }
 const semanticTypeEntry = semanticTypeIdentitySource.match(
