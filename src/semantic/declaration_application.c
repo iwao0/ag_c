@@ -694,8 +694,11 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   if (psx_semantic_type_table_has_cv_qualified_function(
           ps_ctx_semantic_type_table_in(semantic_context),
           declared_type)) {
+    token_t *source_token = declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        (const token_kind_t[]){TK_CONST, TK_VOLATILE}, 2);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "function types cannot be const- or volatile-qualified");
     return 0;
@@ -703,8 +706,11 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   if (psx_semantic_type_table_has_invalid_restrict_qualification(
           ps_ctx_semantic_type_table_in(semantic_context),
           declared_type)) {
+    token_t *source_token = declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        (const token_kind_t[]){TK_RESTRICT}, 1);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "restrict qualifier requires a pointer to an object or "
         "incomplete type");
@@ -712,8 +718,11 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   }
   if (psx_semantic_type_has_invalid_atomic_qualification_in(
           semantic_context, declared_type)) {
+    token_t *source_token = declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        (const token_kind_t[]){TK_ATOMIC}, 1);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "atomic qualifier requires a complete non-array object type");
     return 0;

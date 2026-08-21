@@ -38225,3 +38225,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 既存9fixtureをClang strict/Nativeで分類し、変更対象2件と型境界8probeを3 compiler、隣接2件をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - hosted-mainのfunction/return specifier診断は既存specifier範囲で閉じた。次も通常サイズの宣言・statement制約を少数のClang strict probeから選び、既存coverage済みの領域は再実装しない。
+
+### このセッション（続き1296）: 共通型qualifier制約のE3064をqualifierへ移した
+- 対象選定:
+  - 共通declaration-specifier validatorに残るCV-qualified function、invalid restrict、invalid Atomic qualifier分岐を、file・local・member・parameter・typedefの既存19fixtureでClang C11 strictと比較した。
+  - function pointerへの`restrict`とtypedef functionへのAtomic qualifierはClang/ag_cとも拒否したが、Clangがqualifierを指す一方、ag_cは後続の宣言名を指していた。CV-qualified functionはClangがunspecified-behavior warning、ag_cが既存方針でE3064拒否という受理差を維持するが、同じくClangは`const`・`volatile`を指していた。
+  - `_Atomic(type-name)`は既に専用診断が`_Atomic`を指し、parameter/type-nameも多くが先行専用診断でqualifier位置を維持していたため変更しなかった。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - 共通validatorの3分岐だけが、保存済みspecifier開始からdeclarator直前までのtoken範囲を持ちながら宣言名tokenをE3064へ渡していた。
+  - 既存の限定走査helperへCV-qualified functionでは`TK_CONST`/`TK_VOLATILE`、invalid restrictでは`TK_RESTRICT`、invalid Atomic qualifierでは`TK_ATOMIC`を渡し、実際のqualifierをsource tokenとして選ぶ。型形成、受理可否、CV functionの既存reject方針は変更していない。
+  - design invariantは共通validatorのsource-token診断が9分岐あることと、4qualifier kindの選択を固定する。診断文言のexact matchにはしていない。
+- coverage:
+  - should_rejectとNative/Wasm共用compile-fail registryにCV function、restrict function pointer、Atomic typedef functionの各文脈が登録済みなので、重複fixtureは追加していない。differential coverage表へ診断位置の修正境界を追加した。
+- 確認:
+  - 変更対象の既存10形はNative/WasmともE3064で拒否し、`const`・`volatile`・`restrict`・`_Atomic`の実際のqualifier token上で一致した。restrict 3形とAtomic 4形はClang strictも拒否、CV function 3形はClang warningに対してag_cの既存rejectを維持した。
+  - 対照の`atomic_void_type`、`restrict_nonpointer_parameter`、`const_function_typedef_parameter`、`atomic_typedef_function_parameter`はNative/Wasmとも従来の専用診断位置を維持した。parameterの`int restrict`だけはbase-type resolverが`int`を指す別差分として分離した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.44秒 / user 3.09秒 / sys 0.27秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.38秒 / user 11.75秒 / sys 1.57秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.12秒 / user 0.76秒 / sys 0.51秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e`はwarningなしで成功した。
+- 未実施:
+  - 既存19fixtureをClang strict/Nativeで分類し、変更対象10形と対照4形をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - parameterの`int restrict value`はparameter base-type resolution失敗がspecifier開始`int`へ粗く診断される。full parameter syntaxが保持するspecifierからdeclaratorまでの範囲だけで`restrict`を選べるかを確認する。
