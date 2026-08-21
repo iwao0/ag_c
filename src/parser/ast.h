@@ -203,9 +203,11 @@ struct node_function_call_t {
 typedef struct node_ctrl_t node_ctrl_t;
 struct node_ctrl_t {
   node_t base;
-  node_t *els;      // Else branch (ND_IF only).
+  node_t *els;      // Else branch (ND_IF / ND_TERNARY).
   node_t *init;     // Initializer (ND_FOR only).
   node_t *inc;      // Increment expression (ND_FOR only).
+  token_t *then_token;  // Then-branch start (ND_TERNARY only).
+  token_t *else_token;  // Else-branch start (ND_TERNARY only).
 };
 
 // Case-label node.

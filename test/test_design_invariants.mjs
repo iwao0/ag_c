@@ -6480,6 +6480,9 @@ const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
 const sourceCastNode = astSource.match(
   /typedef\s+struct\s*\{([\s\S]*?)\}\s*node_source_cast_t\s*;/,
 );
+const controlNode = astSource.match(
+  /struct\s+node_ctrl_t\s*\{([\s\S]*?)\};/,
+);
 if (!nodeStruct ||
     !/\bpsx_syntax_node_kind_t\s+kind\s*;/.test(nodeStruct[1]) ||
     /\bpsx_(?:work|resolution)_node_kind_t\s+kind\s*;/.test(
@@ -6529,6 +6532,19 @@ if (!/case\s+PSX_SOURCE_CAST_OPERAND_NOT_SCALAR\s*:[\s\S]*?if\s*\(!resolution->t
     )) {
   throw new Error(
     "invalid scalar source casts must retain the operand start token without changing aggregate-cast diagnostics",
+  );
+}
+if (!controlNode ||
+    !/\btoken_t\s*\*\s*then_token\s*;/.test(controlNode[1]) ||
+    !/\btoken_t\s*\*\s*else_token\s*;/.test(controlNode[1]) ||
+    !/ternary->then_token\s*=\s*curtok\(ctx\)[\s\S]*?ternary->else_token\s*=\s*curtok\(ctx\)/.test(
+      parserExpressionSource,
+    ) ||
+    !/PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE[\s\S]*?then_is_void\s*!=\s*else_is_void[\s\S]*?then_is_void\s*\?\s*ternary->then_token[\s\S]*?:\s*ternary->else_token[\s\S]*?note_direct_semantic_rejection_at_token/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "one-sided void conditional diagnostics must retain the selected branch start without changing other incompatibility sources",
   );
 }
 if (/\b(?:unevaluated_operand_depth|in_unevaluated_operand)\b/.test(

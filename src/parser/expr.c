@@ -336,8 +336,10 @@ static node_t *conditional_ctx(expr_parse_ctx_t *ctx) {
     ternary->base.kind = ND_TERNARY;
     ternary->base.tok = question_tok;
     ternary->base.lhs = node;
+    ternary->then_token = curtok(ctx);
     ternary->base.rhs = expr_internal_ctx(ctx);
     tk_expect_ctx(ctx->tokenizer_context, ':');
+    ternary->else_token = curtok(ctx);
     ternary->els = conditional_ctx(ctx);
     return (node_t *)ternary;
   }

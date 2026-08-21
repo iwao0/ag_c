@@ -17401,7 +17401,19 @@ static void test_expr_ternary(
   ASSERT_EQ(ND_TERNARY, syntax->kind);
   ASSERT_EQ(1, as_num(syntax->lhs)->val);
   ASSERT_EQ(2, as_num(syntax->rhs)->val);
-  ASSERT_EQ(ND_TERNARY, as_ctrl(syntax)->els->kind); // 右結合
+  node_ctrl_t *outer = as_ctrl(syntax);
+  ASSERT_TRUE(outer->then_token != NULL);
+  ASSERT_EQ(TK_NUM, outer->then_token->kind);
+  ASSERT_EQ(4, outer->then_token->byte_offset);
+  ASSERT_TRUE(outer->else_token != NULL);
+  ASSERT_EQ(TK_NUM, outer->else_token->kind);
+  ASSERT_EQ(8, outer->else_token->byte_offset);
+  ASSERT_EQ(ND_TERNARY, outer->els->kind); // 右結合
+  node_ctrl_t *inner = as_ctrl(outer->els);
+  ASSERT_TRUE(inner->then_token != NULL);
+  ASSERT_EQ(12, inner->then_token->byte_offset);
+  ASSERT_TRUE(inner->else_token != NULL);
+  ASSERT_EQ(16, inner->else_token->byte_offset);
   ASSERT_EQ(PSX_HIR_TERNARY, psx_hir_node_kind(root));
   ASSERT_EQ(3, psx_hir_node_child_count(root));
   ASSERT_EQ(
@@ -20677,6 +20689,37 @@ static void test_parse_invalid(
       "  return !object;\n"
       "}",
       "E3064", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int value = 1;\n"
+      "  return value();\n"
+      "}",
+      "E3102", 15);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct condition_record { int value; };\n"
+      "int main(void) {\n"
+      "  struct condition_record condition = {1};\n"
+      "  return condition ? 1 : 0;\n"
+      "}",
+      "E3100", 20);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "static void conditional_then_void(void) {}\n"
+      "int main(void) {\n"
+      "  (void)(1 ? conditional_then_void() : 3);\n"
+      "  return 0;\n"
+      "}",
+      "E3101", 14);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "static void conditional_else_void(void) {}\n"
+      "int main(void) {\n"
+      "  (void)(1 ? 3 : conditional_else_void());\n"
+      "  return 0;\n"
+      "}",
+      "E3101", 18);
   expect_parse_fail_at_column(
       test_suite_session,
       "int main(void) {\n"

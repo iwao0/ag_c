@@ -39055,3 +39055,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 6 fixture、6 structured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。aggregate cast規則、pointer qualifier体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`call_nonfunction_object`、`conditional_struct_condition`、`conditional_void_scalar_operands`の浅いpostfix/conditional 3件だけをClang strictと比較し、callまたは`?`/operand token選択だけで閉じる場合に限る。argument変換、pointer compatibility、aggregate value semantics、deep expressionには入らない。
+
+### このセッション（続き1332）: 片側void conditionalのE3101をvoid branchへ移した
+- 対象選定:
+  - 前回候補の`call_nonfunction_object`、`conditional_struct_condition`、`conditional_void_scalar_operands`をClang C11 strict、Native、Wasmで比較した。3系統とも拒否し、callは開き括弧、struct conditionは`?`で既に一致していた。
+  - 片側だけvoidのconditionalはClangがvoid branchの`do_nothing`、Native/Wasmが`?`を指していた。voidをelse側へ置いた小型controlでも同じ差を確認した。
+  - argument変換、pointer compatibility、aggregate value semantics、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - ternary Syntaxは`?`だけをsourceに持ち、then/else branchの解析開始tokenを失っていた。`node_ctrl_t`へternary専用の`then_token`/`else_token`を追加し、parserが各branchを解析する直前に保存するようにした。
+  - 共通型解決が`PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE`を返した後、片側だけがcanonical `void`の場合だけそのbranch tokenをE3101 source overrideに使う。両側voidの合法形、non-scalar condition、void以外のbranch不一致、型解決、受理/拒否、E3100/E3101 ID・文言は変更していない。
+- coverage:
+  - structured diagnosticへnon-function callのE3102開き括弧、struct conditionのE3100 `?`、then/elseそれぞれがvoidのE3101 branch先頭の計4列を追加した。
+  - Syntax境界では右結合ternaryの外側・内側それぞれのthen/else開始offsetを固定した。design invariantでは片側だけvoidの場合に限ってbranch tokenを使い、それ以外は従来sourceへfallbackすることを固定した。
+  - differential coverage表のconditional共通型制約とcall target制約へsource位置方針を追記した。
+- 確認:
+  - 対象3 fixtureと左右反転controlはClang strict、Native、Wasmの12/12経路がexit 1だった。修正後のone-sided void 2形はNative/Wasm 4/4経路がE3101とvoid branch identifierを指し、call/struct condition 4/4経路は`(`/`?`を維持した。probeファイルは確認後に削除した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_language_analysis`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.86秒 / user 3.07秒 / sys 0.28秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.45秒 / user 11.65秒 / sys 1.56秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.11秒 / user 0.75秒 / sys 0.41秒**。
+  - `git diff --check`も成功した。独立gateは並列実行した。
+- 未実施:
+  - 3 fixture、左右反転control、4 structured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。argument変換、pointer compatibility、aggregate value semantics、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`too_few_args`と`too_many_args`の単純call arity 2件だけをClang strictと比較し、callまたは余分なargument token選択だけで閉じる場合に限る。argument型変換、variadic、unprototyped call、deep expressionには入らない。

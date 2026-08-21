@@ -3818,11 +3818,21 @@ static int resolve_direct_ternary_preflight_type(
         PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_CONDITION_NOT_SCALAR,
         syntax);
   if (resolution.status ==
-      PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE)
-    return note_direct_semantic_rejection(
+      PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE) {
+    int then_is_void = direct_qual_type_has_kind(
+        context, then_type, PSX_TYPE_VOID);
+    int else_is_void = direct_qual_type_has_kind(
+        context, else_type, PSX_TYPE_VOID);
+    const token_t *source_token =
+        then_is_void != else_is_void
+            ? (then_is_void ? ternary->then_token
+                            : ternary->else_token)
+            : NULL;
+    return note_direct_semantic_rejection_at_token(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE,
-        syntax);
+        syntax, source_token);
+  }
   if (resolution.status != PSX_CONDITIONAL_TYPES_OK)
     return 0;
   *result_type = resolution.result_qual_type;
