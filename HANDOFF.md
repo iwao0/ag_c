@@ -40369,3 +40369,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member access、initializer、width式派生、pointer/array/function bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`bitfield_pointer_type` fixtureの単一member `unsigned int *pointer : 3;`だけをClang strict、Native、Wasmで比較し、非integer bit-field診断がmember名を指すか確認する。member access、initializer、width式派生、array/function bit-fieldには入らない。
+
+### このセッション（続き1402）: pointer bit-fieldのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`bitfield_pointer_type` fixtureにある単一member `unsigned int *pointer : 3;`だけをClang C11 strict、Native、Wasmで比較した。
+  - member access、initializer、width式派生、array/function bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともbit-field member名`pointer`を指し、Clangは3行17列、Native/WasmはE3064と実トークン`pointer`を報告した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行とインデントを持つE3064 column 17 assertionへ強化し、pointer declarator、型指定子、幅定数、colonへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、pointer identity、bit-field layout、width評価、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`pointer`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.65秒 / user 3.01秒 / sys 0.30秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member access、initializer、width式派生、array/function bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`bitfield_array_type` fixtureの単一member `unsigned int values[2] : 3;`だけをClang strict、Native、Wasmで比較し、非integer bit-field診断がmember名を指すか確認する。member access、initializer、width式派生、function bit-fieldには入らない。

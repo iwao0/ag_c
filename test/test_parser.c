@@ -16044,9 +16044,13 @@ static void test_aggregate_member_resolution_boundary(
       "int main(void) { "
       "  return ((struct FlexibleLiteral[2]){{1}, {2}})[0].prefix; "
       "}");
-  expect_parse_fail(test_suite_session,
-      "struct BadPointer { int *value : 1; }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct pointer_bitfield {\n"
+      "  unsigned int *pointer : 3;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 17);
   expect_parse_fail(test_suite_session,
       "struct BadFunction { int value(void); }; "
       "int main(void) { return 0; }");
