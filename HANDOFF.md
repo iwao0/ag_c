@@ -40763,3 +40763,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、source-aware structured column、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。3段以上、異種declarator、別名member、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - named-member衝突のdirect／1段／2段昇格境界が揃ったため、次は既存`empty_translation_unit` fixtureのcomment-only入力だけをClang strict、Native、Wasmで比較し、external declaration要件の診断IDとEOF位置を確認する。preprocessor directive-only、pragma、includeには入らない。
+
+### このセッション（続き1423）: comment-only translation unitのE3064 EOF位置を固定した
+- 対象選定:
+  - 前回候補の既存`empty_translation_unit` fixtureにある、末尾改行付きの単一commentだけでexternal declarationを持たないtranslation unitをClang C11 strict、Native、Wasmで比較した。
+  - preprocessor directive-only、pragma、include、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangはcomment終端直後の1行67列へempty-translation-unit診断を報告した。Native/Wasmはfrontendの現在tokenである末尾改行後のEOFを2行1列でE3064と実トークン`EOF`として報告した。
+  - Native/WasmのEOF方針は一致し、既存frontend実装がexternal declarationなし・先行errorなしの場合にcurrent EOF tokenを使うことも確認したため、compiler sourceは変更していない。
+  - 既存のmessage-only parser境界をfixture相当入力のE3064 position 2:1 assertionへ強化した。
+  - structured診断helperにline＋column対応を追加し、従来のcolumn-only APIはwrapperとして全既存call siteを互換維持した。EOFが次行へ進む境界を行まで直接固定できるようにした。
+  - 受理/拒否、comment tokenization、translation-unit lifecycle、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`EOF`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.91秒 / user 3.08秒 / sys 0.37秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。preprocessor directive-only、pragma、include、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`preprocessor_only_translation_unit` fixtureの単一object-like `#define`だけをClang strict、Native、Wasmで比較し、preprocessing後のEOF診断IDと位置を確認する。function-like macro、conditional、include、pragmaには入らない。

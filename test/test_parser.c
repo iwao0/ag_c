@@ -8599,9 +8599,9 @@ static void recover_parse_diagnostic(void *context) {
   longjmp(recovery->jump, 1);
 }
 
-static void expect_parse_fail_at_column(
+static void expect_parse_fail_at_position(
     ag_compilation_session_t *test_suite_session, const char *input,
-    const char *expected_code, int expected_column) {
+    const char *expected_code, int expected_line, int expected_column) {
   fflush(NULL);
   pid_t pid = fork();
   if (pid == 0) {
@@ -8625,6 +8625,8 @@ static void expect_parse_fail_at_column(
     int matches =
         diag_context_record_count(diagnostics) > 0 &&
         strcmp(diag_context_record_code(diagnostics, 0), expected_code) == 0 &&
+        (expected_line <= 0 ||
+         diag_context_record_start_line(diagnostics, 0) == expected_line) &&
         diag_context_record_start_column(diagnostics, 0) == expected_column;
     if (!matches) {
       int record_count = diag_context_record_count(diagnostics);
@@ -8650,11 +8652,24 @@ static void expect_parse_fail_at_column(
   waitpid(pid, &status, 0);
   ASSERT_TRUE(WIFEXITED(status));
   if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-    fprintf(stderr,
-            "Expected %s at column %d for source: %s\n",
-            expected_code, expected_column, input);
+    if (expected_line > 0) {
+      fprintf(stderr,
+              "Expected %s at %d:%d for source: %s\n",
+              expected_code, expected_line, expected_column, input);
+    } else {
+      fprintf(stderr,
+              "Expected %s at column %d for source: %s\n",
+              expected_code, expected_column, input);
+    }
   }
   ASSERT_EQ(0, WEXITSTATUS(status));
+}
+
+static void expect_parse_fail_at_column(
+    ag_compilation_session_t *test_suite_session, const char *input,
+    const char *expected_code, int expected_column) {
+  expect_parse_fail_at_position(
+      test_suite_session, input, expected_code, 0, expected_column);
 }
 
 
@@ -12654,8 +12669,10 @@ static void test_frontend_stream_lifecycle_boundary(
 static void test_translation_unit_external_declaration_boundary(
     ag_compilation_session_t *test_suite_session) {
   printf("test_translation_unit_external_declaration_boundary...\n");
-  expect_parse_fail_with_message(
-      test_suite_session, "/* no external declaration */", "E3064");
+  expect_parse_fail_at_position(
+      test_suite_session,
+      "/* A C11 translation unit must contain an external declaration. */\n",
+      "E3064", 2, 1);
   expect_parse_ok(
       test_suite_session, "_Static_assert(1, \"ok\");");
   expect_parse_ok(
