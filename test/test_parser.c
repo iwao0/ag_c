@@ -20166,6 +20166,12 @@ static void test_parse_invalid(
       "E3117", 17);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) {\n"
+      "  return sizeof(int * _Atomic restrict);\n"
+      "}",
+      "E3117", 21);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return _Alignof(restrict int); }", "E3117", 34);
   expect_parse_fail_at_column(
       test_suite_session,

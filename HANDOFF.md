@@ -39787,3 +39787,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較と1 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer階層の一般化、typedef pointer、nested pointer、initializer評価、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_restrict_pointer_type_name`の単純な`_Atomic(int * restrict)` type-name 1件だけをClang strictと比較し、`_Atomic`または`restrict` tokenの選択だけで閉じる場合に限る。typedef pointer、nested pointer、callback、expression evaluationには入らない。
+
+### このセッション（続き1371）: Atomic/restrict同段type-nameのE3117位置をClangへ揃えた
+- 対象選定:
+  - 前回候補の`atomic_restrict_pointer_type_name`だけをClang C11 strict、Native、Wasmで比較した。
+  - typedef pointer、nested pointer、callback、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 修正:
+  - Clangは`sizeof(int * _Atomic restrict)`を3行21列のpointer operator `*`で拒否する一方、Native/Wasmは3行31列の`restrict`をE3117 sourceにしていた。
+  - `psx_type_name_restrict_qualifier_token()`へ、対象type-nameのtoken範囲だけを走査し、同じpointer qualifier列に`_Atomic`と対象`restrict`がある場合だけその`TK_MUL`を返す限定ヘルパーを追加した。
+  - scalar・function pointerなど通常のinvalid restrictは従来どおり`restrict` tokenを返し、受理/拒否、canonical QualType、診断ID・文言、expression評価は変更していない。
+- coverage:
+  - structured diagnosticへ対象fixture相当のE3117 column 21を追加した。
+  - design invariantへ、同段Atomic/restrict type-nameだけpointer tokenへ切り替え、その他は既存qualifier token経路を維持する境界を追加した。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3117と実トークン`*`を報告した。
+  - `restrict_typedef_scalar_type_name`と`restrict_function_pointer_type_name`はNative/Wasm 4/4経路で引き続き実トークン`restrict`を報告した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.76秒 / user 3.10秒 / sys 0.35秒**。
+  - `/usr/bin/time -p node test/test_design_invariants.mjs` = **design invariants: ok**、**real 3.29秒 / user 0.71秒 / sys 0.50秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - 対象fixtureと近傍2 fixtureの三系統/二系統比較、parser、design invariantsで直接境界を確認したため、language-analysis、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。typedef pointer、nested pointer、callback、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`restrict_atomic_pointer`の直接宣言1件だけをClang strictと比較し、同段qualifier逆順で`*`またはqualifier tokenの選択だけで閉じる場合に限る。type-name、typedef、nested pointer、initializerには入らない。
