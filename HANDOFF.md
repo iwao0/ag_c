@@ -41297,3 +41297,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、全compile-fail registry、全E2E、language-analysis、design invariants、1354秒規模の`make test-wasm-js-api`は反復しない。direct qualifier、specifier form、unnamed bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_bitfield_unnamed` fixtureのzero-width unnamed bit-field `_Atomic unsigned int : 0`だけをClang strict、Native、Wasmで比較し、member名がない場合にqualifier・colon・widthのどこを指すかを行まで確認する。named bit-field、specifier form、nonzero unnamed widthには入らない。
+
+### このセッション（続き1451）: unnamed atomic bit-fieldのE3064位置を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_bitfield_unnamed` fixtureにある、zero-width unnamed bit-field `_Atomic unsigned int : 0`だけをClang C11 strict、Native、Wasmで比較した。
+  - named bit-field、specifier form、nonzero unnamed width、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangはmember名のないatomic bit-fieldで`_Atomic`を3行3列へ報告した。Native/Wasmも同じ`_Atomic`を3行3列でE3064と実トークン`_Atomic`として報告した。
+  - named bit-fieldではmember declaratorを指す一方、unnamed bit-fieldではdeclaration specifier先頭へfallbackする診断位置が三系統で一致することを確認した。
+  - 既存のE3064 column 3 assertionをfixtureと同じ先頭comment・aggregate・空行・main配置を持つE3064 position 3:3 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、atomic integer type identity、unnamed bit-field resolution、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.60秒 / user 3.00秒 / sys 0.28秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、全compile-fail registry、全E2E、language-analysis、design invariants、1354秒規模の`make test-wasm-js-api`は反復しない。named bit-field、specifier form、nonzero unnamed width、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - bit-field fixture群が揃ったため、次は既存`atomic_rvalue_return_to_plain_type` fixtureの直接call `return source()`だけをClang strict、Native、Wasmで比較し、E3108の診断IDと位置を確認する。nested call、conditional、generic selection、deep expressionには広げない。
