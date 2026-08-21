@@ -38714,3 +38714,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象5形のClang strict/Native/Wasm source位置、未選択generic control、positive 3件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。VLA診断統合、generic-selected/unselected位置、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 直接compound literalの型制約位置は閉じた。次は既存`excess_{scalar,array,struct,union}_compound_literal_initializer`だけを少数比較し、余剰initializer要素の既存failure token選択だけで閉じる場合に限る。再帰brace、designator chain、未選択genericには入らない。
+
+### このセッション（続き1317）: 不正な配列式initializerの診断を宣言名へ移した
+- 対象選定:
+  - 前回候補の`excess_{scalar,array,struct,union}_compound_literal_initializer`はClang C11 strict、Native、Wasmが全て余剰の第2要素`2`を既に指していた。続けてfile/local/static-local/compound literalのscalar過剰brace 4形も全て内側の`{`を既に指していたため変更しなかった。
+  - 配列へscalar式または配列式を直接指定するfile-scope、automatic local、static localのfixed/incomplete arrayを比較すると、Clangは13形とも配列宣言名`values`を指す一方、Native/Wasmはinitializerの`1`、`source`、または`(`を指していた。型変換規則、再帰brace、designator chain、深い式、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - global/static initializer assignment、incomplete array completion、direct local preflightの3経路はいずれも既にdeclarator名tokenを受け取っていたが、配列式initializerを拒否する分岐だけinitializer tokenを診断へ渡していた。
+  - global/static assignment helperはtargetがarrayの場合だけ既存fallback declarator tokenを選ぶ。global/static-localのarray-completion failureはrequestのdiagnostic tokenを選び、direct automatic/static-localの3つのarray failure分岐も既存の`name` tokenを渡す。
+  - failure predicate、fixed/incomplete array型、同型array compound literal copy拡張、static constant判定、E3064/E3099 ID・文言、非array initializerのtoken選択は変更していない。
+- coverage:
+  - structured diagnosticはfile-scope fixed scalar/array式、file-scope incomplete scalar、automatic fixed/incomplete scalar、static-local fixed/incomplete scalar、型不一致array compound literalの8形を宣言名columnで固定した。
+  - design invariantはdirect local 3分岐、array targetだけのstatic assignment fallback、global/static-local array-completion failureのrequest token選択を固定し、非array経路を同じfallbackへ広げない。
+  - differential coverage表はfile/local/static-localのfixed/incomplete arrayと型不一致compound literalを同じsource位置境界として記録した。
+- 確認:
+  - 対象13形はClang strict、Native、Wasmが全て拒否した。Native/Wasmは従来のE3064/E3099を維持して13形全て`values`を指し、26/26経路がexit 1だった。
+  - standard positiveのfile-scope brace array、automatic brace array、static-local pointer arrayはClang strict、Native、Wasm objectの9/9 compile経路で受理し、Clang/Nativeの6/6 executableもexit 0だった。
+  - ag_c固有のfile-scope同型array compound literal copyはNative/Wasm 2/2 compile経路で受理し、Native executableもexit 0だった。file-scope scalar型不一致controlはClang/Native/Wasmが拒否し、3系統とも宣言名を指したためarray-only境界を維持している。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.55秒 / user 3.14秒 / sys 0.30秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.25秒 / user 11.57秒 / sys 1.63秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.18秒 / user 0.79秒 / sys 0.55秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功し、`git diff --check`も成功した。
+- 未実施:
+  - 対象13形のClang strict/Native/Wasm source位置、positive 4群、非array control、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。再帰brace、designator chain、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 配列式initializerの位置は閉じた。比較中に既存`assign_string_to_int`のautomatic local診断がClangの宣言名`x`に対してNative/Wasmでは`main`を指すことを確認した。次はfile/local/static-localの単純scalar型不一致だけを比較し、既存declarator tokenをdirect scalar assignment rejectionへ渡すだけで閉じる場合に限る。変換規則、深い式、pointer qualifier体系には入らない。

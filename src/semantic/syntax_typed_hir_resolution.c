@@ -9036,7 +9036,7 @@ static int preflight_direct_local_declaration(
           return note_direct_initializer_rejection(
               context,
               PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
-              &syntax->base, initializer->value_tok);
+              &syntax->base, (token_t *)name);
         const psx_typed_hir_tree_t *initializer_typed_hir = NULL;
         psx_resolved_hir_build_failure_t initializer_failure;
         psx_syntax_typed_hir_resolution_status_t initializer_status =
@@ -9098,7 +9098,7 @@ static int preflight_direct_local_declaration(
         return note_direct_initializer_rejection(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
-            &syntax->base, initializer->value_tok);
+            &syntax->base, (token_t *)name);
       has_type = psx_semantic_type_table_describe(
           semantic_types, decl_qual_type.type_id, &type_shape);
     }
@@ -9201,7 +9201,7 @@ static int preflight_direct_local_declaration(
           return note_direct_initializer_rejection(
               context,
               PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
-              &syntax->base, initializer->value_tok);
+              &syntax->base, (token_t *)name);
         is_object_copy_initializer = 1;
       } else {
         if (!initializer->value ||

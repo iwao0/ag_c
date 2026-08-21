@@ -7540,6 +7540,25 @@ if (!/initializer->kind\s*==\s*PSX_DECL_INIT_EXPR\s*\)\s*\{[^]*?type_shape\.kind
     "direct local array object-copy initialization must be limited to matching compound literals",
   );
 }
+if (!/static_initializer_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES[^]*?\(token_t\s*\*\)name/.test(
+      directLocalDeclarationPreflight[0],
+    ) ||
+    !/decl_qual_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES[^]*?\(token_t\s*\*\)name/.test(
+      directLocalDeclarationPreflight[0],
+    ) ||
+    !/type_shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?initializer->value->kind\s*!=\s*ND_COMPOUND_LITERAL[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES[^]*?\(token_t\s*\*\)name/.test(
+      directLocalDeclarationPreflight[0],
+    ) ||
+    !/object_shape\.kind\s*==\s*PSX_TYPE_ARRAY\s*&&\s*fallback_diag_tok[^]*?fallback_diag_tok[^]*?initializer->tok/.test(
+      declarationPipelineSource,
+    ) ||
+    !/PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED\s*&&[^]*?request->diag_tok[^]*?\?\s*request->diag_tok/.test(
+      declarationPipelineSource,
+    )) {
+  throw new Error(
+    "invalid expression initializers for arrays must diagnose the declarator name across file, automatic, and static-local paths",
+  );
+}
 if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(
       declarationPipelineSource,
     ) ||

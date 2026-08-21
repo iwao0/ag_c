@@ -546,8 +546,10 @@ static int validate_static_scalar_initializer_assignment(
 
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
-  token_t *token = initializer->tok
-      ? initializer->tok : fallback_diag_tok;
+  token_t *token =
+      object_shape.kind == PSX_TYPE_ARRAY && fallback_diag_tok
+          ? fallback_diag_tok
+          : (initializer->tok ? initializer->tok : fallback_diag_tok);
   diag_error_id_t diagnostic =
       assignment.status == PSX_ASSIGNMENT_DISCARDS_QUALIFIERS
           ? DIAG_ERR_PARSER_CONST_QUAL_DISCARD
@@ -596,8 +598,13 @@ static int finish_global_declaration_pipeline(
       if (initializer_resolution.status != PSX_STATIC_INITIALIZER_OK)
         diagnose_static_initializer(
             ps_ctx_diagnostics(request->semantic_context),
-            request->initializer->value_tok
-                ? request->initializer->value_tok : request->diag_tok,
+            initializer_resolution.status ==
+                    PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED &&
+                request->diag_tok
+                ? request->diag_tok
+                : (request->initializer->value_tok
+                       ? request->initializer->value_tok
+                       : request->diag_tok),
             global->name, global->name_len,
             initializer_resolution.status);
       const node_t *initializer = selected_static_initializer_syntax(
@@ -1542,8 +1549,13 @@ int psx_finish_static_local_declaration_pipeline(
   if (resolution.status != PSX_STATIC_INITIALIZER_OK) {
     diagnose_static_initializer(
         ps_ctx_diagnostics(request->semantic_context),
-        request->initializer->value_tok
-            ? request->initializer->value_tok : request->diag_tok,
+        resolution.status ==
+                PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED &&
+            request->diag_tok
+            ? request->diag_tok
+            : (request->initializer->value_tok
+                   ? request->initializer->value_tok
+                   : request->diag_tok),
         request->name, request->name_len, resolution.status);
   }
   const node_t *initializer = selected_static_initializer_syntax(

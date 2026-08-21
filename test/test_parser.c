@@ -20217,6 +20217,39 @@ static void test_parse_invalid(
       "E3084", 61);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int values[2] = 1; int main(void) { return 0; }",
+      "E3099", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int source[2] = {1, 2}; int values[2] = source; "
+      "int main(void) { return 0; }",
+      "E3099", 29);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int values[] = 1; int main(void) { return 0; }",
+      "E3064", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { int values[2] = 1; return 0; }",
+      "E3099", 22);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { int values[] = 1; return 0; }",
+      "E3099", 22);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { static int values[2] = 1; return 0; }",
+      "E3099", 29);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { static int values[] = 1; return 0; }",
+      "E3099", 29);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { int values[2] = (long[2]){1, 2}; return 0; }",
+      "E3099", 22);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Alignas((1, 16)) int value; int main(void) { return 0; }",
       "E3064", 10);
   expect_parse_fail_at_column(
