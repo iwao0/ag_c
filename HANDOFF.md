@@ -40330,3 +40330,24 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member access、initializer、width式派生、unnamed bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_bitfield_unnamed` fixtureの単一unnamed zero-width member `_Atomic unsigned int : 0;`だけをClang strict、Native、Wasmで比較し、identifier不在時の診断位置を確認する。named member、member access、initializer、非定数widthには入らない。
+
+### このセッション（続き1400）: unnamed Atomic bit-field固有診断を保持した
+- 対象選定:
+  - 前回候補の既存`atomic_bitfield_unnamed` fixtureにある単一unnamed zero-width member `_Atomic unsigned int : 0;`だけをClang C11 strict、Native、Wasmで比較した。
+  - named member、member access、initializer、非定数width、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 発見と修正:
+  - 修正前はClangが3行3列の`_Atomic`でAtomic bit-field制約を報告する一方、Native/Wasmは構文段階で同じ位置へ「structure or union definition requires at least one named member」を先に報告していた。
+  - `aggregate_body_named_member_status()`で明示的Atomic型を持つunnamed bit-fieldをinvalid declarationとして扱い、一般のnamed-member欠如診断より後段の意味制約を優先した。
+  - Atomic bit-field意味診断はidentifier tokenがない場合だけdecl-specifier内の実`_Atomic` tokenを選ぶようにし、named bit-fieldがmember identifierを指す既存挙動は維持した。
+  - 既存の非構造化parser assertionをfixture同様のE3064 column 3 assertionへ強化した。
+- 確認:
+  - 修正後の対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はAtomic bit-field固有文言と実トークン`_Atomic`を報告した。
+  - 非Atomicの`unnamed_bitfield_only_struct` controlは従来どおりnamed-member欠如のE3064を報告し、通常制約を維持した。
+  - `make -j4 build/test_parser build/ag_c build/ag_c_wasm`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 4.03秒 / user 3.06秒 / sys 0.31秒**。
+  - `/usr/bin/time -p make test-design-invariants` = **design invariants: ok**、**real 3.37秒 / user 0.79秒 / sys 0.48秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - Native/Wasm共通source、structured parser regression、三系統fixture、非Atomic control、該当design invariantで直接境界を確認したため、language-analysis、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。named member、member access、initializer、非定数width、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`bitfield_floating_type` fixtureの単一member `double value : 1;`だけをClang strict、Native、Wasmで比較し、非integer bit-field診断のIDとmember位置を確認する。member access、initializer、width式派生、pointer/array/function bit-fieldには入らない。

@@ -21691,9 +21691,13 @@ static void test_parse_invalid(
       "};\n"
       "int main(void) { return 0; }",
       "E3064", 15);
-  expect_parse_fail(test_suite_session,
-      "struct flags { _Atomic unsigned int : 0; }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct flags {\n"
+      "  _Atomic unsigned int : 0;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 3);
   expect_parse_ok(test_suite_session,
       "int first(int values[1]) { return values[0]; } "
       "int apply(int (*callback)(int values[*]), int *values) { "

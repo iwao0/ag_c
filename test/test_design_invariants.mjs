@@ -11266,6 +11266,12 @@ if (!/PSX_AGGREGATE_MEMBER_ATOMIC_BITFIELD_UNSUPPORTED/.test(
     !/is_bitfield\s*&&[^]*?declared_type\.qualifiers\s*&\s*PSX_TYPE_QUALIFIER_ATOMIC[^]*?atomic-qualified bit-fields are not supported/.test(
       declarationApplicationSource,
     ) ||
+    !/aggregate_body_named_member_status\s*\([^]*?specifier\.type_spec\.is_atomic\s*\|\|[^]*?specifier\.atomic_type_name[^]*?has_bitfield[^]*?PSX_AGGREGATE_NAMED_MEMBER_INVALID_DECLARATION/.test(
+      aggregateMemberSyntaxSource,
+    ) ||
+    !/is_bitfield\s*&&[^]*?PSX_TYPE_QUALIFIER_ATOMIC[^]*?diagnostic_token->kind\s*!=\s*TK_IDENT[^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?TK_ATOMIC[^]*?atomic-qualified bit-fields are not supported/.test(
+      declarationApplicationSource,
+    ) ||
     !/PSX_AGGREGATE_MEMBER_ATOMIC_BITFIELD_UNSUPPORTED[^]*?atomic-qualified bit-fields are not supported/.test(
       declarationRegistrationSource,
     )) {

@@ -766,8 +766,13 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   }
   if (is_bitfield &&
       (declared_type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0) {
+    token_t *source_token = diagnostic_token;
+    if (!diagnostic_token || diagnostic_token->kind != TK_IDENT)
+      source_token = psx_declaration_specifier_token_for_kinds(
+          specifier, diagnostic_token,
+          (const token_kind_t[]){TK_ATOMIC}, 1);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "atomic-qualified bit-fields are not supported");
     return 0;

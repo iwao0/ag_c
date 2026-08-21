@@ -113,6 +113,13 @@ static psx_aggregate_named_member_status_t aggregate_body_named_member_status(
       if (nested != PSX_AGGREGATE_NAMED_MEMBER_NONE) return nested;
       continue;
     }
+    if (declaration->specifier.type_spec.is_atomic ||
+        declaration->specifier.atomic_type_name) {
+      for (int j = 0; j < declaration->declarator_count; j++) {
+        if (declaration->declarators[j].has_bitfield)
+          return PSX_AGGREGATE_NAMED_MEMBER_INVALID_DECLARATION;
+      }
+    }
     for (int j = 0; j < declaration->declarator_count; j++) {
       if (!declaration->declarators[j].has_bitfield)
         return PSX_AGGREGATE_NAMED_MEMBER_INVALID_DECLARATION;
