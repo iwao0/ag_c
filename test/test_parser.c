@@ -21624,9 +21624,12 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session,
       "typedef int array_type[2]; "
       "int main(void) { return sizeof(_Atomic array_type); }");
-  expect_parse_fail(test_suite_session,
-      "struct item; _Atomic struct item *pointer; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct item;\n"
+      "_Atomic struct item *pointer;\n"
+      "int main(void) { return 0; }",
+      "E3064", 1);
   expect_parse_fail(test_suite_session,
       "struct flags { _Atomic unsigned int value : 3; }; "
       "int main(void) { return 0; }");

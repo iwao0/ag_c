@@ -40093,3 +40093,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。record定義、member access、initializer、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_incomplete_record_pointer_outer`の`struct item; _Atomic struct item *pointer;`と単純な`return 0`だけを一時probeで比較し、外側pointer declaratorが不完全Atomic base制約の診断位置を変えないか確認する。pointer使用、member access、initializerには入らない。
+
+### このセッション（続き1387）: outer pointer付きincomplete Atomic baseのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_incomplete_record_pointer_outer`からpointer使用を除き、`struct item;`と`_Atomic struct item *pointer;`、単純な`return 0`だけを一時probeとしてClang C11 strict、Native、Wasmで比較した。
+  - pointer使用、member access、initializer、record定義、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともClangと同じ宣言行1列の`_Atomic`を指し、Native/WasmはE3064を報告した。
+  - 既存の非構造化`expect_parse_fail`を改行付きのE3064 column 1 assertionへ強化し、外側pointer declaratorやforward declarationのtag tokenへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、pointer派生、record completeness、canonical QualType、診断ID・文言は変更していない。
+- 確認:
+  - 対象probeはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.76秒 / user 3.06秒 / sys 0.34秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象probeの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer使用、member access、initializer、record定義、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_typedef_function_qualifier` fixtureの`typedef int function_type(void); _Atomic function_type function;`だけをClang strict、Native、Wasmで比較し、typedef解決後のfunction型制約が`_Atomic`を指すかだけを確認する。function使用、pointer派生、parameter、initializerには入らない。
