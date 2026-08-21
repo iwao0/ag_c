@@ -7,6 +7,7 @@
 #include "lowering/static_local_lowering.h"
 #include "lowering/vla_lowering.h"
 #include "parser/decl.h"
+#include "parser/core.h"
 #include "parser/declarator_shape_builder.h"
 #include "parser/arena.h"
 #include "parser/diag.h"
@@ -684,6 +685,23 @@ int psx_apply_global_declaration_pipeline(
   return psx_finish_global_declaration_pipeline(request, result);
 }
 
+static token_t *main_return_type_diagnostic_token(
+    const psx_function_declaration_pipeline_request_t *request) {
+  token_t *typedef_name_token = NULL;
+  for (token_t *token = request ? request->specifier_tok : NULL;
+       token && token != request->diag_tok && token->kind != TK_EOF;
+       token = token->next) {
+    if (psx_is_type_specifier_token(token->kind) ||
+        psx_is_tag_keyword_token(token->kind))
+      return token;
+    if (!typedef_name_token && token->kind == TK_IDENT &&
+        !psx_is_gnu_attribute_token(token))
+      typedef_name_token = token;
+  }
+  if (typedef_name_token) return typedef_name_token;
+  return request ? request->diag_tok : NULL;
+}
+
 static void diagnose_function_declaration(
     const psx_function_declaration_pipeline_request_t *request,
     psx_function_declaration_status_t status) {
@@ -733,7 +751,7 @@ static void diagnose_function_declaration(
       return;
     case PSX_FUNCTION_DECLARATION_MAIN_RETURN_TYPE:
       ps_diag_ctx_in(
-          diagnostics, request->diag_tok, context,
+          diagnostics, main_return_type_diagnostic_token(request), context,
           "hosted環境のmain関数の戻り型は修飾されていないint型でなければなりません "
           "(C11 5.1.2.2.1)");
       return;

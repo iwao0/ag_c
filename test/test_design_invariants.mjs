@@ -7343,9 +7343,15 @@ if (!/token_t\s*\*specifier_tok\s*;/.test(
     ) ||
     !/\.specifier_tok\s*=\s*request->specifier_tok/.test(
       declarationPipelineSource,
+    ) ||
+    !/main_return_type_diagnostic_token\s*\([^]*?request->specifier_tok[^]*?token\s*!=\s*request->diag_tok[^]*?psx_is_type_specifier_token[^]*?psx_is_tag_keyword_token[^]*?TK_IDENT[^]*?request->diag_tok/.test(
+      declarationPipelineSource,
+    ) ||
+    !/case\s+PSX_FUNCTION_DECLARATION_MAIN_RETURN_TYPE:[^]*?main_return_type_diagnostic_token\s*\(\s*request\s*\)/.test(
+      declarationPipelineSource,
     )) {
   throw new Error(
-    "hosted main function-specifier diagnostics must preserve the offending keyword across file, definition, and block declaration pipelines",
+    "hosted main diagnostics must preserve function and return-type specifiers across file, definition, and block declaration pipelines",
   );
 }
 const blockExternDeclarationPipeline = declarationPipelineSource.match(

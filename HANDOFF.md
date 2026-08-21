@@ -38202,3 +38202,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 既存4fixtureと順序自由3probeを3 compiler、合法対照を3 compiler、隣接するmain診断3件をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - hosted-main function-specifier診断は3宣言経路で閉じた。次も通常サイズの宣言・statement制約を少数のClang strict probeから選び、既存coverage済みの領域は再実装しない。
+
+### このセッション（続き1295）: hosted mainの戻り型診断を型specifierへ移した
+- 対象選定:
+  - hosted `main`の戻り型・引数型6fixtureとvariadic 3fixtureをClang C11 strictと比較した。第1/第2引数型4件とvariadic 3件はClang/Nativeとも宣言名`main`を指していたため変更しなかった。
+  - `void main`と`const int main`だけは、Clangが実際の`void`・`int`を指す一方、Native/WasmのE3064は`main`を指す実差分だった。前回から共通pipelineへ伝播しているspecifier範囲だけで閉じ、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - main return-type statusはspecifier開始tokenを受け取れるようになった後も、他statusと同じ宣言名tokenを診断へ渡していた。
+  - return-type status専用helperがspecifier開始から宣言名直前までを走査し、最初のbuiltin/tag型specifierを選ぶ。`const`・`volatile`・`_Atomic`等のqualifierは飛ばし、builtin/tag keywordがない場合はtypedef名identifierを使う。該当tokenがない異常経路だけ宣言名へfallbackする。
+  - parameter・variadic status、mainの型判定、受理可否、function登録は変更していない。design invariantは限定走査、builtin/tag判定、typedef fallback、return-type statusでの使用を固定し、診断文言のexact matchにはしていない。
+- coverage:
+  - 既存should_rejectの`void_main_function_definition`と`qualified_main_function_declaration`はNative/Wasm共用compile-fail registryへ登録済みなので、重複fixtureは追加していない。
+  - `long`、`unsigned int`、`int const`、typedef、`_Atomic(int)`、`_Bool`、`struct`、`volatile int`の通常サイズ一時probeで型specifier選択をClang strictと比較した。differential coverage表へ診断位置の修正境界を追加した。
+- 確認:
+  - 既存2fixtureと型境界8probeはhost Clang strict、ag_c Native、Wasm objectがすべて拒否し、Native/Wasmは`void`、`int`、`long`、`unsigned`、typedef名、Atomic type-name内の`int`、`_Bool`、`struct`の実際の型specifier上で一致した。
+  - `invalid_main_first_parameter`と`variadic_main_function_definition`はNative/Wasmとも拒否し、従来の宣言名`main`位置を維持した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.52秒 / user 3.02秒 / sys 0.24秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.08秒 / user 11.58秒 / sys 1.48秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、最終実行は**real 3.15秒 / user 0.74秒 / sys 0.42秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e`はwarningなしで成功した。
+- 未実施:
+  - 既存9fixtureをClang strict/Nativeで分類し、変更対象2件と型境界8probeを3 compiler、隣接2件をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - hosted-mainのfunction/return specifier診断は既存specifier範囲で閉じた。次も通常サイズの宣言・statement制約を少数のClang strict probeから選び、既存coverage済みの領域は再実装しない。
