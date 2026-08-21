@@ -11134,7 +11134,7 @@ if (!/semantic_record_contains_flexible_array_member\s*\([^]*?record->member_cou
     !/psx_resolve_parameter_declaration\s*\([^]*?psx_semantic_type_has_incomplete_array_element_in\s*\(\s*request->type\.semantic_context,\s*identity\.type_id\s*\)/.test(
       parameterDeclarationResolutionSource,
     ) ||
-    !/psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?psx_semantic_type_has_incomplete_array_element_in\s*\(\s*semantic_context,\s*declared_type\.type_id\s*\)/.test(
+    !/psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?psx_semantic_type_has_incomplete_array_element_in\s*\(\s*semantic_context,\s*declared_type\.type_id\s*\)[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?diagnostic_token->next->kind\s*==\s*TK_LBRACKET[^]*?ps_ctx_diagnostics\(semantic_context\),\s*source_token/.test(
       declarationApplicationSource,
     ) ||
     !/psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?psx_semantic_type_has_incomplete_array_element_in\s*\(\s*semantic_context,\s*resolved\.type_id\s*\)/.test(

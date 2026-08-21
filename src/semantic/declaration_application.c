@@ -733,8 +733,13 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   }
   if (psx_semantic_type_has_incomplete_array_element_in(
           semantic_context, declared_type.type_id)) {
+    token_t *source_token = diagnostic_token;
+    if (shape.kind == PSX_TYPE_ARRAY && diagnostic_token &&
+        diagnostic_token->next &&
+        diagnostic_token->next->kind == TK_LBRACKET)
+      source_token = diagnostic_token->next;
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "an array element type must be a complete object type");
     return 0;

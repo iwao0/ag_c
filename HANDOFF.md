@@ -39240,3 +39240,24 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。nested declarator、array/function parameter、typedef-void、variadic、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`void_variable`と`array_of_void`の単純void object型2件だけをClang strictと比較し、宣言名またはarray declarator先頭token選択だけで閉じる場合に限る。typedef-void、compound literal、VLA、nested declaratorには入らない。
+
+### このセッション（続き1341）: direct void arrayのE3064を`[`へ合わせた
+- 対象選定:
+  - 前回候補の`void_variable`と`array_of_void`だけをClang C11 strict、Native、Wasmで比較した。
+  - `array_of_void`正本自体が単一の`typedef void element_type`を使うため、その1 aliasだけは対象に含めたが、他のtypedef-void形、compound literal、VLA、parenthesized/nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 修正:
+  - 通常のlocal `void x`はNative/Wasmとも既にClangと同じidentifier `x`をE3087 sourceにしていた。
+  - `element_type values[2]`はClangがdirect array suffixの`[`を指す一方、Native/Wasmはidentifier `values`を指していた。
+  - declaration constraint validatorで最外形がarrayかつidentifier直後が`[`のdirect declaratorだけ、その既存tokenを不完全array element型のE3064 sourceに選ぶよう変更した。型形成、受理/拒否、E3064/E3087 ID・文言、parenthesized/nested declaratorのfallbackは変更していない。
+  - structured diagnosticへ`void value`のE3087 column 23とdirect typedef-void arrayのE3064 column 20を追加し、design invariantとdifferential coverage表にもdirect-only境界を固定した。
+- 確認:
+  - 修正前比較では対象2 fixtureのClang strict、Native、Wasm 6/6経路がexit 1で、arrayだけがClangの`[`に対してNative/Wasmの`values`という不一致だった。
+  - 修正後のNative/Wasm 4/4経路もexit 1で、`void_variable`はE3087と`x`、`array_of_void`はE3064と`[`を報告した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 4.03秒 / user 3.06秒 / sys 0.30秒**。
+  - `/usr/bin/time -p make test-design-invariants` = **design invariants: ok**、**real 3.37秒 / user 0.80秒 / sys 0.48秒**。parserと並列実行したためwall waitは約4.1秒だった。
+  - `git diff --check`も成功した。
+- 未実施:
+  - direct declaration constraintとsource tokenだけの変更を2 fixture、2 structured column、design invariantで直接確認するため、language-analysis、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。compound literal、VLA、parenthesized/nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`void_main_function_definition`と`c11_implicit_return_type`の単純function definition 2件だけをClang strictと比較し、return typeまたはfunction名token選択だけで閉じる場合に限る。old-style parameter、nested declarator、function pointer、CFG、deep expressionには入らない。
