@@ -21835,15 +21835,19 @@ static void test_parse_invalid(
       "  return 0;\n"
       "}",
       "E3064", 3, 25);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* A typedef does not make an atomic type valid for a bit-field. */\n"
       "typedef _Atomic unsigned int atomic_uint;\n"
       "\n"
       "struct flags {\n"
       "  atomic_uint value : 3;\n"
       "};\n"
-      "int main(void) { return 0; }",
-      "E3064", 15);
+      "\n"
+      "int main(void) {\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 5, 15);
   expect_parse_fail_at_column(
       test_suite_session,
       "struct flags {\n"
