@@ -21616,10 +21616,12 @@ static void test_parse_invalid(
       "};\n"
       "int main(void) { return 0; }",
       "E3064", 3);
-  expect_parse_fail(test_suite_session,
-      "typedef int function_type(void); "
-      "int apply(_Atomic function_type callback); "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "typedef int function_type(void);\n"
+      "int apply(_Atomic function_type callback);\n"
+      "int main(void) { return 0; }",
+      "E3064", 11);
   expect_parse_fail(test_suite_session,
       "typedef int function_type(void); "
       "typedef _Atomic function_type atomic_function_type; "

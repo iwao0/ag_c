@@ -40165,3 +40165,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member使用、nested aggregate、pointer派生、parameter、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_typedef_function_parameter` fixtureのfunction typedefと単純なprototype parameter `_Atomic function_type callback`だけをClang strict、Native、Wasmで比較し、parameter経路で使用側`_Atomic`を指すか確認する。definition、callback使用、nested declarator、initializerには入らない。
+
+### このセッション（続き1391）: parameter function typedefへのAtomic qualifierのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_typedef_function_parameter` fixtureにあるfunction typedefと単純なprototype parameter `_Atomic function_type callback`だけをClang C11 strict、Native、Wasmで比較した。
+  - definition、callback使用、nested declarator、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともClangと同じprototype宣言4行11列の`_Atomic`を指し、Native/WasmはE3064を報告した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行を持つE3064 column 11 assertionへ強化し、typedef定義側、parameter identifier、function declaratorへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、parameter adjustment、function typedef identity、canonical QualType、診断IDは変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.74秒 / user 3.02秒 / sys 0.34秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。definition、callback使用、nested declarator、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_typedef_function_typedef` fixtureのfunction typedefと`typedef _Atomic function_type atomic_function_type;`だけをClang strict、Native、Wasmで比較し、typedef declaration経路で`_Atomic`を指すか確認する。別名使用、pointer派生、parameter、initializerには入らない。
