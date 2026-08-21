@@ -41087,3 +41087,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member、parameter、pointer declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_typedef_function_member` fixtureのaggregate member `_Atomic function_type callback`だけをClang strict、Native、Wasmで比較し、member declarationの診断IDと位置を行まで確認する。parameter、typedef redeclaration、pointer declaratorには入らない。
+
+### このセッション（続き1440）: member atomic function typedefのE3064位置を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_typedef_function_member` fixtureにある、aggregate member declaration `_Atomic function_type callback`だけをClang C11 strict、Native、Wasmで比較した。
+  - parameter、typedef redeclaration、pointer declarator、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangはaggregate memberでfunction typedefへ適用された`_Atomic` qualifierを5行3列へ報告した。Native/Wasmも同じ`_Atomic`を5行3列でE3064と実トークン`_Atomic`として報告した。
+  - aggregate member declaration-specifier経路のatomic qualifierがfunction typeを拒否する位置を、typedef名やmember declaratorではなくqualifier開始位置で三系統が一致して報告することを確認した。
+  - 既存のE3064 column 3 assertionをfixtureと同じ先頭comment・typedef・空行・aggregate・main配置を持つE3064 position 5:3 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、function typedef identity、aggregate member resolution、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.67秒 / user 3.02秒 / sys 0.33秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。parameter、typedef redeclaration、pointer declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_typedef_function_parameter` fixtureのprototype parameter `_Atomic function_type callback`だけをClang strict、Native、Wasmで比較し、parameter declarationの診断IDと位置を行まで確認する。typedef redeclaration、pointer outer、local parameter definitionには入らない。

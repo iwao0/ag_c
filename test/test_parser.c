@@ -21718,14 +21718,20 @@ static void test_parse_invalid(
       "  return 0;\n"
       "}",
       "E3064", 5, 3);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* An aggregate member cannot have an atomic-qualified function "
+      "type. */\n"
       "typedef int function_type(void);\n"
+      "\n"
       "struct callbacks {\n"
       "  _Atomic function_type callback;\n"
       "};\n"
-      "int main(void) { return 0; }",
-      "E3064", 3);
+      "\n"
+      "int main(void) {\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 5, 3);
   expect_parse_fail_at_column(
       test_suite_session,
       "typedef int function_type(void);\n"
