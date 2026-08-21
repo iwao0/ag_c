@@ -8721,9 +8721,13 @@ static int preflight_direct_local_declaration(
   if (declaration->is_standalone_tag) {
     if (declaration_context ==
         PSX_DECLARATION_CONTEXT_FOR_INITIALIZER) {
+      token_t *source_token = declaration->diagnostic_token;
+      if (declaration->specifier.tag_action.name_token)
+        source_token =
+            (token_t *)declaration->specifier.tag_action.name_token;
       ps_diag_ctx_in(
           ps_ctx_diagnostics(context->semantic_context),
-          declaration->diagnostic_token, "declaration-specifier",
+          source_token, "declaration-specifier",
           "for initializer declaration may only declare objects with "
           "'auto' or 'register' storage");
       return 0;

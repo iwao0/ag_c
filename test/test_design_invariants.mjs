@@ -9451,11 +9451,14 @@ if (!/psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\([^
     !/psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/if\s*\(declaration->is_standalone_tag\)\s*\{\s*if\s*\(declaration_context\s*==\s*PSX_DECLARATION_CONTEXT_FOR_INITIALIZER\)\s*\{[^]*?source_token\s*=\s*declaration->diagnostic_token[^]*?tag_action\.name_token[^]*?source_token\s*=\s*\(token_t\s*\*\)declaration->specifier\.tag_action\.name_token[^]*?ps_diag_ctx_in\([^]*?source_token/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     (declarationApplicationSource.match(
       /psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\(/g,
     )?.length ?? 0) < 2) {
   throw new Error(
-    "standalone tag declarations must ignore storage, CV, atomic, and alignment specifiers while sharing typedef, restrict, function, and declared-entity constraints",
+    "standalone tag declarations must preserve shared constraints and use named tag tokens for for-initializer diagnostics",
   );
 }
 const declarationSpecifierConstraintValidator =

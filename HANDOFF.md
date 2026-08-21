@@ -38385,3 +38385,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 既存fixtureと通常サイズprobeをClang strict/Nativeで分類し、代表5形と合法対照をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - storage/function specifierの浅い診断位置はtype-name後置形まで閉じた。次も既存identifier/keywordだけで閉じる通常サイズの宣言・statement制約を比較し、`_Alignas`受理方針、block-scope extern void、duplicate caseの式位置は保留する。
+
+### このセッション（続き1303）: for初期節のnamed standalone tag診断をtag名へ移した
+- 対象選定:
+  - 前回分離したfile/block-scope `extern void`をClang C11 strictと比較し、宣言専用のresolver/data lowering試作ではNative/Wasmの宣言を受理できた。しかしClangが許す破棄式・void cast・conditional/commaでag_cはlvalue conversion拒否となり、address取得はE0006、`sizeof`は既存の`sizeof(void) == 1`拡張方針とも交差した。式semantic、address/type-query方針まで必要になるため未コミット試作を戻し、今回の浅い修正対象から除外した。
+  - 代わりに`for`初期宣言の既存5fixtureを比較した。typedef、static/extern object、function declarationはClang strictとag_cが同じ宣言名を指したが、`for (struct loop_tag; ... )`だけClangがtag名`loop_tag`、ag_cがtag keyword `struct`を指していた。
+  - named tag tokenの保持と専用分岐だけで閉じ、tag body、anonymous tag、式、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - tag specifier parserはtag keywordを汎用`diagnostic_token`へ保持する一方、tag名は文字列と長さだけを残してidentifier token自体を捨てていた。direct local declaration preflightのstandalone tag分岐は汎用tokenをそのまま使うため、for初期節のE3064も`struct`を指していた。
+  - `psx_parsed_tag_action_t`へ別の`name_token`を保持し、`PSX_DECLARATION_CONTEXT_FOR_INITIALIZER`のstandalone tag拒否だけがnamed形ではそれを選ぶ。名前がない場合は従来のdeclaration tokenへfallbackする。既存のtag診断用`diagnostic_token`、tag登録、型形成、受理可否、診断ID・文言は変更していない。
+  - parser unitはstandalone named tagの保存tokenと文字列を固定し、design invariantはfor初期節分岐がnamed tokenを選びfallbackを残すことを固定する。診断文言のexact matchにはしていない。
+- coverage:
+  - 既存`for_initializer_standalone_tag` fixtureがshould_reject正本とNative/Wasm共用compile-fail registryへ登録済みなので重複fixtureは追加していない。differential coverage表へnamed/anonymousのsource token境界を追記した。
+- 確認:
+  - `for_initializer_standalone_tag`はClang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3064を維持してClangと同じtag名`loop_tag`上で一致した。
+  - typedef、static/extern object、function declarationの既存4fixtureはNative/Wasmとも従来の`loop_type`、`counter`、`shared_value`、`helper`位置を維持した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.63秒 / user 3.08秒 / sys 0.25秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.91秒 / user 12.13秒 / sys 1.61秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、再確認も含め最新は **real 3.17秒 / user 0.77秒 / sys 0.46秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象1fixtureと隣接4fixtureをClang strict/Native/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - `extern void`は式semantic方針が必要なため保留する。次も既存identifier/keyword tokenだけで閉じる通常サイズの宣言・statement制約を少数比較し、`_Alignas`受理方針とduplicate caseの式位置には入らない。

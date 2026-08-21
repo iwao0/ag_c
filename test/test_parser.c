@@ -10850,6 +10850,14 @@ static void test_direct_function_typed_hir_resolution_boundary(
   node_local_declaration_t *standalone_tag_declaration =
       (node_local_declaration_t *)nested_block->body[6];
   ASSERT_TRUE(standalone_tag_declaration->declaration->is_standalone_tag);
+  const token_ident_t *standalone_tag_name =
+      standalone_tag_declaration->declaration->specifier
+          .tag_action.name_token;
+  ASSERT_TRUE(standalone_tag_name != NULL);
+  ASSERT_EQ(15, standalone_tag_name->len);
+  ASSERT_TRUE(strncmp(
+                  standalone_tag_name->str,
+                  "__direct_marker", 15) == 0);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[8]->kind);
   node_local_declaration_t *mode_declaration =
       (node_local_declaration_t *)nested_block->body[8];
