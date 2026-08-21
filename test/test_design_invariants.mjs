@@ -6477,6 +6477,9 @@ if (semanticParserTypeBoundaryViolations.length > 0) {
   );
 }
 const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
+const sourceCastNode = astSource.match(
+  /typedef\s+struct\s*\{([\s\S]*?)\}\s*node_source_cast_t\s*;/,
+);
 if (!nodeStruct ||
     !/\bpsx_syntax_node_kind_t\s+kind\s*;/.test(nodeStruct[1]) ||
     /\bpsx_(?:work|resolution)_node_kind_t\s+kind\s*;/.test(
@@ -6498,10 +6501,15 @@ if (!nodeStruct ||
   );
 }
 if (/\bis_source_cast\b/.test(astSource) ||
+    !sourceCastNode ||
+    !/\btoken_t\s*\*\s*operand_token\s*;/.test(sourceCastNode[1]) ||
     !/\bND_SOURCE_CAST\b/.test(syntaxNodeKindHeader) ||
     /\bND_CAST\b/.test(syntaxNodeKindHeader) ||
     !/cast->base\.kind\s*=\s*ND_SOURCE_CAST/.test(
       earlyNodeUtilsSource,
+    ) ||
+    !/\(\(node_source_cast_t\s*\*\)source_cast\)->operand_token\s*=\s*operand_token/.test(
+      parserExpressionSource,
     ) ||
     !/static\s+int\s+resolve_direct_source_cast\s*\(/.test(
       syntaxTypedHirResolutionSource,
@@ -6511,6 +6519,16 @@ if (/\bis_source_cast\b/.test(astSource) ||
     )) {
   throw new Error(
     "source casts must use Syntax ND_SOURCE_CAST and resolve directly into Typed HIR casts",
+  );
+}
+if (!/case\s+PSX_SOURCE_CAST_OPERAND_NOT_SCALAR\s*:[\s\S]*?if\s*\(!resolution->target_is_aggregate\)\s*source_token\s*=\s*cast->operand_token/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+PSX_SOURCE_CAST_SCALAR_CATEGORIES_INCOMPATIBLE\s*:[\s\S]*?source_token\s*=\s*cast->operand_token/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "invalid scalar source casts must retain the operand start token without changing aggregate-cast diagnostics",
   );
 }
 if (/\b(?:unevaluated_operand_depth|in_unevaluated_operand)\b/.test(

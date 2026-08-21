@@ -90,6 +90,7 @@ typedef struct {
 typedef struct {
   node_t base;
   psx_type_name_ref_t type_name;
+  token_t *operand_token;
 } node_source_cast_t;
 
 typedef struct {

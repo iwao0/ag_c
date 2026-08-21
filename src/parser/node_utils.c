@@ -1717,6 +1717,7 @@ node_t *psx_node_new_source_cast_in(
   cast->base.kind = ND_SOURCE_CAST;
   cast->base.lhs = operand;
   cast->type_name = type_name;
+  cast->operand_token = operand ? operand->tok : NULL;
   return (node_t *)cast;
 }
 

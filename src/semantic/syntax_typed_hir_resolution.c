@@ -594,10 +594,11 @@ static direct_cast_binding_t *find_direct_cast_binding(
 
 static int note_direct_source_cast_rejection(
     direct_resolution_context_t *context,
-    const node_t *syntax,
+    const node_source_cast_t *cast,
     const psx_source_cast_types_resolution_t *resolution) {
-  if (!resolution) return 0;
+  if (!cast || !resolution) return 0;
   psx_syntax_typed_hir_rejection_t rejection;
+  const token_t *source_token = NULL;
   switch (resolution->status) {
     case PSX_SOURCE_CAST_TARGET_NOT_VOID_OR_SCALAR:
       rejection =
@@ -606,10 +607,13 @@ static int note_direct_source_cast_rejection(
     case PSX_SOURCE_CAST_OPERAND_NOT_SCALAR:
       rejection =
           PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_OPERAND_NOT_SCALAR;
+      if (!resolution->target_is_aggregate)
+        source_token = cast->operand_token;
       break;
     case PSX_SOURCE_CAST_SCALAR_CATEGORIES_INCOMPATIBLE:
       rejection =
           PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_SCALAR_CATEGORIES_INCOMPATIBLE;
+      source_token = cast->operand_token;
       break;
     case PSX_SOURCE_CAST_AGGREGATE_TYPE_MISMATCH:
       rejection =
@@ -635,8 +639,11 @@ static int note_direct_source_cast_rejection(
     case PSX_SOURCE_CAST_TYPES_INVALID:
       return 0;
   }
-  return note_direct_integer_rejection(
-      context, rejection, syntax, resolution->target_type_kind);
+  note_direct_integer_rejection(
+      context, rejection, &cast->base, resolution->target_type_kind);
+  if (context && context->failure && source_token)
+    context->failure->source_token = source_token;
+  return 0;
 }
 
 static int resolve_direct_source_cast_preflight_type(
@@ -671,7 +678,8 @@ static int resolve_direct_source_cast_preflight_type(
   if (binding->type_resolution.status !=
       PSX_SOURCE_CAST_TYPES_OK)
     return note_direct_source_cast_rejection(
-        context, syntax, &binding->type_resolution);
+        context, (const node_source_cast_t *)syntax,
+        &binding->type_resolution);
   if (binding->type_resolution.target_is_aggregate) {
     if (!context->lowering_context || !context->options) return 0;
     if (context->unevaluated_depth == 0 &&

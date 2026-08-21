@@ -410,11 +410,13 @@ static node_t *cast_ctx(expr_parse_ctx_t *ctx) {
   parsed_parenthesized_type_name_t parsed_type;
   if (parse_parenthesized_type_name(curtok(ctx), &parsed_type, ctx)) {
     set_curtok(ctx, parsed_type.after_rparen);
+    token_t *operand_token = curtok(ctx);
     node_t *operand = cast_ctx(ctx);
     node_t *source_cast =
         psx_node_new_source_cast_in(
             ctx->arena_context, operand, parsed_type.type_name);
     source_cast->tok = cast_tok;
+    ((node_source_cast_t *)source_cast)->operand_token = operand_token;
     return apply_postfix(source_cast, ctx);
   }
   return unary_ctx(ctx);

@@ -39031,3 +39031,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象fixture、2 control、12個のstructured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。bit-field、register、aggregate return、VLA、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`cast_pointer_to_double`、`cast_double_to_pointer`、`cast_void_expression_to_integer`の単純cast 3件だけをClang strictと比較し、castまたはoperand token選択だけで閉じる場合に限る。aggregate cast、pointer qualifier体系、complex、deep expressionには入らない。
+
+### このセッション（続き1331）: 不正scalar castのE3064をoperand先頭へ移した
+- 対象選定:
+  - 前回候補の`cast_pointer_to_double`、`cast_double_to_pointer`、`cast_void_expression_to_integer`をClang C11 strict、Native、Wasmで比較した。3系統とも拒否しE3064 parityは維持していたが、Clangは`&value`、`1.5`、`do_nothing`のoperand先頭、Native/Wasmはcast開始の`(`を指していた。
+  - pointer↔floatingと共通statusを使う`cast_{pointer_to_complex,complex_to_pointer}`だけを位置controlとして追加し、aggregate controlの`cast_struct_from_nonscalar`も比較した。前2件は同じoperand位置差、aggregate controlは3系統ともcast開始位置で一致した。
+  - aggregate cast規則、pointer qualifier体系、式の意味評価、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - `node_source_cast_t`はcast開始tokenだけを持ち、operandを解析する直前のtokenを失っていた。構文ノードへ`operand_token`を追加し、parserがtype-name閉じ括弧直後のtokenを保存するようにした。
+  - `PSX_SOURCE_CAST_SCALAR_CATEGORIES_INCOMPATIBLE`と、targetがaggregateでない`PSX_SOURCE_CAST_OPERAND_NOT_SCALAR`だけがE3064 source overrideにこのtokenを使う。aggregate mismatch/extension rejection、target type rejection、受理/拒否、型解決、E3064 ID・文言は変更していない。
+- coverage:
+  - structured diagnosticへpointer↔floating 2列、void expression→integer、pointer↔complex 2列、aggregate controlの計6列を追加した。complex→pointerはcast開始column 18ではなく、括弧付きoperand開始column 25を固定した。
+  - Syntax境界ではnested castの外側が内側castの`(`、内側がidentifierをoperand tokenとして保持することを固定した。design invariantではscalar rejectionだけがoperand tokenを使い、aggregate cast sourceを変えないことを固定した。
+  - differential coverage表へscalar category不一致/非aggregate void operandとaggregate rejectionのsource方針を追記した。
+- 確認:
+  - 対象・control 6 fixtureはClang strict、Native、Wasmの18/18経路がexit 1だった。修正対象5件のNative/Wasm 10/10経路はE3064を維持してoperand先頭へ移り、aggregate control 2/2経路はcast開始を維持した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_language_analysis`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、最終実行は**real 3.58秒 / user 2.97秒 / sys 0.28秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.41秒 / user 11.63秒 / sys 1.52秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.13秒 / user 0.75秒 / sys 0.44秒**。
+  - `git diff --check`も成功した。独立gateは並列実行した。
+- 未実施:
+  - 6 fixture、6 structured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。aggregate cast規則、pointer qualifier体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`call_nonfunction_object`、`conditional_struct_condition`、`conditional_void_scalar_operands`の浅いpostfix/conditional 3件だけをClang strictと比較し、callまたは`?`/operand token選択だけで閉じる場合に限る。argument変換、pointer compatibility、aggregate value semantics、deep expressionには入らない。

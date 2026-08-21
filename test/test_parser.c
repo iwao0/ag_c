@@ -10150,9 +10150,15 @@ static void test_cast_typed_hir_boundary(
   ASSERT_EQ(ND_SOURCE_CAST, node->kind);
   node_source_cast_t *outer = (node_source_cast_t *)node;
   ASSERT_TRUE(outer->type_name.syntax != NULL);
+  ASSERT_TRUE(outer->operand_token != NULL);
+  ASSERT_EQ(TK_LPAREN, outer->operand_token->kind);
+  ASSERT_EQ(5, outer->operand_token->byte_offset);
   ASSERT_EQ(ND_SOURCE_CAST, node->lhs->kind);
   node_source_cast_t *inner = (node_source_cast_t *)node->lhs;
   ASSERT_TRUE(inner->type_name.syntax != NULL);
+  ASSERT_TRUE(inner->operand_token != NULL);
+  ASSERT_EQ(TK_IDENT, inner->operand_token->kind);
+  ASSERT_EQ(20, inner->operand_token->byte_offset);
 
   psx_frontend_expression_hir_t expression =
       resolve_test_expression_hir(test_suite_session, node);
@@ -20669,6 +20675,51 @@ static void test_parse_invalid(
       "int main(void) {\n"
       "  struct value object = {1};\n"
       "  return !object;\n"
+      "}",
+      "E3064", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int value = 7;\n"
+      "  return (double)&value != 0.0;\n"
+      "}",
+      "E3064", 18);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int *invalid = (int *)1.5;\n"
+      "  return invalid == 0;\n"
+      "}",
+      "E3064", 25);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "static void do_nothing(void) {}\n"
+      "int main(void) {\n"
+      "  return (int)do_nothing();\n"
+      "}",
+      "E3064", 15);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int value = 7;\n"
+      "  double _Complex invalid = (double _Complex)&value;\n"
+      "  return invalid != 0.0;\n"
+      "}",
+      "E3064", 46);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int *invalid = (int *)(1.0 + 2.0 * (double _Complex)1.0);\n"
+      "  return invalid == 0;\n"
+      "}",
+      "E3064", 25);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  struct S { int x; };\n"
+      "  union U { int y; };\n"
+      "  union U value = {1};\n"
+      "  return (struct S)value;\n"
       "}",
       "E3064", 10);
   expect_parse_fail_at_column(
