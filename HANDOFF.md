@@ -40686,3 +40686,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。失敗assertion、複雑な条件式、通常member、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`unnamed_bitfield_only_struct` fixtureの単一の無名bit-fieldだけを持つstructをClang strict、Native、Wasmで比較し、無名bit-fieldがnamed member要件を満たさない診断IDと位置を確認する。atomic型、非定数幅、named member、nested aggregateには入らない。
+
+### このセッション（続き1419）: unnamed-bitfield-only structのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`unnamed_bitfield_only_struct` fixtureにある、単一の無名bit-field `unsigned int : 1;`だけを持つstructをClang C11 strict、Native、Wasmで比較した。
+  - atomic型、非定数幅、named member、nested aggregate、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangはnamed memberを持たないstructをGNU empty-struct extensionとして`struct`の2行1列へ報告した。Native/Wasmはaggregate body内の無名bit-field宣言先頭`unsigned`を3行3列でE3064と実トークン`unsigned`として報告した。
+  - 有効な幅を持つ無名bit-fieldはbit-field構文自体を通過してもnamed member要件を満たさず、static-assert-only caseと同じaggregate body代表token方針で両backendが一致することを確認した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行とインデントを持つE3064 column 3 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、bit-field幅評価、record identity、aggregate layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`unsigned`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.60秒 / user 3.00秒 / sys 0.29秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。atomic型、非定数幅、named member、nested aggregate、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`anonymous_unnamed_bitfield_only` fixtureの無名bit-fieldだけを含む単一anonymous structをClang strict、Native、Wasmで比較し、recursive named-member検査の診断IDと位置を確認する。多段nest、named member、atomic型、非定数幅には入らない。

@@ -21836,9 +21836,13 @@ static void test_parse_invalid(
       "};\n"
       "int main(void) { return 0; }",
       "E3064", 3);
-  expect_parse_fail(test_suite_session,
-      "struct Bits { unsigned int : 1; }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Bits {\n"
+      "  unsigned int : 1;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 3);
   expect_parse_fail(test_suite_session,
       "struct Outer { struct { unsigned int : 1; }; }; "
       "int main(void) { return 0; }");
