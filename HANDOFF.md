@@ -40802,3 +40802,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、隣接2件のfocused file-pipeline確認、E2E registry再ビルドで境界を確認したため、parser suite、preprocess suite、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。function-like macro、conditional、include、pragma、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`variably_modified_typedef_array_member` fixtureの単一identifier VLA boundを持つblock-scope typedef arrayと単一struct memberだけをClang strict、Native、Wasmで比較し、variably-modified member拒否の診断IDと位置を確認する。pointer typedef variant、複合bound式、nested aggregateには入らない。
+
+### このセッション（続き1425）: VLA typedef array memberのE3064位置を固定した
+- 対象選定:
+  - 前回候補の既存`variably_modified_typedef_array_member` fixtureにある、単一identifier `count`をboundに持つblock-scope `typedef int Row[count]`とstruct member `Row values`だけをClang C11 strict、Native、Wasmで比較した。
+  - pointer variant、pointer typedef variant、複合bound式、nested aggregate、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - ClangはVLA typedef array memberのmember名`values`を5行9列へ報告した。Native/Wasmも同じ`values`を5行9列でE3064と実トークン`values`として報告した。
+  - VLA boundとblock-scope typedefの解決後、aggregate memberのvariably-modified type制約で拒否する位置が三系統で一致することを確認した。
+  - 既存の非構造化`expect_parse_fail`を同じ宣言構造とインデントを持つE3064 position 4:9 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、VLA bound評価、typedef identity、aggregate layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`values`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.99秒 / user 3.01秒 / sys 0.39秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer variant、pointer typedef variant、複合bound式、nested aggregate、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`variably_modified_typedef_pointer_member` fixtureの同じ単一identifier VLA typedefから派生したmember `Row *values`だけをClang strict、Native、Wasmで比較し、pointerを挟んでもvariably-modified制約を拒否する診断IDと位置を確認する。pointer typedef variant、二重pointer、union、複合bound式には入らない。

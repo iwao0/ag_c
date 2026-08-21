@@ -22017,9 +22017,16 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session,
       "struct Holder { static int member; }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(test_suite_session,
-      "void probe(int count) { typedef int Row[count]; "
-      "struct Item { Row values; }; }");
+  expect_parse_fail_at_position(
+      test_suite_session,
+      "void probe(int count) {\n"
+      "  typedef int Row[count];\n"
+      "  struct Item {\n"
+      "    Row values;\n"
+      "  };\n"
+      "}\n"
+      "int main(void) { return 0; }",
+      "E3064", 4, 9);
   expect_parse_fail(test_suite_session,
       "void probe(int count) { typedef int Row[count]; "
       "struct Item { Row *values; }; }");
