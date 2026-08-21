@@ -21897,9 +21897,12 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session, "int main(void) { int x; enum E { x }; return 0; }");
   expect_parse_fail(test_suite_session,
       "enum Empty {}; int main(void) { return 0; }");
-  expect_parse_fail(test_suite_session,
-      "enum Incomplete; enum Incomplete object; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "enum value;\n"
+      "enum value object;\n"
+      "int main(void) { return 0; }",
+      "E3064", 12);
   expect_parse_fail(test_suite_session,
       "enum Incomplete; struct Holder { enum Incomplete member; }; "
       "int main(void) { return 0; }");

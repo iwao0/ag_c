@@ -104,9 +104,12 @@ void psx_resolve_global_declaration(
                                     ? psx_semantic_type_table_base(
                                           types, request->type.type_id)
                                     : request->type;
-  if (object_type.type_id == PSX_TYPE_ID_INVALID ||
-      (!defer_incomplete_record &&
-       !type_is_complete_object(semantic_context, object_type.type_id))) {
+  if (object_type.type_id == PSX_TYPE_ID_INVALID) {
+    return;
+  }
+  if (!defer_incomplete_record &&
+      !type_is_complete_object(semantic_context, object_type.type_id)) {
+    resolution->status = PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT;
     return;
   }
   resolution->declaration_qual_type = request->type;

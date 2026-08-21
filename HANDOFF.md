@@ -40496,3 +40496,24 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。enum定義、member access、initializer、width式派生、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`incomplete_enum_object` fixtureのforward-declared enumと単一object `enum value object;`だけをClang strict、Native、Wasmで比較し、不完全enum object制約の診断IDとobject位置を確認する。enum定義、initializer、sizeof、pointer派生には入らない。
+
+### このセッション（続き1409）: incomplete enum global objectの専用診断を復元した
+- 対象選定:
+  - 前回候補の既存`incomplete_enum_object` fixtureにある`enum value;`と単一object `enum value object;`だけをClang C11 strict、Native、Wasmで比較した。
+  - enum定義、initializer、sizeof、pointer派生、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 発見と修正:
+  - 修正前はClangが対象objectを3行12列で「never completed」と報告する一方、Native/Wasmは同じ`object`を指しながら「canonical global declaration resolution failed」という内部的な汎用E3064文言へ落ちていた。Clang strictは別途forward enum自体も2行6列でpedantic errorにする。
+  - global declaration resolverは不完全recordだけを`PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT`へ変換し、不完全enumのcomplete-object検査失敗を既定の`INVALID`のまま返していた。有効なobject typeが不完全で、record遅延対象でもない場合は既存の`INCOMPLETE_OBJECT` statusを返すようにした。
+  - これによりNative/Wasmは既存E3064の「不完全型のオブジェクトは宣言できません」を実トークン`object`へ報告する。外部リンケージの不完全record tentative definitionを後続tag定義まで遅延する分岐は変更していない。
+  - 既存の非構造化parser assertionをfixture同様のE3064 column 12 assertionへ強化した。
+- 確認:
+  - 修正後の対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路は専用E3064文言と実トークン`object`を報告した。
+  - `tentative_incomplete_record_completion` controlはNative/Wasmの2/2経路がexit 0で、既存のrecord遅延受理を維持した。
+  - `make -j4 build/test_parser build/ag_c build/ag_c_wasm`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.78秒 / user 3.01秒 / sys 0.28秒**。
+  - `/usr/bin/time -p make test-design-invariants` = **design invariants: ok**、**real 3.33秒 / user 0.77秒 / sys 0.47秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - Native/Wasm共通source、structured parser regression、対象fixture、record遅延control、該当design invariantで直接境界を確認したため、language-analysis、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。enum定義、initializer、sizeof、pointer派生、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`incomplete_enum_member` fixtureのforward-declared enumと単一memberだけをClang strict、Native、Wasmで比較し、不完全enum member制約の診断ID・文言・member位置を確認する。enum定義、initializer、bit-field、anonymous aggregateには入らない。
