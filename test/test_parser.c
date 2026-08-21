@@ -21646,9 +21646,22 @@ static void test_parse_invalid(
       "_Atomic array_type *pointer;\n"
       "int main(void) { return 0; }",
       "E3064", 1);
-  expect_parse_fail(test_suite_session,
-      "typedef int array_type[2]; "
-      "int main(void) { return sizeof(_Atomic array_type); }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "typedef int array_type[2];\n"
+      "\n"
+      "int main(void) {\n"
+      "  return sizeof(_Atomic array_type);\n"
+      "}",
+      "E3064", 17);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "typedef int array_type[2];\n"
+      "\n"
+      "int main(void) {\n"
+      "  return _Alignof(_Atomic array_type);\n"
+      "}",
+      "E3064", 19);
   expect_parse_fail_at_column(
       test_suite_session,
       "struct item;\n"

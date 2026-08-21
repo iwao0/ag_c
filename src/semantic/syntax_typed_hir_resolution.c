@@ -1834,6 +1834,7 @@ static int validate_direct_type_query_type(
     const node_t *source, psx_qual_type_t queried_qual_type,
     int is_sizeof, int allow_incomplete_extension,
     const token_t *invalid_restrict_token,
+    const token_t *invalid_atomic_token,
     const token_t *invalid_type_token) {
   psx_type_shape_t shape = {0};
   if (!context || !source ||
@@ -1856,8 +1857,11 @@ static int validate_direct_type_query_type(
           context->semantic_context, queried_qual_type))
     return note_direct_semantic_rejection_at_token(
         context,
-        PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
-        source, invalid_type_token);
+        invalid_atomic_token
+            ? PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_NAME_INVALID_ATOMIC_QUALIFICATION
+            : PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+        source, invalid_atomic_token ? invalid_atomic_token
+                                     : invalid_type_token);
   if (is_sizeof && shape.kind == PSX_TYPE_VOID)
     return 1;
   if (shape.kind == PSX_TYPE_VOID || shape.kind == PSX_TYPE_FUNCTION)
@@ -1997,7 +2001,8 @@ static int resolve_direct_sizeof_type_name(
       !validate_direct_type_query_type(
           context, &query->base, queried_qual_type, 1,
           has_zero_length_array_extension,
-          psx_type_name_restrict_qualifier_token(&type_name), NULL))
+          psx_type_name_restrict_qualifier_token(&type_name),
+          psx_type_name_atomic_qualifier_token(&type_name), NULL))
     return 0;
 
   int maximum_factors = effective_application.array_bound_count;
@@ -2279,7 +2284,8 @@ static int resolve_direct_alignof_type_name(
   return queried_qual_type.type_id != PSX_TYPE_ID_INVALID &&
          validate_direct_type_query_type(
              context, &query->base, queried_qual_type, 0, 0,
-             psx_type_name_restrict_qualifier_token(&type_name), NULL) &&
+             psx_type_name_restrict_qualifier_token(&type_name),
+             psx_type_name_atomic_qualifier_token(&type_name), NULL) &&
          psx_resolve_alignof_qual_type_plan_in(
              context->semantic_context, queried_qual_type,
              &binding->plan);
@@ -2530,7 +2536,7 @@ static int resolve_direct_type_query(
       }
       if (queried_qual_type.type_id != PSX_TYPE_ID_INVALID &&
           !validate_direct_type_query_type(
-              context, syntax, queried_qual_type, 1, 0, NULL,
+              context, syntax, queried_qual_type, 1, 0, NULL, NULL,
               query->invalid_type_token))
         return 0;
       if (!resolved && operand->kind == ND_STRING) {

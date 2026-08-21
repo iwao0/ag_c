@@ -7142,11 +7142,11 @@ if (!/query->operand_token\s*=\s*lparen_tok->next\s*;\s*query->invalid_type_toke
     (directTypeQueryValidation.match(
       /note_direct_semantic_rejection_at_token\s*\(/g,
     )?.length ?? 0) < 7 ||
-    !/validate_direct_type_query_type\s*\(\s*context,\s*syntax,\s*queried_qual_type,\s*1,\s*0,\s*NULL,\s*query->invalid_type_token\s*\)/.test(
+    !/validate_direct_type_query_type\s*\(\s*context,\s*syntax,\s*queried_qual_type,\s*1,\s*0,\s*NULL,\s*NULL,\s*query->invalid_type_token\s*\)/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     (syntaxTypedHirResolutionSource.match(
-      /psx_type_name_restrict_qualifier_token\(&type_name\)\s*,\s*NULL/g,
+      /psx_type_name_restrict_qualifier_token\(&type_name\)\s*,\s*psx_type_name_atomic_qualifier_token\(&type_name\)\s*,\s*NULL/g,
     )?.length ?? 0) < 2) {
   throw new Error(
     "sizeof expression diagnostics must preserve the operand start separately from their diagnostic token while type-name queries retain their operator source",
@@ -11250,7 +11250,7 @@ if (!/semantic_type_has_invalid_atomic_qualification\s*\([^]*?PSX_TYPE_QUALIFIER
     !/psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?psx_semantic_type_has_invalid_atomic_qualification_in[^]*?atomic qualifier requires a complete non-array object type/.test(
       typeNameResolutionSource,
     ) ||
-    !/validate_direct_type_query_type\s*\([^]*?psx_semantic_type_has_invalid_atomic_qualification_in[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE/.test(
+    !/validate_direct_type_query_type\s*\([^]*?psx_semantic_type_has_invalid_atomic_qualification_in[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_NAME_INVALID_ATOMIC_QUALIFICATION/.test(
       syntaxTypedHirResolutionSource,
     )) {
   throw new Error(

@@ -572,6 +572,11 @@ int psx_diagnose_syntax_typed_hir_rejection_in_context(
                          diagnostics,
                          DIAG_ERR_PARSER_TYPE_QUERY_INVALID_TYPE));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_NAME_INVALID_ATOMIC_QUALIFICATION:
+      ps_diag_ctx_in(
+          diagnostics, token, "type-name",
+          "atomic qualifier requires a complete non-array object type");
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_SIZEOF_BITFIELD:
       diag_emit_tokf_in(
           diagnostics, DIAG_ERR_PARSER_SIZEOF_BITFIELD,

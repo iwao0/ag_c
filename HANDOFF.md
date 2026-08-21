@@ -40255,3 +40255,24 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer使用、nested pointer、type-name、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_typedef_array_type_name` fixtureの`sizeof(_Atomic array_type)`内のtype-nameだけをClang strict、Native、Wasmで比較し、type-name解決経路でも`_Atomic`を指すか確認する。operand評価、nested expression、pointer派生、initializerには入らない。
+
+### このセッション（続き1396）: Atomic array typedefのtype-name診断をE3064へ修正した
+- 対象選定:
+  - 前回候補の既存`atomic_typedef_array_type_name` fixtureにある`sizeof(_Atomic array_type)`のtype-name形成だけをClang C11 strict、Native、Wasmで比較した。
+  - operand評価、nested expression、pointer派生、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 発見と修正:
+  - 修正前はClangが5行17列の`_Atomic`を指す一方、Native/Wasmは後段の`sizeof`を指すE3117へ診断を畳んでいた。
+  - `sizeof`/`_Alignof`のdirect type-name検証へAtomic qualifierの実トークンを渡し、typed-HIR拒否状態にAtomic type-name専用の区別を追加した。診断生成時に既存のE3064文言へ変換することで、Native/Wasm共通経路をClangの診断位置へ揃えた。
+  - `psx_type_name_atomic_qualifier_token()`は`_Atomic(type-name)`と通常のqualifier形式の双方から実トークンを選ぶ。expression operandの一般的なE3117経路は変更していない。
+  - 既存の非構造化parser assertionをfixture同様のE3064 column 17 assertionへ強化し、同じ共通経路を使う`_Alignof(_Atomic array_type)`もE3064 column 19で固定した。
+- 確認:
+  - 修正後の対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - 一時`_Alignof` probeも三系統3/3経路がexit 1で、Clangは4行19列、Native/WasmはE3064と実トークン`_Atomic`を報告した。probeは確認後に削除した。
+  - `make -j4 build/test_parser build/ag_c build/ag_c_wasm`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.68秒 / user 3.00秒 / sys 0.33秒**。
+  - `/usr/bin/time -p make test-design-invariants` = **design invariants: ok**、**real 3.21秒 / user 0.77秒 / sys 0.47秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - Native/Wasm共通source、structured parser regression、三系統fixture/probe、該当design invariantで直接境界を確認したため、language-analysis、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。operand評価、nested expression、pointer派生、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_bitfield_qualifier` fixtureの単一member `_Atomic unsigned int value : 3;`だけをClang strict、Native、Wasmで比較し、Atomic bit-field固有診断のIDとqualifier位置を確認する。member access、initializer、width式派生、unnamed bit-fieldには入らない。

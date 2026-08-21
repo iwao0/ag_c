@@ -29,6 +29,16 @@ token_t *psx_type_name_restrict_qualifier_token(
              : source_token;
 }
 
+token_t *psx_type_name_atomic_qualifier_token(
+    const psx_type_name_ref_t *type_name) {
+  if (!type_name || !type_name->syntax) return NULL;
+  const psx_parsed_type_name_t *syntax = type_name->syntax;
+  if (syntax->atomic_inner) return syntax->diagnostic_token;
+  return psx_declaration_specifier_token_for_kinds(
+      &syntax->specifier, syntax->end,
+      (const token_kind_t[]){TK_ATOMIC}, 1);
+}
+
 static psx_qual_type_t apply_reference_qualifiers(
     psx_qual_type_t base,
     const psx_parsed_decl_specifier_t *specifier) {

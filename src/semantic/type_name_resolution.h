@@ -15,6 +15,8 @@ typedef struct {
 
 token_t *psx_type_name_restrict_qualifier_token(
     const psx_type_name_ref_t *type_name);
+token_t *psx_type_name_atomic_qualifier_token(
+    const psx_type_name_ref_t *type_name);
 int psx_resolve_type_name_base_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
