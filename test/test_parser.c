@@ -21774,12 +21774,17 @@ static void test_parse_invalid(
       "  return 0;\n"
       "}",
       "E3064", 3, 1);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* A pointer declarator cannot make an invalid atomic array base type "
+      "valid. */\n"
       "typedef int array_type[2];\n"
       "_Atomic array_type *pointer;\n"
-      "int main(void) { return 0; }",
-      "E3064", 1);
+      "\n"
+      "int main(void) {\n"
+      "  return pointer != 0;\n"
+      "}",
+      "E3064", 3, 1);
   expect_parse_fail_at_column(
       test_suite_session,
       "typedef int array_type[2];\n"

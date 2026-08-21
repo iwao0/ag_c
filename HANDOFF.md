@@ -41182,3 +41182,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer outer、type-name、VLA typedef、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_typedef_array_pointer_outer` fixtureの`_Atomic array_type *pointer`だけをClang strict、Native、Wasmで比較し、outer pointer declaratorでも無効なatomic array base typeを拒否する診断IDと位置を行まで確認する。type-name、nested pointer、VLA typedefには入らない。
+
+### このセッション（続き1445）: outer pointer atomic array typedefのE3064位置を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_typedef_array_pointer_outer` fixtureにある、declaration `_Atomic array_type *pointer`だけをClang C11 strict、Native、Wasmで比較した。
+  - type-name、nested pointer、VLA typedef、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangはpointer declaratorのbase array typedefへ適用された`_Atomic` qualifierを3行1列へ報告した。Native/Wasmも同じ`_Atomic`を3行1列でE3064と実トークン`_Atomic`として報告した。
+  - outer pointer declaratorを伴っても、無効なatomic array base typeをpointer自体やtypedef名ではなくqualifier開始位置で三系統が一致して拒否することを確認した。
+  - 既存のE3064 column 1 assertionをfixtureと同じ先頭comment・array typedef・main return配置を持つE3064 position 3:1 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、array typedef identity、pointer declarator resolution、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.64秒 / user 3.00秒 / sys 0.32秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。type-name、nested pointer、VLA typedef、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_typedef_array_type_name` fixtureの`sizeof(_Atomic array_type)`だけをClang strict、Native、Wasmで比較する。E2E registryはE3117、近接parser assertionはE3064を期待しているため、まず実際の診断ID・位置とfixture経路の差を確認する。`_Alignof`、compound literal、VLA typedefには広げない。
