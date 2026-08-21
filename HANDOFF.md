@@ -38855,3 +38855,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの3系統比較と変更対象のparser gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。再帰initializer、designator chain、prefix型体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 通常文字列長E3027のsource位置は閉じた。次は既存`different_encoded_string_prefixes` 1件だけをClang strictと比較し、隣接する異種prefix tokenの既存位置で一致するか確認する。encoded element型推論、Unicode code-unit境界、prefix型体系全体には広げない。
+
+### このセッション（続き1323）: 異種encoding prefix連結のE3058 rangeを回帰固定した
+- 対象選定:
+  - 既存`different_encoded_string_prefixes`だけをClang C11 strict、Native、Wasmで比較した。3系統とも拒否し、Clangは第2 literalの`U` prefixをcolumn 15で指した。Native/Wasmも第2 string tokenをE3058 sourceにしており、structured columnも15で一致した。
+  - encoded element型推論、Unicode code-unit境界、prefix型体系全体、深い式、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- coverage:
+  - structured diagnosticへ`u"a" U"b"`のE3058 column 15を追加し、第2の異種prefix token開始を固定した。
+  - differential coverage表へE3058がClang strictと同じ第2 prefix tokenを指すことを追記した。compiler sourceの変更はない。
+- 隣接確認:
+  - `__func__`のlocal object、typedef、parameter、function再宣言4形はClang strict、Native、Wasmが全て保存済みidentifier位置で拒否した。Native/Wasm 8/8経路はE3067と`__func__`を維持した。
+  - `__func__[0] = 'x'`は3系統が代入operatorを指し、Native/WasmはE3077を維持した。`char *name = __func__;`のNative/Wasm E3078は既存のinitializer sourceを指し、宣言初期化全体のqualifier破棄token方針へ広がるため今回は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1だった。Native/Wasm 2/2はE3058と第2 string tokenを指した。
+  - `make build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.55秒 / user 2.98秒 / sys 0.25秒**。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの3系統比較、隣接する単純control、変更対象のparser gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。encoded element型推論、Unicode code-unit境界、prefix型体系、pointer qualifier体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 異種prefix E3058の位置は閉じた。次は既存`predefined_function_name_file_scope_use` 1件だけをClang strictと比較し、file-scopeでの`__func__` source tokenが一致するか確認する。pointer qualifier変換やpredefined identifier lifecycle全体には広げない。

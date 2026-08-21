@@ -20299,6 +20299,12 @@ static void test_parse_invalid(
       "E3027", 22);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) {\n"
+      "  return u\"a\" U\"b\"[0];\n"
+      "}",
+      "E3058", 15);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Alignas((1, 16)) int value; int main(void) { return 0; }",
       "E3064", 10);
   expect_parse_fail_at_column(
