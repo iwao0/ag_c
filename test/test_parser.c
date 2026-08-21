@@ -21732,12 +21732,17 @@ static void test_parse_invalid(
       "  return 0;\n"
       "}",
       "E3064", 5, 3);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* A parameter cannot have an atomic-qualified function type. */\n"
       "typedef int function_type(void);\n"
+      "\n"
       "int apply(_Atomic function_type callback);\n"
-      "int main(void) { return 0; }",
-      "E3064", 11);
+      "\n"
+      "int main(void) {\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 4, 11);
   expect_parse_fail_at_column(
       test_suite_session,
       "typedef int function_type(void);\n"
