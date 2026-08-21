@@ -21802,12 +21802,17 @@ static void test_parse_invalid(
       "  return _Alignof(_Atomic array_type);\n"
       "}",
       "E3064", 19);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* A pointer declarator cannot make an incomplete atomic record base "
+      "type valid. */\n"
       "struct item;\n"
       "_Atomic struct item *pointer;\n"
-      "int main(void) { return 0; }",
-      "E3064", 1);
+      "\n"
+      "int main(void) {\n"
+      "  return pointer != 0;\n"
+      "}",
+      "E3064", 3, 1);
   expect_parse_fail_at_column(
       test_suite_session,
       "struct flags {\n"
