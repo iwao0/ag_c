@@ -4333,6 +4333,14 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "noreturn_main_block_declaration.c",
      "E3064"},
+    {"inline_internal_object_reference_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "inline_internal_object_reference.c",
+     "E3064"},
+    {"inline_internal_function_reference_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "inline_internal_function_reference.c",
+     "E3064"},
     {"inline_function_typedef_rejected",
      "fixture:test/fixtures/should_reject/inline_function_typedef.c",
      "E3064"},

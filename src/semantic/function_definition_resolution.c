@@ -333,6 +333,8 @@ static int resolve_function_definition_header(
   resolution->is_static = ps_function_symbol_has_internal_linkage(
       ps_ctx_find_function_symbol_in(
           semantic_context, name->str, name->len));
+  resolution->is_inline =
+      definition->return_specifier.type_spec.is_inline;
   resolution->is_variadic = function_shape.is_variadic_function;
   resolution->has_implicit_int_return =
       definition->has_implicit_int_return;

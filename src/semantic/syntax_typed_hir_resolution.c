@@ -312,6 +312,7 @@ typedef struct {
   int suppress_value_decay_depth;
   int address_operand_depth;
   int is_static_initializer;
+  int reject_internal_linkage_references;
 } direct_resolution_context_t;
 
 static psx_syntax_typed_hir_resolution_status_t
@@ -1631,6 +1632,17 @@ static int resolve_direct_identifier_with_usage(
           context,
           PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_IDENTIFIER,
           &identifier->base, identifier->name, identifier->name_len);
+  }
+  if (context->reject_internal_linkage_references &&
+      ((resolved.symbol.kind == PSX_IDENTIFIER_GLOBAL_OBJECT &&
+        ps_gvar_is_static_storage(resolved.symbol.global)) ||
+       (resolved.symbol.kind == PSX_IDENTIFIER_FUNCTION &&
+        ps_function_symbol_has_internal_linkage(
+            resolved.symbol.function)))) {
+    return note_direct_named_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_INLINE_INTERNAL_LINKAGE_REFERENCE,
+        &identifier->base, identifier->name, identifier->name_len);
   }
   if (resolved.expression_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
@@ -11447,6 +11459,8 @@ psx_collect_syntax_function_declarations_for_analysis_in_contexts(
       .function_name_len = header.name_len,
       .function_return_qual_type = return_qual_type,
       .enforce_function_return_type = 1,
+      .reject_internal_linkage_references =
+          header.is_inline && !header.is_static,
   };
   psx_semantic_node_builder_init(
       &context.builder, ps_ctx_arena(semantic_context),
@@ -11535,6 +11549,8 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
       .enforce_function_return_type = 1,
       .track_initialization_order = 1,
       .initialization_flow_reachable = 1,
+      .reject_internal_linkage_references =
+          header.is_inline && !header.is_static,
   };
   psx_semantic_node_builder_init(
       &context.builder, ps_ctx_arena(semantic_context),

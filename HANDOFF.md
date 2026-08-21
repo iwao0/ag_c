@@ -37884,3 +37884,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象negative 4件を3 compiler、positiveを4経路で直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深い式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - hosted `main`のfunction specifierは共通resolverで閉じた。次はC11 6.7.4p3の外部リンケージinline定義が内部リンケージidentifierを参照する制約を、単純なglobal object/function参照とstatic inline対照に限定して調べる。body全体の深い式解析やinline codegen変更へは広げない。
+
+### このセッション（続き1281）: 外部リンケージinline定義の内部リンケージ参照を拒否した
+- 対象選定:
+  - 前回残したC11 6.7.4p3の差分を、file-scope `static` object/functionへの単純な識別子参照だけで確認した。Clang `-std=c11 -pedantic-errors`は両形を拒否したが、ag_c Nativeは両方を受理していた。
+  - `static inline`から同じ内部識別子を参照する形、`extern inline`から外部リンケージobject/functionを参照する形、先行`static`宣言から内部リンケージを継承した`inline`定義はClang strictとag_cで受理される対照として固定した。
+  - 同じ段落にあるmodifiable static local定義はClang strictが差分として診断しなかったため混ぜていない。深い式、inline codegen、巨大入力、resource/security監査系にも進んでいない。
+- 原因と変更:
+  - function definition headerは実効internal linkageを返していたが、定義自身の`inline`状態をbody解決へ渡していなかった。このため共通identifier resolution後に「外部リンケージinline定義内」という制約contextを判定できなかった。
+  - header resolutionへ`is_inline`を追加し、analysis用declaration収集と通常Typed HIR構築の両contextで`header.is_inline && !header.is_static`を伝播した。
+  - 共通identifier preflightは解決済みsymbolがfile-scope static globalまたはinternal-linkage functionの場合だけ専用rejectionへ戻す。local、parameter、enum、外部リンケージsymbol、内部リンケージを持つinline定義は対象外のまま維持する。
+  - semantic rejectionは参照識別子のtoken rangeにC11 6.7.4p3付きE3064を出す。design invariantでheader伝播、実効リンケージ条件、object/function両判定、専用診断を固定した。
+- coverage:
+  - should_rejectへ`inline_internal_object_reference`と`inline_internal_function_reference`を追加し、Native/Wasm compile-fail registryへE3064で登録した。
+  - parser unitへ内部object/functionの2負例と、`static inline`・外部symbol参照の2正例を追加した。header boundaryではdefinitionの`is_inline`伝播も直接確認する。
+  - 既存`function_specifier_constraints`へ`extern inline`から外部object/functionを参照する正例と、先行`static`宣言から内部リンケージを継承するinline定義を追加した。
+- 確認:
+  - negative 2件はhost Clang `-std=c11 -pedantic-errors`、ag_c Native、Wasm objectがすべて拒否し、Native/Wasmは参照token上のE3064で一致した。
+  - positive fixtureはClang strict syntax、ag_c Native compile/link/run、WAT compile/assemble/validate/`wasm-interp`、Wasm object compile/validateがすべて成功し、WATは`main() => i32:0`だった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.60秒 / user 2.98秒 / sys 0.27秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.45秒 / user 0.76秒 / sys 0.48秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 12.67秒 / user 10.89秒 / sys 1.57秒**。
+  - `/usr/bin/time -p make wasm-selfhost-api` = **real 44.74秒 / user 42.74秒 / sys 1.15秒**。`make -q wasm-selfhost-api`もcurrentを確認した。`build/test_e2e`はwarningなしでビルドした。
+- 未実施:
+  - 対象negative 2件を3 compiler、positiveを4経路で直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深い式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - C11 6.7.4p3の内部リンケージ参照は共通preflightで閉じた。modifiable static localはClang strictとの差分にならないため保留し、次は通常サイズの宣言または型制約を少数のClang strict probeから選ぶ。関数bodyの深い式追跡やinline codegenへは広げない。

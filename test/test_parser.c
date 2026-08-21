@@ -10475,7 +10475,7 @@ static void test_function_definition_header_resolution_boundary(
     ag_compilation_session_t *test_suite_session) {
   printf("test_function_definition_header_resolution_boundary...\n");
   const char *source =
-      "long __direct_header_value(int left, double right) { "
+      "inline long __direct_header_value(int left, double right) { "
       "return left; }";
 
   reset_test_translation_unit_state(test_suite_session);
@@ -10516,6 +10516,7 @@ static void test_function_definition_header_resolution_boundary(
             registered_signature.type_id);
   ASSERT_EQ(resolution.signature_qual_type.qualifiers,
             registered_signature.qualifiers);
+  ASSERT_TRUE(resolution.is_inline);
   psx_type_shape_t function_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, resolution.signature_qual_type.type_id, &function_shape));
@@ -20230,6 +20231,21 @@ static void test_parse_invalid(
   expect_parse_fail_with_message(test_suite_session,
       "int helper(void) { _Noreturn int main(void); return 0; } "
       "int main(void) { return helper(); }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "static int internal_object; "
+      "extern inline int read_object(void) { return internal_object; }",
+      "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "static int internal_function(void) { return 1; } "
+      "inline int call_function(void) { return internal_function(); }",
+      "E3064");
+  expect_parse_ok(test_suite_session,
+      "static int internal_object; "
+      "static inline int read_object(void) { return internal_object; }");
+  expect_parse_ok(test_suite_session,
+      "extern int external_object; int external_function(void); "
+      "extern inline int read_external(void) { "
+      "return external_object + external_function(); }");
   expect_parse_fail(test_suite_session,
       "int main(void) { _Thread_local int object; return 0; }");
   expect_parse_fail(test_suite_session,

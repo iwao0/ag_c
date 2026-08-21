@@ -18,6 +18,15 @@ static _Noreturn _Noreturn void repeated_noreturn(void) { for (;;) {} }
 
 static inline int block_target(void) { return 19; }
 
+int external_object = 23;
+int external_function(void) { return 29; }
+extern inline int external_inline_refs(int value) {
+  return value + external_object + external_function();
+}
+
+static int inherited_internal_inline(void);
+inline int inherited_internal_inline(void) { return 31; }
+
 int main(void) {
   inline int block_target(void);
   _Noreturn void never_returns(void);
@@ -29,5 +38,7 @@ int main(void) {
   sum += returns_callback()();
   sum += redeclared_function();
   sum += block_target();
-  return sum == 75 ? 0 : 1;
+  sum += external_inline_refs(1);
+  sum += inherited_internal_inline();
+  return sum == 159 ? 0 : 1;
 }

@@ -13207,6 +13207,32 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     "function and typedef symbols must own canonical QualType values without projecting mutable compatibility nodes",
   );
 }
+if (!functionDefinitionHeaderResolutionStruct ||
+    !/int\s+is_inline\s*;/.test(
+      functionDefinitionHeaderResolutionStruct[1],
+    ) ||
+    !/resolution->is_inline\s*=\s*definition->return_specifier\.type_spec\.is_inline\s*;/.test(
+      functionDefinitionResolutionSource,
+    ) ||
+    !/reject_internal_linkage_references\s*=\s*header\.is_inline\s*&&\s*!header\.is_static/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_IDENTIFIER_GLOBAL_OBJECT[^]*?ps_gvar_is_static_storage\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_IDENTIFIER_FUNCTION[^]*?ps_function_symbol_has_internal_linkage\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_INLINE_INTERNAL_LINKAGE_REFERENCE/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/case\s+PSX_SYNTAX_TYPED_HIR_REJECTION_INLINE_INTERNAL_LINKAGE_REFERENCE:[^]*?C11 6\.7\.4p3/.test(
+      semanticTreeResolutionSource,
+    )) {
+  throw new Error(
+    "external-linkage inline definitions must reject resolved internal-linkage object and function references",
+  );
+}
 const removedMutableCompatibilitySourcePattern =
   /\/(?:legacy_syntax_diagnostics|resolution_work_tree(?:_internal)?|typed_hir_tree_materialization|identifier_binding|local_declaration_tree_resolution|semantic_pass|semantic_lowering_pass|initializer_lowering|compound_literal_lowering|lowered_tree_validation|control_flow_validation|semantic_diagnostics|semantic_invariants|type_identity_pass|tree_walk|lvar_usage_analysis|parser_legacy|stmt_legacy|name_classifier_legacy|semantic_ctx_legacy|node_utils_legacy|local_declaration_legacy|parser_type_compatibility|type_compatibility_view|type(?:_builder|_fwd|_owned_internal)?|semantic_tree_resolution_test_support)\.[ch]$/;
 const remainingMutableCompatibilitySources = allSourceFiles.filter(

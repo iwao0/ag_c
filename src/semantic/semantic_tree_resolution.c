@@ -166,6 +166,15 @@ int psx_diagnose_syntax_typed_hir_rejection_in_context(
           diagnostics, token, "variable", failure->source_name,
           failure->source_name_length);
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INLINE_INTERNAL_LINKAGE_REFERENCE:
+      if (!failure->source_name || failure->source_name_length <= 0)
+        return 0;
+      ps_diag_ctx_in(
+          diagnostics, token, "inline",
+          "external-linkage inline definition cannot reference "
+          "internal-linkage identifier '%.*s' (C11 6.7.4p3)",
+          failure->source_name_length, failure->source_name);
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_DOT_BASE_NOT_AGGREGATE:
       diag_emit_tokf_in(
           diagnostics, DIAG_ERR_PARSER_INVALID_CONTEXT, token, "%s",

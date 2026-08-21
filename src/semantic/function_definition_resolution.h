@@ -23,6 +23,7 @@ typedef struct {
   int parameter_bound_expression_count;
   lvar_t *locals;
   int is_static;
+  int is_inline;
   int is_variadic;
   int has_implicit_int_return;
 } psx_function_definition_header_resolution_t;
