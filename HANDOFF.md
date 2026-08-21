@@ -38763,3 +38763,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3 storage形、既存fixture、qualifier/通常代入control、positive 2件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer qualifier体系、aggregate/complex initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - automatic scalar型不一致initializer位置は閉じた。次は既存`{automatic,static_local,static}_character_array_string_too_long`の単純3形だけをClang strictと比較し、既存string tokenまたはdeclarator tokenの選択だけで閉じる場合に限る。braced string、member、compound literal、多次元配列には入らない。
+
+### このセッション（続き1319）: static文字配列の長すぎる文字列E3027をliteralへ移した
+- 対象選定:
+  - `char text[2] = "abc";`だけをfile-scope、automatic local、static localでClang C11 strict、Native、Wasm比較した。3形とも拒否し、Clangは全て文字列literalを指した。automaticは既に`abc`を指す一方、file/static-localだけNative/Wasmが宣言名`text`を指していた。
+  - braced string、member、compound literal、多次元配列、prefix/element型、深い式、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - file/static-localの非braced配列文字列はstatic scalar-assignment validatorを通る。このvalidatorはinitializer AST tokenを優先していたが、string ASTのtokenはdeclaratorへfallbackしており、呼び出し側が保持する正確な`initializer->value_tok`を捨てていた。
+  - validatorへinitializer diagnostic tokenとdeclarator diagnostic tokenを別parameterで渡す。HIR rootがstringかつtargetがarrayの分岐はinitializer tokenを優先し、長すぎる文字列E3027とprefix不一致E3099のsourceに使う。通常の不正配列式initializerは前回どおりdeclarator tokenを選ぶ。
+  - 文字数・code-unit幅・終端NUL判定、E3027/E3099 ID・文言、automatic direct経路、static constant判定、array expression rejectionは変更していない。
+- coverage:
+  - structured diagnosticはfile/automatic/static-localの非braced過長文字列E3027 columnを文字列literal開始で固定した。
+  - design invariantはvalidator内のstring/declarator token選択、3つのstatic pipeline call siteが両tokenを渡すこと、既存の不正配列式initializerがdeclarator tokenを維持することを固定した。parameter名を明示化したため、前回invariantの旧`fallback_diag_tok`参照も`declarator_diag_tok`へ更新した。
+  - differential coverage表へ非braced 3 storage形のE3027 source位置を追記した。
+- 確認:
+  - 対象3形はClang strict、Native、Wasmが全て拒否した。修正後のNative/Wasmは3形全てE3027と文字列token`abc`を指し、6/6経路がexit 1だった。
+  - 前回の`file_scope_fixed_array_scalar_initializer`と`static_local_fixed_array_scalar_initializer`はNative/Wasm 4/4でE3099と宣言名`values`を維持した。
+  - positiveの推論長global文字配列とexact-boundのfile/function-local static文字配列群はClang strict、Native、Wasm objectの6/6 compile経路で受理し、Clang/Nativeの4/4 executableもexit 0だった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.71秒 / user 3.15秒 / sys 0.27秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.20秒 / user 11.64秒 / sys 1.55秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.17秒 / user 0.75秒 / sys 0.43秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象3 storage形、前回の配列式control、positive 2群、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。braced string、member、compound literal、多次元配列、prefix型体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 非braced単純文字列の位置は閉じた。次は既存`static_character_array_{embedded_null,concatenated_string}_too_long`と`automatic_character_array_braced_string_too_long`だけを比較し、現在のtoken選択で既にClang strictと一致するか確認する。member、compound literal、多次元配列、prefix型には入らない。

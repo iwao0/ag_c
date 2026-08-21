@@ -7549,7 +7549,7 @@ if (!/static_initializer_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID[^]*?PSX_SYNTAX
     !/type_shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?initializer->value->kind\s*!=\s*ND_COMPOUND_LITERAL[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES[^]*?\(token_t\s*\*\)name/.test(
       directLocalDeclarationPreflight[0],
     ) ||
-    !/object_shape\.kind\s*==\s*PSX_TYPE_ARRAY\s*&&\s*fallback_diag_tok[^]*?fallback_diag_tok[^]*?initializer->tok/.test(
+    !/object_shape\.kind\s*==\s*PSX_TYPE_ARRAY\s*&&\s*declarator_diag_tok[^]*?declarator_diag_tok[^]*?initializer->tok/.test(
       declarationPipelineSource,
     ) ||
     !/PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED\s*&&[^]*?request->diag_tok[^]*?\?\s*request->diag_tok/.test(
@@ -7564,6 +7564,24 @@ if (!/assignment\.status\s*==\s*PSX_ASSIGNMENT_TYPES_INCOMPATIBLE[^]*?PSX_SYNTAX
     )) {
   throw new Error(
     "incompatible automatic local initializers must diagnose the declarator without redirecting other assignment failures",
+  );
+}
+const staticScalarInitializerValidation = declarationPipelineSource.match(
+  /static int validate_static_scalar_initializer_assignment\([^]*?\n}\n\nstatic void diagnose_nonconstant_static_initializer/,
+);
+const staticScalarInitializerValidationCalls = declarationPipelineSource.match(
+  /validate_static_scalar_initializer_assignment\(\s*request->semantic_context[^;]*?request->initializer->value_tok,\s*request->diag_tok\)/g,
+) ?? [];
+if (!staticScalarInitializerValidation ||
+    !/PSX_HIR_STRING[^]*?object_shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?token_t\s*\*token\s*=\s*initializer_diag_tok\s*\?\s*initializer_diag_tok\s*:\s*\(initializer->tok\s*\?\s*initializer->tok\s*:\s*declarator_diag_tok\)/.test(
+      staticScalarInitializerValidation[0],
+    ) ||
+    !/object_shape\.kind\s*==\s*PSX_TYPE_ARRAY\s*&&\s*declarator_diag_tok[^]*?\?\s*declarator_diag_tok[^]*?initializer->tok/.test(
+      staticScalarInitializerValidation[0],
+    ) ||
+    staticScalarInitializerValidationCalls.length !== 3) {
+  throw new Error(
+    "static character-array string diagnostics must use the initializer token while invalid array expressions use the declarator token",
   );
 }
 if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(

@@ -468,7 +468,8 @@ static int validate_static_scalar_initializer_assignment(
     psx_local_registry_t *local_registry,
     psx_qual_type_t object_qual_type, const node_t *initializer,
     const psx_frontend_expression_hir_t *expression_hir,
-    token_t *fallback_diag_tok) {
+    token_t *initializer_diag_tok,
+    token_t *declarator_diag_tok) {
   if (!semantic_context || !global_registry || !local_registry ||
       !initializer || !expression_hir ||
       !expression_hir->module ||
@@ -506,8 +507,9 @@ static int validate_static_scalar_initializer_assignment(
             : DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE;
     ag_diagnostic_context_t *diagnostics =
         ps_ctx_diagnostics(semantic_context);
-    token_t *token = initializer->tok
-        ? initializer->tok : fallback_diag_tok;
+    token_t *token = initializer_diag_tok
+        ? initializer_diag_tok
+        : (initializer->tok ? initializer->tok : declarator_diag_tok);
     diag_emit_tokf_in(
         diagnostics, diagnostic, token, "%s",
         diag_message_for_in(diagnostics, diagnostic));
@@ -547,9 +549,9 @@ static int validate_static_scalar_initializer_assignment(
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
   token_t *token =
-      object_shape.kind == PSX_TYPE_ARRAY && fallback_diag_tok
-          ? fallback_diag_tok
-          : (initializer->tok ? initializer->tok : fallback_diag_tok);
+      object_shape.kind == PSX_TYPE_ARRAY && declarator_diag_tok
+          ? declarator_diag_tok
+          : (initializer->tok ? initializer->tok : declarator_diag_tok);
   diag_error_id_t diagnostic =
       assignment.status == PSX_ASSIGNMENT_DISCARDS_QUALIFIERS
           ? DIAG_ERR_PARSER_CONST_QUAL_DISCARD
@@ -656,7 +658,8 @@ static int finish_global_declaration_pipeline(
                 request->semantic_context, request->global_registry,
                 request->local_registry,
                 initializer_resolution.object_qual_type,
-                initializer, &expression_hir, request->diag_tok)) {
+                initializer, &expression_hir,
+                request->initializer->value_tok, request->diag_tok)) {
           psx_frontend_expression_hir_dispose(&expression_hir);
           return 0;
         }
@@ -1598,7 +1601,8 @@ int psx_finish_static_local_declaration_pipeline(
     if (!validate_static_scalar_initializer_assignment(
             request->semantic_context, request->global_registry,
             request->local_registry, resolution.object_qual_type,
-            initializer, &expression_hir, request->diag_tok)) {
+            initializer, &expression_hir,
+            request->initializer->value_tok, request->diag_tok)) {
       psx_frontend_expression_hir_dispose(&expression_hir);
       return 0;
     }
@@ -1690,7 +1694,8 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
         !validate_static_scalar_initializer_assignment(
             request->semantic_context, request->global_registry,
             request->local_registry, resolution.object_qual_type,
-            initializer, &expression_hir, request->diag_tok)) {
+            initializer, &expression_hir,
+            request->initializer->value_tok, request->diag_tok)) {
       psx_hir_module_destroy(initializer_hir);
       return 0;
     }
