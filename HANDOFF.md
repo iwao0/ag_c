@@ -39316,3 +39316,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。function、thread-local、複数storage class、initializer、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`alignas_function_definition`と`alignas_parameter`の単純alignment specifier 2件だけをClang strictと比較し、`_Alignas`または宣言名token選択だけで閉じる場合に限る。type-name alignas、複数alignas、alignment評価、nested declaratorには入らない。
+
+### このセッション（続き1345）: function/parameter AlignasのE3064列を回帰固定した
+- 対象選定:
+  - 前回候補の`alignas_function_definition`と`alignas_parameter`だけをClang C11 strict、Native、Wasmで比較した。
+  - type-name alignas、複数alignas、alignment評価、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 2件ともNative/Wasmは既にClangと同じ`_Alignas` keywordを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへfunction definition先頭のE3064 column 1と、parameter内`_Alignas`のE3064 column 14を追加した。
+  - differential coverage表には不正適用時に`_Alignas` keywordを指す方針が既に記載済みだったため、重複する文書変更は加えていない。alignment制約、受理/拒否、診断ID・文言は変更していない。
+- 確認:
+  - 対象2 fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はE3064と`_Alignas`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.80秒 / user 3.02秒 / sys 0.33秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。type-name alignas、複数alignas、alignment評価、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`alignas_function_declaration`と`alignas_typedef`の単純declaration適用2件だけをClang strictと比較し、`_Alignas` keyword選択だけで閉じる場合に限る。type-name operand、複数alignas、alignment評価、register/bit-field、nested declaratorには入らない。
