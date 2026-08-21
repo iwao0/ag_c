@@ -2174,6 +2174,18 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"assign_int_to_ptr_implicit_rejected",
      "fixture:test/fixtures/should_reject/assign_int_to_ptr_implicit.c",
      "E3099"},
+    {"pointer_initializer_binary_expression_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "pointer_initializer_binary_expression.c",
+     "E3099"},
+    {"pointer_initializer_conditional_expression_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "pointer_initializer_conditional_expression.c",
+     "E3099"},
+    {"pointer_initializer_comma_expression_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "pointer_initializer_comma_expression.c",
+     "E3099"},
     {"assign_struct_to_int_rejected",
      "fixture:test/fixtures/should_reject/assign_struct_to_int.c",
      "E3099"},

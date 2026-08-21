@@ -38089,3 +38089,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - focusなしのcontrol flowは同じ3 groupを同順序で通り、各groupを独立targetで完走したため、1354秒規模の`make test-wasm-js-api`は反復しない。全E2E、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - compiler修正は通常サイズの宣言・statement制約を引き続き少数のClang strict probeから選ぶ。language-analysisのbasic/documentation、macro、operand-hover変更では今回の3 focused targetを使い、全suiteは統合節目へ残す。
+
+### このセッション（続き1290）: 複合式の型診断を実際の演算子へ戻した
+- 対象選定:
+  - return、function-like macro定義、単項`&*`、`_Alignas(type-name)`、pointer初期化のnull pointer constant境界を、既存coverageと通常サイズのClang C11 strict probeで比較した。受理可否は既存実装と一致し、trueの`_Static_assert`を`for`初期部へ置く形も既存方針がN1570のgrammarに従って受理することを確認して変更しなかった。
+  - pointerへ非zero整数複合式を初期化する`1 + 0`、`1 ? 1 : 2`、`(0, 1)`はClang/ag_cとも正しく拒否したが、ag_cのE3099だけがinitializerではなく関数名`main`を指す実差分を確認した。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - literal・identifier Syntax nodeは自身のtokenを持つ一方、binary・comma・conditional nodeはparserが演算子を消費した後にtokenを保存していなかった。semantic rejectionが`source->tok`を得られず、公開診断がcurrent function tokenへfallbackしていた。
+  - `expr_internal_ctx()`は`,`、`conditional_ctx()`は`?`、`binary_ctx()`は現在の二項演算子tokenを各nodeへ保存する。greater-than等の`source_op`も同じtokenから従来どおり記録し、演算子種別、AST形、precedence、評価順は変更していない。
+  - design invariantはcomma・conditional・binaryの3parser経路がoperator tokenをSyntax nodeへ保持することと、`>`/`>=`の`source_op`記録を固定する。
+- coverage:
+  - parser unitへ`1 + 2, 1 ? 2 : 3`を追加し、root comma、左add、右ternaryがそれぞれ`,`、`+`、`?` tokenを持つことを構造的に検査した。
+  - should_rejectへ`pointer_initializer_binary_expression`、`pointer_initializer_conditional_expression`、`pointer_initializer_comma_expression`を追加し、Native/Wasm共用compile-fail registryへE3099で登録した。fixture一覧とdifferential coverage表も更新した。
+- 確認:
+  - 新規3fixtureはhost Clang `-std=c11 -pedantic-errors`、ag_c Native、Wasm objectがすべて拒否した。Native/WasmのE3099はbinary=`+`、conditional=`?`、comma=`,`の実際のoperator token上で一致した。単純literal対照は従来どおり`1`を指す。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.72秒 / user 3.07秒 / sys 0.27秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.36秒 / user 11.76秒 / sys 1.56秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.37秒 / user 0.77秒 / sys 0.50秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e`はwarningなしで成功した。
+- 未実施:
+  - 新規3fixtureを3 compilerで直接確認し、parser unitと共通compile-fail registryへ登録したため、全should_reject、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - composite expressionのsource tokenは共通parser構築点で閉じた。次も通常サイズの宣言・statement・value-category制約を少数のClang strict probeから選び、既存coverage済みの領域は再実装しない。

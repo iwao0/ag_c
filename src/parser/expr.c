@@ -104,16 +104,6 @@ static void leave_paren_nest(expr_parse_ctx_t *ctx) {
   if (ctx && ctx->paren_nest_depth > 0) ctx->paren_nest_depth--;
 }
 
-static node_t *new_binary_with_source_op(
-    expr_parse_ctx_t *ctx, psx_syntax_node_kind_t kind,
-    node_t *lhs, node_t *rhs,
-    token_kind_t source_op) {
-  node_t *node = psx_node_new_raw_binary_in(
-      ctx->arena_context, kind, lhs, rhs);
-  if (node) node->source_op = source_op;
-  return node;
-}
-
 static int is_type_name_start_token(
     token_t *t, const expr_parse_ctx_t *ctx) {
   return psx_token_starts_type_name_syntax(
@@ -280,10 +270,12 @@ static node_t *expr_internal_ctx(expr_parse_ctx_t *ctx) {
   enter_expr_nest_or_die(ctx);
   node_t *node = assign_ctx(ctx);
   while (curtok(ctx)->kind == TK_COMMA) {
-    set_curtok(ctx, curtok(ctx)->next);
+    token_t *comma_tok = curtok(ctx);
+    set_curtok(ctx, comma_tok->next);
     node_t *rhs = assign_ctx(ctx);
     node_t *comma = psx_node_new_raw_binary_in(
         ctx->arena_context, ND_COMMA, node, rhs);
+    comma->tok = comma_tok;
     node = comma;
   }
   leave_expr_nest(ctx);
@@ -331,10 +323,12 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
 static node_t *conditional_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = logical_or_ctx(ctx);
   if (curtok(ctx)->kind == TK_QUESTION) {
-    set_curtok(ctx, curtok(ctx)->next);
+    token_t *question_tok = curtok(ctx);
+    set_curtok(ctx, question_tok->next);
     node_ctrl_t *ternary = arena_alloc_in(
         ctx->arena_context, sizeof(node_ctrl_t));
     ternary->base.kind = ND_TERNARY;
+    ternary->base.tok = question_tok;
     ternary->base.lhs = node;
     ternary->base.rhs = expr_internal_ctx(ctx);
     tk_expect_ctx(ctx->tokenizer_context, ':');
@@ -381,18 +375,20 @@ static int binary_operator_spec(
 static node_t *binary_ctx(expr_parse_ctx_t *ctx, int min_precedence) {
   node_t *node = cast_ctx(ctx);
   for (;;) {
-    token_kind_t token_kind = curtok(ctx)->kind;
+    token_t *operator_tok = curtok(ctx);
+    token_kind_t token_kind = operator_tok->kind;
     binary_operator_spec_t spec;
     if (!binary_operator_spec(token_kind, &spec) ||
         spec.precedence < min_precedence)
       return node;
-    set_curtok(ctx, curtok(ctx)->next);
+    set_curtok(ctx, operator_tok->next);
     node_t *rhs = binary_ctx(ctx, spec.precedence + 1);
-    node = spec.records_source_op
-               ? new_binary_with_source_op(
-                     ctx, spec.node_kind, node, rhs, token_kind)
-               : psx_node_new_raw_binary_in(
-                     ctx->arena_context, spec.node_kind, node, rhs);
+    node_t *binary = psx_node_new_raw_binary_in(
+        ctx->arena_context, spec.node_kind, node, rhs);
+    binary->tok = operator_tok;
+    if (spec.records_source_op)
+      binary->source_op = token_kind;
+    node = binary;
   }
 }
 

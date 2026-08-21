@@ -17027,6 +17027,26 @@ static void test_expr_precedence(
   psx_frontend_expression_hir_dispose(&expression);
 }
 
+static void test_expr_operator_source_tokens(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_expr_operator_source_tokens...\n");
+  reset_test_locals(test_suite_session);
+  node_t *syntax = parse_expr_input_with_existing_locals(
+      test_suite_session, "1 + 2, 1 ? 2 : 3");
+  ASSERT_TRUE(syntax != NULL);
+  ASSERT_EQ(ND_COMMA, syntax->kind);
+  ASSERT_TRUE(syntax->tok != NULL);
+  ASSERT_EQ(TK_COMMA, syntax->tok->kind);
+  ASSERT_TRUE(syntax->lhs != NULL);
+  ASSERT_EQ(ND_ADD, syntax->lhs->kind);
+  ASSERT_TRUE(syntax->lhs->tok != NULL);
+  ASSERT_EQ(TK_PLUS, syntax->lhs->tok->kind);
+  ASSERT_TRUE(syntax->rhs != NULL);
+  ASSERT_EQ(ND_TERNARY, syntax->rhs->kind);
+  ASSERT_TRUE(syntax->rhs->tok != NULL);
+  ASSERT_EQ(TK_QUESTION, syntax->rhs->tok->kind);
+}
+
 static void test_expr_parentheses(
     ag_compilation_session_t *test_suite_session) {
   printf("test_expr_parentheses...\n");
@@ -23495,6 +23515,7 @@ int main() {
   test_expr_mul_div(test_suite_session);
   test_expr_mod(test_suite_session);
   test_expr_precedence(test_suite_session);
+  test_expr_operator_source_tokens(test_suite_session);
   test_expr_parentheses(test_suite_session);
   test_expr_eq_neq(test_suite_session);
   test_expr_relational(test_suite_session);

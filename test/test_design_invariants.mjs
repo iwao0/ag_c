@@ -12420,7 +12420,7 @@ if (!/\bND_GT\b/.test(syntaxNodeKindHeader) ||
     !/case\s+TK_GE:\s*result\s*=\s*\(binary_operator_spec_t\)\{\s*7,\s*ND_GE,\s*1\s*\}/.test(
       parserExpressionSource,
     ) ||
-    !/new_binary_with_source_op\s*\([^]*?spec\.node_kind,\s*node,\s*rhs,\s*token_kind\s*\)/.test(
+    !/binary->tok\s*=\s*operator_tok[^]*?binary->source_op\s*=\s*token_kind/.test(
       parserExpressionSource,
     ) ||
     !/MAP\s*\(\s*ND_GT,\s*PSX_HIR_GT,\s*PSX_TYPE_BINARY_RELATIONAL\s*\)/.test(
@@ -12434,6 +12434,19 @@ if (!/\bND_GT\b/.test(syntaxNodeKindHeader) ||
     )) {
   throw new Error(
     "greater-than syntax and Typed HIR must preserve source operators and operand order until IR lowering",
+  );
+}
+if (!/token_t\s+\*comma_tok\s*=\s*curtok\(ctx\)[^]*?comma->tok\s*=\s*comma_tok/.test(
+      parserExpressionSource,
+    ) ||
+    !/token_t\s+\*question_tok\s*=\s*curtok\(ctx\)[^]*?ternary->base\.tok\s*=\s*question_tok/.test(
+      parserExpressionSource,
+    ) ||
+    !/token_t\s+\*operator_tok\s*=\s*curtok\(ctx\)[^]*?binary->tok\s*=\s*operator_tok/.test(
+      parserExpressionSource,
+    )) {
+  throw new Error(
+    "composite expression Syntax nodes must retain their operator source tokens",
   );
 }
 const unaryPlusParser = parserExpressionSource.match(
