@@ -38157,3 +38157,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規2件と代表的な既存違反を3 compiler、合法対照2件を3 compilerで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - storage classのsource tokenは既存specifier列だけで局所的に閉じた。次も通常サイズの宣言・statement制約を少数のClang strict probeから選び、既存coverage済みの領域は再実装しない。
+
+### このセッション（続き1293）: function specifier制約のE3064を該当keywordへ移した
+- 対象選定:
+  - 直前に修正した共通declaration-specifier validatorの隣接分岐を、既存should_rejectだけでClang C11 strictと比較した。object、typedef、function-pointer object/member、functionとobjectの混在宣言はClang/ag_cとも正しく拒否したが、Clangが`inline`・`_Noreturn`を指すのに対しag_cは後続の宣言名を指していた。
+  - parameterとtype-nameは先行する専用診断が既にkeywordを指していたため変更しなかった。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - function specifier制約分岐だけが、保存済みspecifier列を使える共通validator内にありながらdeclarator tokenをそのままE3064へ渡していた。
+  - storage class診断用に追加済みの限定走査helperへ`TK_INLINE`・`TK_NORETURN`を渡し、実際のfunction specifierをsource tokenとして選ぶ。受理可否、型形成、function specifier metadataは変更していない。
+  - design invariantは共通validatorのsource-token診断が6分岐あることと、`inline`・`_Noreturn`の選択を固定する。診断文言のexact matchにはしていない。
+- coverage:
+  - 既存should_rejectとNative/Wasm共用compile-fail registryにobject、typedef、function-pointer object/parameter/member、mixed declarator、type-nameが登録済みなので、新しい重複fixtureは追加していない。differential coverage表へ診断位置の修正境界を追加した。
+- 確認:
+  - 変更対象の既存10形はhost Clang strict、ag_c Native、Wasm objectがすべて拒否し、Native/WasmのE3064は実際の`inline`・`_Noreturn` token上で一致した。
+  - 非対象のparameter 2形とtype-name 2形も3 compilerが拒否し、Native/Wasmは既存のkeyword位置を維持した。hosted `main` definition 2形は3 compilerが拒否する一方、ag_cは別pipelineの宣言名位置を維持している。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.64秒 / user 3.09秒 / sys 0.24秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.24秒 / user 11.56秒 / sys 1.50秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.16秒 / user 0.73秒 / sys 0.44秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e`はwarningなしで成功した。
+- 未実施:
+  - 既存16fixtureを3 compilerで直接確認し、共通registry登録も既にあるため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - hosted `main`のfunction specifier制約は別function declaration pipelineが宣言名tokenだけを受け取るため、同じ診断位置差分が残る。file declaration・definition・block declarationの3経路でspecifier開始tokenを局所的に渡せるかを確認する。

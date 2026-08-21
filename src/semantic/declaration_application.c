@@ -848,8 +848,11 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   if ((specifier->type_spec.is_inline ||
        specifier->type_spec.is_noreturn) &&
       (has_typedef || is_parameter || is_bitfield || !is_function)) {
+    token_t *source_token = declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        (const token_kind_t[]){TK_INLINE, TK_NORETURN}, 2);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "'inline' and '_Noreturn' may only declare a function identifier");
     return 0;

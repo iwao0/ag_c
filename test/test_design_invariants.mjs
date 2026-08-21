@@ -9416,7 +9416,7 @@ if (!/static\s+token_t\s*\*declaration_specifier_token_for_kinds\s*\([^]*?specif
     ) ||
     (declarationSpecifierConstraintValidator.match(
       /ps_ctx_diagnostics\(semantic_context\),\s*source_token/g,
-    )?.length ?? 0) < 5 ||
+    )?.length ?? 0) < 6 ||
     !/TK_AUTO,\s*TK_REGISTER/.test(
       declarationSpecifierConstraintValidator,
     ) ||
@@ -9425,9 +9425,12 @@ if (!/static\s+token_t\s*\*declaration_specifier_token_for_kinds\s*\([^]*?specif
     ) ||
     !/TK_THREAD_LOCAL,\s*TK_AUTO,\s*TK_REGISTER,\s*TK_STATIC/.test(
       declarationSpecifierConstraintValidator,
+    ) ||
+    !/TK_INLINE,\s*TK_NORETURN/.test(
+      declarationSpecifierConstraintValidator,
     )) {
   throw new Error(
-    "storage class constraint diagnostics must point to the offending declaration specifier while preserving file-object declarators",
+    "storage and function specifier constraint diagnostics must point to the offending declaration specifier while preserving file-object declarators",
   );
 }
 const semanticTypeEntry = semanticTypeIdentitySource.match(
