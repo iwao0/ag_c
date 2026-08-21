@@ -20338,6 +20338,23 @@ static void test_parse_invalid(
       "E2013", 22);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) { return 'x; }",
+      "E2025", 25);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return '\n"
+      "; }",
+      "E2029", 25);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return ''; }",
+      "E2024", 25);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return 0b2; }",
+      "E2022", 27);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Alignas((1, 16)) int value; int main(void) { return 0; }",
       "E3064", 10);
   expect_parse_fail_at_column(

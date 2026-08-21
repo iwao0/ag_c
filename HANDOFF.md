@@ -38896,3 +38896,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象7 fixtureのClang/Native/Wasm比較、8つのstructured column、tokenizer/parserの直接gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。Unicode identifier、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`tokenizer_unterminated_character`、`tokenizer_empty_character`、`tokenizer_binary_invalid_digit`の単純3件だけをClang strictと比較し、診断pointer選択だけで閉じる場合に限る。literal decoding全体、入力サイズ、Unicode、fuzzには入らない。
+
+### このセッション（続き1325）: 不正character診断をliteral開始へ移した
+- 対象選定:
+  - 前回候補の`tokenizer_unterminated_character`、`tokenizer_empty_character`、`tokenizer_binary_invalid_digit`だけをClang C11 strict、Native、Wasmで比較した。3 fixtureとも3系統が拒否し、Native/Wasmの診断IDとcaretは一致していた。
+  - literal decoding全体、multichar値、Unicode/UCN、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - 未終端characterのE2025/E2029はnewlineまたはEOF cursor、空characterのE2024はclosing quoteをsourceにしていた。tokenizerが既に保持する`start`へ統一し、plain literalは開始quote、prefix付きliteralはprefix先頭を指すようにした。
+  - binaryはClang strictが拡張自体を`b`で拒否する一方、ag_cは有効なbinary拡張内の不正digit `2`をE2022で拒否しており、診断理由が異なる。Clang位置へ機械的に寄せず、ag_cは原因である不正digitのcolumn 27を維持した。
+  - characterの受理/拒否、値・幅・prefix metadata、escape処理、E2024/E2025/E2029のID・文言、binary拡張の設定・値解析は変更していない。
+- coverage:
+  - structured diagnosticへ未終端character E2025、開始直後改行E2029、空character E2024のtoken開始column 25と、binary不正digit E2022 column 27を追加した。
+  - differential coverage表へcharacter token開始の境界と、binaryだけはClang strictと拒否理由が異なるため不正digitを指す方針を追記した。
+- 確認:
+  - 対象3 fixtureはClang strict、Native、Wasmの9/9経路がexit 1だった。Native/Wasm 6/6経路はE2025/E2024/E2022と同じcaretを報告した。修正後のcharacter 2件はClangと同じtoken開始へ移った。
+  - 既存`tokenizer_unterminated_empty_character`は3系統が開始quoteで拒否し、Native/WasmはE2029を維持した。prefix付き`L''`と`u'x;`の小型controlも3系統がprefix先頭を指し、Native/WasmはE2024/E2025を維持した。probeファイルは確認後に削除した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_tokenizer`はwarningなしで成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 3.45秒**。
+  - `./build/test_tokenizer` = **OK: All unit tests passed**、初回並列実行は**real 0.29秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - 対象3 fixture、E2029/prefix control、4つのstructured column、tokenizer/parserの直接gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。literal decoding全体、Unicode、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`tokenizer_unexpected_character`と`tokenizer_hex_escape_missing_digits_{string,character}`の単純3件だけをClang strictと比較し、診断pointer選択だけで閉じる場合に限る。UCN、長いescape、literal decoding全体には入らない。
