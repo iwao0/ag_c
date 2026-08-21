@@ -40021,3 +40021,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象probeの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer階層追加、関数・配列declarator、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は式を含まない`_Atomic(int * restrict) invalid_pointer;` 1件だけを一時probeで比較し、Atomic type specifier内の単純なqualified pointer type-nameに対する診断IDとsource tokenだけを確認する。typedef、nested pointer、initializer、expression evaluationには入らない。
+
+### このセッション（続き1383）: Atomic specifier内restrict pointerのE3064列を固定した
+- 対象選定:
+  - 前回候補の`_Atomic(int * restrict) invalid_pointer;` 1件だけを一時probeとしてClang C11 strict、Native、Wasmで比較した。
+  - typedef、nested pointer、initializer、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともClangと同じ1行1列の外側`_Atomic`を指し、Native/WasmはE3064を報告した。
+  - structured diagnosticへE3064 column 1を追加し、Atomic type specifier自身のunqualified-type制約が内部の`restrict`やpointer operator選択へ誤って切り替わらないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、canonical QualType、診断ID・文言、declarator形成は変更していない。
+- 確認:
+  - 対象probeはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.69秒 / user 3.00秒 / sys 0.34秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象probeの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。typedef、nested pointer、initializer、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`nested_atomic_type` fixtureの`_Atomic(_Atomic(int)) value;` 1件だけをClang strict、Native、Wasmで比較し、外側または内側どちらの`_Atomic`を指すかだけを確認する。cast、generic association、initializer、expression evaluationには入らない。
