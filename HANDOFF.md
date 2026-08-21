@@ -40724,3 +40724,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。多段nest、named member、atomic型、非定数幅、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`anonymous_member_direct_name_conflict` fixtureの単一direct memberと単一anonymous structから昇格する同名memberだけをClang strict、Native、Wasmで比較し、衝突診断IDと位置を確認する。recursive conflict、多段nest、異種declaratorには入らない。
+
+### このセッション（続き1421）: direct-vs-promoted anonymous member衝突のE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`anonymous_member_direct_name_conflict` fixtureにある、外側direct member `int value`と単一anonymous structから昇格する`long value`の衝突だけをClang C11 strict、Native、Wasmで比較した。
+  - recursive conflict、多段nest、異種declarator、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangは後発のpromoted member名`value`を5行10列へ報告した。Native/Wasmも同じ`value`を5行10列でE3064と実トークン`value`として報告した。
+  - 既存parser coverageにはこの衝突caseがなかったため、fixture相当のnestとインデントを持つE3064 column 10 assertionを追加した。
+  - structured helperのraw入力にはsource名がなく、promoted member元を復元できない場合にanonymous member終端へfallbackしていた。各子プロセスでtranslation-unit stateをresetし、固定の仮想source名を設定してCLI相当のsource metadata条件に揃えた。
+  - 同helperは不一致時に実際の最初の診断ID・行・列・messageを表示するようにし、今後の列境界調査で再実行回数を減らした。
+  - compiler sourceは変更せず、受理/拒否、anonymous member昇格、record identity、aggregate layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`value`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.69秒 / user 3.07秒 / sys 0.30秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、source metadata付きstructured column、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。recursive conflict、多段nest、異種declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`anonymous_member_recursive_name_conflict` fixtureの2段anonymous structから昇格する単一同名memberだけをClang strict、Native、Wasmで比較し、source metadataが再帰昇格でも最内member名を指すか確認する。3段以上、異種declarator、別名memberには入らない。

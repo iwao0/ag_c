@@ -8605,6 +8605,10 @@ static void expect_parse_fail_at_column(
   fflush(NULL);
   pid_t pid = fork();
   if (pid == 0) {
+    reset_test_translation_unit_state(test_suite_session);
+    ag_source_manager_set_current_name(
+        ag_compilation_session_source_manager(test_suite_session),
+        "parser-column-test.c");
     ag_diagnostic_context_t *diagnostics =
         test_diagnostics(test_suite_session);
     diag_reset_records_in(diagnostics);
@@ -8622,6 +8626,23 @@ static void expect_parse_fail_at_column(
         diag_context_record_count(diagnostics) > 0 &&
         strcmp(diag_context_record_code(diagnostics, 0), expected_code) == 0 &&
         diag_context_record_start_column(diagnostics, 0) == expected_column;
+    if (!matches) {
+      int record_count = diag_context_record_count(diagnostics);
+      fprintf(stderr, "Actual first diagnostic: %s at %d:%d: %s\n",
+              record_count > 0
+                  ? diag_context_record_code(diagnostics, 0)
+                  : "(none)",
+              record_count > 0
+                  ? diag_context_record_start_line(diagnostics, 0)
+                  : -1,
+              record_count > 0
+                  ? diag_context_record_start_column(diagnostics, 0)
+                  : -1,
+              record_count > 0
+                  ? diag_context_record_message(diagnostics, 0)
+                  : "no diagnostic was recorded");
+      fflush(stderr);
+    }
     _exit(matches ? 0 : 1);
   }
 
@@ -21852,6 +21873,16 @@ static void test_parse_invalid(
       "};\n"
       "int main(void) { return 0; }",
       "E3064", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Outer {\n"
+      "  int value;\n"
+      "  struct {\n"
+      "    long value;\n"
+      "  };\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 10);
   expect_parse_ok(test_suite_session,
       "struct Item { _Static_assert(sizeof(int) >= 2, \"int\"); "
       "unsigned int : 1; int value; }; "
