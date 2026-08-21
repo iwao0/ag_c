@@ -21883,6 +21883,18 @@ static void test_parse_invalid(
       "};\n"
       "int main(void) { return 0; }",
       "E3064", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Outer {\n"
+      "  int value;\n"
+      "  struct {\n"
+      "    struct {\n"
+      "      long value;\n"
+      "    };\n"
+      "  };\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 12);
   expect_parse_ok(test_suite_session,
       "struct Item { _Static_assert(sizeof(int) >= 2, \"int\"); "
       "unsigned int : 1; int value; }; "

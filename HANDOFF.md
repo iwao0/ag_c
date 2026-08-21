@@ -40744,3 +40744,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、source metadata付きstructured column、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。recursive conflict、多段nest、異種declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`anonymous_member_recursive_name_conflict` fixtureの2段anonymous structから昇格する単一同名memberだけをClang strict、Native、Wasmで比較し、source metadataが再帰昇格でも最内member名を指すか確認する。3段以上、異種declarator、別名memberには入らない。
+
+### このセッション（続き1422）: recursively promoted member衝突のE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`anonymous_member_recursive_name_conflict` fixtureにある、2段anonymous structの最内`long value`が外側direct `int value`と衝突するcaseだけをClang C11 strict、Native、Wasmで比較した。
+  - 3段以上、異種declarator、別名member、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangは再帰昇格する最内member名`value`を6行12列へ報告した。Native/Wasmも同じ`value`を6行12列でE3064と実トークン`value`として報告した。
+  - 中間anonymous aggregateを越えて最内memberのsource metadataが外側衝突診断まで保持され、前回追加したsource-aware structured helperでも同じcolumn 12を観測することを確認した。
+  - 既存parser coverageにはこのrecursive conflictがなかったため、fixture相当の2段nestとインデントを持つE3064 column 12 assertionを追加した。
+  - compiler sourceは変更せず、受理/拒否、recursive anonymous member昇格、record identity、aggregate layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`value`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.89秒 / user 3.03秒 / sys 0.35秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、source-aware structured column、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。3段以上、異種declarator、別名member、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - named-member衝突のdirect／1段／2段昇格境界が揃ったため、次は既存`empty_translation_unit` fixtureのcomment-only入力だけをClang strict、Native、Wasmで比較し、external declaration要件の診断IDとEOF位置を確認する。preprocessor directive-only、pragma、includeには入らない。
