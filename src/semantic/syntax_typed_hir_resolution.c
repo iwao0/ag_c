@@ -229,6 +229,7 @@ struct direct_switch_scope_t {
   direct_vm_scope_marker_t *entry_vm_scope;
   direct_initialization_snapshot_t entry_initialization;
   const node_t *selected_label;
+  const token_t *first_default_token;
   unsigned char selection_is_known;
   unsigned char has_default;
 };
@@ -9876,9 +9877,11 @@ static int preflight_direct_statement_impl(
             syntax);
       if (!context->initialization_replay &&
           context->switch_scope->has_default)
-        return note_direct_semantic_rejection(
+        return note_direct_semantic_rejection_at_token(
             context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
-            syntax);
+            syntax, context->switch_scope->first_default_token);
+      if (!context->switch_scope->has_default)
+        context->switch_scope->first_default_token = syntax->tok;
       context->switch_scope->has_default = 1;
       direct_initialization_snapshot_t fallthrough;
       if (!capture_direct_initialization_snapshot(

@@ -39120,3 +39120,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象4 fixtureの三系統比較と4 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。loop/switch CFG、VLA scope、nested control flow、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`duplicate_label`、`duplicate_default`、`goto_undefined_label`の単純label 3件だけをClang strictと比較し、label/default/goto target token選択だけで閉じる場合に限る。duplicate case値、case定数式、VLA goto scope、nested control flowには入らない。
+
+### このセッション（続き1335）: 重複defaultのE3061を最初のdefaultへ移した
+- 対象選定:
+  - 前回候補の`duplicate_label`、`duplicate_default`、`goto_undefined_label`だけをClang C11 strict、Native、Wasmで比較した。
+  - duplicate case値、case定数式、VLA goto scope、nested control flow、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - 重複labelはClangとNative/Wasmがともに2個目のlabel、未定義gotoは3系統ともtarget識別子`missing`を指していたため、compiler sourceは変更しなかった。
+  - 重複defaultだけClangが最初のdefaultをerror sourceにする一方、Native/Wasmは重複を検出した2個目を指していた。direct switch scopeへ最初のdefault tokenを一時的に保持し、2個目を検出したE3061だけ、その保存tokenをsource overrideに使う。
+  - defaultの所属・重複判定、switch selection、初期化flow、受理/拒否、E3061 ID・文言は変更していない。
+- coverage:
+  - direct Syntax→Typed HIR境界で重複default failure tokenが最初のdefault node tokenであることを固定した。
+  - structured diagnosticへ重複label E3067 column 1、重複default E3061 column 5、未定義goto E3064 column 8を追加した。design invariantでは最初のdefault tokenのscope保持と重複時の選択を固定した。
+  - differential coverage表へ重複label/defaultのsource位置方針を追記した。未定義gotoのtarget token方針は既存行を維持した。
+- 確認:
+  - 対象3 fixtureはClang strict、Native、Wasmの9/9経路がexit 1だった。修正後のNative/Wasm 6/6経路はE3067/E3061/E3064を維持し、重複defaultだけline 7からClangと同じ最初のdefault line 5へ移った。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_language_analysis`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.93秒 / user 3.08秒 / sys 0.32秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.64秒 / user 11.71秒 / sys 1.63秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.35秒 / user 0.78秒 / sys 0.47秒**。3 gateの並列wallは**13.69秒**だった。
+  - `git diff --check`も成功した。
+- 未実施:
+  - 対象3 fixture、3 structured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。duplicate case値、case定数式、VLA goto scope、nested control flow、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`duplicate_case_simple`、`case_float_constant`、`case_nonconstant_expression`の単純case 3件だけをClang strictと比較し、case keywordまたは式先頭token選択だけで閉じる場合に限る。folded/converted duplicate case、複合定数式、switch CFG、VLA scopeには入らない。

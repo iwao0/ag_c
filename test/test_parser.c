@@ -1874,6 +1874,12 @@ static void test_direct_statement_typed_hir_resolution_boundary(
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
             failure.rejection);
   ASSERT_EQ(ND_DEFAULT, failure.source_node_kind);
+  const node_t *duplicate_default_switch =
+      ((const node_block_t *)duplicate_default)->body[0];
+  const node_t *first_default =
+      ((const node_block_t *)duplicate_default_switch->rhs)->body[0];
+  ASSERT_EQ(ND_DEFAULT, first_default->kind);
+  ASSERT_TRUE(failure.source_token == first_default->tok);
 
   node_t *duplicate_label = parse_direct_test_statement_syntax(test_suite_session,
       "{ duplicate: ; duplicate: ; }");
@@ -20174,6 +20180,34 @@ static void test_parse_invalid(
       "    return 0;\n"
       "}",
       "E3068", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "label:\n"
+      "  goto label;\n"
+      "label:\n"
+      "  return 0;\n"
+      "}",
+      "E3067", 1);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(int argc, char **argv) {\n"
+      "  (void)argv;\n"
+      "  switch (argc) {\n"
+      "    default:\n"
+      "      return 1;\n"
+      "    default:\n"
+      "      return 2;\n"
+      "  }\n"
+      "}",
+      "E3061", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  goto missing;\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 8);
   expect_parse_fail_at_column(
       test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);

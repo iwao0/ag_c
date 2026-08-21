@@ -6283,6 +6283,9 @@ if (!/type_shape\.kind\s*==\s*PSX_TYPE_VOID[^]*?note_direct_named_rejection_at_t
 if (!/struct\s+direct_switch_scope_t\s*\{[^]*?direct_vm_scope_marker_t\s*\*entry_vm_scope\s*;[^]*?\}/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/struct\s+direct_switch_scope_t\s*\{[^]*?const\s+token_t\s*\*first_default_token\s*;[^]*?\}/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     !/case\s+ND_SWITCH[^]*?entry_vm_scope\s*=\s*context->active_vm_scope/.test(
       syntaxTypedHirResolutionSource,
     ) ||
@@ -6290,6 +6293,9 @@ if (!/struct\s+direct_switch_scope_t\s*\{[^]*?direct_vm_scope_marker_t\s*\*entry
       syntaxTypedHirResolutionSource,
     ) ||
     !/case\s+ND_DEFAULT[^]*?active_vm_scope\s*!=[^]*?entry_vm_scope[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_DEFAULT[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,[^]*?first_default_token[^]*?first_default_token\s*=\s*syntax->tok/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_LABEL_INTO_VARIABLY_MODIFIED_SCOPE/.test(
