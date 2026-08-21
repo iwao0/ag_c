@@ -31,6 +31,13 @@ void psx_resolve_function_declaration(
       return_type.type_id == PSX_TYPE_ID_INVALID) {
     return;
   }
+  if ((request->is_inline || request->is_noreturn) &&
+      request->name_len == 4 &&
+      memcmp(request->name, "main", 4) == 0) {
+    resolution->status =
+        PSX_FUNCTION_DECLARATION_MAIN_FUNCTION_SPECIFIER;
+    return;
+  }
   const psx_scope_declaration_t *existing =
       psx_scope_graph_lookup_declaration_in_scope(
           scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,

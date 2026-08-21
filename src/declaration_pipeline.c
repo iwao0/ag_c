@@ -709,6 +709,12 @@ static void diagnose_function_declaration(
           "declaration of function '%.*s' changes its language linkage",
           request->name_len, request->name);
       return;
+    case PSX_FUNCTION_DECLARATION_MAIN_FUNCTION_SPECIFIER:
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, context,
+          "hosted環境のmain関数は'inline'または'_Noreturn'付きで宣言できません "
+          "(C11 6.7.4p4)");
+      return;
     case PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION:
       ps_diag_ctx_in(
           diagnostics, request->diag_tok, context,
@@ -761,6 +767,7 @@ int psx_apply_function_declaration_pipeline(
           .is_definition = request->is_definition,
           .is_static = request->is_static,
           .is_extern = request->is_extern,
+          .is_inline = request->is_inline,
           .is_noreturn = request->is_noreturn,
           .is_block_scope = request->is_block_scope,
       },
@@ -1822,6 +1829,7 @@ int psx_apply_block_extern_declaration_pipeline(
                 .name_len = request->name_len,
                 .function_qual_type = request->type,
                 .is_extern = request->is_explicit_extern,
+                .is_inline = request->is_inline,
                 .is_noreturn = request->is_noreturn,
                 .is_block_scope = 1,
                 .diag_context = "block-extern",

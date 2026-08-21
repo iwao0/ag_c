@@ -11,6 +11,7 @@ typedef enum {
   PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT,
   PSX_FUNCTION_DECLARATION_TYPE_CONFLICT,
   PSX_FUNCTION_DECLARATION_LINKAGE_CONFLICT,
+  PSX_FUNCTION_DECLARATION_MAIN_FUNCTION_SPECIFIER,
   PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION,
 } psx_function_declaration_status_t;
 
@@ -22,6 +23,7 @@ typedef struct {
   int is_definition;
   int is_static;
   int is_extern;
+  int is_inline;
   int is_noreturn;
   int is_block_scope;
 } psx_function_declaration_resolution_request_t;

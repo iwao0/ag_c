@@ -8890,6 +8890,8 @@ static int preflight_direct_local_declaration(
                   .is_thread_local =
                       declaration->specifier.type_spec.is_thread_local,
                   .is_explicit_extern = declaration->is_extern,
+                  .is_inline =
+                      declaration->specifier.type_spec.is_inline,
                   .is_noreturn =
                       declaration->specifier.type_spec.is_noreturn,
                   .has_alignment_specifier =

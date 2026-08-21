@@ -39,7 +39,7 @@ static ag_diagnostic_context_t *application_diagnostics(
 static void apply_function_prototype(
     psx_semantic_context_t *semantic_context,
     token_ident_t *name, psx_qual_type_t function_qual_type,
-    int is_static, int is_extern, int is_noreturn) {
+    int is_static, int is_extern, int is_inline, int is_noreturn) {
   psx_type_shape_t function_shape = {0};
   if (!name ||
       !psx_semantic_type_table_describe(
@@ -55,6 +55,7 @@ static void apply_function_prototype(
               .function_qual_type = function_qual_type,
               .is_static = is_static,
               .is_extern = is_extern,
+              .is_inline = is_inline,
               .is_noreturn = is_noreturn,
               .diag_context = "decl",
               .diag_tok = (token_t *)name,
@@ -176,6 +177,7 @@ static void begin_declarator(
         application->current_qual_type,
         declaration->is_static,
         declaration->is_extern,
+        declaration->specifier.type_spec.is_inline,
         declaration->specifier.type_spec.is_noreturn);
     application->current_kind = PSX_TOPLEVEL_APPLY_FUNCTION;
     return;

@@ -37858,3 +37858,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 正例を4経路、negative 3件を3 compilerで直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、複雑なVLA bound式、深い宣言子/式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - typedefの通常同型再宣言とvariably modified例外は共通resolverで閉じた。次はVLA/gotoへ広げず、通常サイズの別の宣言または型制約をClang strictとの差分probeから選ぶ。
+
+### このセッション（続き1280）: hosted `main`のfunction specifierを拒否した
+- 対象選定:
+  - 前回の一時`_Thread_local` probeを整理し、tentative array、file-scope qualifier、flexible member initializer、Atomic指定、preprocessor、宣言子なしscalar、parameter/member storage class、文字配列initializer、`_Generic`、switch case変換の浅い境界を既存coverageと少数のClang C11 strict比較で確認した。既存coverage済みまたはag_cと一致した範囲は変更していない。
+  - `inline int main(void)`と`_Noreturn int main(void)`はC11 6.7.4p4によりhosted環境では不正だが、ag_cはfile-scope declaration、definition、block-scope function declarationのすべてで受理していた。ag_cは`__STDC_HOSTED__ == 1`を公開しているため、この制約を通常のhosted契約として扱う。
+  - function specifierを持つ外部リンケージinline定義から内部リンケージobjectを参照する別の差分も確認したが、関数bodyの参照追跡へ範囲が広がるため今回へ混ぜていない。深い式、巨大入力、resource/security監査系には進んでいない。
+- 原因と変更:
+  - 共通function declaration resolverは関数名、型、storage、`_Noreturn`状態を受け取っていたが、`inline`状態を受け取らず、名前が`main`の場合のfunction specifier制約も検査していなかった。
+  - function declaration pipelineとresolver requestへ`is_inline`を追加し、file prototype、function definition、direct block declarationの3 entry pathから伝播した。resolverは型がfunctionであることを確認した直後、scope lookupやsymbol登録より前に、名前が`main`かつ`inline`または`_Noreturn`なら専用`PSX_FUNCTION_DECLARATION_MAIN_FUNCTION_SPECIFIER`へ戻す。
+  - 共通pipelineはこのstatusをC11 6.7.4p4付きE3064として診断する。design invariantで両specifier、名前比較、専用status、登録前returnの順序を固定した。
+- coverage:
+  - parser unitへ`inline`/`_Noreturn`付きdefinition、`inline`付きfile declaration、`_Noreturn`付きblock declarationの4形をE3064で追加した。
+  - should_rejectへ`inline_main_function_definition`、`noreturn_main_function_definition`、`inline_main_function_declaration`、`noreturn_main_block_declaration`を追加し、Native/Wasm compile-fail registryへE3064で登録した。
+  - 既存`function_specifier_constraints`正例でhelper関数のspecifier順序、`inline inline`、`_Noreturn _Noreturn`、static inline、block-scope function declarationを維持した。
+- 確認:
+  - negative 4件はhost Clang `-std=c11 -pedantic-errors`、ag_c Native、Wasm objectがすべて拒否し、Native/Wasmは全件E3064で一致した。
+  - 既存positive fixtureはag_c Native compile/link/run、WAT compile/assemble/`wasm-interp`、Wasm object compile/validateがすべて成功し、WATは`main() => i32:0`だった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、最終実行は**real 3.54秒 / user 2.95秒 / sys 0.25秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.49秒 / user 0.75秒 / sys 0.50秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 12.71秒 / user 10.86秒 / sys 1.60秒**。
+  - `/usr/bin/time -p make wasm-selfhost-api` = **real 44.84秒 / user 42.81秒 / sys 1.20秒**。`make -q wasm-selfhost-api`もcurrentを確認した。`build/test_e2e`はwarningなしでビルドした。
+  - 調査中に`./build/test_preprocess`も単独実行し、**real 1.89秒**で成功した。長時間化の原因ではないためテスト本体の変更は行っていない。
+- 未実施:
+  - 対象negative 4件を3 compiler、positiveを4経路で直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深い式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - hosted `main`のfunction specifierは共通resolverで閉じた。次はC11 6.7.4p3の外部リンケージinline定義が内部リンケージidentifierを参照する制約を、単純なglobal object/function参照とstatic inline対照に限定して調べる。body全体の深い式解析やinline codegen変更へは広げない。

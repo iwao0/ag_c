@@ -4317,6 +4317,22 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"noreturn_object_rejected",
      "fixture:test/fixtures/should_reject/noreturn_object.c",
      "E3064"},
+    {"inline_main_function_definition_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "inline_main_function_definition.c",
+     "E3064"},
+    {"noreturn_main_function_definition_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "noreturn_main_function_definition.c",
+     "E3064"},
+    {"inline_main_function_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "inline_main_function_declaration.c",
+     "E3064"},
+    {"noreturn_main_block_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "noreturn_main_block_declaration.c",
+     "E3064"},
     {"inline_function_typedef_rejected",
      "fixture:test/fixtures/should_reject/inline_function_typedef.c",
      "E3064"},

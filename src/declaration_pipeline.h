@@ -61,6 +61,7 @@ typedef struct {
   int is_definition;
   int is_static;
   int is_extern;
+  int is_inline;
   int is_noreturn;
   int is_block_scope;
   const char *diag_context;
@@ -190,6 +191,7 @@ typedef struct {
   psx_qual_type_t type;
   int is_thread_local;
   int is_explicit_extern;
+  int is_inline;
   int is_noreturn;
   int has_alignment_specifier;
   int requested_alignment;

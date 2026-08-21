@@ -20221,6 +20221,15 @@ static void test_parse_invalid(
       "(void)local_pointer; (void)item; }");
   expect_parse_fail(test_suite_session,
       "inline int object; int main(void) { return 0; }");
+  expect_parse_fail_with_message(test_suite_session,
+      "inline int main(void) { return 0; }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "_Noreturn int main(void) { for (;;) {} }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "inline int main(void); int main(void) { return 0; }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int helper(void) { _Noreturn int main(void); return 0; } "
+      "int main(void) { return helper(); }", "E3064");
   expect_parse_fail(test_suite_session,
       "int main(void) { _Thread_local int object; return 0; }");
   expect_parse_fail(test_suite_session,

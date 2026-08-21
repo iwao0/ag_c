@@ -4346,6 +4346,13 @@ if (!/case\s+PSX_DECL_FUNCTION:[^]*?resolution->function\s*=\s*declaration->payl
     "semantic function-symbol resolution must use the passed semantic context",
   );
 }
+if (!/\(request->is_inline\s*\|\|\s*request->is_noreturn\)[^]*?request->name_len\s*==\s*4[^]*?memcmp\s*\(\s*request->name\s*,\s*"main"\s*,\s*4\s*\)[^]*?PSX_FUNCTION_DECLARATION_MAIN_FUNCTION_SPECIFIER[^]*?return\s*;/.test(
+      functionDeclarationResolutionSource,
+    )) {
+  throw new Error(
+    "hosted main function specifiers must be rejected before function registration",
+  );
+}
 const tagDeclarationResolutionSource = await readFile(
   "src/semantic/tag_declaration_resolution.c",
   "utf8",

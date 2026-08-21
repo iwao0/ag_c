@@ -262,6 +262,8 @@ static int resolve_function_definition_header(
               .is_static = definition->is_static,
               .is_extern =
                   definition->return_specifier.type_spec.is_extern,
+              .is_inline =
+                  definition->return_specifier.type_spec.is_inline,
               .is_noreturn =
                   definition->return_specifier.type_spec.is_noreturn,
               .diag_context = "funcdef",
