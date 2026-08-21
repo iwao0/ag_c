@@ -38528,3 +38528,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - static-assert正本14件のNative/Wasm直接拒否、対象5件とblock/aggregate probeのClang strict/Native/Wasm source位置、message3件、positive3件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - static-assertのmessageとcondition位置は閉じた。次は既存`sizeof`/`_Alignof`の単純なincomplete/function型fixtureを少数比較し、type-name/keyword tokenだけで閉じる差分を探す。VLA runtime評価、深いdeclarator、`_Alignas`受理方針、duplicate case式には入らない。
+
+### このセッション（続き1309）: `sizeof` expressionのE3117をoperand先頭へ移した
+- 対象選定:
+  - incomplete record/array、flexible array member、functionの既存`sizeof`/`_Alignof` fixtureをClang C11 strictと比較した。type-name形7件はClangと同じ`sizeof` / `_Alignof` keywordを既に指していた。
+  - expression形4件では、Clangが`*`、`values`、`packet`、`function`を指す一方、ag_cは全て`sizeof` keywordへ固定していた。VLA runtime評価、bit-field選択、深いexpression/declarator、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - `node_sizeof_query_t`はoperand ASTを保持していたが、operandをparseする直前のtokenを残していなかった。identifierやunary式ではAST tokenが先頭と一致する一方、binary/member式のAST rootは設計上operator tokenを保持するため、後段から構文上のoperand先頭を一貫して復元できなかった。
+  - parenthesized expressionでは`(`直後、unparenthesized expressionではunary parse直前のcurrent tokenを`operand_token`としてSyntaxへ保持する。type-name形ではこのmetadataを設定せず、従来のquery keyword sourceを維持する。
+  - direct type-queryの共通型制約検査へ任意のinvalid-type tokenを渡し、expression形のE3117だけが`operand_token`を使う。restrict qualifierは専用tokenを優先し、type-name、診断ID・文言、型制約、AST operator token、VLA評価方針は変更していない。
+- coverage:
+  - parser boundaryはparenthesized composite operandの先頭identifierがAST rootの`+` tokenと別に保持されること、unparenthesized `*`、type-name形ではtokenを持たないことを直接固定した。
+  - structured diagnosticはincomplete dereference、extern incomplete array、flexible array member、function designatorのexpression形と、incomplete/function type-name、`_Alignof` type-nameのE3117 columnを固定した。design invariantはSyntax metadata、両parse経路、共通validatorのtoken付き拒否、expression/type-name各call siteを固定し、user-facing文言のexact matchにはしていない。
+- 確認:
+  - expression正本4件はClang strict、Native、Wasmが全て拒否し、Native/WasmはE3117を維持してClangと同じ`*`、`values`、`packet`、`function` tokenを指した。type-name正本7件は3系統で従来の`sizeof` / `_Alignof`位置を維持した。
+  - 上記11件に`sizeof_generic_selected_function`と`sizeof_incomplete_enum`を加えたE3117正本13件はNative/Wasm合計26/26経路がexit 1を維持した。multiline generic selectionはoperand先頭の`_Generic`へ改善する一方、Clangは改行前の`(`直後を指す非token位置なので今回の一致根拠には含めていない。
+  - positiveの`unevaluated_type_query_boundaries`と`type_query_result_type_boundaries`はClang strict、Native、Wasm objectの6/6経路ですべて受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.65秒 / user 3.00秒 / sys 0.29秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.79秒 / user 11.93秒 / sys 1.61秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.31秒 / user 0.77秒 / sys 0.48秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象13件のNative/Wasm直接拒否、対象expression/type-nameのClang strict source位置、positive 2件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。deep expression/declarator、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - incomplete/function型のtype-query位置は閉じた。次は直接memberの`sizeof(bit-field)` E3118だけを少数比較する。これはClangがoperand先頭でなくbit-field identifierを指すため、今回の`operand_token`を流用せず、既存member resolutionが保持するtokenだけで閉じる場合に限る。generic-selected bit-fieldや深い選択式には入らない。

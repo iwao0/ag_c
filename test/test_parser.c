@@ -18124,6 +18124,42 @@ static void test_expr_sizeof(
         type_queries[i].value);
   }
 
+  node_t *parenthesized_syntax =
+      parse_expr_input_with_existing_locals(
+          test_suite_session, "sizeof(a + 1)");
+  ASSERT_TRUE(parenthesized_syntax != NULL);
+  ASSERT_EQ(ND_SIZEOF_QUERY, parenthesized_syntax->kind);
+  node_sizeof_query_t *parenthesized_query =
+      (node_sizeof_query_t *)parenthesized_syntax;
+  ASSERT_TRUE(!parenthesized_query->is_type_name);
+  ASSERT_TRUE(parenthesized_query->operand_token != NULL);
+  ASSERT_EQ(TK_IDENT, parenthesized_query->operand_token->kind);
+  ASSERT_EQ(7, parenthesized_query->operand_token->byte_offset);
+  ASSERT_TRUE(parenthesized_query->operand != NULL);
+  ASSERT_EQ(ND_ADD, parenthesized_query->operand->kind);
+  ASSERT_TRUE(parenthesized_query->operand_token !=
+              parenthesized_query->operand->tok);
+
+  node_t *unparenthesized_syntax =
+      parse_expr_input_with_existing_locals(
+          test_suite_session, "sizeof *a");
+  ASSERT_TRUE(unparenthesized_syntax != NULL);
+  ASSERT_EQ(ND_SIZEOF_QUERY, unparenthesized_syntax->kind);
+  node_sizeof_query_t *unparenthesized_query =
+      (node_sizeof_query_t *)unparenthesized_syntax;
+  ASSERT_TRUE(!unparenthesized_query->is_type_name);
+  ASSERT_TRUE(unparenthesized_query->operand_token != NULL);
+  ASSERT_EQ(TK_MUL, unparenthesized_query->operand_token->kind);
+  ASSERT_EQ(7, unparenthesized_query->operand_token->byte_offset);
+
+  node_t *type_name_syntax =
+      parse_expr_input_with_existing_locals(
+          test_suite_session, "sizeof(int)");
+  ASSERT_TRUE(type_name_syntax != NULL);
+  ASSERT_EQ(ND_SIZEOF_QUERY, type_name_syntax->kind);
+  ASSERT_TRUE(((node_sizeof_query_t *)type_name_syntax)->is_type_name);
+  ASSERT_TRUE(((node_sizeof_query_t *)type_name_syntax)->operand_token == NULL);
+
   assert_test_program_return_hir_number(test_suite_session,
       "int main() { int x; return sizeof(x); }", 4);
   assert_test_program_return_hir_number(test_suite_session,
@@ -20027,6 +20063,39 @@ static void test_parse_invalid(
   expect_parse_fail_at_column(
       test_suite_session,
       "int apply(int (*restrict callback)(void));", "E3064", 17);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct incomplete; int main(void) { "
+      "return sizeof(*(struct incomplete *)0); }",
+      "E3117", 51);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "extern int values[]; int main(void) { return sizeof(values); }",
+      "E3117", 53);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct packet { int count; unsigned char payload[]; }; "
+      "int main(void) { struct packet *packet=0; "
+      "return sizeof(packet->payload); }",
+      "E3117", 112);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int function(void); int main(void) { return sizeof(function); }",
+      "E3117", 52);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct incomplete; int main(void) { "
+      "return sizeof(struct incomplete); }",
+      "E3117", 44);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return sizeof(int(void)); }",
+      "E3117", 25);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct incomplete; int main(void) { "
+      "return _Alignof(struct incomplete); }",
+      "E3117", 44);
   expect_parse_fail_at_column(
       test_suite_session,
       "_Static_assert(0, \"failure\"); int main(void) { return 0; }",

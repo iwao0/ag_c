@@ -7002,12 +7002,39 @@ if (!typeNameRef ||
     /\bpsx_type_t\s*\*\s*type\s*;/.test(genericAssociation[1]) ||
     !sizeofQueryNode ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(sizeofQueryNode[1]) ||
+    !/\btoken_t\s*\*\s*operand_token\s*;/.test(sizeofQueryNode[1]) ||
     /\bqueried_type\b/.test(sizeofQueryNode[1]) ||
     !alignofQueryNode ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(alignofQueryNode[1]) ||
     /\bresolved_alignment\b/.test(alignofQueryNode[1])) {
   throw new Error(
     "type-name expressions must resolve directly into canonical semantic types without Syntax state",
+  );
+}
+const directTypeQueryValidation =
+  syntaxTypedHirResolutionSource.match(
+    /static\s+int\s+validate_direct_type_query_type\s*\([^]*?\n\}\n\nstatic\s+int\s+direct_sizeof_operand_is_bitfield/,
+  )?.[0] ?? "";
+if (!/query->operand_token\s*=\s*curtok\(ctx\)->next\s*;\s*set_curtok\(ctx,\s*query->operand_token\s*\)[^]*?query->operand_token\s*=\s*curtok\(ctx\)\s*;\s*query->operand\s*=\s*unary_ctx\(ctx\)/.test(
+      parserExprSource,
+    ) ||
+    !/const\s+token_t\s*\*\s*invalid_type_token/.test(
+      directTypeQueryValidation,
+    ) ||
+    /note_direct_semantic_rejection\s*\(/.test(
+      directTypeQueryValidation,
+    ) ||
+    (directTypeQueryValidation.match(
+      /note_direct_semantic_rejection_at_token\s*\(/g,
+    )?.length ?? 0) < 7 ||
+    !/validate_direct_type_query_type\s*\(\s*context,\s*syntax,\s*queried_qual_type,\s*1,\s*0,\s*NULL,\s*query->operand_token\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    (syntaxTypedHirResolutionSource.match(
+      /psx_type_name_restrict_qualifier_token\(&type_name\)\s*,\s*NULL/g,
+    )?.length ?? 0) < 2) {
+  throw new Error(
+    "sizeof expression diagnostics must preserve the operand start token while type-name queries retain their operator source",
   );
 }
 

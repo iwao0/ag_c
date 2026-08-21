@@ -446,13 +446,15 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
       return (node_t *)query;
     }
 
-    set_curtok(ctx, curtok(ctx)->next);
+    query->operand_token = curtok(ctx)->next;
+    set_curtok(ctx, query->operand_token);
     query->operand = expr_internal_ctx(ctx);
     tk_expect_ctx(ctx->tokenizer_context, ')');
     query->operand = apply_postfix(query->operand, ctx);
     return (node_t *)query;
   }
 
+  query->operand_token = curtok(ctx);
   query->operand = unary_ctx(ctx);
   return (node_t *)query;
 }
