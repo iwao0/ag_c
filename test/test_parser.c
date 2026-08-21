@@ -20194,6 +20194,22 @@ static void test_parse_invalid(
       "E3084", 61);
   expect_parse_fail_at_column(
       test_suite_session,
+      "_Alignas((1, 16)) int value; int main(void) { return 0; }",
+      "E3064", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "_Alignas(3) int value; int main(void) { return 0; }",
+      "E3064", 1);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "_Alignas(1) int value; int main(void) { return 0; }",
+      "E3064", 1);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { _Alignas(3) int value; return value; }",
+      "E3064", 18);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Static_assert(0, \"failure\"); int main(void) { return 0; }",
       "E3012", 16);
   expect_parse_fail_at_column(

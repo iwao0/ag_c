@@ -4605,6 +4605,16 @@ if (!/has_alignment_specifier\s*=\s*declaration->specifier\.alignas_specifier_co
     "aggregate member resolution must preserve alignment-specifier presence from both semantic entry paths",
   );
 }
+if (!/requested_alignment\s*&\s*\(requested_alignment\s*-\s*1\)[^]*?psx_declaration_specifier_token_for_kinds\([^]*?TK_ALIGNAS[^]*?ps_diag_ctx_in\([^]*?source_token,[^]*?alignment must be zero or a power of two/.test(
+      declarationApplicationSource,
+    ) ||
+    !/natural_alignment\s*>\s*requested_alignment[^]*?psx_declaration_specifier_token_for_kinds\([^]*?TK_ALIGNAS[^]*?ps_diag_ctx_in\([^]*?source_token,[^]*?alignment cannot be weaker than the natural alignment/.test(
+      declarationApplicationSource,
+    )) {
+  throw new Error(
+    "resolved alignment value constraints must diagnose the alignment specifier rather than the declarator name",
+  );
+}
 if (!/has_anonymous_aggregate_specifier\s*=\s*declaration->specifier\.tag_action\.is_anonymous/.test(
       declarationApplicationSource,
     ) ||

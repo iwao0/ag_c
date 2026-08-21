@@ -38647,3 +38647,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象4件のClang strict/Native/Wasm source位置、positive 3件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。GNU range、deep designator chain、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - initializer designator operand位置は閉じた。次は既存`alignas_{comma_constant,non_power_of_two,weaker_than_natural}`だけを少数比較し、specifier/operand tokenの伝播だけで閉じる場合に限る。redeclaration merge、signed overflow、incomplete type、深い定数式には入らない。
+
+### このセッション（続き1314）: `_Alignas`値制約のE3064をspecifierへ移した
+- 対象選定:
+  - `alignas_comma_constant`、`alignas_non_power_of_two`、`alignas_weaker_than_natural`だけをClang C11 strictと比較した。comma非ICEは3系統ともoperand先頭の`(`を既に指していたため変更しなかった。
+  - 非2冪と自然alignmentより弱い指定ではClangが`_Alignas` keywordを指す一方、Native/Wasmは宣言名`value`へ固定していた。適用対象制約、type-name完成性、signed overflow、再宣言merge、VLA、深い定数式、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - 各alignas expressionの整数定数式解決は`psx_parsed_alignas_t::diagnostic_token`としてoperand先頭を使っていた。一方、解決済みalignment値の2冪・自然alignment検査は共通declaration specifier validatorで行い、declarator名tokenをそのまま診断へ渡していた。
+  - 非zero値が2冪でない分岐と、対象型の自然alignmentより弱い分岐だけが、既存`psx_declaration_specifier_token_for_kinds()`でspecifier列中の`TK_ALIGNAS`を選ぶ。comma非ICEなど式解決中の診断sourceは変更しない。
+  - alignment値の解決・最大値選択、0指定、type-name、対象宣言の適格性、自然alignment算出、E3064 ID・文言、再宣言一貫性は変更していない。
+- coverage:
+  - structured diagnosticはfile-scopeのcomma非ICE、非2冪、自然alignment弱化と、block-scope非2冪のE3064 columnを固定した。design invariantは解決済み2分岐が`TK_ALIGNAS`を選ぶことを固定する。
+- 確認:
+  - 対象3件はClang strict、Native、Wasmがすべて拒否し、Native/WasmはE3064を維持した。comma非ICEはClangと同じ`(`、非2冪と弱化はClangと同じ`_Alignas` tokenを指し、Native/Wasm 6/6経路はexit 1だった。
+  - positiveの`alignas/{lvar_value,global_var,type_name}`はClang strict、Native、Wasm objectの9/9経路ですべて受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.81秒 / user 3.11秒 / sys 0.34秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.98秒 / user 11.94秒 / sys 1.69秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.22秒 / user 0.82秒 / sys 0.53秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象3件のClang strict/Native/Wasm source位置、positive 3件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。適用対象、type-name完成性、signed overflow、redeclaration、VLA、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - alignment値制約の位置は閉じた。次は既存`alignas_{typedef,parameter,bitfield,register_object,function_declaration}`だけを少数比較し、同じ`TK_ALIGNAS`選択で適用対象E3064の位置だけ閉じる場合に限る。function definition、再宣言、type-name、VLAには入らない。

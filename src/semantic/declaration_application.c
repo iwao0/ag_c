@@ -873,8 +873,11 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   }
   if (requested_alignment == 0) return 1;
   if ((requested_alignment & (requested_alignment - 1)) != 0) {
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        (const token_kind_t[]){TK_ALIGNAS}, 1);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "alignas", "alignment must be zero or a power of two");
     return 0;
   }
@@ -883,8 +886,11 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
       ps_ctx_record_layout_table_in(semantic_context),
       declared_type, ps_ctx_data_layout(semantic_context));
   if (natural_alignment > requested_alignment) {
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        (const token_kind_t[]){TK_ALIGNAS}, 1);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "alignas", "alignment cannot be weaker than the natural alignment");
     return 0;
   }
