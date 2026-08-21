@@ -38316,3 +38316,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象2fixtureとdefinition・unnamed void対照5形をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - named void prototypeは通常・nestedで閉じた。次も既存identifier/keyword tokenだけで閉じる宣言・statement制約を少数比較し、duplicate caseの式位置は保留する。
+
+### このセッション（続き1300）: unnamed void parameterのE3064をdelimiterへ移した
+- 対象選定:
+  - 前回分離したunnamed `void, ...`とtypedef-void variadicを起点に、直接/typedef、variadic/通常複数parameter、先頭/末尾、nested prototypeの既存2fixtureと通常サイズ6probeをClang C11 strictとNativeで比較した。
+  - Clangは先頭のunqualified void/typedef-voidでは直後のcomma、末尾形では`)`を指したが、ag_cはspecifier開始の`void`またはtypedef名を指していた。
+  - abstract parameter declaratorが直後のdelimiter tokenを既に保持していたため、そのtokenだけで閉じた。declarator構造、式、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - prototype void validatorはnamed形をidentifierへ移した後も、identifierのない不正形をすべてspecifier tokenへfallbackしていた。
+  - identifierがなく、base qualifierが空で、parameter countが1でないかvariadicである場合だけ`parameter->declarator.diagnostic_token`を選ぶ。先頭形はcomma、末尾形は`)`となる。identifierがあればparameter名、qualified voidならspecifier、sole unnamed unqualified voidなら合法markerとして従来どおり処理する。
+  - 型形成、parameter adjustment、受理可否、診断ID・文言は変更していない。design invariantはsole marker、named、unqualified delimiter failure、qualified specifierの4分岐を固定する。
+- coverage:
+  - 既存の`void_variadic_parameter`と`typedef_void_variadic_parameter`に加え、非variadic複数parameter入口を`void_multiple_parameters`としてshould_reject正本とNative/Wasm共用compile-fail registryへ追加した。READMEとdifferential coverage表も同じ境界へ更新した。
+- 確認:
+  - 直接/typedef、variadic/通常複数、先頭/末尾、nestedの8形はClang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3064を維持してClangと同じcommaまたは`)` token上で一致した。
+  - named voidは`value`、qualified voidは`const`位置をNative/Wasmとも維持し、合法なsole `void` markerは両backendで受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.57秒 / user 3.06秒 / sys 0.25秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.24秒 / user 11.68秒 / sys 1.55秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.07秒 / user 0.75秒 / sys 0.50秒**。`node --check test/test_design_invariants.mjs`、直接`node test/test_design_invariants.mjs`、`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e`はwarningなしで成功した。
+- 未実施:
+  - 新旧3fixtureと通常サイズprobeをClang strict/Nativeで分類し、対象8形と対照3形をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - void parameterのnamed/unqualified delimiter/qualified/sole marker診断位置は閉じた。次も既存tokenだけで閉じるparameter・statement制約を少数比較し、duplicate caseの式位置は保留する。

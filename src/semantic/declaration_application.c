@@ -1223,9 +1223,15 @@ void psx_apply_parsed_function_parameters_in_contexts(
         resolved_count = 0;
         break;
       }
-      token_t *source_token = parameter->declarator.identifier
-          ? (token_t *)parameter->declarator.identifier
-          : parameter->specifier.diagnostic_token;
+      token_t *source_token = parameter->specifier.diagnostic_token;
+      if (parameter->declarator.identifier) {
+        source_token = (token_t *)parameter->declarator.identifier;
+      } else if (base_qual_type.qualifiers ==
+                     PSX_TYPE_QUALIFIER_NONE &&
+                 (parameters->count != 1 ||
+                  parameters->is_variadic)) {
+        source_token = parameter->declarator.diagnostic_token;
+      }
       ps_diag_ctx_in(
           ps_ctx_diagnostics(semantic_context),
           source_token, "param",
