@@ -21807,8 +21807,11 @@ static void test_parse_invalid(
       "enum { KIND_ZERO }; int main(void) { "
       "union Local; enum { KIND_ONE = 1 }; "
       "return KIND_ZERO + KIND_ONE - 1; }");
-  expect_parse_fail(test_suite_session,
-      "struct Empty {}; int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Empty {};\n"
+      "int main(void) { return 0; }",
+      "E3064", 15);
   expect_parse_fail(test_suite_session,
       "union Empty {} value; int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
