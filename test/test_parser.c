@@ -20304,6 +20304,34 @@ static void test_parse_invalid(
       "E3064", 5);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) {\n"
+      "label:\n"
+      "  _Static_assert(1, \"declaration\");\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  switch (1) {\n"
+      "    case 1:\n"
+      "      int value = 0;\n"
+      "      return value;\n"
+      "  }\n"
+      "}",
+      "E3064", 7);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  switch (1) {\n"
+      "    default:\n"
+      "      int value = 0;\n"
+      "      return value;\n"
+      "  }\n"
+      "}",
+      "E3064", 7);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
   expect_parse_fail_at_column(
       test_suite_session,
