@@ -16008,9 +16008,13 @@ static void test_aggregate_member_resolution_boundary(
   expect_parse_fail(test_suite_session,
       "struct BadWidth { int value : 33; }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(test_suite_session,
-      "struct NegativeWidth { unsigned int value : -1; }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct record {\n"
+      "  unsigned int value : -1;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 16);
   expect_parse_fail_at_column(
       test_suite_session,
       "struct record {\n"

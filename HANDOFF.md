@@ -40460,3 +40460,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。unnamed zero-width、非定数幅、member access、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`bitfield_negative_width` fixtureの単一member `unsigned int value : -1;`だけをClang strict、Native、Wasmで比較し、単純な負定数幅制約の診断IDと位置を確認する。comma/nonconstant/overflow幅式、member access、initializerには入らない。
+
+### このセッション（続き1407）: negative-width bit-fieldのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`bitfield_negative_width` fixtureにある単一member `unsigned int value : -1;`だけをClang C11 strict、Native、Wasmで比較した。
+  - comma/nonconstant/overflow幅式、member access、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともbit-field member名`value`を指し、Clangは3行16列、Native/WasmはE3064と実トークン`value`を報告した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行とインデントを持つE3064 column 16 assertionへ強化し、型指定子、単純なunary minus幅、数値token、colonへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、bit-field layout、integer constant評価、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`value`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.85秒 / user 3.04秒 / sys 0.31秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。comma/nonconstant/overflow幅式、member access、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`incomplete_enum_bitfield` fixtureのforward-declared enumと単一member `enum mode value : 1;`だけをClang strict、Native、Wasmで比較し、不完全enum bit-field型制約の診断IDと位置を確認する。enum定義、member access、initializer、width式派生には入らない。
