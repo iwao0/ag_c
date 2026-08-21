@@ -38839,3 +38839,19 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象2 fixture、prefix/unknown-member control、positive fixture、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。多次元配列、designator chain、再帰brace、一般式AST token、prefix型体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - member/compound literalの位置は閉じた。次は既存`multidimensional_character_array_string_too_long`だけをClang strictと比較し、今回のentry value tokenで既に一致するか確認する。再帰initializerの再設計、designator chain、prefix型体系には入らない。
+
+### このセッション（続き1322）: 多次元文字配列rowのE3027 literal位置を回帰固定した
+- 対象選定:
+  - 既存`multidimensional_character_array_string_too_long`だけをClang C11 strict、Native、Wasmで比較した。3系統とも拒否し、前回追加したinitializer value tokenによりNative/Wasmも既にClangと同じ内側の文字列literalを指していた。
+  - compiler sourceの追加変更は行わず、再帰initializerの再設計、designator chain、prefix型体系、深い式、巨大入力、fuzz、資源stress、security監査系には進んでいない。
+- coverage:
+  - structured diagnosticへ`char rows[1][2] = {"abc"};`のE3027 column 22を追加し、多次元rowでも文字列literal開始を固定した。
+  - differential coverage表のE3027 source位置へ多次元rowを追記した。これで通常3 storage形、単一brace、member designator、多次元row、array compound literalの既存9 fixture群を同じliteral位置境界として記録した。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1だった。Native/Wasm 2/2はE3027と文字列token`abc`を指し、Clangのcolumn 22と一致した。
+  - `make build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.58秒 / user 3.03秒 / sys 0.26秒**。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの3系統比較と変更対象のparser gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。再帰initializer、designator chain、prefix型体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 通常文字列長E3027のsource位置は閉じた。次は既存`different_encoded_string_prefixes` 1件だけをClang strictと比較し、隣接する異種prefix tokenの既存位置で一致するか確認する。encoded element型推論、Unicode code-unit境界、prefix型体系全体には広げない。
