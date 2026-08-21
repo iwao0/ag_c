@@ -16058,6 +16058,13 @@ static void test_aggregate_member_resolution_boundary(
       "};\n"
       "int main(void) { return 0; }",
       "E3064", 16);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct function_bitfield {\n"
+      "  unsigned int callback(void) : 3;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 16);
   expect_parse_fail(test_suite_session,
       "struct BadFunction { int value(void); }; "
       "int main(void) { return 0; }");

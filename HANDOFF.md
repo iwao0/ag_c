@@ -40405,3 +40405,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member access、initializer、array bound派生、width式派生、function bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`bitfield_function_type` fixtureの単一member `unsigned int callback(void) : 3;`だけをClang strict、Native、Wasmで比較し、function declaratorを持つbit-field診断がmember名を指すか確認する。呼び出し、function pointer、member access、initializer、width式派生には入らない。
+
+### このセッション（続き1404）: function bit-fieldのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`bitfield_function_type` fixtureにある単一member `unsigned int callback(void) : 3;`だけをClang C11 strict、Native、Wasmで比較した。
+  - 呼び出し、function pointer、member access、initializer、width式派生、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともbit-field member名`callback`を指し、Clangは3行16列、Native/WasmはE3064と実トークン`callback`を報告した。
+  - Wasmは失敗時にもstdoutへ8 byteの未完WAT `(module\n`を出すため結合表示ではstderr診断へ割り込んだが、stdoutを一時ファイルへ分離すると診断トークンは完全な`callback`だった。一時ファイルはworkspace外の`/tmp`だけに置いた。
+  - 通常のfunction member拒否とは別に、fixture同様の改行とインデントを持つE3064 column 16 assertionを追加し、function declarator、型指定子、parameter list、幅定数、colonへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、function identity、bit-field layout、width評価、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`callback`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 5.58秒 / user 4.70秒 / sys 0.33秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。呼び出し、function pointer、member access、initializer、width式派生、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`bool_bitfield_too_wide` fixtureの単一member `_Bool enabled : 2;`だけをClang strict、Native、Wasmで比較し、型幅を超える単一定数bit-field幅の診断IDと位置を確認する。comma/nonconstant/overflow幅式、member access、initializerには入らない。
