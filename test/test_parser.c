@@ -20252,6 +20252,16 @@ static void test_parse_invalid(
   expect_parse_fail_with_message(test_suite_session,
       "int helper(void) { int main(long, char **); return 0; } "
       "int main(void) { return helper(); }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(int argc, ...) { return argc; }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(int argc, char **argv, ...) { "
+      "return argc + (argv != 0); }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(int, char **, ...);", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int helper(void) { int main(int, char **, ...); return 0; } "
+      "int main(void) { return helper(); }", "E3064");
   expect_parse_ok(test_suite_session,
       "typedef int integer; typedef char character; "
       "integer main(volatile integer argc, "
@@ -20265,6 +20275,10 @@ static void test_parse_invalid(
   expect_parse_ok(test_suite_session,
       "int main(int argc, char **argv, char **environment) { "
       "return argc + (argv != 0) + (environment != 0); }");
+  expect_parse_ok(test_suite_session,
+      "static int sum(int count, ...) { return count; } "
+      "int main(int argc, char **argv, char **environment) { "
+      "return sum(0, argc, argv, environment); }");
   expect_parse_fail_with_message(test_suite_session,
       "static int internal_object; "
       "extern inline int read_object(void) { return internal_object; }",

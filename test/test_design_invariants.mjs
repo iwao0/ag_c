@@ -4357,6 +4357,7 @@ if (!/static int is_hosted_main_name[^]*?name_len\s*==\s*4[^]*?memcmp\s*\(\s*nam
   );
 }
 for (const mainTypeStatus of [
+  "PSX_FUNCTION_DECLARATION_MAIN_VARIADIC",
   "PSX_FUNCTION_DECLARATION_MAIN_RETURN_TYPE",
   "PSX_FUNCTION_DECLARATION_MAIN_FIRST_PARAMETER_TYPE",
   "PSX_FUNCTION_DECLARATION_MAIN_SECOND_PARAMETER_TYPE",
@@ -4366,6 +4367,13 @@ for (const mainTypeStatus of [
       "hosted main return and parameter types must have dedicated rejection statuses",
     );
   }
+}
+if (!/is_hosted_main\s*&&\s*function_shape\.is_variadic_function[^]*?PSX_FUNCTION_DECLARATION_MAIN_VARIADIC[^]*?return\s*;/.test(
+      functionDeclarationResolutionSource,
+    )) {
+  throw new Error(
+    "hosted main variadic declarations must be rejected before function registration",
+  );
 }
 const hostedMainTypeCheckIndex = functionDeclarationResolutionSource.indexOf(
   "if (is_hosted_main && !is_unqualified_signed_int",

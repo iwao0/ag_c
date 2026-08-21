@@ -715,6 +715,12 @@ static void diagnose_function_declaration(
           "hosted環境のmain関数は'inline'または'_Noreturn'付きで宣言できません "
           "(C11 6.7.4p4)");
       return;
+    case PSX_FUNCTION_DECLARATION_MAIN_VARIADIC:
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, context,
+          "hosted環境のmain関数は可変個引数付きで宣言できません "
+          "(C11 5.1.2.2.1)");
+      return;
     case PSX_FUNCTION_DECLARATION_MAIN_RETURN_TYPE:
       ps_diag_ctx_in(
           diagnostics, request->diag_tok, context,

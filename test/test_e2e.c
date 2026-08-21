@@ -4357,6 +4357,18 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "invalid_main_block_declaration.c",
      "E3064"},
+    {"variadic_main_function_definition_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "variadic_main_function_definition.c",
+     "E3064"},
+    {"variadic_main_function_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "variadic_main_function_declaration.c",
+     "E3064"},
+    {"variadic_main_block_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "variadic_main_block_declaration.c",
+     "E3064"},
     {"inline_internal_object_reference_rejected",
      "fixture:test/fixtures/should_reject/"
      "inline_internal_object_reference.c",

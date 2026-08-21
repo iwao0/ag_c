@@ -37936,3 +37936,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - negative 6件を3 compiler、positiveを4経路で直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - hosted `main`のcanonical return/第1・第2引数型は共通resolverで閉じた。次もClang固有の複合修飾構文へ広げず、通常サイズの別の宣言制約を少数probeから選ぶ。
+
+### このセッション（続き1283）: variadicなhosted `main`を拒否した
+- 対象選定:
+  - 前回のcanonical `main`型検査に載っていないvariadic flagを、通常サイズのdefinition、file prototype、block-scope function declarationでClang C11 strictと比較した。
+  - `int main(int, ...)`と`int main(int, char **, ...)`、そのprototypeをClang strictは拒否したがag_cは受理した。block declarationも宣言位置では受理し、後続`int main(void)`との型衝突まで遅れてE3064になっていた。
+  - 通常のvariadic helperと、Clangが実装定義形として受理する3固定引数の`main`を同じsourceで使う形は双方が受理した。ellipsis構文全般、variadic ABI、`va_list`、深い式には広げていない。
+- 原因と変更:
+  - 共通function declaration resolverはcanonical function shapeの`is_variadic_function`を既に取得していたが、hosted `main`の検査はreturn型と固定parameter型だけを見ていた。
+  - `is_hosted_main && function_shape.is_variadic_function`をfunction symbol登録前に検査し、専用`PSX_FUNCTION_DECLARATION_MAIN_VARIADIC`へ戻す。共通pipelineはdefinition・file/block declarationの全entry pathでC11 5.1.2.2.1付きE3064を`main` tokenへ出す。
+- coverage:
+  - parser unitへ1固定引数definition、2固定引数definition、file prototype、block declarationの4負例をE3064で追加した。通常variadic helperと3固定引数mainの組合せを合法対照に追加した。
+  - should_rejectへ`variadic_main_function_definition`、`variadic_main_function_declaration`、`variadic_main_block_declaration`を追加し、Native/Wasm compile-fail registryへE3064で登録した。
+  - design invariantはcanonical variadic flag、専用status、function登録前returnを固定する。differential coverageとshould_reject一覧も独立行で更新した。
+- 確認:
+  - negative 3件はhost Clang `-std=c11 -pedantic-errors`、ag_c Native、Wasm objectがすべて拒否し、Native/Wasmは全件E3064で一致した。
+  - 通常variadic helper＋3固定引数mainの正例はClang strict、ag_c Native compile/link/run、WAT compile/assemble/validate、Wasm object compile/validateがすべて成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.66秒 / user 3.03秒 / sys 0.23秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.28秒 / user 0.76秒 / sys 0.46秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 12.55秒 / user 10.84秒 / sys 1.50秒**。
+  - `/usr/bin/time -p make wasm-selfhost-api` = **real 44.29秒 / user 42.47秒 / sys 0.94秒**。`make -q wasm-selfhost-api`もcurrentを確認し、`build/test_e2e`はwarningなしでビルドした。
+- 未実施:
+  - negative 3件を3 compiler、positiveを4経路で直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、variadic ABIの再検証、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - hosted `main`のvariadicnessもcanonical function shapeで閉じた。次は`main`やClang固有複合修飾から離れ、通常サイズの別の宣言・statement制約を少数probeから選ぶ。

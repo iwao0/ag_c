@@ -88,6 +88,10 @@ void psx_resolve_function_declaration(
         PSX_FUNCTION_DECLARATION_MAIN_FUNCTION_SPECIFIER;
     return;
   }
+  if (is_hosted_main && function_shape.is_variadic_function) {
+    resolution->status = PSX_FUNCTION_DECLARATION_MAIN_VARIADIC;
+    return;
+  }
   if (is_hosted_main && !is_unqualified_signed_int(types, return_type)) {
     resolution->status = PSX_FUNCTION_DECLARATION_MAIN_RETURN_TYPE;
     return;
