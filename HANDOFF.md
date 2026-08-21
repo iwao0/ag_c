@@ -39144,3 +39144,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3 fixture、3 structured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。duplicate case値、case定数式、VLA goto scope、nested control flow、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`duplicate_case_simple`、`case_float_constant`、`case_nonconstant_expression`の単純case 3件だけをClang strictと比較し、case keywordまたは式先頭token選択だけで閉じる場合に限る。folded/converted duplicate case、複合定数式、switch CFG、VLA scopeには入らない。
+
+### このセッション（続き1336）: 重複caseのE3060を2個目のcase式へ移した
+- 対象選定:
+  - 前回候補の`duplicate_case_simple`、`case_float_constant`、`case_nonconstant_expression`だけをClang C11 strict、Native、Wasmで比較した。
+  - folded/converted duplicate case、複合定数式、switch CFG、VLA scope、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - floating constantと関数呼出しのcase式は、ClangとNative/Wasmがともに式先頭の`1.0`/`runtime_value`を指していたため、compiler sourceは変更しなかった。
+  - 単純な重複caseだけClangが2個目のcase値`1`を指す一方、Native/Wasmは2個目の`case` keywordを指していた。`node_case_t`が既に保持する`expression_token`をE3060 source overrideへ渡すようにした。
+  - case値の整数定数評価・switch control型への正規化・重複判定・診断値、受理/拒否、E3060 ID・文言は変更していない。
+- coverage:
+  - direct Syntax→Typed HIR境界で重複case failure tokenが2個目のcase expression tokenであることを固定した。
+  - structured diagnosticへ重複case E3060、floating case E3064、nonconstant case E3064の式先頭column 10を追加した。design invariantではduplicate-case rejectionが既存`expression_token`を使うことを固定した。
+  - differential coverage表へ重複caseと不正case式のsource位置方針を追記した。
+- 確認:
+  - 対象3 fixtureはClang strict、Native、Wasmの9/9経路がexit 1だった。修正後のNative/Wasm 6/6経路はE3060/E3064を維持し、重複caseだけ`case` keywordからClangと同じ2個目の値`1`へ移った。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_language_analysis`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.81秒 / user 3.12秒 / sys 0.33秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.86秒 / user 11.76秒 / sys 1.62秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.34秒 / user 0.78秒 / sys 0.49秒**。3 gateの並列wallは**13.91秒**だった。
+  - `git diff --check`も成功した。
+- 未実施:
+  - 対象3 fixture、3 structured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。folded/converted duplicate case、複合定数式、switch CFG、VLA scope、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`declaration_as_{if,else,while,do,for,switch}_body`の単純statement構文6件だけをClang strictと比較し、body先頭token選択だけで閉じる場合に限る。制御フロー意味解析、VLA、nested statement、deep expressionには入らない。

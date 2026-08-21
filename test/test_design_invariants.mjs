@@ -6956,6 +6956,9 @@ if (!/case\s+ND_CASE\s*:\s*\{[^]*?direct_integer_constant\s*\([^]*?bind_direct_c
     !/PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT[^]*?\(\(const\s+node_case_t\s*\*\)syntax\)->expression_token/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,[^]*?&case_node->base,\s*case_node->expression_token,\s*value/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     /\b(?:val|has_resolved_value|label_id)\b/.test(caseNodeStruct[1]) ||
     /\blabel_id\b/.test(astSource)) {
   throw new Error(

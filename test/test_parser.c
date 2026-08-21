@@ -1862,6 +1862,14 @@ static void test_direct_statement_typed_hir_resolution_boundary(
             failure.rejection);
   ASSERT_EQ(ND_CASE, failure.source_node_kind);
   ASSERT_EQ(1, failure.source_integer_value);
+  const node_t *duplicate_case_switch =
+      ((const node_block_t *)duplicate_case)->body[0];
+  const node_t *second_case =
+      ((const node_block_t *)duplicate_case_switch->rhs)->body[1];
+  ASSERT_EQ(ND_CASE, second_case->kind);
+  ASSERT_TRUE(
+      failure.source_token ==
+      ((const node_case_t *)second_case)->expression_token);
 
   node_t *duplicate_default = parse_direct_test_statement_syntax(test_suite_session,
       "{ switch (0) { default: break; default: break; } }");
@@ -20208,6 +20216,41 @@ static void test_parse_invalid(
       "  return 0;\n"
       "}",
       "E3064", 8);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(int argc, char **argv) {\n"
+      "  (void)argv;\n"
+      "  switch (argc) {\n"
+      "    case 1:\n"
+      "      return 1;\n"
+      "    case 1:\n"
+      "      return 2;\n"
+      "  }\n"
+      "  return 0;\n"
+      "}",
+      "E3060", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  switch (1) {\n"
+      "    case 1.0:\n"
+      "      return 0;\n"
+      "  }\n"
+      "  return 1;\n"
+      "}",
+      "E3064", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "static int runtime_value(void) { return 1; }\n"
+      "int main(int argc, char **argv) {\n"
+      "  (void)argv;\n"
+      "  switch (argc) {\n"
+      "    case runtime_value():\n"
+      "      return 1;\n"
+      "  }\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 10);
   expect_parse_fail_at_column(
       test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);

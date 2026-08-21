@@ -1590,6 +1590,18 @@ static int note_direct_integer_rejection(
   return 0;
 }
 
+static int note_direct_integer_rejection_at_token(
+    direct_resolution_context_t *context,
+    psx_syntax_typed_hir_rejection_t rejection,
+    const node_t *source, const token_t *source_token,
+    long long value) {
+  note_direct_integer_rejection(
+      context, rejection, source, value);
+  if (context && context->failure && source_token)
+    context->failure->source_token = source_token;
+  return 0;
+}
+
 static psx_typed_hir_tree_t *wrap_typed_root(
     psx_semantic_context_t *semantic_context,
     psx_semantic_node_t *root,
@@ -7516,9 +7528,9 @@ static int bind_direct_case_value(
            context->switch_scope->case_values;
        existing; existing = existing->next) {
     if (existing->value == value)
-      return note_direct_integer_rejection(
+      return note_direct_integer_rejection_at_token(
           context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,
-          &case_node->base, value);
+          &case_node->base, case_node->expression_token, value);
   }
   direct_case_value_t *case_value = arena_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*case_value));
