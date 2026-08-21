@@ -20601,6 +20601,11 @@ static void test_parse_invalid(
       "E3064", 17);
   expect_parse_fail_at_column(
       test_suite_session,
+      "_Atomic(void) value;\n"
+      "int main(void) { return 0; }",
+      "E3064", 1);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
   expect_parse_fail_at_column(
       test_suite_session,
