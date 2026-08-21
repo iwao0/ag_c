@@ -20787,11 +20787,15 @@ static void test_parse_invalid(
       "  return 0;\n"
       "}",
       "E3064", 2, 1);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* An atomic type specifier cannot name a volatile-qualified type. */\n"
       "_Atomic(volatile int) value;\n"
-      "int main(void) { return 0; }",
-      "E3064", 1);
+      "\n"
+      "int main(void) {\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 2, 1);
   expect_parse_fail_at_column(
       test_suite_session,
       "int value;\n"
