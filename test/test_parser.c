@@ -20710,6 +20710,12 @@ static void test_parse_invalid(
       "E3064", 1);
   expect_parse_fail_at_column(
       test_suite_session,
+      "struct incomplete;\n"
+      "_Atomic(struct incomplete) value;\n"
+      "int main(void) { return 0; }",
+      "E3064", 1);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Atomic(const int) value;\n"
       "int main(void) { return 0; }",
       "E3064", 1);
