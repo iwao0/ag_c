@@ -6185,6 +6185,12 @@ if (!/struct\s+direct_vm_scope_marker_t\s*\{[^]*?direct_vm_scope_marker_t\s*\*pa
     !/validate_direct_function_vm_jumps\s*\([^]*?label->vm_scope[^]*?direct_vm_scope_contains[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO[^]*?&jump->base,\s*jump->name_tok,\s*jump->name,\s*jump->name_len/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE,[^]*?&jump->base,\s*jump->name,\s*jump->name_len/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     !/PSX_SYNTAX_TYPED_HIR_REJECTION_GOTO_INTO_VARIABLY_MODIFIED_SCOPE/.test(
       typedHirBuildStatusHeader,
     ) ||

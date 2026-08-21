@@ -1901,6 +1901,11 @@ static void test_direct_statement_typed_hir_resolution_boundary(
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO,
             failure.rejection);
+  const node_jump_t *undefined_jump =
+      (const node_jump_t *)
+          ((const node_block_t *)undefined_goto)->body[0];
+  ASSERT_TRUE(
+      failure.source_token == undefined_jump->name_tok);
   ASSERT_EQ(7, failure.source_name_length);
   ASSERT_TRUE(memcmp(failure.source_name, "missing", 7) == 0);
 

@@ -1513,6 +1513,18 @@ static int note_direct_named_rejection(
   return 0;
 }
 
+static int note_direct_named_rejection_at_token(
+    direct_resolution_context_t *context,
+    psx_syntax_typed_hir_rejection_t rejection,
+    const node_t *source, const token_t *source_token,
+    const char *name, int name_length) {
+  note_direct_named_rejection(
+      context, rejection, source, name, name_length);
+  if (context && context->failure && source_token)
+    context->failure->source_token = source_token;
+  return 0;
+}
+
 static int note_direct_semantic_rejection(
     direct_resolution_context_t *context,
     psx_syntax_typed_hir_rejection_t rejection,
@@ -7702,9 +7714,10 @@ static int validate_direct_function_jumps(
     if (psx_scope_graph_lookup_in_scope(
             graph, label_scope, PSX_NAMESPACE_LABEL,
             jump->name, jump->name_len) == PSX_DECL_ID_INVALID) {
-      return note_direct_named_rejection(
+      return note_direct_named_rejection_at_token(
           context, PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO,
-          &jump->base, jump->name, jump->name_len);
+          &jump->base, jump->name_tok,
+          jump->name, jump->name_len);
     }
   }
   return 1;

@@ -38271,3 +38271,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新旧2fixtureと旧形式probeをClang strict/Native/Wasm objectで直接確認し、隣接3対照もNative/Wasmで確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 共通specifierとparameter base-typeのqualifier診断位置は閉じた。次も通常サイズの宣言・statement制約を少数のClang strict probeから選び、declarator内部へ深掘りしない。
+
+### このセッション（続き1298）: 未定義gotoのE3064をlabel名へ移した
+- 対象選定:
+  - 浅いstatement制約として`break`、`continue`、switch外`case`/`default`、重複label/default/case、未定義gotoの既存8fixtureをClang C11 strictとNativeで比較した。最初の5領域は既にkeyword/label位置で一致した。
+  - `goto missing`だけはClangがlabel名`missing`を指す一方、ag_cはgoto node先頭の`goto`を指していた。duplicate caseはClangがcase定数式を指すが式評価境界へ入るため分離し、深い式、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - parserの`node_jump_t`は`base.tok`に`goto` keyword、`name_tok`にlabel identifierを既に保持し、direct Syntax preflightも未定義label名をfailureへ保持していたが、汎用named rejectionがbase tokenだけを選んでいた。
+  - source tokenを明示できるnamed rejection helperを追加し、undefined-goto分岐だけが保存済み`jump->name_tok`を渡す。label lookup、HIR形成、受理可否、診断ID・文言は変更していない。
+  - parser unitは外側block内のgoto nodeを取得し、failure source tokenが`name_tok`と同一であることを固定する。design invariantはundefined gotoが`name_tok`を使い、VLA/VM scope進入gotoが従来どおりbase tokenを使う境界を固定する。
+- coverage:
+  - `goto_undefined_label`はshould_reject正本とNative/Wasm共用compile-fail registryへ登録済みなので重複fixtureは追加していない。differential coverage表へ診断source tokenの修正境界を追加した。
+- 確認:
+  - `goto_undefined_label`はClang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3064を維持してlabel名`missing`上で一致した。
+  - `goto_into_vla_{same_block,nested_block}`と`goto_into_pointer_to_vla_scope`はNative/Wasmとも従来の`goto`位置を維持し、Clang strictのstatement位置と一致した。`duplicate_label`もNative/Wasmとも重複label名位置を維持した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.55秒 / user 2.99秒 / sys 0.24秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.24秒 / user 11.70秒 / sys 1.52秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.14秒 / user 0.77秒 / sys 0.49秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象1fixtureとVLA/label対照4件をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - duplicate caseはClangがcase定数式を指す一方でag_cは`case` keywordを指すが、式token境界を確認する必要があるため保留する。次は式を辿らず既存tokenだけで閉じる宣言・statement制約を選ぶ。
