@@ -47,6 +47,7 @@ typedef struct {
   char *member_name;
   int member_len;
   token_t *tok;
+  token_t *value_tok;
   long long index;
   unsigned char has_index;
   unsigned char has_member;

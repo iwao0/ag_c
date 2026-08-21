@@ -978,7 +978,8 @@ static int flat_initializer_apply_designated_ranges(
     return flat_initializer_designated_span(
                context, object, entry, ranges, last_target) &&
            flat_initializer_apply_value(
-               context, last_target, entry->value, NULL, 1);
+               context, last_target, entry->value,
+               entry->value_tok, 1);
   }
   if (!ranges[designator_index].is_range) {
     return flat_initializer_apply_designated_ranges(
@@ -1156,7 +1157,9 @@ static int flat_initializer_apply_list(
       }
     }
     const token_t *value_token =
-        entry->designator_count == 0 ? entry->tok : NULL;
+        entry->value_tok
+            ? entry->value_tok
+            : entry->designator_count == 0 ? entry->tok : NULL;
     if (!flat_initializer_apply_value(
             context, &target, entry->value, value_token,
             range_grouped))

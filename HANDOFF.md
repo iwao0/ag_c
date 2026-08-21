@@ -38814,3 +38814,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3 storage形、prefix/非braced/余剰要素control、positive fixture、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member、compound literal、多次元配列、designator chain、prefix型体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 単一文字列braced初期化の位置は閉じた。次は既存`character_array_member_string_too_long`と`character_array_compound_literal_string_too_long`だけをClang strictと比較し、今回のflat failure token伝播で既に一致するか確認する。多次元配列、designator、再帰brace、prefix型体系には入らない。
+
+### このセッション（続き1321）: memberとcompound literalの過長文字列E3027をliteralへ移した
+- 対象選定:
+  - 既存`character_array_member_string_too_long`と`character_array_compound_literal_string_too_long`だけをClang C11 strict、Native、Wasmで比較した。両fixtureとも3系統が拒否し、Clangは文字列literalを指す一方、Native/Wasmは外側initializer listの`{`を指していた。
+  - 多次元配列、designator chain、再帰brace、一般式AST token、prefix型体系、深い式、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - initializer entryの既存`tok`はdesignator付きでは`.`または`[`を指し、値が始まるtokenを保持していなかった。parserがdesignatorと`=`を読み終え、値をparseする直前のtokenをSyntax-onlyな`psx_initializer_entry_t.value_tok`へ保存する。一般のstring ASTにtokenを追加せず、initializer構文の境界内に限定した。
+  - flat initializer plannerはcharacter-array string plannerの長さ超過・幅不一致failureだけentryの`value_tok`を保存し、旧Syntaxやsynthetic entryで未設定なら非designatedの既存`entry->tok`へfallbackする。unknown memberや不正indexなどdesignator自身のfailure token選択は変更していない。
+  - array compound literalの専用character-string fast pathは前回追加した単一entry token helperを使っていなかったため、同じhelperで`value_tok`を選ぶ。型解決、文字数・幅・終端NUL判定、storage duration、E3027/E3099 ID・文言は変更していない。
+- coverage:
+  - structured diagnosticはmember designatorの文字列E3027をcolumn 35、array compound literalをcolumn 21で固定した。
+  - design invariantはinitializer Syntax entryが値開始tokenをparse直前に捕捉すること、flat通常/range経路がそのtokenを文字列failureへ渡すこと、direct localとcompound literalの両fast pathが同じhelperを使うことを固定した。
+  - differential coverage表へmember designatorとarray compound literalのE3027 source位置を追記した。
+- 確認:
+  - 対象2 fixtureはClang strict、Native、Wasmが全て拒否した。修正後のNative/Wasmは両形ともE3027と文字列token`abc`を指し、4/4経路がexit 1だった。
+  - designated memberのprefix不一致`short text[3] = u"hi"`は3系統が文字列literalを指して拒否し、Native/WasmはE3099を維持した。未知member designator fixtureはNative/Wasm 2/2でE3084と従来のmember名`missing`を維持した。
+  - positiveの`ordinary_character_array_exact_boundaries`はClang strict、Native、Wasm objectの3/3 compile経路で受理し、Clang/Nativeの2/2 executableもexit 0だった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.65秒 / user 3.05秒 / sys 0.28秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.86秒 / user 12.01秒 / sys 1.67秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.18秒 / user 0.75秒 / sys 0.44秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功し、`git diff --check`も成功した。
+- 未実施:
+  - 対象2 fixture、prefix/unknown-member control、positive fixture、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。多次元配列、designator chain、再帰brace、一般式AST token、prefix型体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - member/compound literalの位置は閉じた。次は既存`multidimensional_character_array_string_too_long`だけをClang strictと比較し、今回のentry value tokenで既に一致するか確認する。再帰initializerの再設計、designator chain、prefix型体系には入らない。

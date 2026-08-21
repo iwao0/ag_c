@@ -189,6 +189,7 @@ node_t *psx_parse_initializer_syntax_list_with_context(
       }
       if (designator_count > 0) tk_expect_ctx(tk_ctx, '=');
 
+      token_t *value_tok = curtok(runtime_context);
       node_t *value = curtok(runtime_context)->kind == TK_LBRACE
                           ? psx_parse_initializer_syntax_list_with_context(
                                 context)
@@ -199,6 +200,7 @@ node_t *psx_parse_initializer_syntax_list_with_context(
           .member_name = member ? member->str : NULL,
           .member_len = member ? member->len : 0,
           .tok = entry_tok,
+          .value_tok = value_tok,
           .designators = designators,
           .designator_count = designator_count,
           .has_index = has_index,

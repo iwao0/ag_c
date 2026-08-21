@@ -8330,7 +8330,9 @@ static token_t *direct_character_array_string_initializer_token(
         (const node_init_list_t *)initializer->value;
     if (list->entry_count == 1 && list->entries &&
         list->entries[0].value == (const node_t *)string)
-      return list->entries[0].tok;
+      return list->entries[0].value_tok
+                 ? list->entries[0].value_tok
+                 : list->entries[0].tok;
   }
   return initializer->value_tok;
 }
@@ -8579,6 +8581,9 @@ static int resolve_direct_compound_literal(
       direct_character_array_string_initializer_for_type(
           context, object_qual_type, &initializer);
   if (object_shape.kind == PSX_TYPE_ARRAY && string_initializer) {
+    token_t *string_initializer_token =
+        direct_character_array_string_initializer_token(
+            &initializer, string_initializer);
     psx_character_array_initializer_status_t status =
         psx_plan_character_array_string_initializer(
             ps_ctx_arena(context->semantic_context),
@@ -8597,7 +8602,10 @@ static int resolve_direct_compound_literal(
     }
     if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK)
       return reject_direct_character_array_initializer(
-          context, status, initializer.value_tok);
+          context, status,
+          string_initializer_token
+              ? string_initializer_token
+              : initializer.value_tok);
   } else if (!preflight_direct_flat_initializer(
                  context, object_qual_type, &initializer,
                  &binding->flat_initializer))

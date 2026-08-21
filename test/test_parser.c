@@ -20278,6 +20278,20 @@ static void test_parse_invalid(
       "E3027", 41);
   expect_parse_fail_at_column(
       test_suite_session,
+      "struct Holder { char text[2]; };\n"
+      "int main(void) {\n"
+      "  struct Holder holder = {.text = \"abc\"};\n"
+      "  return holder.text[0];\n"
+      "}",
+      "E3027", 35);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  return ((char[2]){\"abc\"})[0];\n"
+      "}",
+      "E3027", 21);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Alignas((1, 16)) int value; int main(void) { return 0; }",
       "E3064", 10);
   expect_parse_fail_at_column(
