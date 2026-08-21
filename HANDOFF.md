@@ -39424,3 +39424,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。standalone tag、multiple declarator、initializer expression、nested statement、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`for_initializer_standalone_tag`の単純tag declaration 1件だけをClang strictと比較し、tag keywordまたはtag名token選択だけで閉じる場合に限る。anonymous tag、tag definition、storage class、multiple declarator、nested statementには入らない。
+
+### このセッション（続き1351）: for initializer standalone tagのE3064列を回帰固定した
+- 対象選定:
+  - 前回候補の`for_initializer_standalone_tag`だけをClang C11 strict、Native、Wasmで比較した。
+  - anonymous tag、tag definition、storage class、multiple declarator、nested statement、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Native/Wasmは既にClangと同じtag名`loop_tag`を指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへE3064 column 15を追加した。
+  - differential coverage表にはfor-initializerの不正宣言でClangが宣言対象名を指す方針が既に記載済みだったため、重複する文書変更は加えていない。tag宣言、受理/拒否、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1だった。Native/Wasm 2/2経路はE3064と`loop_tag`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.72秒 / user 3.04秒 / sys 0.34秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較と1 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。anonymous tag、tag definition、storage class、multiple declarator、nested statement、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`block_scope_extern_initializer`の単純block declaration 1件だけをClang strictと比較し、`extern` keyword、宣言名、initializer tokenのどれを指すかだけで閉じる場合に限る。aggregate/static initializer、function call、compound literal、nested declaratorには入らない。

@@ -20475,6 +20475,14 @@ static void test_parse_invalid(
       "E3064", 20);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) {\n"
+      "  for (struct loop_tag; 0; ) {\n"
+      "  }\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 15);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
   expect_parse_fail_at_column(
       test_suite_session,
