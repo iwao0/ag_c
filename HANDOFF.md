@@ -40351,3 +40351,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - Native/Wasm共通source、structured parser regression、三系統fixture、非Atomic control、該当design invariantで直接境界を確認したため、language-analysis、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。named member、member access、initializer、非定数width、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`bitfield_floating_type` fixtureの単一member `double value : 1;`だけをClang strict、Native、Wasmで比較し、非integer bit-field診断のIDとmember位置を確認する。member access、initializer、width式派生、pointer/array/function bit-fieldには入らない。
+
+### このセッション（続き1401）: floating bit-fieldのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`bitfield_floating_type` fixtureにある単一member `double value : 1;`だけをClang C11 strict、Native、Wasmで比較した。
+  - member access、initializer、width式派生、pointer/array/function bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともbit-field member名`value`を指し、Clangは3行10列、Native/WasmはE3064と実トークン`value`を報告した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行とインデントを持つE3064 column 10 assertionへ強化し、floating type specifier、幅定数、colonへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、floating identity、bit-field layout、width評価、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`value`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 5.28秒 / user 4.87秒 / sys 0.31秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member access、initializer、width式派生、pointer/array/function bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`bitfield_pointer_type` fixtureの単一member `unsigned int *pointer : 3;`だけをClang strict、Native、Wasmで比較し、非integer bit-field診断がmember名を指すか確認する。member access、initializer、width式派生、array/function bit-fieldには入らない。

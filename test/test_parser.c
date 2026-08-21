@@ -22017,9 +22017,13 @@ static void test_parse_invalid(
       "  };\n"
       "};\n"
       "int main(void) { return 0; }");
-  expect_parse_fail(test_suite_session,
-      "struct Bits { double value : 1; }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct record {\n"
+      "  double value : 1;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 10);
   expect_parse_fail(test_suite_session,
       "struct Bits { _Bool value : 2; }; "
       "int main(void) { return 0; }");
