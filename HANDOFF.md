@@ -38988,3 +38988,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象9 fixture、subscript 4 control、12個のstructured column、parser/language-analysisの直接gateを確認したため、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer qualifier体系、複合式、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`deref_int`、`void_ptr_deref`、`logical_not_struct`の単純unary 3件だけをClang strictと比較し、operatorまたはoperand token選択だけで閉じる場合に限る。lvalue conversion全体、複合式、deep expressionには入らない。
+
+### このセッション（続き1329）: 単純unary・更新・非lvalue代入のoperator位置を回帰固定した
+- 対象選定:
+  - 前回候補の`deref_int`、`void_ptr_deref`、`logical_not_struct`に続けて、`bitwise_not_{pointer,complex}`、`decrement_function`、`increment_{array,const_scalar,const_bitfield}`、`compound_assign_{const_scalar,array,struct}`、`assignment_to_{assignment,comma,conditional}_result`の単一operator 15 fixtureだけをClang C11 strict、Native、Wasmで比較した。
+  - lvalue conversion全体、pointer compound arithmetic、complex演算全体、複合式、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - dereference `*`、logical/bitwise unary `!/~`、prefix/postfix `++/--`、`+=`、非lvalue結果への外側`=`は、Native/WasmがすでにClangと同じoperator tokenを指していた。compiler sourceの変更は不要だった。
+  - structured diagnosticへ15 fixtureのE3064/E3077/E3098/E3099/E3062 columnを追加し、prefix/postfixと外側assignment operatorを区別して固定した。
+  - diagnostics ID・文言、modifiable-lvalue判定、単項・更新・assignment semanticsは変更していない。
+- 確認:
+  - 対象15 fixtureはClang strict、Native、Wasmの45/45経路がexit 1だった。Native/Wasm 30/30経路は期待するE3064/E3077/E3098/E3099/E3062と同じoperator tokenを報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 3.41秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象15 fixtureの3系統比較、15個のstructured column、変更対象のparser gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。lvalue conversion全体、pointer compound arithmetic、complex演算全体、複合式、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`address_of_assignment_result`、`address_of_comma_result`、`address_of_conditional_result`の単純address-of 3件だけをClang strictと比較し、`&`またはoperand token選択だけで閉じる場合に限る。bit-field、register、aggregate return、deep expressionには入らない。

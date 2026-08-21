@@ -20435,6 +20435,106 @@ static void test_parse_invalid(
       "E3064", 10);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) {\n"
+      "  int value = 1;\n"
+      "  int *pointer = &value;\n"
+      "  return ~pointer != 0;\n"
+      "}",
+      "E3064", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  double _Complex value = 5.0;\n"
+      "  return (int)~value;\n"
+      "}",
+      "E3064", 15);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "static int answer(void) { return 42; }\n"
+      "int main(void) {\n"
+      "  answer--;\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 9);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int values[2] = {1, 2};\n"
+      "  ++values;\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  const int value = 1;\n"
+      "  ++value;\n"
+      "  return 0;\n"
+      "}",
+      "E3077", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Bits { const unsigned int value : 3; };\n"
+      "int main(void) {\n"
+      "  struct Bits bits = {1};\n"
+      "  bits.value++;\n"
+      "  return 0;\n"
+      "}",
+      "E3077", 13);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  const int value = 1;\n"
+      "  value += 2;\n"
+      "  return 0;\n"
+      "}",
+      "E3077", 9);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int values[2] = {1, 2};\n"
+      "  values += 1;\n"
+      "  return 0;\n"
+      "}",
+      "E3098", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Pair { int first; int second; };\n"
+      "int main(void) {\n"
+      "  struct Pair value = {1, 2};\n"
+      "  value += value;\n"
+      "  return 0;\n"
+      "}",
+      "E3099", 9);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int left = 1;\n"
+      "  int right = 2;\n"
+      "  (left = right) = 3;\n"
+      "  return left;\n"
+      "}",
+      "E3062", 18);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int left = 1;\n"
+      "  int right = 2;\n"
+      "  (left, right) = 3;\n"
+      "  return right;\n"
+      "}",
+      "E3062", 17);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int left = 1;\n"
+      "  int right = 2;\n"
+      "  (left ? left : right) = 3;\n"
+      "  return left;\n"
+      "}",
+      "E3062", 25);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { int x = 5; return x[0]; }",
       "E3064", 37);
   expect_parse_fail_at_column(
@@ -20469,6 +20569,22 @@ static void test_parse_invalid(
       "  return &pointer[0] == pointer;\n"
       "}",
       "E3064", 18);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { int x = 5; return *x; }",
+      "E3064", 36);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { int x = 5; void *p = &x; return *p; }",
+      "E3064", 50);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct value { int member; };\n"
+      "int main(void) {\n"
+      "  struct value object = {1};\n"
+      "  return !object;\n"
+      "}",
+      "E3064", 10);
   expect_parse_fail_at_column(
       test_suite_session,
       "_Alignas((1, 16)) int value; int main(void) { return 0; }",
