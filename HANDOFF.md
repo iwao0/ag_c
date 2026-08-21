@@ -40878,3 +40878,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。struct variantの追加、三重pointer、複合bound式、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - VLA member fixture群のarray／pointer／pointer typedef／union境界が揃ったため、次は既存`atomic_const_type` fixtureの単一`_Atomic(const int)` declarationだけをClang strict、Native、Wasmで比較し、qualified type拒否の診断IDと位置を行まで確認する。volatile、nested atomic、aggregate atomicには入らない。
+
+### このセッション（続き1429）: atomic const-qualified typeのE3064位置を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_const_type` fixtureにある、単一file-scope declaration `_Atomic(const int) value`だけをClang C11 strict、Native、Wasmで比較した。
+  - volatile、nested atomic、aggregate atomic、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangはqualified typeを包む外側`_Atomic`を2行1列へ報告した。Native/Wasmも同じ`_Atomic`を2行1列でE3064と実トークン`_Atomic`として報告した。
+  - atomic type specifierがunqualified complete object typeを要求する制約を、内側`const`ではなくspecifier開始位置で三系統が一致して報告することを確認した。
+  - 既存のE3064 column 1 assertionをfixtureと同じ先頭comment・宣言配置を持つE3064 position 2:1 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、qualifier identity、atomic type identity、global declaration、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.92秒 / user 3.03秒 / sys 0.36秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。volatile、nested atomic、aggregate atomic、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_volatile_type` fixtureの単一`_Atomic(volatile int)` declarationだけをClang strict、Native、Wasmで比較し、同じqualified-type拒否の診断IDと位置を行まで確認する。const、nested atomic、aggregate atomicには入らない。
