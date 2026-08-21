@@ -487,15 +487,36 @@ static void psx_type_spec_result_reset(psx_type_spec_result_t *out) {
   out->kind = TK_EOF;
 }
 
-static void emit_invalid_type_spec_diag(
-    ag_diagnostic_context_t *diagnostics,
-    tokenizer_context_t *tokenizer_context) {
+static void emit_invalid_type_spec_diag_at(
+    ag_diagnostic_context_t *diagnostics, token_t *source_token) {
   diag_emit_tokf_in(
       diagnostics,
-      DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok_in(tokenizer_context), "%s",
+      DIAG_ERR_PARSER_INVALID_TYPE_SPEC, source_token, "%s",
       diag_message_for_in(
           diagnostics,
           DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+}
+
+static void emit_invalid_type_spec_diag(
+    ag_diagnostic_context_t *diagnostics,
+    tokenizer_context_t *tokenizer_context) {
+  emit_invalid_type_spec_diag_at(
+      diagnostics, curtok_in(tokenizer_context));
+}
+
+/* Clang reports an incompatible floating/void/_Bool base at the preceding
+ * integer modifier when the prefix itself is otherwise a valid integer type.
+ * An explicit earlier base (for example `long int float`) instead keeps the
+ * diagnostic on the current token.  Sign diagnostics precede width
+ * diagnostics; `char` is the exception because signed/unsigned char is valid. */
+static token_t *select_invalid_integer_modifier_source_token(
+    token_t *current_token, token_t *sign_token, token_t *short_token,
+    token_t *first_long_token, int saw_prior_base, int sign_conflicts) {
+  if (saw_prior_base) return current_token;
+  if (sign_conflicts && sign_token) return sign_token;
+  if (short_token) return short_token;
+  if (first_long_token) return first_long_token;
+  return current_token;
 }
 
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
@@ -574,6 +595,9 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
   int saw_bool = 0;
   int saw_complex = 0;
   int saw_imaginary = 0;
+  token_t *sign_token = NULL;
+  token_t *short_token = NULL;
+  token_t *first_long_token = NULL;
 
   while (true) {
     token_kind_t k = curtok_in(tokenizer_context)->kind;
@@ -596,19 +620,21 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
       continue;
     }
     if (k == TK_SIGNED) {
-      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
+      if (saw_signed || saw_unsigned || saw_void || saw_float || saw_double || saw_bool) {
         emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
       }
       saw_signed = 1;
+      sign_token = curtok_in(tokenizer_context);
       set_curtok_in(
           tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_UNSIGNED) {
-      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
+      if (saw_signed || saw_unsigned || saw_void || saw_float || saw_double || saw_bool) {
         emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
       }
       saw_unsigned = 1;
+      sign_token = curtok_in(tokenizer_context);
       set_curtok_in(
           tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
@@ -616,8 +642,12 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     if (k == TK_LONG) {
       if (saw_char || saw_short || saw_void || saw_float || saw_bool ||
           long_count >= 2 || (saw_double && long_count >= 1)) {
-        emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
+        token_t *source_token = curtok_in(tokenizer_context);
+        if (saw_double && long_count >= 1 && first_long_token)
+          source_token = first_long_token;
+        emit_invalid_type_spec_diag_at(diagnostics, source_token);
       }
+      if (!first_long_token) first_long_token = curtok_in(tokenizer_context);
       long_count++;
       set_curtok_in(
           tokenizer_context, curtok_in(tokenizer_context)->next);
@@ -628,6 +658,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
         emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
       }
       saw_short = 1;
+      short_token = curtok_in(tokenizer_context);
       set_curtok_in(
           tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
@@ -643,7 +674,13 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_CHAR) {
       if (saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
+        token_t *source_token =
+            select_invalid_integer_modifier_source_token(
+                curtok_in(tokenizer_context), sign_token, short_token,
+                first_long_token,
+                saw_char || saw_int || saw_void || saw_float || saw_double || saw_bool,
+                0);
+        emit_invalid_type_spec_diag_at(diagnostics, source_token);
       }
       saw_char = 1;
       set_curtok_in(
@@ -653,7 +690,13 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     if (k == TK_VOID) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count ||
           saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
+        token_t *source_token =
+            select_invalid_integer_modifier_source_token(
+                curtok_in(tokenizer_context), sign_token, short_token,
+                first_long_token,
+                saw_char || saw_int || saw_void || saw_float || saw_double || saw_bool,
+                1);
+        emit_invalid_type_spec_diag_at(diagnostics, source_token);
       }
       saw_void = 1;
       set_curtok_in(
@@ -663,7 +706,13 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     if (k == TK_FLOAT) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count ||
           saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
+        token_t *source_token =
+            select_invalid_integer_modifier_source_token(
+                curtok_in(tokenizer_context), sign_token, short_token,
+                first_long_token,
+                saw_char || saw_int || saw_void || saw_float || saw_double || saw_bool,
+                1);
+        emit_invalid_type_spec_diag_at(diagnostics, source_token);
       }
       saw_float = 1;
       set_curtok_in(
@@ -673,7 +722,13 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     if (k == TK_DOUBLE) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || saw_int ||
           saw_void || saw_float || saw_double || saw_bool || long_count >= 2) {
-        emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
+        token_t *source_token =
+            select_invalid_integer_modifier_source_token(
+                curtok_in(tokenizer_context), sign_token, short_token,
+                first_long_token,
+                saw_char || saw_int || saw_void || saw_float || saw_double || saw_bool,
+                1);
+        emit_invalid_type_spec_diag_at(diagnostics, source_token);
       }
       saw_double = 1;
       set_curtok_in(
@@ -683,7 +738,13 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     if (k == TK_BOOL) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count ||
           saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(diagnostics, tokenizer_context);
+        token_t *source_token =
+            select_invalid_integer_modifier_source_token(
+                curtok_in(tokenizer_context), sign_token, short_token,
+                first_long_token,
+                saw_char || saw_int || saw_void || saw_float || saw_double || saw_bool,
+                1);
+        emit_invalid_type_spec_diag_at(diagnostics, source_token);
       }
       saw_bool = 1;
       set_curtok_in(

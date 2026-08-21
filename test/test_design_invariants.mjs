@@ -5375,17 +5375,57 @@ const initializerSyntaxHeader = await readFile(
   "src/parser/initializer_syntax.h",
   "utf8",
 );
-if (!/if\s*\(k\s*==\s*TK_LONG\)\s*\{\s*if\s*\([^;]*long_count\s*>=\s*2[^;]*saw_double\s*&&\s*long_count\s*>=\s*1[^;]*emit_invalid_type_spec_diag/.test(
+if (!/if\s*\(k\s*==\s*TK_LONG\)\s*\{\s*if\s*\([^}]*long_count\s*>=\s*2[^}]*saw_double\s*&&\s*long_count\s*>=\s*1[^}]*emit_invalid_type_spec_diag/.test(
       parserSource,
     ) ||
-    !/if\s*\(k\s*==\s*TK_VOID\)\s*\{\s*if\s*\([^;]*saw_void[^;]*emit_invalid_type_spec_diag/.test(parserSource) ||
-    !/if\s*\(k\s*==\s*TK_FLOAT\)\s*\{\s*if\s*\([^;]*saw_float[^;]*emit_invalid_type_spec_diag/.test(parserSource) ||
-    !/if\s*\(k\s*==\s*TK_DOUBLE\)\s*\{\s*if\s*\([^;]*saw_double[^;]*long_count\s*>=\s*2[^;]*emit_invalid_type_spec_diag/.test(
+    !/if\s*\(k\s*==\s*TK_VOID\)\s*\{\s*if\s*\([^}]*saw_void[^}]*emit_invalid_type_spec_diag/.test(parserSource) ||
+    !/if\s*\(k\s*==\s*TK_FLOAT\)\s*\{\s*if\s*\([^}]*saw_float[^}]*emit_invalid_type_spec_diag/.test(parserSource) ||
+    !/if\s*\(k\s*==\s*TK_DOUBLE\)\s*\{\s*if\s*\([^}]*saw_double[^}]*long_count\s*>=\s*2[^}]*emit_invalid_type_spec_diag/.test(
       parserSource,
     ) ||
-    !/if\s*\(k\s*==\s*TK_BOOL\)\s*\{\s*if\s*\([^;]*saw_bool[^;]*emit_invalid_type_spec_diag/.test(parserSource)) {
+    !/if\s*\(k\s*==\s*TK_BOOL\)\s*\{\s*if\s*\([^}]*saw_bool[^}]*emit_invalid_type_spec_diag/.test(parserSource)) {
   throw new Error(
     "C type-specifier parsing must reject repeated singleton specifiers and more than one long on double",
+  );
+}
+const signedSpecifierCondition = parserSource.match(
+  /if\s*\(k\s*==\s*TK_SIGNED\)\s*\{\s*if\s*\(([^)]*)\)/,
+);
+const unsignedSpecifierCondition = parserSource.match(
+  /if\s*\(k\s*==\s*TK_UNSIGNED\)\s*\{\s*if\s*\(([^)]*)\)/,
+);
+for (const [label, condition] of [
+  ["signed", signedSpecifierCondition?.[1]],
+  ["unsigned", unsignedSpecifierCondition?.[1]],
+]) {
+  if (
+    !condition ||
+    !/saw_signed[^]*saw_unsigned[^]*saw_void[^]*saw_float[^]*saw_double[^]*saw_bool/.test(
+      condition,
+    ) ||
+    /saw_char|saw_short|long_count|saw_int/.test(condition)
+  ) {
+    throw new Error(
+      `${label} must remain valid after char, short, int, long, and long long specifiers`,
+    );
+  }
+}
+const invalidIntegerModifierSelector = parserSource.match(
+  /static token_t \*select_invalid_integer_modifier_source_token\([^]*?\n\}/,
+);
+if (
+  !invalidIntegerModifierSelector ||
+  !/if \(saw_prior_base\) return current_token;[^]*if \(sign_conflicts && sign_token\) return sign_token;[^]*if \(short_token\) return short_token;[^]*if \(first_long_token\) return first_long_token;/.test(
+    invalidIntegerModifierSelector[0],
+  ) ||
+  (parserSource.match(/select_invalid_integer_modifier_source_token\(/g) ?? [])
+    .length !== 6 ||
+  !/saw_double && long_count >= 1 && first_long_token[^]*source_token = first_long_token;[^]*emit_invalid_type_spec_diag_at/.test(
+    parserSource,
+  )
+) {
+  throw new Error(
+    "mixed type-specifier diagnostics must preserve conflicting sign/width modifier source tokens",
   );
 }
 if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(

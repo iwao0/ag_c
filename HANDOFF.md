@@ -38456,3 +38456,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象fixture、pointer/array probe、named/void control、不完全record対照をClang strict/Native/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・declarator、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - unnamed scalar/pointer parameterの診断位置は閉じた。array abstract declarator内部位置は保留し、次も既存identifier/keyword/delimiter tokenだけで閉じる通常サイズのdeclaration/statement制約を少数比較する。`extern void`、`_Alignas`受理方針、duplicate caseには入らない。
+
+### このセッション（続き1306）: integer type-specifierの逆順受理と混在型E3006のsource位置を揃えた
+- 対象選定:
+  - label/case/default、selection/iteration body、break/continueの浅いstatement制約はClang C11 strictと既に同じtoken位置だった。式評価を含むduplicate caseへは入らず、単純なtype-specifier組合せへ移った。
+  - `long float`はClangが先行`long`、ag_cが現在`float`を指し、`long long double`もClangの最初の`long`に対してag_cは`double`を指していた。隣接比較では`short double`、`signed double`、`long void`も同じ先行modifier規則だった。
+  - 比較中、C11で同義な`unsigned long`は受理する一方、`long unsigned`、`char unsigned`、`short signed`等はsign分岐が既出の整数flagを衝突扱いしてE3006拒否する順序依存も確認した。
+- 原因と変更:
+  - `TK_SIGNED`/`TK_UNSIGNED`分岐から、合法に共存できるchar/short/int/long flagの拒否条件を外した。相反sign、反復sign、void/float/double/_Boolとの組合せは従来どおり拒否する。
+  - sign、short、最初のlong tokenをtype-specifier loop内で保持する。不適合baseの前に明示int等がなければ、Clangの優先順どおりsign、width modifierをE3006 sourceに使う。charではsigned/unsignedが合法なのでshort/longだけを候補にする。
+  - `long long double`、`double long long`、`long double long`は最初の`long`を使う。`long int float`、`long short`、反復singletonは現在tokenを維持し、型の不正判定、診断ID・文言は変更していない。
+- coverage:
+  - 既存`type_specifier_combination_boundaries`へ、file/block object、typedef、function return/parameter、member、cast/sizeof type-name、Atomic type-nameにある後置signed/unsignedを追加した。Clang strict・Native・WAT/Wasm実行で型幅・符号・値を確認する。
+  - parser unitは合法な逆順をfull HIRまで受理し、structured diagnosticのE3006 columnを`long float`、`short double`、long-double不正3語順と隣接controlで直接固定する。design invariantはsign分岐の合法flag集合とmodifier token選択順を固定し、user-facing文言のexact matchにはしていない。
+- 確認:
+  - positive fixtureはClang strictで実行成功し、Native生成assemblyをClangでlinkした実行、`build/ag_c_wasm`生成WATを`wat2wasm`で組み立てたNode Wasm実行もmain=0で成功した。
+  - Native/Wasm targetは`long float`=`long`、`short double`=`short`、`signed double`=`signed`、`long int float`=`float`、反復`void`=第2`void`をE3006 sourceとして維持した。parser structured rangeは`long long double`=column 1、`double long long`=column 8、`long double long`=column 1を固定した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.54秒 / user 3.01秒 / sys 0.24秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.92秒 / user 11.98秒 / sys 1.71秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.25秒 / user 0.78秒 / sys 0.49秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功し、`git diff --check`も成功した。
+- 未実施:
+  - 対象positiveのClang/Native/Wasm実行、既存2fixtureと浅いprobe/controlの直接診断、parser structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・declarator、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 基本integer/floating/void/_Boolの順序とsource位置は閉じた。次は既存対応範囲内の`_Complex`/`_Imaginary`語順を少数比較し、標準方針差が見えた場合は広げず、通常のidentifier/keyword/delimiter診断へ戻る。

@@ -92,6 +92,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <limits.h>
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8569,6 +8570,53 @@ static void expect_parse_ok(
   ASSERT_TRUE(WIFEXITED(status));
   if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
     fprintf(stderr, "Expected parse success: %s\n", input);
+  ASSERT_EQ(0, WEXITSTATUS(status));
+}
+
+typedef struct {
+  jmp_buf jump;
+} parse_diagnostic_recovery_t;
+
+static void recover_parse_diagnostic(void *context) {
+  parse_diagnostic_recovery_t *recovery = context;
+  longjmp(recovery->jump, 1);
+}
+
+static void expect_parse_fail_at_column(
+    ag_compilation_session_t *test_suite_session, const char *input,
+    const char *expected_code, int expected_column) {
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    ag_diagnostic_context_t *diagnostics =
+        test_diagnostics(test_suite_session);
+    diag_reset_records_in(diagnostics);
+    diag_context_set_capture_only(diagnostics, 1);
+    parse_diagnostic_recovery_t recovery;
+    diag_context_set_fatal_recovery(
+        diagnostics, recover_parse_diagnostic, &recovery);
+    if (setjmp(recovery.jump) == 0) {
+      token_t *head = tk_tokenize_ctx(
+          test_tokenizer(test_suite_session), (char *)input);
+      (void)resolve_test_program_hir_from(test_suite_session, head);
+      _exit(2);
+    }
+    diag_context_clear_fatal_recovery(diagnostics);
+    int matches =
+        diag_context_record_count(diagnostics) > 0 &&
+        strcmp(diag_context_record_code(diagnostics, 0), expected_code) == 0 &&
+        diag_context_record_start_column(diagnostics, 0) == expected_column;
+    _exit(matches ? 0 : 1);
+  }
+
+  int status;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    fprintf(stderr,
+            "Expected %s at column %d for source: %s\n",
+            expected_code, expected_column, input);
+  }
   ASSERT_EQ(0, WEXITSTATUS(status));
 }
 
@@ -19940,12 +19988,48 @@ static void test_parse_invalid(
       "long double long value; int main(void) { return 0; }", "E3006");
   expect_parse_fail_with_message(test_suite_session,
       "int main(void) { return sizeof(_Atomic(double double)); }", "E3006");
+  expect_parse_fail_at_column(
+      test_suite_session, "long float value;", "E3006", 1);
+  expect_parse_fail_at_column(
+      test_suite_session, "short double value;", "E3006", 1);
+  expect_parse_fail_at_column(
+      test_suite_session, "long long double value;", "E3006", 1);
+  expect_parse_fail_at_column(
+      test_suite_session, "double long long value;", "E3006", 8);
+  expect_parse_fail_at_column(
+      test_suite_session, "long double long value;", "E3006", 1);
+  expect_parse_fail_at_column(
+      test_suite_session, "long int float value;", "E3006", 10);
+  expect_parse_fail_at_column(
+      test_suite_session, "long short value;", "E3006", 6);
+  expect_parse_fail_at_column(
+      test_suite_session, "void void function(void);", "E3006", 6);
+  expect_parse_fail_at_column(
+      test_suite_session, "signed signed value;", "E3006", 8);
+  expect_parse_fail_at_column(
+      test_suite_session, "unsigned signed value;", "E3006", 10);
+  expect_parse_fail_at_column(
+      test_suite_session, "double signed value;", "E3006", 8);
   expect_parse_ok(test_suite_session,
       "typedef double long OrderedLongDouble; "
       "typedef signed long long SignedWide; "
-      "struct Value { long const double floating; long long integer; }; "
+      "typedef char unsigned ReorderedUnsignedChar; "
+      "typedef short signed ReorderedSignedShort; "
+      "typedef int unsigned ReorderedUnsignedInt; "
+      "typedef long signed ReorderedSignedLong; "
+      "typedef long long unsigned ReorderedUnsignedWide; "
+      "static int unsigned reordered_file_object=9U; "
+      "struct Value { long const double floating; long long integer; "
+      "long const unsigned reordered; }; "
+      "static long unsigned add(int signed left, short unsigned right) { "
+      "return (long unsigned)left + (long unsigned)right; } "
       "int main(void) { OrderedLongDouble value=1.0L; SignedWide wide=2; "
-      "struct Value pair={value,wide}; return pair.integer != 2; }");
+      "struct Value pair={value,wide,3UL}; ReorderedUnsignedChar byte=4; "
+      "ReorderedSignedShort half=-5; ReorderedUnsignedInt word=6U; "
+      "ReorderedSignedLong longer=-7L; ReorderedUnsignedWide widest=8ULL; "
+      "return pair.integer != 2 || pair.reordered != 3UL || byte != 4 || "
+      "half != -5 || word != 6U || longer != -7L || widest != 8ULL || "
+      "add(1,2) != 3UL || reordered_file_object != 9U; }");
   expect_parse_fail(test_suite_session, "int main() { ++1; }");                  // lvalueでない
   expect_parse_fail(test_suite_session, "int main() { 1++; }");                  // lvalueでない
   expect_parse_fail(test_suite_session,
