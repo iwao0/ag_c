@@ -38941,3 +38941,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3 fixture、nonhex string/character control、3つのstructured column、tokenizer/parserの直接gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。UCN、長いescape、literal decoding全体、Unicode、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`tokenizer_integer_too_large`、`tokenizer_numeric_multiple_decimal_points`、`tokenizer_numeric_suffix_concatenated`の単純3件だけをClang strictと比較し、診断pointer選択だけで閉じる場合に限る。Unicode suffix、数値型体系、fuzzには入らない。
+
+### このセッション（続き1327）: 不正float suffix診断をsuffix開始へ移した
+- 対象選定:
+  - 前回候補の`tokenizer_integer_too_large`、`tokenizer_numeric_multiple_decimal_points`、`tokenizer_numeric_suffix_concatenated`だけをClang C11 strict、Native、Wasmで比較した。3 fixtureとも3系統が拒否し、Native/Wasmの診断IDとcaretは一致していた。
+  - Unicode suffix、数値型体系、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - 整数値超過E2015はすでにliteral開始、複数小数点E2018は2個目の`.`を指してClangと一致したため、compiler sourceは変更しなかった。
+  - `1.0f0`はfloat suffix `f`を消費した後、共通pp-number継続checkが後続digit `0`をE2018 sourceにしていた。認識済みfloat suffix metadataがある場合だけ1文字前のsuffix開始を選ぶ。
+  - `1.0fo`の識別子継続はsuffix helper内で後続`o`をE2020 sourceにしていたため、helper入口のsuffix開始pointerを保存して使う。suffixなしの`1.0z`は従来どおり不正文字`z`を指す。
+  - 数値の受理/拒否、`strtod`結果、型・suffix metadata、E2015/E2018/E2020のID・文言、integer suffix処理は変更していない。
+- coverage:
+  - structured diagnosticへ整数値超過E2015 column 25、複数小数点E2018 column 27、`1.0f0` E2018と`1.0fo` E2020のsuffix開始column 28を追加した。
+  - differential coverage表へ整数値超過、複数小数点、float suffix連結のsource位置境界を追記した。
+- 確認:
+  - 対象3 fixtureはClang strict、Native、Wasmの9/9経路がexit 1だった。Native/Wasm 6/6経路はE2015/E2018と同じcaretを報告し、修正後の`1.0f0`はClangと同じ`f`位置へ移った。
+  - `1.0L0`、`1.0z`、`1.0fo`の小型controlもClang strict、Native、Wasmの9/9経路がexit 1だった。Native/Wasmはsuffix連結をsuffix先頭、suffixなし形を`z`へ置き、E2018/E2020を維持した。probeファイルは確認後に削除した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_tokenizer`はwarningなしで成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、最終再実行は**real 3.44秒**。
+  - `./build/test_tokenizer` = **OK: All unit tests passed**、並列実行は**real 0.13秒**。
+- 未実施:
+  - 対象3 fixture、float suffix 3 control、4つのstructured column、tokenizer/parserの直接gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。Unicode suffix、数値型体系、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 非Unicodeの単純tokenizer fixtureは一巡した。次は既存`address_of_rvalue`、`add_two_pointers`、`arrow_nonpointer_operand`の単純operator 3件だけをClang strictと比較し、operator token選択だけで閉じる場合に限る。pointer qualifier体系、複合式、deep expressionには入らない。

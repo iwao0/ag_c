@@ -221,6 +221,7 @@ static inline bool has_hex_float_marker(const char *p) {
 static void parse_float_suffix(
     tokenizer_context_t *ctx, parsed_num_t *num, char **endp) {
   char *end = *endp;
+  char *suffix_start = end;
   if (*end == 'f' || *end == 'F') {
     num->fp_kind = TK_FLOAT_KIND_FLOAT;
     num->float_suffix_kind = TK_FLOAT_SUFFIX_F;
@@ -234,7 +235,7 @@ static void parse_float_suffix(
     num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
   }
   if (tk_is_ident_start_byte(*end)) {
-    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID, end, "%s",
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID, suffix_start, "%s",
                    TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID));
   }
   *endp = end;
@@ -381,7 +382,10 @@ void tk_parse_number_literal_ctx(
   }
 
   if (*p == '.' || starts_identifier_continuation(p)) {
-    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
+    char *diag_loc = p;
+    if (num->float_suffix_kind != TK_FLOAT_SUFFIX_NONE) diag_loc = p - 1;
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, diag_loc,
+                   "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
   }
   *pp = p;
 }
