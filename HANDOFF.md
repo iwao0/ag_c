@@ -38669,3 +38669,24 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3件のClang strict/Native/Wasm source位置、positive 3件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。適用対象、type-name完成性、signed overflow、redeclaration、VLA、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - alignment値制約の位置は閉じた。次は既存`alignas_{typedef,parameter,bitfield,register_object,function_declaration}`だけを少数比較し、同じ`TK_ALIGNAS`選択で適用対象E3064の位置だけ閉じる場合に限る。function definition、再宣言、type-name、VLAには入らない。
+
+### このセッション（続き1315）: 不正な`_Alignas`適用対象のE3064をspecifierへ移した
+- 対象選定:
+  - `alignas_{typedef,parameter,bitfield,register_object,function_declaration}`だけをClang C11 strictと比較した。Clangは5件とも`_Alignas` keywordを指していた。
+  - parameterは既存のparameter storage-class検査が既に`_Alignas`を指していた。一方、typedef・bit-field・register object・function declarationではNative/Wasmが宣言名を指していた。function definition、再宣言merge、type-name、VLA、深い式、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - 共通declaration specifier validatorは`alignas_specifier_count`を確認して適用対象を拒否していたが、診断tokenには呼び出し元のdeclarator名をそのまま使っていた。
+  - typedef・parameter・bit-field・function・registerの共通不許可分岐だけが、既存`psx_declaration_specifier_token_for_kinds()`でspecifier列中の`TK_ALIGNAS`を選ぶ。適用対象predicate、parameterの先行検査、alignment値解決、E3064 ID・文言は変更していない。
+- coverage:
+  - structured diagnosticはtypedef、parameter、bit-field、register object、function declarationのE3064 columnを`_Alignas`位置で固定した。design invariantは適用対象不許可分岐も`TK_ALIGNAS`を選ぶことを固定する。
+- 確認:
+  - 対象5件はClang strict、Native、Wasmがすべて拒否した。Native/WasmはE3064を維持して5件とも`_Alignas` tokenを指し、10/10経路がexit 1だった。parameterは既存の`function-parameters`診断sourceを維持した。
+  - positiveの`alignas/{lvar_value,global_var,type_name}`はClang strict、Native、Wasm objectの9/9経路ですべて受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.45秒 / user 3.06秒 / sys 0.31秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.36秒 / user 11.69秒 / sys 1.63秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.15秒 / user 0.79秒 / sys 0.53秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象5件のClang strict/Native/Wasm source位置、positive 3件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。function definition、再宣言、type-name、VLA、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 適用対象5件の位置は閉じた。次は既存`alignas_{function_definition,block_scope_function_declaration}`だけを少数比較し、同じspecifier token選択か既存の浅い宣言検査だけで閉じる場合に限る。再宣言merge、type-name、VLAには入らない。

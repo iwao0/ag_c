@@ -4610,9 +4610,12 @@ if (!/requested_alignment\s*&\s*\(requested_alignment\s*-\s*1\)[^]*?psx_declarat
     ) ||
     !/natural_alignment\s*>\s*requested_alignment[^]*?psx_declaration_specifier_token_for_kinds\([^]*?TK_ALIGNAS[^]*?ps_diag_ctx_in\([^]*?source_token,[^]*?alignment cannot be weaker than the natural alignment/.test(
       declarationApplicationSource,
+    ) ||
+    !/has_typedef\s*\|\|\s*is_parameter\s*\|\|\s*is_bitfield\s*\|\|\s*is_function[^]*?type_spec\.is_register[^]*?psx_declaration_specifier_token_for_kinds\([^]*?TK_ALIGNAS[^]*?ps_diag_ctx_in\([^]*?source_token,[^]*?alignment specifier is not permitted for this declaration/.test(
+      declarationApplicationSource,
     )) {
   throw new Error(
-    "resolved alignment value constraints must diagnose the alignment specifier rather than the declarator name",
+    "alignment value and target constraints must diagnose the alignment specifier rather than the declarator name",
   );
 }
 if (!/has_anonymous_aggregate_specifier\s*=\s*declaration->specifier\.tag_action\.is_anonymous/.test(

@@ -865,8 +865,11 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   if (specifier->alignas_specifier_count <= 0) return 1;
   if (has_typedef || is_parameter || is_bitfield || is_function ||
       specifier->type_spec.is_register) {
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        (const token_kind_t[]){TK_ALIGNAS}, 1);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "alignas",
         "alignment specifier is not permitted for this declaration");
     return 0;

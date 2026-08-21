@@ -20210,6 +20210,29 @@ static void test_parse_invalid(
       "E3064", 18);
   expect_parse_fail_at_column(
       test_suite_session,
+      "typedef _Alignas(16) int aligned_int; int main(void) { return 0; }",
+      "E3064", 9);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int function(_Alignas(16) int value) { return value; } "
+      "int main(void) { return function(0); }",
+      "E3064", 14);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct record { _Alignas(8) unsigned int bit : 1; }; "
+      "int main(void) { return 0; }",
+      "E3064", 17);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { register _Alignas(8) int value = 0; "
+      "return value; }",
+      "E3064", 27);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "_Alignas(16) int function(void); int main(void) { return 0; }",
+      "E3064", 1);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Static_assert(0, \"failure\"); int main(void) { return 0; }",
       "E3012", 16);
   expect_parse_fail_at_column(
