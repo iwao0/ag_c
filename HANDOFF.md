@@ -40629,3 +40629,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、named-member診断source確認、structured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。typedef、local scope、struct、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`empty_struct_typedef` fixtureの空struct定義とtypedef declaratorだけをClang strict、Native、Wasmで比較し、typedef名があっても空bodyを拒否する診断IDと閉じ波括弧位置を確認する。object、local scope、union、initializerには入らない。
+
+### このセッション（続き1416）: empty struct typedefのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`empty_struct_typedef` fixtureにある空struct定義とtypedef declarator `typedef struct Empty {} Empty;`だけをClang C11 strict、Native、Wasmで比較した。
+  - object、local scope、union、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangは空struct extensionを`struct`の2行9列へ報告した。Native/Wasmはaggregate body開始時の閉じ波括弧`}`を2行23列でE3064と実トークン`}`として報告した。
+  - 後続のtypedef declarator`Empty`より先に空body制約を診断し、empty struct/union objectと同じbody開始token方針を維持することを確認した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行を持つE3064 column 23 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、record identity、typedef登録、aggregate layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`}`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.66秒 / user 3.04秒 / sys 0.29秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、named-member診断source確認、structured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。object、local scope、union、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`local_empty_struct_object` fixtureのblock-scope空struct定義と単一object declaratorだけをClang strict、Native、Wasmで比較し、local宣言でも空bodyを拒否する診断IDと閉じ波括弧位置を確認する。file scope、typedef、union、initializerには入らない。
