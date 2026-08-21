@@ -39877,3 +39877,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。typedef、parameter、nested pointer、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_restrict_typedef_pointer`のAtomic pointer typedefへのprefix `restrict` 1件だけをClang strictと比較し、typedefに隠れたAtomic性では`restrict`またはdeclarator tokenのどちらを指すかだけで閉じる場合に限る。parameter、nested pointer、initializerには入らない。
+
+### このセッション（続き1375）: Atomic pointer typedefへのprefix restrictのE3064列を固定した
+- 対象選定:
+  - 前回候補の`atomic_restrict_typedef_pointer`だけをClang C11 strict、Native、Wasmで比較した。
+  - parameter、nested pointer、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - typedefのcanonical型にはAtomic pointerが保持される一方、使用箇所のsource token列には同段の`_Atomic`とpointer operatorがないため、三系統ともClangと同じprefix `restrict`を指していた。
+  - structured diagnosticへ使用宣言のE3064 column 1を追加した。
+  - compiler sourceは変更せず、共有pointer token選択がtypedef定義内の別宣言へ遡らない境界だけを固定した。受理/拒否、typedef identity、canonical QualType、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`restrict`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.66秒 / user 3.00秒 / sys 0.33秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。parameter、nested pointer、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_restrict_nested_pointer`の2段pointer宣言1件だけをClang strictと比較し、同段Atomic/restrictを持つ内側または外側どちらのpointer operatorを指すかだけで閉じる場合に限る。3段以上、typedef、parameter、initializerには入らない。
