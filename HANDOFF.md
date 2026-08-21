@@ -39370,3 +39370,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。複数alignas、alignment評価、anonymous bit-field、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`alignas_non_power_of_two`と`alignas_weaker_than_natural`の単純integer literal alignment 2件だけをClang strictと比較し、`_Alignas` keywordまたはliteral token選択だけで閉じる場合に限る。非ICE、overflow、comma/binary expression、type-name operandには入らない。
+
+### このセッション（続き1348）: 単純Alignas値制約のE3064列を回帰固定した
+- 対象選定:
+  - 前回候補の`alignas_non_power_of_two`と`alignas_weaker_than_natural`だけをClang C11 strict、Native、Wasmで比較した。
+  - 非ICE、overflow、comma/binary expression、type-name operand、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 非2冪の`_Alignas(3)`と自然alignment未満の`_Alignas(1)`は、Native/Wasmが既にClangと同じ先頭`_Alignas` keywordを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへ両E3064のcolumn 1を追加した。
+  - differential coverage表には非2冪・自然alignment弱化で`_Alignas` keywordを指す方針が既に記載済みだったため、重複する文書変更は加えていない。alignment評価、受理/拒否、診断ID・文言は変更していない。
+- 確認:
+  - 対象2 fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はE3064と`_Alignas`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.67秒 / user 2.99秒 / sys 0.33秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。非ICE、overflow、comma/binary expression、type-name operand、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`for_initializer_extern_object`と`for_initializer_static_object`の単純for declaration 2件だけをClang strictと比較し、storage keywordまたは宣言名token選択だけで閉じる場合に限る。function declaration、thread-local、initializer expression、nested statementには入らない。
