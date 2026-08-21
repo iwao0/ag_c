@@ -39678,3 +39678,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較と2 structured columnsで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer、callback、atomic型、parameter adjustment、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - `restrict_builtin_scalar_type_name`は既にstructured E3117 column 32があるため重複追加しない。次は既存`restrict_typedef_scalar_type_name`の`sizeof`一段だけをClang strictと比較し、`restrict` keywordのtoken選択だけで閉じる場合に限る。cast、nested type-name、pointer、callback、expression evaluationには入らない。
+
+### このセッション（続き1365）: typedef scalar type-nameの`restrict` E3117列を回帰固定した
+- 対象選定:
+  - 前回候補の`restrict_typedef_scalar_type_name`だけをClang C11 strict、Native、Wasmで比較した。
+  - `restrict_builtin_scalar_type_name`は既にstructured E3117 column 32があったため重複追加していない。
+  - cast、nested type-name、pointer、callback、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Native/Wasmは既にClangと同じ`restrict` keywordを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへtypedef scalar type-nameのE3117 column 17を追加した。
+  - `sizeof`一段のtype-name制約だけを固定し、受理/拒否、typedef解決、型形成、式評価、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1だった。Native/Wasm 2/2経路はE3117と`restrict`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.62秒 / user 2.98秒 / sys 0.31秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較と1 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。cast、nested type-name、pointer、callback、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_void_type`の単純な`_Atomic(void)` declaration 1件だけをClang strictと比較し、`_Atomic`または`void` tokenの選択だけで閉じる場合に限る。atomic array/function、typedef、nested declarator、initializerには入らない。
