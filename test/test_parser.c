@@ -21764,12 +21764,16 @@ static void test_parse_invalid(
       "  return pointer != 0;\n"
       "}",
       "E3064", 3, 1);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* The _Atomic qualifier cannot be applied to an array typedef. */\n"
       "typedef int array_type[2];\n"
       "_Atomic array_type values;\n"
-      "int main(void) { return 0; }",
-      "E3064", 1);
+      "\n"
+      "int main(void) {\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 3, 1);
   expect_parse_fail_at_column(
       test_suite_session,
       "typedef int array_type[2];\n"
