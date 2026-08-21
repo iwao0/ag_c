@@ -39751,3 +39751,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較と1 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。callback、variadic function、typedef function、function pointer、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_const_type`と`atomic_volatile_type`の単純な`_Atomic(qualified int)` declaration 2件だけをClang strictと比較し、`_Atomic`またはqualifier tokenの選択だけで閉じる場合に限る。pointer qualifier、typedef、nested declarator、initializerには入らない。
+
+### このセッション（続き1369）: `_Atomic(qualified int)`のE3064列を回帰固定した
+- 対象選定:
+  - 前回候補の`atomic_const_type`と`atomic_volatile_type`だけをClang C11 strict、Native、Wasmで比較した。
+  - pointer qualifier、typedef、nested declarator、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Native/Wasmは既にClangと同じ`_Atomic` keywordを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへ`_Atomic(const int)`と`_Atomic(volatile int)`のE3064 column 1を追加した。
+  - `_Atomic(type-name)`のunqualified type制約だけを固定し、受理/拒否、qualifier伝播、型形成、object登録、initializer、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はE3064と`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.65秒 / user 2.99秒 / sys 0.32秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較と2 structured columnsで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer qualifier、typedef、nested declarator、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_const_pointer_type`の`_Atomic(int * const)` declaration 1件だけをClang strictと比較し、initializerより前の`_Atomic`または`const` token選択だけで閉じる場合に限る。pointer階層の一般化、typedef pointer、nested pointer、initializer評価には入らない。
