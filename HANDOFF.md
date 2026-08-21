@@ -39222,3 +39222,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。fallthrough CFG、aggregate/complex return、`_Noreturn`、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`funcdef_unnamed_parameter`と`named_void_parameter`の単純parameter 2件だけをClang strictと比較し、parameter identifierまたは閉じ括弧token選択だけで閉じる場合に限る。nested declarator、array/function parameter、typedef-void、variadicには入らない。
+
+### このセッション（続き1340）: 単純parameter制約の診断列を回帰固定した
+- 対象選定:
+  - 前回候補の`funcdef_unnamed_parameter`と`named_void_parameter`だけをClang C11 strict、Native、Wasmで比較した。
+  - nested declarator、array/function parameter、typedef-void、variadic、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 2件ともNative/Wasmは既にClangと同じsource tokenを指していたため、compiler sourceの変更は不要だった。
+  - function definitionの単純unnamed parameterはE3065と閉じ`)`のcolumn 16、prototypeのnamed void parameterはE3064とidentifier `value`のcolumn 19をstructured diagnosticへ追加した。
+  - differential coverage表には両source位置方針が既に記載済みだったため、重複する文書変更は加えていない。parameter型制約、受理/拒否、診断ID・文言は変更していない。
+- 確認:
+  - 対象2 fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はそれぞれE3065と`)`、E3064と`value`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.71秒 / user 3.05秒 / sys 0.33秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。nested declarator、array/function parameter、typedef-void、variadic、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`void_variable`と`array_of_void`の単純void object型2件だけをClang strictと比較し、宣言名またはarray declarator先頭token選択だけで閉じる場合に限る。typedef-void、compound literal、VLA、nested declaratorには入らない。

@@ -20346,6 +20346,17 @@ static void test_parse_invalid(
       "E3005", 3);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int invalid(int) {\n"
+      "  return 0;\n"
+      "}",
+      "E3065", 16);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int function(void value);\n"
+      "int main(void) { return 0; }",
+      "E3064", 19);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
   expect_parse_fail_at_column(
       test_suite_session,
