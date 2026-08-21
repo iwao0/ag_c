@@ -9219,6 +9219,11 @@ static int preflight_direct_local_declaration(
                 declaration_qual_type.qualifiers &
                     PSX_TYPE_QUALIFIER_ATOMIC},
             value_type, is_null_pointer_constant, &assignment);
+        if (assignment.status == PSX_ASSIGNMENT_TYPES_INCOMPATIBLE)
+          return note_direct_initializer_rejection(
+              context,
+              PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
+              &syntax->base, (token_t *)name);
         if (assignment.status != PSX_ASSIGNMENT_TYPES_OK)
           return note_direct_assignment_rejection(
               context, initializer->value,

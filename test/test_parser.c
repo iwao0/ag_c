@@ -20250,6 +20250,10 @@ static void test_parse_invalid(
       "E3099", 22);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) { int value = \"hello\"; return value; }",
+      "E3099", 22);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Alignas((1, 16)) int value; int main(void) { return 0; }",
       "E3064", 10);
   expect_parse_fail_at_column(

@@ -7559,6 +7559,13 @@ if (!/static_initializer_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID[^]*?PSX_SYNTAX
     "invalid expression initializers for arrays must diagnose the declarator name across file, automatic, and static-local paths",
   );
 }
+if (!/assignment\.status\s*==\s*PSX_ASSIGNMENT_TYPES_INCOMPATIBLE[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES[^]*?\(token_t\s*\*\)name[^]*?assignment\.status\s*!=\s*PSX_ASSIGNMENT_TYPES_OK[^]*?note_direct_assignment_rejection/.test(
+      directLocalDeclarationPreflight[0],
+    )) {
+  throw new Error(
+    "incompatible automatic local initializers must diagnose the declarator without redirecting other assignment failures",
+  );
+}
 if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(
       declarationPipelineSource,
     ) ||

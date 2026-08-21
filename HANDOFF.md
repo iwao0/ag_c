@@ -38739,3 +38739,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象13形のClang strict/Native/Wasm source位置、positive 4群、非array control、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。再帰brace、designator chain、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 配列式initializerの位置は閉じた。比較中に既存`assign_string_to_int`のautomatic local診断がClangの宣言名`x`に対してNative/Wasmでは`main`を指すことを確認した。次はfile/local/static-localの単純scalar型不一致だけを比較し、既存declarator tokenをdirect scalar assignment rejectionへ渡すだけで閉じる場合に限る。変換規則、深い式、pointer qualifier体系には入らない。
+
+### このセッション（続き1318）: automatic scalar型不一致initializerのE3099を宣言名へ移した
+- 対象選定:
+  - `int value = "hello";`だけをfile-scope、automatic local、static localでClang C11 strict、Native、Wasm比較した。3形とも拒否し、file/static-localは既にClangと同じ`value`を指していたが、automatic localだけNative/Wasmが関数名`main`を指していた。
+  - pointer qualifier変換、aggregate initializer、複合式、深い式、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - direct automatic-local preflightはdeclarator名tokenを既に保持していたが、scalar assignment conversion失敗を通常の代入式と同じhelperへinitializer ASTをsourceとして渡していた。string literal ASTのfallback sourceは宣言名を復元できず、外側function tokenへ落ちていた。
+  - assignment statusが`PSX_ASSIGNMENT_TYPES_INCOMPATIBLE`の場合だけ、既存のinitializer rejectionへdeclarator `name` tokenを渡す。qualifier破棄など他statusは従来の`note_direct_assignment_rejection()`へ残す。
+  - conversion判定、target/value型、null pointer constant判定、E3099 ID・文言、file/static pipeline、通常の代入式は変更していない。
+- coverage:
+  - structured diagnosticはautomatic `int value = "hello";`のE3099 columnを宣言名位置で固定した。
+  - design invariantは型不一致分岐が`name`を選び、その直後に他status用の既存assignment rejectionが残ることを固定する。
+- 確認:
+  - file/automatic/static-localの3形はClang strict、Native、Wasmが全て拒否した。修正後のNative/Wasmは3形全てE3099と宣言名`value`を指し、6/6経路がexit 1だった。既存`assign_string_to_int`もNative/Wasm 2/2でE3099と`x`を指した。
+  - `initializer_const_array_pointer_to_plain`はNative/Wasm 2/2でE3078と従来の`&`位置を維持した。通常の`value = "hello"`代入はClang strict、Native、Wasmが拒否し、3系統とも代入operator `=`を指した。
+  - positiveのautomatic scalar brace initializerとfile/function-local static scalar initializerはClang strict、Native、Wasm objectの6/6 compile経路で受理し、Clang/Nativeの4/4 executableもexit 0だった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.65秒 / user 3.09秒 / sys 0.29秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.25秒 / user 11.67秒 / sys 1.55秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.29秒 / user 0.78秒 / sys 0.52秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功し、`git diff --check`も成功した。
+- 未実施:
+  - 対象3 storage形、既存fixture、qualifier/通常代入control、positive 2件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer qualifier体系、aggregate/complex initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - automatic scalar型不一致initializer位置は閉じた。次は既存`{automatic,static_local,static}_character_array_string_too_long`の単純3形だけをClang strictと比較し、既存string tokenまたはdeclarator tokenの選択だけで閉じる場合に限る。braced string、member、compound literal、多次元配列には入らない。
