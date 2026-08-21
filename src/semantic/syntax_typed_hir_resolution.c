@@ -9741,10 +9741,11 @@ static int preflight_direct_statement_impl(
           return 0;
         if (!direct_qual_type_is_integer(context, case_qual_type) ||
             !direct_integer_constant(context, syntax->lhs, &value))
-          return note_direct_semantic_rejection(
+          return note_direct_semantic_rejection_at_token(
               context,
               PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT,
-              syntax);
+              syntax,
+              ((const node_case_t *)syntax)->expression_token);
         if (!psx_normalize_integer_constant_cast(
                 &context->switch_scope->promoted_control_type,
                 value, &value))

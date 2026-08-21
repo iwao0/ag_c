@@ -38576,3 +38576,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - direct dot/arrowのClang strict/Native/Wasm source位置、E3118正本2件、positive 1件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - direct `sizeof(bit-field)`位置は閉じた。次は既存`address_of_parenthesized_bitfield`の直接member E3113だけをClang strictと比較し、今回保持した`member_tok`を既存address bit-field rejectionへ渡すだけで閉じる場合に限る。`address_generic_selected_bitfield`や深いvalue-category伝播には入らない。
+
+### このセッション（続き1311）: 非整数・非定数caseのE3064を式先頭へ移した
+- 対象選定:
+  - 前回候補のaddress-of bit-fieldはdirect/genericともClang C11 strictと同じ`&`位置だった。続けてaddress非lvalue 4件、直接register 4件、control body declaration 5件、label/case/default直後declaration 3件、`for`初期節declaration制約5件も比較したが、全てClangと同じoperator、宣言先頭、宣言名/tag名を指していたため変更しなかった。
+  - 単純switch/caseへ移ると、complex controlはClang/Native/Wasmとも`switch`位置だった一方、floating constant、runtime call、comma expressionのcase値はClangが`1.0`、`runtime_value`、`(`を指し、ag_cは`case` keywordへ固定していた。duplicate case値の比較・正規化、深い定数式、VLA scope、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - `node_case_t`はcase keyword tokenとexpression ASTを保持していたが、expression parse直前tokenを残していなかった。leafではAST tokenから開始位置を得られる一方、comma/binary AST rootはoperator tokenを保持するため、共通して式先頭を復元できなかった。
+  - `case`消費直後、case expressionをparseする前のcurrent tokenを`expression_token`としてSyntaxへ保持する。direct statement preflightで型が整数でない、または整数定数式評価に失敗した場合の`PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT`だけがtoken付きrejectionを使う。
+  - switch外case、VM scope進入、duplicate case、case値の整数昇格・control型正規化、診断ID・文言、expression ASTのoperator tokenは変更していない。
+- coverage:
+  - parser case-label boundaryは`case A * 2`のexpression tokenがidentifier `A`で、AST rootの`*` tokenとは別であることを直接固定した。structured diagnosticはfloating、runtime call、parenthesized commaのE3064 columnを式先頭で固定する。
+  - design invariantはcase Syntax metadata、parse前capture、invalid-ICE rejectionへのtoken伝播を固定し、解決済みcase値をSyntaxへ書き戻さない既存境界とuser-facing文言の非exact-match方針を維持する。
+- 確認:
+  - `case_float_constant`、`case_nonconstant_expression`、`case_comma_constant`はClang strict、Native、Wasmがすべて拒否し、Native/WasmはE3064を維持してClangと同じ`1.0`、`runtime_value`、`(` tokenを指した。Native/Wasm 6/6経路はexit 1だった。
+  - `case_outside_switch`は3系統で従来の`case`位置を維持した。`duplicate_case_simple`もE3060と従来の`case`位置を維持したが、Clangの重複値token位置との差はduplicate value bindingの別課題なので今回の一致根拠には含めていない。
+  - positiveの`control_flow_enum_compound_boundaries`と`switch_fallthrough`はClang strict、Native、Wasm objectの6/6経路ですべて受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.51秒 / user 2.98秒 / sys 0.26秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.81秒 / user 11.87秒 / sys 1.68秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.24秒 / user 0.79秒 / sys 0.50秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象3件のClang strict/Native/Wasm source位置、隣接control 2件、positive 2件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。duplicate case式、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 非整数・非定数caseの位置は閉じた。次は同じ整数定数式制約の既存`enum_{float,comma}_constant`と`enum_floating_expression_cast`だけを少数比較し、enumerator initializer先頭tokenの伝播だけで閉じる場合に限る。enumerator値の依存解決、重複、深い定数式には入らない。

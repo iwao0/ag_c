@@ -12039,6 +12039,12 @@ static void test_case_label_syntax_hir_boundary(
   ASSERT_TRUE(syntax_expression != NULL);
   ASSERT_EQ(ND_MUL, syntax_expression->kind);
   ASSERT_EQ(ND_IDENTIFIER, syntax_expression->lhs->kind);
+  ASSERT_TRUE(syntax_case->expression_token != NULL);
+  ASSERT_EQ(TK_IDENT, syntax_case->expression_token->kind);
+  ASSERT_TRUE(syntax_case->expression_token ==
+              syntax_expression->lhs->tok);
+  ASSERT_TRUE(syntax_case->expression_token !=
+              syntax_expression->tok);
 
   const psx_typed_hir_tree_t *typed_hir = NULL;
   psx_resolved_hir_build_failure_t failure;
@@ -20109,6 +20115,19 @@ static void test_parse_invalid(
       "struct bits { unsigned int value:3; }; int main(void) { "
       "struct bits *pointer=0; return sizeof pointer->value; }",
       "E3118", 104);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { switch (1) { case 1.0: return 0; } }",
+      "E3064", 36);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int runtime_value(void); int main(void) { switch (1) { "
+      "case runtime_value(): return 0; } }",
+      "E3064", 61);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { switch (1) { case (1, 1): return 0; } }",
+      "E3064", 36);
   expect_parse_fail_at_column(
       test_suite_session,
       "_Static_assert(0, \"failure\"); int main(void) { return 0; }",

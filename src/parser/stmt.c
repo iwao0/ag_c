@@ -380,6 +380,7 @@ static node_t *parse_stmt_case(psx_statement_parse_context_t *context) {
       context->arena_context, sizeof(node_case_t));
   node->base.kind = ND_CASE;
   node->base.tok = case_tok;
+  node->expression_token = curtok(context);
   if (!context->syntax.parse_case_expression) {
     require_syntax_service(context, "parse_case_expression");
     return NULL;

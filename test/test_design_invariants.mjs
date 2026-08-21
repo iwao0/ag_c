@@ -6877,6 +6877,13 @@ if (!/case\s+ND_CASE\s*:\s*\{[^]*?direct_integer_constant\s*\([^]*?bind_direct_c
       syntaxTypedHirResolutionSource,
     ) ||
     !caseNodeStruct ||
+    !/\btoken_t\s*\*\s*expression_token\s*;/.test(caseNodeStruct[1]) ||
+    !/parse_stmt_case\s*\([^]*?node->expression_token\s*=\s*curtok\(context\)[^]*?parse_case_expression/.test(
+      parserStatementSource,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT[^]*?\(\(const\s+node_case_t\s*\*\)syntax\)->expression_token/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     /\b(?:val|has_resolved_value|label_id)\b/.test(caseNodeStruct[1]) ||
     /\blabel_id\b/.test(astSource)) {
   throw new Error(

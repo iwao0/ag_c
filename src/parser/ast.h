@@ -207,6 +207,7 @@ struct node_ctrl_t {
 typedef struct node_case_t node_case_t;
 struct node_case_t {
   node_t base;
+  token_t *expression_token;
 };
 
 // Default-label node.
