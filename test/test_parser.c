@@ -20138,6 +20138,13 @@ static void test_parse_invalid(
   expect_parse_fail_at_column(
       test_suite_session, "void void function(void);", "E3006", 6);
   expect_parse_fail_at_column(
+      test_suite_session,
+      "float float value;\nint main(void) { return 0; }", "E3006", 7);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n  double double value;\n  return (int)value;\n}",
+      "E3006", 10);
+  expect_parse_fail_at_column(
       test_suite_session, "signed signed value;", "E3006", 8);
   expect_parse_fail_at_column(
       test_suite_session, "unsigned signed value;", "E3006", 10);

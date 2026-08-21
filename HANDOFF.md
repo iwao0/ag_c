@@ -39496,3 +39496,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較と2 structured columnsで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。redeclaration、linkage変更、aggregate member、typedef、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`repeated_void_type_specifier`と`repeated_float_type_specifier`の単純な同一宣言内type-specifier重複2件だけをClang strictと比較し、第2type keywordのtoken選択だけで閉じる場合に限る。aggregate、typedef、nested declarator、expression evaluationには入らない。
+
+### このセッション（続き1355）: 単純な浮動type-specifier重複2件のE3006列を回帰固定した
+- 対象選定:
+  - 前回候補の`repeated_void_type_specifier`と`repeated_float_type_specifier`をClang C11 strict、Native、Wasmで比較し、現行structured diagnosticも確認した。
+  - `void void`は既にE3006 column 6が固定済みだったため重複追加せず、同じ浅い未固定境界の`repeated_double_type_specifier`を追加比較した。
+  - aggregate、typedef、nested declarator、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Native/Wasmは既にClangと同じ第2type keywordを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへ`float float`のE3006 column 7と`double double`のE3006 column 10を追加した。既存`void void`のcolumn 6は維持した。
+  - 同一宣言内specifier制約だけを固定し、受理/拒否、型形成、診断ID・文言は変更していない。
+- 確認:
+  - `float float`と`double double`はClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はE3006と第2type keywordを報告した。
+  - `void void`も三系統でexit 1かつ第2`void`を指し、既存structured columnで直接固定済みと確認した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.62秒 / user 2.96秒 / sys 0.32秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較と既存/追加structured columnsで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。aggregate semantics、typedef、nested declarator、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`repeated_bool_type_specifier`の単純なmember declaration 1件だけをClang strictと比較し、第2`_Bool` keywordのtoken選択だけで閉じる場合に限る。member layout、anonymous aggregate、bit-field、typedef、nested declaratorには入らない。
