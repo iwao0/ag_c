@@ -21813,13 +21813,17 @@ static void test_parse_invalid(
       "  return pointer != 0;\n"
       "}",
       "E3064", 3, 1);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* An atomic-qualified type cannot be used as a bit-field type. */\n"
       "struct flags {\n"
       "  _Atomic unsigned int value : 3;\n"
       "};\n"
-      "int main(void) { return 0; }",
-      "E3064", 24);
+      "\n"
+      "int main(void) {\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 3, 24);
   expect_parse_fail_at_column(
       test_suite_session,
       "struct flags {\n"

@@ -41240,3 +41240,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、全compile-fail registry、全E2E、language-analysis、design invariants、1354秒規模の`make test-wasm-js-api`は反復しない。complete record、nested pointer、cross-translation-unit、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_bitfield_qualifier` fixtureのnamed bit-field `_Atomic unsigned int value : 3`だけをClang strict、Native、Wasmで比較する。近接parser assertionはcolumn 24を期待しているため、実際にqualifier・member名・colonのどこを指すかを行まで確認する。specifier form、typedef bit-field、unnamed bit-fieldには広げない。
+
+### このセッション（続き1448）: atomic qualifier bit-fieldのE3064位置を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_bitfield_qualifier` fixtureにある、named bit-field `_Atomic unsigned int value : 3`だけをClang C11 strict、Native、Wasmで比較した。
+  - specifier form、typedef bit-field、unnamed bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangはatomic-qualified named bit-fieldのmember名`value`を3行24列へ報告した。Native/Wasmも同じ`value`を3行24列でE3064と実トークン`value`として報告した。
+  - atomic qualifier自体ではなく、non-integral atomic typeを持つbit-field declaratorを問題箇所とする診断位置が三系統で一致することを確認した。
+  - 既存のE3064 column 24 assertionをfixtureと同じ先頭comment・aggregate・空行・main配置を持つE3064 position 3:24 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、atomic integer type identity、bit-field declaration resolution、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`value`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.86秒 / user 3.03秒 / sys 0.34秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、全compile-fail registry、全E2E、language-analysis、design invariants、1354秒規模の`make test-wasm-js-api`は反復しない。specifier form、typedef bit-field、unnamed bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_bitfield_specifier` fixtureのnamed bit-field `_Atomic(unsigned int) value : 3`だけをClang strict、Native、Wasmで比較し、specifier formでもmember名を指すかを行まで確認する。qualifier form、typedef bit-field、unnamed bit-fieldには入らない。
