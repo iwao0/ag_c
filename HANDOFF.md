@@ -40147,3 +40147,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。function使用、nested block、pointer派生、parameter、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_typedef_function_member` fixtureのfunction typedefと単一record member `_Atomic function_type callback;`だけをClang strict、Native、Wasmで比較し、aggregate member経路でも使用側`_Atomic`を指すか確認する。member使用、nested aggregate、pointer派生、initializerには入らない。
+
+### このセッション（続き1390）: member function typedefへのAtomic qualifierのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_typedef_function_member` fixtureにあるfunction typedefと単一record member `_Atomic function_type callback;`だけをClang C11 strict、Native、Wasmで比較した。
+  - member使用、nested aggregate、pointer派生、parameter、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともClangと同じmember宣言5行3列の`_Atomic`を指し、Native/WasmはE3064を報告した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行とインデントを持つE3064 column 3 assertionへ強化し、typedef定義側、record token、member identifierへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、record layout、function typedef identity、canonical QualType、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.72秒 / user 3.01秒 / sys 0.35秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member使用、nested aggregate、pointer派生、parameter、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_typedef_function_parameter` fixtureのfunction typedefと単純なprototype parameter `_Atomic function_type callback`だけをClang strict、Native、Wasmで比較し、parameter経路で使用側`_Atomic`を指すか確認する。definition、callback使用、nested declarator、initializerには入らない。
