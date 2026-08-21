@@ -40003,3 +40003,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象probeの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。typedef使用側、nested block、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は括弧1段だけの`int * _Atomic restrict (invalid_pointer);` 1件を一時probeで比較し、parenthesized direct declaratorでもpointer operatorを指すかだけで閉じる。pointer階層追加、initializer、expression evaluationには入らない。
+
+### このセッション（続き1382）: parenthesized Atomic/restrict declaratorのE3064列を固定した
+- 対象選定:
+  - 前回候補の括弧1段だけを持つ`int * _Atomic restrict (invalid_pointer);` 1件を一時probeとしてClang C11 strict、Native、Wasmで比較した。
+  - pointer階層追加、関数・配列declarator、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともClangと同じ1行5列のpointer operator `*`を指していた。
+  - structured diagnosticへE3064 column 5を追加し、括弧の`(`やidentifierへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、parenthesized direct declaratorでも共有pointer token選択が届く境界だけを固定した。受理/拒否、declarator shape、canonical QualType、診断ID・文言は変更していない。
+- 確認:
+  - 対象probeはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`*`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.74秒 / user 3.04秒 / sys 0.34秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象probeの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer階層追加、関数・配列declarator、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は式を含まない`_Atomic(int * restrict) invalid_pointer;` 1件だけを一時probeで比較し、Atomic type specifier内の単純なqualified pointer type-nameに対する診断IDとsource tokenだけを確認する。typedef、nested pointer、initializer、expression evaluationには入らない。
