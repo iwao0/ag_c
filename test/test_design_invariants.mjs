@@ -10932,11 +10932,11 @@ if (!/PSX_CALL_TYPES_INCOMPLETE_RETURN/.test(
     "calls with incomplete return types must be rejected during canonical call resolution before Typed HIR lowering",
   );
 }
-if (!/base_shape\.kind\s*==\s*PSX_TYPE_VOID\s*&&[^]*?parameter_application\.shape\.count\s*==\s*0[^]*?parameters->count\s*==\s*1\s*&&[^]*?!parameters->is_variadic\s*&&[^]*?!parameter->declarator\.identifier\s*&&[^]*?base_qual_type\.qualifiers\s*==\s*PSX_TYPE_QUALIFIER_NONE[^]*?resolved_count\s*=\s*0[^]*?void parameter must be the only parameter, unnamed/.test(
+if (!/base_shape\.kind\s*==\s*PSX_TYPE_VOID\s*&&[^]*?parameter_application\.shape\.count\s*==\s*0[^]*?parameters->count\s*==\s*1\s*&&[^]*?!parameters->is_variadic\s*&&[^]*?!parameter->declarator\.identifier\s*&&[^]*?base_qual_type\.qualifiers\s*==\s*PSX_TYPE_QUALIFIER_NONE[^]*?resolved_count\s*=\s*0[^]*?parameter->declarator\.identifier\s*\?[^]*?parameter->specifier\.diagnostic_token[^]*?void parameter must be the only parameter, unnamed/.test(
       declarationApplicationSource,
     )) {
   throw new Error(
-    "the zero-parameter void marker must be the sole unnamed unqualified parameter while typedef void remains valid",
+    "the zero-parameter void marker must remain unnamed and unqualified while named void diagnostics point to the parameter name",
   );
 }
 if (!/allow_incomplete_object/.test(

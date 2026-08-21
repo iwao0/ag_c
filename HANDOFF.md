@@ -38293,3 +38293,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象1fixtureとVLA/label対照4件をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - duplicate caseはClangがcase定数式を指す一方でag_cは`case` keywordを指すが、式token境界を確認する必要があるため保留する。次は式を辿らず既存tokenだけで閉じる宣言・statement制約を選ぶ。
+
+### このセッション（続き1299）: named void parameterのE3064をparameter名へ移した
+- 対象選定:
+  - まずreturn制約2件とselection/iteration bodyへのdeclaration 6件をClang C11 strictとNativeで比較し、すべて`return`または型keyword位置で一致したため変更しなかった。
+  - 続いてvoid marker、variadic位置、重複parameter名の既存9fixtureを比較した。重複名とvariadic-onlyは既に一致し、`void value`の通常・nested prototypeだけはClangがparameter名`value`を指す一方、ag_cは`void`を指していた。
+  - function definitionの一時probeは既に`value`を指していた。declaratorが保持するidentifierだけで閉じ、declarator内部型形成、式、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - prototype parameter適用のvoid marker validatorは、named形もunnamed形もspecifier開始tokenを診断へ渡していた。parameter declaratorはidentifier tokenを既に保持していた。
+  - identifierがあるnamed void parameterだけそのtokenを選び、identifierがないqualified void、void+ellipsis等は従来のspecifier tokenへfallbackする。型形成、parameter adjustment、受理可否、診断ID・文言は変更していない。
+  - design invariantは合法なsole unnamed unqualified void markerを維持しつつ、named形がidentifierを選ぶことを固定する。診断文言のexact matchにはしていない。
+- coverage:
+  - `named_void_parameter`と`nested_named_void_parameter`はshould_reject正本とNative/Wasm共用compile-fail registryへ登録済みなので重複fixtureは追加していない。differential coverage表へ診断source tokenの修正境界を追加した。
+- 確認:
+  - 通常・nested prototypeはClang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3064を維持してparameter名`value`上で一致した。function definitionもNative/Wasmとも従来の`value`位置を維持した。
+  - `qualified_void_parameter`と`void_variadic_parameter`はNative/Wasmとも従来の`const`・`void`位置を維持した。合法なsole `void` markerと`void *value` parameterはNative/Wasmとも受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.57秒 / user 3.05秒 / sys 0.25秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.26秒 / user 11.68秒 / sys 1.56秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.22秒 / user 0.76秒 / sys 0.50秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象2fixtureとdefinition・unnamed void対照5形をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - named void prototypeは通常・nestedで閉じた。次も既存identifier/keyword tokenだけで閉じる宣言・statement制約を少数比較し、duplicate caseの式位置は保留する。

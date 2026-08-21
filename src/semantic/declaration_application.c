@@ -1223,9 +1223,12 @@ void psx_apply_parsed_function_parameters_in_contexts(
         resolved_count = 0;
         break;
       }
+      token_t *source_token = parameter->declarator.identifier
+          ? (token_t *)parameter->declarator.identifier
+          : parameter->specifier.diagnostic_token;
       ps_diag_ctx_in(
           ps_ctx_diagnostics(semantic_context),
-          parameter->specifier.diagnostic_token, "param",
+          source_token, "param",
           "a void parameter must be the only parameter, unnamed, "
           "and unqualified");
     }
