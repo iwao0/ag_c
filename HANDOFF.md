@@ -40535,3 +40535,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。enum定義、initializer、bit-field、anonymous aggregate、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`empty_enum` fixtureの単一の空enum定義だけをClang strict、Native、Wasmで比較し、enumerator必須制約の診断IDとbrace位置を確認する。enumerator値式、nested enum、initializerには入らない。
+
+### このセッション（続き1411）: empty enumのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`empty_enum` fixtureにある単一の空enum定義 `enum empty {};`だけをClang C11 strict、Native、Wasmで比較した。
+  - enumerator値式、nested enum、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統とも空enumerator listの閉じ波括弧`}`を指し、Clangは2行13列、Native/WasmはE3064と実トークン`}`を報告した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行を持つE3064 column 13 assertionへ強化し、enum keyword、tag名、開き波括弧、semicolonへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、enum identity、enumerator登録、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`}`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.72秒 / user 3.07秒 / sys 0.31秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。enumerator値式、nested enum、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`aggregate_named_enum_without_member` fixtureのnamed enum定義と後続の通常memberだけをClang strict、Native、Wasmで比較し、member declarator欠如制約の診断IDと位置を確認する。anonymous enum、nested aggregate、initializerには入らない。

@@ -21895,8 +21895,11 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session, "int f(void); enum E { f }; int main(void) { return 0; }");
   expect_parse_fail(test_suite_session, "typedef int T; enum E { T }; int main(void) { return 0; }");
   expect_parse_fail(test_suite_session, "int main(void) { int x; enum E { x }; return 0; }");
-  expect_parse_fail(test_suite_session,
-      "enum Empty {}; int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "enum empty {};\n"
+      "int main(void) { return 0; }",
+      "E3064", 13);
   expect_parse_fail_at_column(
       test_suite_session,
       "enum value;\n"
