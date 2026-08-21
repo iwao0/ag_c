@@ -37,6 +37,11 @@ void psx_resolve_member_access_qual_type_in(
              base_shape.kind != PSX_TYPE_UNION) {
     return;
   }
+  if ((object_qual_type.qualifiers &
+       PSX_TYPE_QUALIFIER_ATOMIC) != 0) {
+    resolution->status = PSX_MEMBER_ACCESS_ATOMIC_BASE;
+    return;
+  }
   psx_type_shape_t object_shape = {0};
   if (!psx_semantic_type_table_describe(
           semantic_types, object_qual_type.type_id, &object_shape) ||

@@ -188,6 +188,12 @@ int psx_diagnose_syntax_typed_hir_rejection_in_context(
               diagnostics,
               DIAG_ERR_PARSER_ARROW_LHS_REQUIRES_STRUCT_PTR));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_ACCESS_ATOMIC_BASE:
+      ps_diag_ctx_in(
+          diagnostics, token, "member",
+          "atomic structure or union cannot be used directly as a "
+          "member-access base (C11 6.5.2.3p2-p3)");
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_NOT_FOUND:
       if (!failure->source_name || failure->source_name_length <= 0)
         return 0;

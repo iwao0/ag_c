@@ -38023,3 +38023,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新focusが対象checkpointまで完走したため、1354秒規模の`make test-wasm-js-api`と全E2Eは反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 次候補:
   - operand-hover領域の変更では新focusを使う。117秒の前半には基礎・macro群も含まれるため、さらに短縮する場合は共有helperのscopeを壊さずtest groupを明示分割する。compiler修正は引き続き通常サイズの少数Clang strict probeから実差分を選ぶ。
+
+### このセッション（続き1287）: Atomic aggregateの直接member accessを拒否した
+- 対象選定:
+  - 通常サイズの宣言・statement制約を既存coverageと少数のClang C11 strict probeで比較し、Atomic struct/unionへの直接`.`とpointer-to-Atomic structへの`->`だけが実差分になった。Clang `-std=c11 -pedantic-errors`はC11 6.5.2.3p2-p3の制約として拒否するが、ag_c NativeはAtomic load後の通常aggregateとして受理していた。
+  - Atomic aggregateをいったん通常aggregateへ読み出してからmemberへアクセスする形はClang/ag_cともに受理する合法対照として維持した。深い式、巨大入力、resource/security監査系へは広げていない。
+- 原因と変更:
+  - dot式の通常preflightがmember resolverより前にvalue decayを適用し、owner `QualType`のAtomic qualifierを落としていた。arrow側もpointeeのAtomic qualifierを共通member resolverで制約検査していなかった。
+  - dot式はmember解決までvalue decayを抑止してowner `QualType`を保持する。共通member resolverはstruct/union ownerのAtomic qualifierを専用`PSX_MEMBER_ACCESS_ATOMIC_BASE`へ戻し、syntax Typed HIRの専用rejectionからC11 6.5.2.3p2-p3付きE3064を`.`/`->`へ出す。
+  - `offsetof`の共通member lookupに同じstatusが来た場合は既存のinvalid-type rejectionへ統合した。design invariantはAtomic qualifier検査、dot decay抑止、専用status/rejection、構造化診断経路を固定し、診断文言のexact matchにはしていない。
+- coverage:
+  - parser unitへAtomic struct dot、Atomic union dot、pointer-to-Atomic struct arrowの3負例をE3064で追加し、通常structへ読み出した後のmember accessを正例に追加した。
+  - should_rejectへ`atomic_struct_member_access`、`atomic_union_member_access`、`atomic_struct_pointer_member_access`を追加し、Native/Wasm共用compile-fail registryへE3064で登録した。differential coverage表とfixture一覧も更新した。
+- 確認:
+  - negative 3件はhost Clang `-std=c11 -pedantic-errors`、ag_c Native、Wasm objectがすべて拒否し、Native/Wasmは全件`.`/`->` token上のE3064で一致した。
+  - 既存`atomic_aggregate_value_boundaries.c`はClang strict、ag_c Native、Wasm objectがすべて受理し、Atomic aggregateを通常aggregateへ読み出す合法境界を維持した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.70秒 / user 3.03秒 / sys 0.23秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.30秒 / user 11.66秒 / sys 1.51秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.13秒 / user 0.75秒 / sys 0.46秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/test_parser`と`make -j4 build/ag_c_wasm build/test_e2e`はwarningなしで成功した。
+- 未実施:
+  - 対象negative 3件を3 compiler、positiveを3 compilerで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - Atomic aggregateの直接member accessは共通resolverで閉じた。次も通常サイズの別の宣言・statement制約を少数のClang strict probeから選び、長時間suiteは対応するfocused gateがない場合だけ追加を検討する。

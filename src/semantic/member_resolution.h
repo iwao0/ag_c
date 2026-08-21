@@ -7,6 +7,7 @@
 typedef enum {
   PSX_MEMBER_ACCESS_OK = 0,
   PSX_MEMBER_ACCESS_INVALID_BASE,
+  PSX_MEMBER_ACCESS_ATOMIC_BASE,
   PSX_MEMBER_ACCESS_NOT_FOUND,
 } psx_member_access_status_t;
 

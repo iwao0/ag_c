@@ -20409,6 +20409,19 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session, "int main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
   expect_parse_fail(test_suite_session,
       "int main() { struct S { int x; } s={0}; return s.y; }");
+  expect_parse_fail_with_message(test_suite_session,
+      "struct S { int value; }; _Atomic(struct S) value=(struct S){1}; "
+      "int main(void){ return value.value; }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "union U { int value; }; _Atomic(union U) value=(union U){1}; "
+      "int main(void){ return value.value; }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "struct S { int value; }; _Atomic(struct S) value=(struct S){1}; "
+      "int main(void){ _Atomic(struct S) *pointer=&value; "
+      "return pointer->value; }", "E3064");
+  expect_parse_ok(test_suite_session,
+      "struct S { int value; }; _Atomic(struct S) value=(struct S){1}; "
+      "int main(void){ struct S loaded=value; return loaded.value-1; }");
   expect_parse_fail(test_suite_session, "int main() { int x; int *p=&x; return *(void *)p; }"); // void* deref
   expect_parse_fail(test_suite_session, "int main(void) { int *p=0; return -p; }");
   expect_parse_fail(test_suite_session, "int main(void) { int *p=0; return __real__ p; }");

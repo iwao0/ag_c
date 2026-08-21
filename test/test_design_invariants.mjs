@@ -4879,6 +4879,12 @@ if (!/\bpsx_qual_type_t\s+base_object_qual_type\s*;/.test(
     !/object_qual_type\.qualifiers/.test(
       memberResolutionSource,
     ) ||
+    !/object_qual_type\.qualifiers\s*&\s*[^)]*PSX_TYPE_QUALIFIER_ATOMIC[^]*?resolution->status\s*=\s*PSX_MEMBER_ACCESS_ATOMIC_BASE/.test(
+      memberQualTypeCore[0],
+    ) ||
+    !/PSX_MEMBER_ACCESS_ATOMIC_BASE/.test(
+      memberResolutionHeader,
+    ) ||
     /\bps_type_find_aggregate_object_type\s*\(/.test(
       memberResolutionSource,
     ) ||
@@ -6098,6 +6104,16 @@ const syntaxTypedHirResolutionSource = await readFile(
   "src/semantic/syntax_typed_hir_resolution.c",
   "utf8",
 );
+if (!/resolve_direct_member_access\s*\([^]*?suppress_value_decay_depth\+\+[^]*?preflight_direct_expression\s*\([^]*?suppress_value_decay_depth--[^]*?PSX_MEMBER_ACCESS_ATOMIC_BASE[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_ACCESS_ATOMIC_BASE/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_ACCESS_ATOMIC_BASE\s*:[^]*?ps_diag_ctx_in\s*\([^]*?return\s+1\s*;/.test(
+      semanticTreeResolutionSource,
+    )) {
+  throw new Error(
+    "atomic aggregate member access must preserve the owner QualType until semantic rejection",
+  );
+}
 if (!/if\s*\(\s*declaration->is_typedef\s*\)\s*\{[^]*?if\s*\(\s*initializer->has_initializer\s*\)\s*\{[^]*?ps_diag_ctx_in\s*\([^]*?return\s+0\s*;[^]*?psx_runtime_declarator_application_t\s+application/.test(
       syntaxTypedHirResolutionSource,
     ) ||

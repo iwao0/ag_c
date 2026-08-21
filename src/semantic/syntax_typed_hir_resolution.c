@@ -2243,7 +2243,8 @@ static int resolve_direct_offsetof_query(
           context->semantic_context, current_type,
           designator->member_name, designator->member_name_len, 0,
           &member);
-      if (member.status == PSX_MEMBER_ACCESS_INVALID_BASE)
+      if (member.status == PSX_MEMBER_ACCESS_INVALID_BASE ||
+          member.status == PSX_MEMBER_ACCESS_ATOMIC_BASE)
         return note_direct_semantic_rejection(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
@@ -2637,12 +2638,19 @@ static int resolve_direct_member_access(
   if (!context || !access || !access->base.lhs || !resolution)
     return 0;
   psx_qual_type_t base_type;
-  int base_resolved =
-      !access->from_pointer && require_lvalue_object
-          ? preflight_direct_lvalue(
-                context, access->base.lhs, &base_type)
-          : preflight_direct_expression(
-                context, access->base.lhs, &base_type);
+  int base_resolved = 0;
+  if (!access->from_pointer && require_lvalue_object) {
+    base_resolved = preflight_direct_lvalue(
+        context, access->base.lhs, &base_type);
+  } else if (!access->from_pointer) {
+    context->suppress_value_decay_depth++;
+    base_resolved = preflight_direct_expression(
+        context, access->base.lhs, &base_type);
+    context->suppress_value_decay_depth--;
+  } else {
+    base_resolved = preflight_direct_expression(
+        context, access->base.lhs, &base_type);
+  }
   if (!base_resolved) return 0;
   if (psx_resolve_member_hir_node_spec_in(
       context->semantic_context, base_type,
@@ -2655,6 +2663,12 @@ static int resolve_direct_member_access(
         access->from_pointer
             ? PSX_SYNTAX_TYPED_HIR_REJECTION_ARROW_BASE_NOT_AGGREGATE_POINTER
             : PSX_SYNTAX_TYPED_HIR_REJECTION_DOT_BASE_NOT_AGGREGATE,
+        &access->base);
+  if (resolution->member.status ==
+      PSX_MEMBER_ACCESS_ATOMIC_BASE)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_ACCESS_ATOMIC_BASE,
         &access->base);
   if (resolution->member.status == PSX_MEMBER_ACCESS_NOT_FOUND)
     return note_direct_named_rejection(
