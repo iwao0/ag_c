@@ -39261,3 +39261,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - direct declaration constraintとsource tokenだけの変更を2 fixture、2 structured column、design invariantで直接確認するため、language-analysis、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。compound literal、VLA、parenthesized/nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`void_main_function_definition`と`c11_implicit_return_type`の単純function definition 2件だけをClang strictと比較し、return typeまたはfunction名token選択だけで閉じる場合に限る。old-style parameter、nested declarator、function pointer、CFG、deep expressionには入らない。
+
+### このセッション（続き1342）: 単純function definition制約の診断列を回帰固定した
+- 対象選定:
+  - 前回候補の`void_main_function_definition`と`c11_implicit_return_type`だけをClang C11 strict、Native、Wasmで比較した。
+  - old-style parameter、nested declarator、function pointer、CFG、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 2件ともNative/Wasmは既にClangと同じsource tokenを指していたため、compiler sourceの変更は不要だった。
+  - hosted `void main`はE3064とreturn type `void`のcolumn 1、implicit function return typeはE3088とfunction名先頭のcolumn 1をstructured diagnosticへ追加した。
+  - E3088は診断をrecordして解析を返す非fatal経路だったため、`expect_parse_fail_at_column`をfatal recovery後だけでなく通常return後にも同じrecord照合へ進めるよう修正した。既存fatal診断のfork isolation、code/column照合、失敗条件は維持する。
+  - differential coverage表へfunction returnのimplicit intがfunction名先頭を指す方針を追記した。void mainの戻り型source方針は既に記載済みだった。
+- 確認:
+  - 対象2 fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はそれぞれE3064と`void`、E3088と`implicit_return`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.63秒 / user 2.99秒 / sys 0.32秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。old-style parameter、nested declarator、function pointer、CFG、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`c11_implicit_int_objects`と`c11_block_implicit_int`の単純object declaration 2件だけをClang strictと比較し、宣言名token選択だけで閉じる場合に限る。複数declarator、initializer、typedef、old-style function、nested declaratorには入らない。

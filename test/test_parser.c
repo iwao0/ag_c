@@ -8616,7 +8616,6 @@ static void expect_parse_fail_at_column(
       token_t *head = tk_tokenize_ctx(
           test_tokenizer(test_suite_session), (char *)input);
       (void)resolve_test_program_hir_from(test_suite_session, head);
-      _exit(2);
     }
     diag_context_clear_fatal_recovery(diagnostics);
     int matches =
@@ -20365,6 +20364,17 @@ static void test_parse_invalid(
       "element_type values[2];\n"
       "int main(void) { return 0; }",
       "E3064", 20);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "void main(void) {\n"
+      "}",
+      "E3064", 1);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "implicit_return(void) {\n"
+      "  return 0;\n"
+      "}",
+      "E3088", 1);
   expect_parse_fail_at_column(
       test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
