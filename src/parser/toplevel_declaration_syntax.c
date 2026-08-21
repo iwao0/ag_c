@@ -90,30 +90,41 @@ outermost_function_parameters(
   return suffix ? suffix->parameters : NULL;
 }
 
-static int declarator_has_nonouter_identifier_list(
+static token_t *identifier_list_diagnostic_token(
+    const psx_parsed_function_parameters_t *parameters,
+    token_t *fallback) {
+  if (parameters && parameters->count > 0 &&
+      parameters->items[0].declarator.identifier)
+    return (token_t *)parameters->items[0].declarator.identifier;
+  return fallback;
+}
+
+static token_t *declarator_nonouter_identifier_list_token(
     const psx_parsed_declarator_t *declarator,
-    const psx_parsed_function_parameters_t *outermost) {
+    const psx_parsed_function_parameters_t *outermost,
+    token_t *fallback) {
   for (int i = 0;
        declarator && i < declarator->function_suffix_count; i++) {
     const psx_parsed_function_parameters_t *parameters =
         declarator->function_suffixes[i].parameters;
     if (parameters && parameters->is_identifier_list &&
         parameters != outermost)
-      return 1;
+      return identifier_list_diagnostic_token(parameters, fallback);
   }
-  return 0;
+  return NULL;
 }
 
-static int declarator_has_identifier_list(
-    const psx_parsed_declarator_t *declarator) {
+static token_t *declarator_identifier_list_token(
+    const psx_parsed_declarator_t *declarator,
+    token_t *fallback) {
   for (int i = 0;
        declarator && i < declarator->function_suffix_count; i++) {
     const psx_parsed_function_parameters_t *parameters =
         declarator->function_suffixes[i].parameters;
     if (parameters && parameters->is_identifier_list)
-      return 1;
+      return identifier_list_diagnostic_token(parameters, fallback);
   }
-  return 0;
+  return NULL;
 }
 
 static int token_can_follow_nondefinition_declarator(
@@ -176,11 +187,14 @@ int psx_parse_toplevel_declaration_head_syntax_with_context(
     psx_parsed_function_parameters_t *parameters =
         outermost_function_parameters(
             &declaration->declarators[0]);
-    if (declarator_has_nonouter_identifier_list(
-            &declaration->declarators[0], parameters)) {
+    token_t *identifier_list_token =
+        declarator_nonouter_identifier_list_token(
+            &declaration->declarators[0], parameters,
+            declaration->declarators[0].diagnostic_token);
+    if (identifier_list_token) {
       ps_diag_ctx_in(
           diagnostics(runtime_context),
-          declaration->declarators[0].diagnostic_token, "decl",
+          identifier_list_token, "decl",
           "an identifier list is only permitted in the outermost "
           "declarator of an old-style function definition");
       return 0;
@@ -230,10 +244,13 @@ int psx_finish_toplevel_declaration_syntax_with_context(
   for (;;) {
     psx_parsed_declarator_t *declarator =
         &declaration->declarators[declaration->declarator_count - 1];
-    if (declarator_has_identifier_list(declarator)) {
+    token_t *identifier_list_token =
+        declarator_identifier_list_token(
+            declarator, declarator->diagnostic_token);
+    if (identifier_list_token) {
       ps_diag_ctx_in(
           diagnostics(runtime_context),
-          declarator->diagnostic_token, "decl",
+          identifier_list_token, "decl",
           "an identifier list is only permitted in an old-style "
           "function definition");
       return 0;

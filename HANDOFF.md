@@ -38408,3 +38408,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象1fixtureと隣接4fixtureをClang strict/Native/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - `extern void`は式semantic方針が必要なため保留する。次も既存identifier/keyword tokenだけで閉じる通常サイズの宣言・statement制約を少数比較し、`_Alignas`受理方針とduplicate caseの式位置には入らない。
+
+### このセッション（続き1304）: old-style identifier-list宣言のE3064をparameter名へ移した
+- 対象選定:
+  - 旧形式function parameter制約の既存9fixtureをClang C11 strictとNativeで比較した。missing/extra/duplicate parameter、typedef名、initializer、static storage等の8件は既にidentifier、`=`、`static`位置で一致した。
+  - `int old_style(value);`だけはClangがidentifier-list先頭の`value`を指す一方、ag_cはfunction名`old_style`を指していた。隣接する`int (*old_style)(value);`もClangが`value`、ag_cが`old_style`を指す同じ差分だった。
+  - parserが保持するidentifier tokenの選択だけで閉じ、parameter型、declaration-list、式、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - function parameter syntaxはidentifier-list各項目の`declarator.identifier`を既に保持していたが、toplevel declaration syntaxの通常宣言拒否とnon-outer declarator拒否は真偽helperしか使わず、diagnostic sourceをfunction declarator名へ固定していた。
+  - 真偽helperを該当identifier-listの先頭parameter tokenを返す限定helperへ置き換え、通常宣言とnested declaratorの2分岐がそのtokenを使う。項目tokenがない回復状態では従来のfunction declarator tokenへfallbackする。
+  - identifier-list判定、old-style definitionの受理、parameter宣言適用、型形成、ABI順序、診断ID・文言は変更していない。design invariantは先頭identifier選択、fallback、2分岐でのsource利用を固定し、診断文言のexact matchにはしていない。
+- coverage:
+  - 既存`old_style_identifier_list_declaration`と`old_style_nested_identifier_list`がshould_reject正本とNative/Wasm共用compile-fail registryへ登録済みなのでfixtureは追加していない。differential coverage表へ通常/nestedのsource token境界を追記した。
+- 確認:
+  - 既存2fixtureはClang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3064を維持してClangと同じ`value`位置で一致した。
+  - 2項の通常/nested probe `(...first, second)`もClang strict、Native、Wasm objectがすべて先頭名`first`位置で一致した。
+  - duplicate identifierとstatic storageの既存対照はNativeで従来の`value`、`static`位置を維持した。positive正本`old_style_function_definition_boundaries`はClang strict、Native、Wasm objectがすべて受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.68秒 / user 3.11秒 / sys 0.24秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 14.02秒 / user 12.25秒 / sys 1.61秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.08秒 / user 0.76秒 / sys 0.42秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象2fixture、2項probe、隣接2対照、positive正本をClang strict/Native/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - old-style identifier-listの通常/nested宣言位置は閉じた。次も既存identifier/keyword tokenだけで閉じる通常サイズのdeclaration/statement制約を少数比較し、`extern void`、`_Alignas`受理方針、duplicate caseの式位置には入らない。

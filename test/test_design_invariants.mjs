@@ -7754,6 +7754,18 @@ if (!/PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST/.test(
     !/identifier list is only permitted in an old-style[^]*?function definition/.test(
       toplevelDeclarationSyntaxSource,
     ) ||
+    !/identifier_list_diagnostic_token\s*\([^]*?parameters->items\[0\]\.declarator\.identifier[^]*?return\s+fallback/.test(
+      toplevelDeclarationSyntaxSource,
+    ) ||
+    !/declarator_nonouter_identifier_list_token\s*\(/.test(
+      toplevelDeclarationSyntaxSource,
+    ) ||
+    !/declarator_identifier_list_token\s*\(/.test(
+      toplevelDeclarationSyntaxSource,
+    ) ||
+    (toplevelDeclarationSyntaxSource.match(
+      /ps_diag_ctx_in\(\s*diagnostics\(runtime_context\),\s*identifier_list_token/g,
+    )?.length ?? 0) < 2 ||
     !/primary_is_identifier_list/.test(
       `${declarationPipelineHeader}\n${declarationPipelineSource}`,
     ) ||
@@ -7782,7 +7794,7 @@ if (!/PSX_PARAMETER_TYPE_ALLOW_IDENTIFIER_LIST/.test(
       hirIrCallAbiSource,
     )) {
   throw new Error(
-    "old-style function definitions must resolve declaration lists in source order, preserve identifier-list ABI order, replay parameter bindings, share declaration specifiers, isolate declaration-list tags, promote their non-prototype function signature with DataLayout, and convert incoming values into declared parameter objects",
+    "old-style function definitions must preserve identifier tokens and declaration-list semantics through parsing, type formation, and ABI lowering",
   );
 }
 const parserDeclarationSyntaxSource = await readFile(
