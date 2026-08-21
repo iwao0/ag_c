@@ -21668,9 +21668,13 @@ static void test_parse_invalid(
       "_Atomic struct item *pointer;\n"
       "int main(void) { return 0; }",
       "E3064", 1);
-  expect_parse_fail(test_suite_session,
-      "struct flags { _Atomic unsigned int value : 3; }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct flags {\n"
+      "  _Atomic unsigned int value : 3;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 24);
   expect_parse_fail(test_suite_session,
       "struct flags { _Atomic(unsigned int) value : 3; }; "
       "int main(void) { return 0; }");
