@@ -39280,3 +39280,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。old-style parameter、nested declarator、function pointer、CFG、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`c11_implicit_int_objects`と`c11_block_implicit_int`の単純object declaration 2件だけをClang strictと比較し、宣言名token選択だけで閉じる場合に限る。複数declarator、initializer、typedef、old-style function、nested declaratorには入らない。
+
+### このセッション（続き1343）: implicit-int object宣言のE3088列を回帰固定した
+- 対象選定:
+  - 前回候補の`c11_implicit_int_objects`と`c11_block_implicit_int`だけをClang C11 strict、Native、Wasmで比較した。
+  - comma区切りの複数declarator、initializer、typedef、old-style function、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - file-scopeの`first;`・`second;`とblock-scopeの`static local;`はNative/Wasmが既にClangと同じ各identifierを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへ単一file-scope implicit-int objectのE3088 column 1と、storage classだけを持つblock objectのE3088 column 10を追加した。
+  - differential coverage表のE3088 source方針をfunction/file object先頭とstorage class直後のblock identifierまで明記した。受理/拒否、診断ID・文言は変更していない。
+- 確認:
+  - 対象2 fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasmはfile-scope 4/4診断で`first`・`second`、block-scope 2/2診断で`local`をE3088 sourceにした。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.65秒 / user 2.99秒 / sys 0.32秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。comma区切りの複数declarator、initializer、typedef、old-style function、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`file_scope_auto_object`と`file_scope_register_object`の単純file-scope storage class 2件だけをClang strictと比較し、storage keywordまたは宣言名token選択だけで閉じる場合に限る。function、thread-local、複数storage class、initializer、nested declaratorには入らない。

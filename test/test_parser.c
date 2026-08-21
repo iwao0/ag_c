@@ -20377,6 +20377,18 @@ static void test_parse_invalid(
       "E3088", 1);
   expect_parse_fail_at_column(
       test_suite_session,
+      "file_object;\n"
+      "int main(void) { return 0; }",
+      "E3088", 1);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int block_scope(void) {\n"
+      "  static local;\n"
+      "  return 0;\n"
+      "}",
+      "E3088", 10);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
   expect_parse_fail_at_column(
       test_suite_session,
