@@ -21822,8 +21822,13 @@ static void test_parse_invalid(
       "typedef struct Empty {} Empty;\n"
       "int main(void) { return 0; }",
       "E3064", 23);
-  expect_parse_fail(test_suite_session,
-      "int main(void) { struct Local {} value; return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  struct Local {} value;\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 17);
   expect_parse_fail(test_suite_session,
       "struct Check { _Static_assert(1, \"ok\"); }; "
       "int main(void) { return 0; }");
