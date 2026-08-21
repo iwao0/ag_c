@@ -20747,11 +20747,15 @@ static void test_parse_invalid(
       "_Atomic(int * restrict) invalid_pointer;\n"
       "int main(void) { return 0; }",
       "E3064", 1);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* An atomic type specifier cannot name an atomic type. */\n"
       "_Atomic(_Atomic(int)) value;\n"
-      "int main(void) { return 0; }",
-      "E3064", 1);
+      "\n"
+      "int main(void) {\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 2, 1);
   expect_parse_fail_at_column(
       test_suite_session,
       "_Atomic(int * _Atomic) pointer;\n"
