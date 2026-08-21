@@ -20627,6 +20627,13 @@ static void test_parse_invalid(
       "E3064", 6);
   expect_parse_fail_at_column(
       test_suite_session,
+      "struct holder {\n"
+      "  int * _Atomic restrict pointer;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 7);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int read_value(int * _Atomic restrict pointer);",
       "E3064", 20);
   expect_parse_fail_at_column(
