@@ -427,6 +427,7 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
   query->base.tok = op_tok;
 
   if (curtok(ctx)->kind == TK_LPAREN) {
+    token_t *lparen_tok = curtok(ctx);
     psx_type_name_ref_t captured = {0};
     token_t *type_end = NULL;
     if (capture_type_name_ref_at(
@@ -452,7 +453,8 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
       return (node_t *)query;
     }
 
-    query->operand_token = curtok(ctx)->next;
+    query->operand_token = lparen_tok->next;
+    query->invalid_type_token = lparen_tok;
     set_curtok(ctx, query->operand_token);
     query->operand = expr_internal_ctx(ctx);
     tk_expect_ctx(ctx->tokenizer_context, ')');
@@ -461,6 +463,7 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
   }
 
   query->operand_token = curtok(ctx);
+  query->invalid_type_token = query->operand_token;
   query->operand = unary_ctx(ctx);
   return (node_t *)query;
 }

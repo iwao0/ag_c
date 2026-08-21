@@ -118,6 +118,7 @@ typedef struct {
   node_t base;
   node_t *operand;
   token_t *operand_token;
+  token_t *invalid_type_token;
   psx_type_name_ref_t type_name;
   unsigned char is_type_name;
 } node_sizeof_query_t;

@@ -18171,6 +18171,9 @@ static void test_expr_sizeof(
   ASSERT_TRUE(parenthesized_query->operand_token != NULL);
   ASSERT_EQ(TK_IDENT, parenthesized_query->operand_token->kind);
   ASSERT_EQ(7, parenthesized_query->operand_token->byte_offset);
+  ASSERT_TRUE(parenthesized_query->invalid_type_token != NULL);
+  ASSERT_EQ(TK_LPAREN, parenthesized_query->invalid_type_token->kind);
+  ASSERT_EQ(6, parenthesized_query->invalid_type_token->byte_offset);
   ASSERT_TRUE(parenthesized_query->operand != NULL);
   ASSERT_EQ(ND_ADD, parenthesized_query->operand->kind);
   ASSERT_TRUE(parenthesized_query->operand_token !=
@@ -18187,6 +18190,8 @@ static void test_expr_sizeof(
   ASSERT_TRUE(unparenthesized_query->operand_token != NULL);
   ASSERT_EQ(TK_MUL, unparenthesized_query->operand_token->kind);
   ASSERT_EQ(7, unparenthesized_query->operand_token->byte_offset);
+  ASSERT_TRUE(unparenthesized_query->invalid_type_token ==
+              unparenthesized_query->operand_token);
 
   node_t *type_name_syntax =
       parse_expr_input_with_existing_locals(
@@ -18195,6 +18200,8 @@ static void test_expr_sizeof(
   ASSERT_EQ(ND_SIZEOF_QUERY, type_name_syntax->kind);
   ASSERT_TRUE(((node_sizeof_query_t *)type_name_syntax)->is_type_name);
   ASSERT_TRUE(((node_sizeof_query_t *)type_name_syntax)->operand_token == NULL);
+  ASSERT_TRUE(((node_sizeof_query_t *)type_name_syntax)->invalid_type_token ==
+              NULL);
 
   assert_test_program_return_hir_number(test_suite_session,
       "int main() { int x; return sizeof(x); }", 4);
@@ -20103,21 +20110,21 @@ static void test_parse_invalid(
       test_suite_session,
       "struct incomplete; int main(void) { "
       "return sizeof(*(struct incomplete *)0); }",
-      "E3117", 51);
+      "E3117", 50);
   expect_parse_fail_at_column(
       test_suite_session,
       "extern int values[]; int main(void) { return sizeof(values); }",
-      "E3117", 53);
+      "E3117", 52);
   expect_parse_fail_at_column(
       test_suite_session,
       "struct packet { int count; unsigned char payload[]; }; "
       "int main(void) { struct packet *packet=0; "
       "return sizeof(packet->payload); }",
-      "E3117", 112);
+      "E3117", 111);
   expect_parse_fail_at_column(
       test_suite_session,
       "int function(void); int main(void) { return sizeof(function); }",
-      "E3117", 52);
+      "E3117", 51);
   expect_parse_fail_at_column(
       test_suite_session,
       "struct incomplete; int main(void) { "
@@ -20390,6 +20397,59 @@ static void test_parse_invalid(
       "E3112", 18);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) { return (int)_Alignof(void); }",
+      "E3117", 30);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return (int)_Alignof(int(void)); }",
+      "E3117", 30);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct incomplete;\n"
+      "int main(void) { return (int)_Alignof(struct incomplete); }",
+      "E3117", 30);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  return (int)sizeof(int(void));\n"
+      "}",
+      "E3117", 15);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct incomplete;\n"
+      "int main(void) {\n"
+      "  return (int)sizeof(struct incomplete);\n"
+      "}",
+      "E3117", 15);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int function(void);\n"
+      "int main(void) {\n"
+      "  return (int)sizeof(function);\n"
+      "}",
+      "E3117", 21);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct incomplete;\n"
+      "int main(void) {\n"
+      "  return (int)sizeof(*(struct incomplete *)0);\n"
+      "}",
+      "E3117", 21);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "extern int values[];\n"
+      "int main(void) {\n"
+      "  return (int)sizeof(values);\n"
+      "}",
+      "E3117", 21);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  return (int)sizeof(int[]);\n"
+      "}",
+      "E3117", 15);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) {\n"
       "  int values[2];\n"
       "  int *first = &values[0];\n"
@@ -20533,6 +20593,32 @@ static void test_parse_invalid(
       "  return left;\n"
       "}",
       "E3062", 25);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int value = 1;\n"
+      "  int *pointer = &(value = 2);\n"
+      "  return pointer != 0;\n"
+      "}",
+      "E3112", 18);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int left = 1;\n"
+      "  int right = 2;\n"
+      "  int *pointer = &(left, right);\n"
+      "  return pointer != 0;\n"
+      "}",
+      "E3112", 18);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  int left = 1;\n"
+      "  int right = 2;\n"
+      "  int *pointer = &(left ? left : right);\n"
+      "  return pointer != 0;\n"
+      "}",
+      "E3112", 18);
   expect_parse_fail_at_column(
       test_suite_session,
       "int main(void) { int x = 5; return x[0]; }",

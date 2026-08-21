@@ -39006,3 +39006,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象15 fixtureの3系統比較、15個のstructured column、変更対象のparser gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。lvalue conversion全体、pointer compound arithmetic、complex演算全体、複合式、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`address_of_assignment_result`、`address_of_comma_result`、`address_of_conditional_result`の単純address-of 3件だけをClang strictと比較し、`&`またはoperand token選択だけで閉じる場合に限る。bit-field、register、aggregate return、deep expressionには入らない。
+
+### このセッション（続き1330）: 括弧付き`sizeof` expressionのE3117を開き括弧へ移した
+- 対象選定:
+  - 前回候補の`address_of_{assignment,comma,conditional}_result`に続けて、`alignof_{void,function,incomplete}_type`と`sizeof_{function_type,incomplete_type,function_expression,incomplete_expression,incomplete_array_expression,incomplete_array_type}`の浅い12 fixtureだけをClang C11 strict、Native、Wasmで比較した。
+  - address-of 3件は`&`、`_Alignof` 3件はkeyword、`sizeof` type-name 3件はkeywordで既に一致していた。括弧付き`sizeof` expression 3件だけ、Clangは開き括弧、Native/Wasmは括弧内operand先頭を指していた。
+  - bit-field、register、aggregate return、VLA、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - `node_sizeof_query_t::operand_token`は構文上のoperand開始を保持し、そのままE3117にも使われていた。括弧付きexpression-formだけ開き括弧を保存する`invalid_type_token`を追加し、semantic rejectionは専用tokenを参照するようにした。
+  - 括弧なしexpression-formでは`invalid_type_token == operand_token`、type-name formでは両方NULLのままoperator sourceへfallbackする。operand構文、型問い合わせの受理/拒否、E3117 ID・文言、bit-fieldのE3118 source、VLA評価は変更していない。
+- coverage:
+  - structured diagnosticへaddress-of 3列、`_Alignof` 3列、`sizeof` 6列を追加した。括弧付きfunction/incomplete record/incomplete array expressionは開き括弧、function/incomplete record/incomplete array type-nameは`sizeof` keywordを固定した。
+  - 既存のincomplete record/array expression、flexible array member、function expressionのE3117期待値も開き括弧へ更新した。Syntax境界とdesign invariantではoperand開始と診断tokenを別々に保持することを固定した。
+  - differential coverage表へ括弧付きexpression、括弧なしexpression、type-name formの3 source方針を追記した。
+- 確認:
+  - 対象12 fixtureはClang strict、Native、Wasmの36/36経路がexit 1だった。修正対象3件のNative/WasmはE3117と開き括弧を指し、type-name 3件は`sizeof` keywordを維持した。
+  - 追加controlの`sizeof(packet->payload)`と括弧なし`sizeof function`はClang strict、Native、Wasmの6/6経路がexit 1だった。前者は開き括弧、後者は`function` operandを3系統で指した。probeファイルは確認後に削除した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_language_analysis`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.65秒 / user 3.05秒 / sys 0.27秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.33秒 / user 11.57秒 / sys 1.53秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.32秒 / user 0.76秒 / sys 0.46秒**。
+  - `git diff --check`も成功した。独立gateは並列実行した。
+- 未実施:
+  - 対象fixture、2 control、12個のstructured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。bit-field、register、aggregate return、VLA、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`cast_pointer_to_double`、`cast_double_to_pointer`、`cast_void_expression_to_integer`の単純cast 3件だけをClang strictと比較し、castまたはoperand token選択だけで閉じる場合に限る。aggregate cast、pointer qualifier体系、complex、deep expressionには入らない。

@@ -2492,7 +2492,7 @@ static int resolve_direct_type_query(
       if (queried_qual_type.type_id != PSX_TYPE_ID_INVALID &&
           !validate_direct_type_query_type(
               context, syntax, queried_qual_type, 1, 0, NULL,
-              query->operand_token))
+              query->invalid_type_token))
         return 0;
       if (!resolved && operand->kind == ND_STRING) {
         const node_string_t *string =
