@@ -20483,6 +20483,13 @@ static void test_parse_invalid(
       "E3064", 15);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) {\n"
+      "  extern int external_value = 3;\n"
+      "  return external_value;\n"
+      "}",
+      "E3064", 14);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
   expect_parse_fail_at_column(
       test_suite_session,
