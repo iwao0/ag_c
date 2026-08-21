@@ -39570,3 +39570,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較と2 structured columnsで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member layout、anonymous aggregate、bit-field、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`parameter_extern_storage`の単純なprototype parameter 1件だけをClang strictと比較し、`extern` keywordのtoken選択だけで閉じる場合に限る。old-style parameter、array parameter、parameter adjustment、nested declaratorには入らない。
+
+### このセッション（続き1359）: prototype parameterの`extern` E3064列を回帰固定した
+- 対象選定:
+  - 前回候補の`parameter_extern_storage`だけをClang C11 strict、Native、Wasmで比較した。
+  - old-style parameter、array parameter、parameter adjustment、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Native/Wasmは既にClangと同じ`extern` keywordを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへE3064 column 14を追加した。
+  - prototype parameterのstorage-class適用制約だけを固定し、受理/拒否、型形成、parameter adjustment、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1だった。Native/Wasm 2/2経路はE3064と`extern`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.63秒 / user 3.02秒 / sys 0.31秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較と1 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。old-style parameter、array parameter、parameter adjustment、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`static_parameter`の単純なfunction definition parameter 1件だけをClang strictと比較し、`static` keywordのtoken選択だけで閉じる場合に限る。function body、old-style parameter、array parameter、parameter lowering、nested declaratorには入らない。
