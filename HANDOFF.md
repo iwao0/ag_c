@@ -40424,3 +40424,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。呼び出し、function pointer、member access、initializer、width式派生、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`bool_bitfield_too_wide` fixtureの単一member `_Bool enabled : 2;`だけをClang strict、Native、Wasmで比較し、型幅を超える単一定数bit-field幅の診断IDと位置を確認する。comma/nonconstant/overflow幅式、member access、initializerには入らない。
+
+### このセッション（続き1405）: _Bool bit-field幅超過のE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`bool_bitfield_too_wide` fixtureにある単一member `_Bool value : 2;`だけをClang C11 strict、Native、Wasmで比較した。
+  - comma/nonconstant/overflow幅式、member access、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともbit-field member名`value`を指し、Clangは3行9列、Native/WasmはE3064と実トークン`value`を報告した。
+  - bit-field診断群にある既存の非構造化`expect_parse_fail`をfixture同様の改行とインデントを持つE3064 column 9 assertionへ強化し、`_Bool` type specifier、幅定数、colonへ診断がずれないことを固定した。別のaggregate boundary受理拒否testは変更していない。
+  - compiler sourceは変更せず、受理/拒否、`_Bool` identity、bit-field layout、width評価、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`value`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.83秒 / user 3.03秒 / sys 0.31秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。comma/nonconstant/overflow幅式、member access、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`named_zero_width_bitfield` fixtureの単一member `unsigned int value : 0;`だけをClang strict、Native、Wasmで比較し、名前付きzero-width制約の診断IDと位置を確認する。unnamed zero-width、非定数幅、member access、initializerには入らない。
