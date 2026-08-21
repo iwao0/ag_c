@@ -20232,6 +20232,40 @@ static void test_parse_invalid(
       "int helper(void) { _Noreturn int main(void); return 0; } "
       "int main(void) { return helper(); }", "E3064");
   expect_parse_fail_with_message(test_suite_session,
+      "void main(void) {}", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "const int main(void);", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "_Atomic int main(void) { return 0; }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(long argc, char **argv) { return argc + (argv != 0); }",
+      "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(_Atomic int argc, char **argv) { "
+      "return argc + (argv != 0); }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(int argc, int **argv) { return argc + (argv != 0); }",
+      "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(int argc, char *volatile *argv) { "
+      "return argc + (argv != 0); }", "E3064");
+  expect_parse_fail_with_message(test_suite_session,
+      "int helper(void) { int main(long, char **); return 0; } "
+      "int main(void) { return helper(); }", "E3064");
+  expect_parse_ok(test_suite_session,
+      "typedef int integer; typedef char character; "
+      "integer main(volatile integer argc, "
+      "const character *const *argv) { "
+      "return argc + (argv != 0); }");
+  expect_parse_ok(test_suite_session,
+      "int main(int argc, char **restrict argv) { "
+      "return argc + (argv != 0); }");
+  expect_parse_ok(test_suite_session,
+      "int main(int argc) { return argc; }");
+  expect_parse_ok(test_suite_session,
+      "int main(int argc, char **argv, char **environment) { "
+      "return argc + (argv != 0) + (environment != 0); }");
+  expect_parse_fail_with_message(test_suite_session,
       "static int internal_object; "
       "extern inline int read_object(void) { return internal_object; }",
       "E3064");
@@ -20943,7 +20977,9 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok_without_message(test_suite_session, "int main(void){ int a[4]; int *p=a; return *(p + 2147483647); }",
                                   "W3023");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ return 1 << 32; }", "W3014");
-  expect_parse_ok_with_message(test_suite_session, "long main(void){ return 1L << 64; }", "W3014");
+  expect_parse_ok_with_message(test_suite_session,
+      "long shift_warning(void){ return 1L << 64; } "
+      "int main(void){ return (int)shift_warning(); }", "W3014");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ return 1 / 0; }", "W3015");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ return 1 % 0; }", "W3015");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ return f(); } int f(void){ return 1; }", "W3016");
@@ -20952,7 +20988,9 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok_without_message(test_suite_session, "int main(void){ return 0; }", "W3001");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ int x=2.0; return 0; }", "W3010");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ int x; x=2.0; return 0; }", "W3010");
-  expect_parse_ok_without_message(test_suite_session, "double main(void){ return 1.5; }", "W3010");
+  expect_parse_ok_without_message(test_suite_session,
+      "double conversion_warning(void){ return 1.5; } "
+      "int main(void){ return (int)conversion_warning(); }", "W3010");
   expect_parse_ok_without_message(test_suite_session, "int f(int x){ return x; } int main(void){ return f(3); }", "W3004");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ int x=7; return x; }", "W3004");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ static int x; return x; }", "W3004");

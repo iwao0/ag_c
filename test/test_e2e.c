@@ -4333,6 +4333,30 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "noreturn_main_block_declaration.c",
      "E3064"},
+    {"void_main_function_definition_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "void_main_function_definition.c",
+     "E3064"},
+    {"qualified_main_function_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "qualified_main_function_declaration.c",
+     "E3064"},
+    {"invalid_main_first_parameter_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "invalid_main_first_parameter.c",
+     "E3064"},
+    {"invalid_main_second_parameter_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "invalid_main_second_parameter.c",
+     "E3064"},
+    {"qualified_main_second_parameter_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "qualified_main_second_parameter.c",
+     "E3064"},
+    {"invalid_main_block_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "invalid_main_block_declaration.c",
+     "E3064"},
     {"inline_internal_object_reference_rejected",
      "fixture:test/fixtures/should_reject/"
      "inline_internal_object_reference.c",

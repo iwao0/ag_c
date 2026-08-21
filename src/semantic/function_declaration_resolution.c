@@ -6,6 +6,56 @@
 
 #include <string.h>
 
+static int is_hosted_main_name(const char *name, int name_len) {
+  return name_len == 4 && memcmp(name, "main", 4) == 0;
+}
+
+static int is_unqualified_signed_int(
+    const psx_semantic_type_table_t *types,
+    psx_qual_type_t type) {
+  psx_type_shape_t shape = {0};
+  return type.qualifiers == PSX_TYPE_QUALIFIER_NONE &&
+         psx_semantic_type_table_describe(types, type.type_id, &shape) &&
+         shape.kind == PSX_TYPE_INTEGER &&
+         shape.integer_kind == PSX_INTEGER_KIND_INT &&
+         !shape.is_unsigned;
+}
+
+static int qualifiers_are_at_most_const(unsigned int qualifiers) {
+  return qualifiers == PSX_TYPE_QUALIFIER_NONE ||
+         qualifiers == PSX_TYPE_QUALIFIER_CONST;
+}
+
+static int is_hosted_main_second_parameter(
+    const psx_semantic_type_table_t *types,
+    psx_qual_type_t parameter) {
+  psx_type_shape_t outer_pointer = {0};
+  if (parameter.qualifiers != PSX_TYPE_QUALIFIER_NONE ||
+      !psx_semantic_type_table_describe(
+          types, parameter.type_id, &outer_pointer) ||
+      outer_pointer.kind != PSX_TYPE_POINTER) {
+    return 0;
+  }
+  psx_qual_type_t inner_pointer =
+      psx_semantic_type_table_base(types, parameter.type_id);
+  psx_type_shape_t inner_pointer_shape = {0};
+  if (!qualifiers_are_at_most_const(inner_pointer.qualifiers) ||
+      !psx_semantic_type_table_describe(
+          types, inner_pointer.type_id, &inner_pointer_shape) ||
+      inner_pointer_shape.kind != PSX_TYPE_POINTER) {
+    return 0;
+  }
+  psx_qual_type_t character =
+      psx_semantic_type_table_base(types, inner_pointer.type_id);
+  psx_type_shape_t character_shape = {0};
+  return qualifiers_are_at_most_const(character.qualifiers) &&
+         psx_semantic_type_table_describe(
+             types, character.type_id, &character_shape) &&
+         character_shape.kind == PSX_TYPE_INTEGER &&
+         character_shape.integer_kind == PSX_INTEGER_KIND_CHAR &&
+         character_shape.is_plain_char;
+}
+
 void psx_resolve_function_declaration(
     const psx_function_declaration_resolution_request_t *request,
     psx_function_declaration_resolution_t *resolution) {
@@ -31,11 +81,31 @@ void psx_resolve_function_declaration(
       return_type.type_id == PSX_TYPE_ID_INVALID) {
     return;
   }
-  if ((request->is_inline || request->is_noreturn) &&
-      request->name_len == 4 &&
-      memcmp(request->name, "main", 4) == 0) {
+  int is_hosted_main =
+      is_hosted_main_name(request->name, request->name_len);
+  if ((request->is_inline || request->is_noreturn) && is_hosted_main) {
     resolution->status =
         PSX_FUNCTION_DECLARATION_MAIN_FUNCTION_SPECIFIER;
+    return;
+  }
+  if (is_hosted_main && !is_unqualified_signed_int(types, return_type)) {
+    resolution->status = PSX_FUNCTION_DECLARATION_MAIN_RETURN_TYPE;
+    return;
+  }
+  if (is_hosted_main && function_shape.parameter_count > 0 &&
+      !is_unqualified_signed_int(
+          types, psx_semantic_type_table_parameter(
+                     types, request->function_qual_type.type_id, 0))) {
+    resolution->status =
+        PSX_FUNCTION_DECLARATION_MAIN_FIRST_PARAMETER_TYPE;
+    return;
+  }
+  if (is_hosted_main && function_shape.parameter_count > 1 &&
+      !is_hosted_main_second_parameter(
+          types, psx_semantic_type_table_parameter(
+                     types, request->function_qual_type.type_id, 1))) {
+    resolution->status =
+        PSX_FUNCTION_DECLARATION_MAIN_SECOND_PARAMETER_TYPE;
     return;
   }
   const psx_scope_declaration_t *existing =

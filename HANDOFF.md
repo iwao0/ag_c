@@ -37910,3 +37910,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象negative 2件を3 compiler、positiveを4経路で直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深い式、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - C11 6.7.4p3の内部リンケージ参照は共通preflightで閉じた。modifiable static localはClang strictとの差分にならないため保留し、次は通常サイズの宣言または型制約を少数のClang strict probeから選ぶ。関数bodyの深い式追跡やinline codegenへは広げない。
+
+### このセッション（続き1282）: hosted `main`の戻り型・引数型制約を追加した
+- 対象選定:
+  - 通常サイズの宣言・型制約を少数のClang C11 strict probeで比較した。function storage、重複type specifier、parameter storage、aggregate member重複、initializer適用文脈、空宣言は既存coverage済みまたはag_cと一致したため変更していない。
+  - `void`/`long`/qualified/Atomic return、`long`/`unsigned int`/enum/Atomicの第1引数、`int **`/signed char **/pointer深度違い/内側volatile・restrict・Atomicの第2引数をClang strictは拒否したが、ag_cはprototype・definition・block-scope function declarationで受理していた。
+  - Clang strictが受理する`static int main`、1引数形、3引数形、typedef経由の`int`/`char`、第1引数や第2引数最外層のCVR修飾、内側`const`は合法対照にした。`const char *const *restrict`だけは内側`const`と最外層`restrict`を個別に書いた場合と異なりClangが拒否する実装依存の組合せだった。canonical function parameter型ではC11 6.7.6.3p15に従い最外層CVRを消すため、構文修飾の別伝播が必要なこの組合せは今回へ混ぜていない。
+- 原因と変更:
+  - 共通function declaration resolverはcanonical function型を既に取得していたが、名前が`main`の場合のreturn/parameter型をsymbol登録前に検査していなかった。
+  - resolverへhosted `main`名、修飾なしsigned `int`、第2引数のcanonical pointer二段とplain `char` identityを検査する小さいhelperを追加した。return、第1引数、第2引数は専用statusへ分け、prototype・definition・block declarationの共通pipelineからそれぞれC11 5.1.2.2.1付きE3064を`main` tokenへ出す。
+  - 第2引数は最外層Atomicを拒否し、内側pointerとchar leafは無修飾または`const`だけを許す。plain `char` identityを確認するためsigned/unsigned charは混同しない。parameter数そのものはClangの実装定義形を維持するため制限せず、存在する第1・第2引数だけを検査する。
+  - 既存warning testで制約違反だった`long main`/`double main`は、同じwarning対象式を通常のhelper関数へ移し、合法な`int main`から呼ぶ形に直した。
+- coverage:
+  - parser unitへreturn 3形、第1引数2形、第2引数2形、block declaration 1形のE3064負例を追加した。typedef/CVR/内側constの2引数形、最外層restrict、1引数、3引数を合法対照に追加した。
+  - should_rejectへ`void_main_function_definition`、`qualified_main_function_declaration`、`invalid_main_first_parameter`、`invalid_main_second_parameter`、`qualified_main_second_parameter`、`invalid_main_block_declaration`を追加し、Native/Wasm compile-fail registryへE3064で登録した。
+  - design invariantはmain名判定、3専用status、canonical pointer二段/plain char判定、function登録前検査を固定する。
+- 確認:
+  - negative 6件はhost Clang `-std=c11 -pedantic-errors`、ag_c Native、Wasm objectがすべて拒否し、Native/Wasmは全件E3064で一致した。第2引数違反の診断はfixture 1行目の`main` tokenへ出ることも直接確認した。
+  - typedef、最外層volatile、内側constを使う合法な2引数形はClang strict、ag_c Native compile/link/run、WAT compile/assemble/validate、Wasm object compile/validateがすべて成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、最終実行は**real 3.59秒 / user 3.03秒 / sys 0.24秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.62秒 / user 11.64秒 / sys 1.52秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、最終実行は**real 3.44秒 / user 0.75秒 / sys 0.43秒**。
+  - `/usr/bin/time -p make wasm-selfhost-api` = **real 44.22秒 / user 42.64秒 / sys 0.94秒**。`make -q wasm-selfhost-api`もcurrentを確認し、`build/test_e2e`はwarningなしでビルドした。
+- 未実施:
+  - negative 6件を3 compiler、positiveを4経路で直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - hosted `main`のcanonical return/第1・第2引数型は共通resolverで閉じた。次もClang固有の複合修飾構文へ広げず、通常サイズの別の宣言制約を少数probeから選ぶ。

@@ -4346,11 +4346,41 @@ if (!/case\s+PSX_DECL_FUNCTION:[^]*?resolution->function\s*=\s*declaration->payl
     "semantic function-symbol resolution must use the passed semantic context",
   );
 }
-if (!/\(request->is_inline\s*\|\|\s*request->is_noreturn\)[^]*?request->name_len\s*==\s*4[^]*?memcmp\s*\(\s*request->name\s*,\s*"main"\s*,\s*4\s*\)[^]*?PSX_FUNCTION_DECLARATION_MAIN_FUNCTION_SPECIFIER[^]*?return\s*;/.test(
+if (!/static int is_hosted_main_name[^]*?name_len\s*==\s*4[^]*?memcmp\s*\(\s*name\s*,\s*"main"\s*,\s*4\s*\)/.test(
+      functionDeclarationResolutionSource,
+    ) ||
+    !/\(request->is_inline\s*\|\|\s*request->is_noreturn\)\s*&&\s*is_hosted_main[^]*?PSX_FUNCTION_DECLARATION_MAIN_FUNCTION_SPECIFIER[^]*?return\s*;/.test(
       functionDeclarationResolutionSource,
     )) {
   throw new Error(
     "hosted main function specifiers must be rejected before function registration",
+  );
+}
+for (const mainTypeStatus of [
+  "PSX_FUNCTION_DECLARATION_MAIN_RETURN_TYPE",
+  "PSX_FUNCTION_DECLARATION_MAIN_FIRST_PARAMETER_TYPE",
+  "PSX_FUNCTION_DECLARATION_MAIN_SECOND_PARAMETER_TYPE",
+]) {
+  if (!functionDeclarationResolutionSource.includes(mainTypeStatus)) {
+    throw new Error(
+      "hosted main return and parameter types must have dedicated rejection statuses",
+    );
+  }
+}
+const hostedMainTypeCheckIndex = functionDeclarationResolutionSource.indexOf(
+  "if (is_hosted_main && !is_unqualified_signed_int",
+);
+const functionRegistrationIndex = functionDeclarationResolutionSource.indexOf(
+  "ps_ctx_register_function_qual_type_in",
+);
+if (hostedMainTypeCheckIndex < 0 ||
+    functionRegistrationIndex < 0 ||
+    hostedMainTypeCheckIndex > functionRegistrationIndex ||
+    !/is_hosted_main_second_parameter[^]*?PSX_TYPE_POINTER[^]*?PSX_TYPE_POINTER[^]*?is_plain_char/.test(
+      functionDeclarationResolutionSource,
+    )) {
+  throw new Error(
+    "hosted main types must be validated canonically before function registration",
   );
 }
 const tagDeclarationResolutionSource = await readFile(
