@@ -83,6 +83,7 @@ typedef struct {
 typedef struct {
   node_t base;
   psx_type_name_ref_t type_name;
+  token_t *type_name_token;
 } node_compound_literal_t;
 
 typedef struct {

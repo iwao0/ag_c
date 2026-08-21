@@ -7024,6 +7024,9 @@ if (!typeNameRef ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(
       compoundLiteralNode[1],
     ) ||
+    !/\btoken_t\s*\*\s*type_name_token\s*;/.test(
+      compoundLiteralNode[1],
+    ) ||
     /\bobject_type\b|\brequires_addressable_object\b|\bhas_file_scope_storage\b/.test(
       compoundLiteralNode[1],
     ) ||
@@ -13121,6 +13124,17 @@ if (!compoundLiteralParser ||
     )) {
   throw new Error(
     "compound literal storage duration must derive from its lexical scope during semantic resolution, not from a parser-owned flag",
+  );
+}
+if (!/\.type_name_token\s*=\s*tok/.test(parserExpressionSource) ||
+    !/psx_node_new_compound_literal_in\([^]*?type_name_token/.test(
+      parserExpressionSource,
+    ) ||
+    !/object_shape\.kind\s*==\s*PSX_TYPE_VOID[^]*?object_shape\.kind\s*==\s*PSX_TYPE_STRUCT[^]*?object_shape\.kind\s*==\s*PSX_TYPE_UNION[^]*?compound->type_name_token[^]*?note_direct_semantic_rejection_at_token\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_COMPOUND_LITERAL_INVALID_OBJECT_TYPE[^]*?invalid_object_type_token/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "direct invalid void and incomplete-record compound literals must diagnose the type-name opening token while function types retain the initializer token",
   );
 }
 if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(

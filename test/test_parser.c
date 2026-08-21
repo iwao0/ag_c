@@ -9046,6 +9046,11 @@ static void test_expr_compound_literal_typed_hir_boundary(
   ASSERT_EQ(ND_COMPOUND_LITERAL, raw->kind);
   node_compound_literal_t *compound = (node_compound_literal_t *)raw;
   ASSERT_TRUE(compound->type_name.syntax != NULL);
+  ASSERT_TRUE(compound->type_name_token != NULL);
+  ASSERT_EQ(TK_LPAREN, compound->type_name_token->kind);
+  ASSERT_EQ(0, compound->type_name_token->byte_offset);
+  ASSERT_EQ(TK_LBRACE, compound->base.tok->kind);
+  ASSERT_EQ(5, compound->base.tok->byte_offset);
   ASSERT_EQ(PSX_SCOPE_ID_INVALID, compound->type_name.scope_seq);
   ASSERT_EQ(
       PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC,
@@ -20122,6 +20127,24 @@ static void test_parse_invalid(
       test_suite_session,
       "int main(void) { return sizeof(int(void)); }",
       "E3117", 25);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { (void)(void){0}; return 0; }",
+      "E3114", 24);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct incomplete; int main(void) { "
+      "(void)(struct incomplete){0}; return 0; }",
+      "E3114", 43);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "union incomplete; int main(void) { "
+      "(void)(union incomplete){0}; return 0; }",
+      "E3114", 42);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { (void)(int(void)){0}; return 0; }",
+      "E3114", 35);
   expect_parse_fail_at_column(
       test_suite_session,
       "struct incomplete; int main(void) { "

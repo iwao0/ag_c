@@ -44,6 +44,7 @@ static inline void set_curtok(
 
 typedef struct {
   psx_type_name_ref_t type_name;
+  token_t *type_name_token;
   token_t *after_rparen;
 } parsed_parenthesized_type_name_t;
 
@@ -69,7 +70,8 @@ static int capture_type_name_ref_at(
     token_t **out_end, expr_parse_ctx_t *ctx);
 static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx);
 static node_t *parse_compound_literal_from_type(
-    psx_type_name_ref_t type_name, token_t *after_rparen,
+    psx_type_name_ref_t type_name, token_t *type_name_token,
+    token_t *after_rparen,
     expr_parse_ctx_t *ctx);
 
 static void enter_expr_nest_or_die(expr_parse_ctx_t *ctx) {
@@ -150,7 +152,8 @@ static node_t *build_member_access(
 }
 
 static node_t *parse_compound_literal_from_type(
-    psx_type_name_ref_t type_name, token_t *after_rparen,
+    psx_type_name_ref_t type_name, token_t *type_name_token,
+    token_t *after_rparen,
     expr_parse_ctx_t *ctx) {
   set_curtok(ctx, after_rparen);
   token_t *initializer_tok = curtok(ctx);
@@ -159,7 +162,8 @@ static node_t *parse_compound_literal_from_type(
                                   ctx->syntax.context)
                             : NULL;
   node_t *syntax = psx_node_new_compound_literal_in(
-      ctx->arena_context, type_name, initializer, initializer_tok);
+      ctx->arena_context, type_name, type_name_token,
+      initializer, initializer_tok);
   return apply_postfix(syntax, ctx);
 }
 
@@ -178,6 +182,7 @@ static int parse_parenthesized_type_name(
     return 0;
   *out = (parsed_parenthesized_type_name_t){
       .type_name = type_name,
+      .type_name_token = tok,
       .after_rparen = end->next,
   };
   return 1;
@@ -871,7 +876,8 @@ static node_t *try_parse_compound_literal(expr_parse_ctx_t *ctx) {
       parsed_type.after_rparen &&
       parsed_type.after_rparen->kind == TK_LBRACE) {
     return parse_compound_literal_from_type(
-        parsed_type.type_name, parsed_type.after_rparen, ctx);
+        parsed_type.type_name, parsed_type.type_name_token,
+        parsed_type.after_rparen, ctx);
   }
   return NULL;
 }

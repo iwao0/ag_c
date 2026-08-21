@@ -8543,11 +8543,18 @@ static int resolve_direct_compound_literal(
           context->semantic_context, object_qual_type,
           compound->type_name.scope_seq,
           context->function_name != NULL,
-          &binding->plan))
-    return note_direct_semantic_rejection(
+          &binding->plan)) {
+    const token_t *invalid_object_type_token = compound->base.tok;
+    if ((object_shape.kind == PSX_TYPE_VOID ||
+         object_shape.kind == PSX_TYPE_STRUCT ||
+         object_shape.kind == PSX_TYPE_UNION) &&
+        compound->type_name_token)
+      invalid_object_type_token = compound->type_name_token;
+    return note_direct_semantic_rejection_at_token(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_COMPOUND_LITERAL_INVALID_OBJECT_TYPE,
-        &compound->base);
+        &compound->base, invalid_object_type_token);
+  }
   const node_string_t *string_initializer =
       direct_character_array_string_initializer_for_type(
           context, object_qual_type, &initializer);

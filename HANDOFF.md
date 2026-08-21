@@ -38690,3 +38690,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象5件のClang strict/Native/Wasm source位置、positive 3件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。function definition、再宣言、type-name、VLA、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 適用対象5件の位置は閉じた。次は既存`alignas_{function_definition,block_scope_function_declaration}`だけを少数比較し、同じspecifier token選択か既存の浅い宣言検査だけで閉じる場合に限る。再宣言merge、type-name、VLAには入らない。
+
+### このセッション（続き1316）: 直接void・未完成record compound literalのE3114をtype-name開始へ移した
+- 対象選定:
+  - 前回候補の`alignas_{function_definition,block_scope_function_declaration}`は前の共通修正で既にClang C11 strictと同じ`_Alignas`位置だった。続けてalignment type-name完成性・signed overflow、Atomic bit-field、単純`_Atomic(type-name)`制約を少数比較したが、いずれもClangと同じspecifier・operand・member位置を既に指していたため変更しなかった。function specifierは既存の専用回帰と共通token選択を確認し、追加比較は行わなかった。
+  - `compound_literal_{void_type,function_type,incomplete_record,vla}`を比較すると、直接void・未完成structはClangがcompound type-name開始の`(`を指す一方、Native/Wasmはinitializer `{`を指していた。直接関数型は3系統とも`{`、VLAはNative/Wasmの先行array-bound E3064が`count`を指していたため維持した。未完成unionも小型probeで同じ`(`方針を確認した。未選択`_Generic`内の未完成compound literalは別経路で従来の`{`を維持し、深い選択式には広げていない。
+- 原因と変更:
+  - compound literal Syntaxはtype-name参照とinitializer `{` tokenを保持していたが、type-nameを囲む先頭`(`をparse後に捨てていた。そのため直接semantic planがvoid・未完成recordを拒否した時点でClangと同じsource tokenを選べなかった。
+  - `node_compound_literal_t`へ`type_name_token`を追加し、parenthesized type-name parse時の`(`を保持する。直接plan失敗のうちvoid・struct・unionだけがtoken付きE3114 rejectionへこのtokenを渡し、function型は従来の`{`へfallbackする。
+  - object型適格性、type-name解決、initializer計画、storage duration、E3114 ID・文言、VLA bound解決、未選択generic経路は変更していない。
+- coverage:
+  - parser boundaryは`(int){3}`のtype-name tokenがoffset 0の`(`、initializer tokenがoffset 5の`{`として別に保持されることを固定した。structured diagnosticは直接void・未完成struct/unionのE3114を`(`、直接function型を`{`位置で固定する。
+  - design invariantはSyntax metadata、parse時capture、直接void・未完成recordだけのtoken付きrejectionを固定し、semantic型やstorage状態をSyntaxへ持ち込まない既存境界を維持する。
+- 確認:
+  - 直接void・function・未完成struct/unionとVLAはClang strict、Native、Wasmがすべて拒否した。Native/Wasmはvoid・未完成struct/unionのE3114をClangと同じ`(`へ移し、function型のE3114は`{`、VLAのE3064は`count`を維持した。Native/Wasm 10/10経路はexit 1だった。
+  - 未選択`_Generic`内の未完成compound literalはNative/Wasm 2/2経路でE3114と従来の`{`位置を維持した。
+  - positiveの`compound_literal_scalar_lvalue`、`nested_compound_literal`、`compound_literal_array_size_and_decay`はClang strict、Native、Wasm objectの9/9経路ですべて受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.67秒 / user 3.19秒 / sys 0.36秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.90秒 / user 11.96秒 / sys 1.69秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.14秒 / user 0.80秒 / sys 0.53秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象5形のClang strict/Native/Wasm source位置、未選択generic control、positive 3件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。VLA診断統合、generic-selected/unselected位置、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 直接compound literalの型制約位置は閉じた。次は既存`excess_{scalar,array,struct,union}_compound_literal_initializer`だけを少数比較し、余剰initializer要素の既存failure token選択だけで閉じる場合に限る。再帰brace、designator chain、未選択genericには入らない。
