@@ -39388,3 +39388,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。非ICE、overflow、comma/binary expression、type-name operand、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`for_initializer_extern_object`と`for_initializer_static_object`の単純for declaration 2件だけをClang strictと比較し、storage keywordまたは宣言名token選択だけで閉じる場合に限る。function declaration、thread-local、initializer expression、nested statementには入らない。
+
+### このセッション（続き1349）: for initializer extern/static objectのE3064列を回帰固定した
+- 対象選定:
+  - 前回候補の`for_initializer_extern_object`と`for_initializer_static_object`だけをClang C11 strict、Native、Wasmで比較した。
+  - function declaration、thread-local、initializer expression、nested statement、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 2件ともNative/Wasmは既にClangと同じ各宣言名を指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへ`extern int shared_value`と`static int counter`のE3064 column 19を追加した。
+  - differential coverage表にはfor-initializerでClangが宣言名を指す方針が既に記載済みだったため、重複する文書変更は加えていない。storage class制約、受理/拒否、診断ID・文言は変更していない。
+- 確認:
+  - 対象2 fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はE3064とそれぞれ`shared_value`・`counter`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.67秒 / user 3.00秒 / sys 0.32秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。function declaration、thread-local、initializer expression、nested statement、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`for_initializer_function_declaration`と`for_initializer_typedef_declaration`の単純for declaration 2件だけをClang strictと比較し、宣言名token選択だけで閉じる場合に限る。standalone tag、multiple declarator、initializer expression、nested statementには入らない。
