@@ -10911,6 +10911,23 @@ const initializerResolutionSource = await readFile(
   "src/semantic/initializer_resolution.c",
   "utf8",
 );
+if (!/\btoken_t\s*\*index_tok\s*;/.test(astHeader) ||
+    !/tk_expect_ctx\(\s*tk_ctx,\s*'\['\s*\)[^]*?token_t\s*\*index_tok\s*=\s*curtok\(runtime_context\)[^]*?parse_assignment_expression[^]*?\.index_tok\s*=\s*index_tok/.test(
+      initializerSyntaxSource,
+    ) ||
+    !/!context->resolve_index\([^]*?PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,[^]*?designator->index_tok\s*\?\s*designator->index_tok\s*:\s*designator->tok[^]*?index\s*<\s*0\s*\|\|\s*index\s*>=\s*shape\.array_len[^]*?PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,[^]*?designator->index_tok\s*\?\s*designator->index_tok\s*:\s*designator->tok/.test(
+      initializerResolutionSource,
+    ) ||
+    !/shape\.kind\s*!=\s*PSX_TYPE_ARRAY[^]*?PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,[^]*?designator->tok/.test(
+      initializerResolutionSource,
+    ) ||
+    !/PSX_LOCAL_INITIALIZER_MEMBER_DESIGNATOR_INVALID,[^]*?designator->tok[^]*?PSX_LOCAL_INITIALIZER_MEMBER_DESIGNATOR_NOT_FOUND,[^]*?designator->member_tok\s*\?\s*designator->member_tok\s*:\s*designator->tok/.test(
+      initializerResolutionSource,
+    )) {
+  throw new Error(
+    "initializer designator value failures must preserve operand tokens without moving target-kind diagnostics",
+  );
+}
 if (!/semantic_record_contains_flexible_array_member\s*\([^]*?record->member_count[^]*?semantic_type_contains_flexible_array_member/.test(
       typeCompletenessSource,
     ) ||

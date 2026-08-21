@@ -839,13 +839,17 @@ static int flat_initializer_designated_span(
         return flat_initializer_fail(
             context,
             PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
-            designator->tok);
+            designator->index_tok
+                ? designator->index_tok
+                : designator->tok);
       }
       if (index < 0 || index >= shape.array_len)
         return flat_initializer_fail(
             context,
             PSX_LOCAL_INITIALIZER_ARRAY_DESIGNATOR_INDEX_INVALID,
-            designator->tok);
+            designator->index_tok
+                ? designator->index_tok
+                : designator->tok);
       child_index = (int)index;
     } else if (designator->kind == PSX_INIT_DESIGNATOR_MEMBER) {
       if (!psx_type_kind_is_aggregate(shape.kind))
@@ -859,7 +863,9 @@ static int flat_initializer_designated_span(
         return flat_initializer_fail(
             context,
             PSX_LOCAL_INITIALIZER_MEMBER_DESIGNATOR_NOT_FOUND,
-            designator->tok);
+            designator->member_tok
+                ? designator->member_tok
+                : designator->tok);
       *target = child;
       continue;
     } else {

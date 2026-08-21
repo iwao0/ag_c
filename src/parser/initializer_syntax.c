@@ -157,6 +157,7 @@ node_t *psx_parse_initializer_syntax_list_with_context(
           };
         } else {
           tk_expect_ctx(tk_ctx, '[');
+          token_t *index_tok = curtok(runtime_context);
           node_t *index_expr =
               context->parse_assignment_expression(
                   context->context);
@@ -177,6 +178,7 @@ node_t *psx_parse_initializer_syntax_list_with_context(
           tk_expect_ctx(tk_ctx, ']');
           designators[designator_count++] = (psx_initializer_designator_t){
               .kind = PSX_INIT_DESIGNATOR_INDEX,
+              .index_tok = index_tok,
               .index_expr = index_expr,
               .range_end_expr = range_end_expr,
               .tok = designator_tok,

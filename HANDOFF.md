@@ -38624,3 +38624,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3件のClang strict/Native/Wasm source位置、暗黙overflow control 2件、positive 1件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。enumerator依存・重複、signed overflow、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - enum initializer位置は閉じた。次は既存`bitfield_{floating_type,nonconstant_width,comma_width}`の単純なwidth制約だけを少数比較し、width式先頭tokenの伝播だけで閉じる場合に限る。width overflow、bit-field型体系、深い定数式には入らない。
+
+### このセッション（続き1313）: 不正initializer designatorの診断をoperandへ移した
+- 対象選定:
+  - まず`bitfield_{floating_type,nonconstant_width,comma_width,negative_width}`、`bool_bitfield_too_wide`、`named_zero_width_bitfield`をClang C11 strict/Native/Wasmで比較した。型違反・負幅・幅超過・named zero-widthはmember名、非定数/comma幅は式先頭を3系統とも既に指していたため変更しなかった。
+  - 次に`array_designator_{negative,nonconstant,out_of_bounds}`を比較すると、Clangはindex expression先頭の`-`、`index_value`、`3`を指す一方、Native/Wasmは全て`[`へ固定していた。隣接する`struct_designator_unknown_member`もClangは`missing`、Native/Wasmは`.`を指していた。initializer値の評価順、上書き規則、GNU range designator、深いdesignator chain、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - `psx_initializer_designator_t`はdesignator prefix tokenとindex ASTを保持していたが、`[`直後のindex expression先頭tokenを捨てていた。binary/comma AST rootはoperator tokenなので後段から一貫して式先頭を復元できない。またmember識別子用`member_tok`は既に保持していたが、unknown member failureでは`.` tokenを選んでいた。
+  - index parse直前のcurrent tokenを`index_tok`としてSyntaxへ保持する。flat initializer plannerでindexの整数定数式解決に失敗した場合と、解決値が負または既知array bound外の場合だけ、このtokenをfailureへ渡す。unknown memberだけは既存`member_tok`を渡す。
+  - designator対象がarray/aggregateでないtarget-kind failure、nested non-array、GNU range処理、E3084/E3085 ID・文言、index評価、incomplete array bound推論、member lookup、positional継続・重複後勝ちは変更していない。
+- coverage:
+  - parser/direct-function boundaryは合法な`[1 + 0]`の`index_tok`が先頭literal tokenで、AST rootの`+` tokenとは別であることを直接固定した。
+  - structured diagnosticはfile-scopeの負index、非定数index、one-past index、unknown memberと、block-scopeの非定数indexのE3085/E3084 columnをoperand位置で固定した。design invariantはparse前capture、index value failureとmember lookup failureへのtoken伝播、target-kind failureのprefix token維持を固定する。
+- 確認:
+  - `array_designator_negative`、`array_designator_nonconstant`、`array_designator_out_of_bounds`、`struct_designator_unknown_member`はClang strict、Native、Wasmがすべて拒否し、Native/WasmはE3085/E3084を維持してClangと同じ`-`、`index_value`、`3`、`missing` tokenを指した。Native/Wasm 8/8経路はexit 1だった。
+  - positiveの`designator_then_positional`、`duplicate_designator_override`、`nested_array_designator`はClang strict、Native、Wasm objectの9/9経路ですべて受理した。Clangの重複initializer warningは既存の後勝ち規則に対するもので、失敗ではない。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.79秒 / user 3.09秒 / sys 0.30秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.99秒 / user 11.91秒 / sys 1.69秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.23秒 / user 0.80秒 / sys 0.51秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象4件のClang strict/Native/Wasm source位置、positive 3件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。GNU range、deep designator chain、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - initializer designator operand位置は閉じた。次は既存`alignas_{comma_constant,non_power_of_two,weaker_than_natural}`だけを少数比較し、specifier/operand tokenの伝播だけで閉じる場合に限る。redeclaration merge、signed overflow、incomplete type、深い定数式には入らない。

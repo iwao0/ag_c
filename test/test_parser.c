@@ -10723,7 +10723,7 @@ static void test_direct_function_typed_hir_resolution_boundary(
   const char *source =
       "static int __direct_function_hir(int left, int right) { "
       "int sum = left + right; int unused; "
-      "{ int sum = right; int values[3] = {[1] = 2, "
+      "{ int sum = right; int values[3] = {[1 + 0] = 2, "
       "[0] = values != 0}; "
       "int inferred[] = {4, 5}; "
       "int matrix[2][2] = {{1, 2}, {[0] = 3}}; "
@@ -10827,6 +10827,16 @@ static void test_direct_function_typed_hir_resolution_boundary(
       syntax_array_initializer->entries[0]
           .designators[0].index_expr;
   ASSERT_TRUE(syntax_designator_index != NULL);
+  ASSERT_EQ(ND_ADD, syntax_designator_index->kind);
+  const token_t *syntax_designator_index_token =
+      syntax_array_initializer->entries[0]
+          .designators[0].index_tok;
+  ASSERT_TRUE(syntax_designator_index_token != NULL);
+  ASSERT_EQ(TK_NUM, syntax_designator_index_token->kind);
+  ASSERT_TRUE(syntax_designator_index_token ==
+              syntax_designator_index->lhs->tok);
+  ASSERT_TRUE(syntax_designator_index_token !=
+              syntax_designator_index->tok);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[2]->kind);
   node_local_declaration_t *inferred_declaration =
       (node_local_declaration_t *)nested_block->body[2];
@@ -20157,6 +20167,31 @@ static void test_parse_invalid(
       test_suite_session,
       "int main(void) { enum values { VALUE = 1.0 }; return 0; }",
       "E3064", 40);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int values[3] = {[-1] = 7}; int main(void) { return 0; }",
+      "E3085", 19);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "static const int index_value = 1; "
+      "int values[3] = {[index_value] = 7}; "
+      "int main(void) { return 0; }",
+      "E3085", 53);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int values[3] = {[3] = 7}; int main(void) { return 0; }",
+      "E3085", 19);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(int index) { int values[3] = {[index] = 7}; "
+      "return values[0]; }",
+      "E3085", 41);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct pair { int left; int right; }; "
+      "struct pair value = {.missing = 7}; "
+      "int main(void) { return 0; }",
+      "E3084", 61);
   expect_parse_fail_at_column(
       test_suite_session,
       "_Static_assert(0, \"failure\"); int main(void) { return 0; }",

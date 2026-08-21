@@ -30,6 +30,7 @@ typedef enum {
 
 typedef struct {
   psx_initializer_designator_kind_t kind;
+  token_t *index_tok;
   node_t *index_expr;
   node_t *range_end_expr;
   char *member_name;
