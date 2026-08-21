@@ -457,6 +457,10 @@ static int note_direct_semantic_rejection(
     direct_resolution_context_t *context,
     psx_syntax_typed_hir_rejection_t rejection,
     const node_t *source);
+static int note_direct_semantic_rejection_at_token(
+    direct_resolution_context_t *context,
+    psx_syntax_typed_hir_rejection_t rejection,
+    const node_t *source, const token_t *source_token);
 static int note_direct_integer_rejection(
     direct_resolution_context_t *context,
     psx_syntax_typed_hir_rejection_t rejection,
@@ -720,6 +724,19 @@ static int mark_direct_out_argument_initialization(
   return 1;
 }
 
+static const token_t *direct_call_arity_failure_token(
+    const node_function_call_t *call,
+    const psx_call_types_resolution_t *resolution) {
+  if (!call || !resolution) return NULL;
+  if (call->argument_count < resolution->parameter_count)
+    return call->closing_token;
+  if (resolution->parameter_count >= 0 &&
+      resolution->parameter_count < call->argument_count &&
+      call->argument_tokens)
+    return call->argument_tokens[resolution->parameter_count];
+  return NULL;
+}
+
 static int resolve_direct_function_call(
     direct_resolution_context_t *context,
     const node_function_call_t *call,
@@ -824,10 +841,11 @@ static int resolve_direct_function_call(
         PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_INCOMPLETE_RETURN,
         &call->base);
   if (resolution.status == PSX_CALL_TYPES_ARGUMENT_COUNT_MISMATCH)
-    return note_direct_semantic_rejection(
+    return note_direct_semantic_rejection_at_token(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
-        &call->base);
+        &call->base,
+        direct_call_arity_failure_token(call, &resolution));
   if (resolution.status != PSX_CALL_TYPES_OK) return 0;
   psx_qual_type_t atomic_argument_types[3] = {{0}};
   unsigned char atomic_argument_is_null[3] = {0};

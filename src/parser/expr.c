@@ -763,6 +763,7 @@ static size_t deep_first_argument_call_chain_depth(
 typedef struct {
   node_t *callee;
   token_t *call_token;
+  token_t *first_argument_token;
 } deep_call_syntax_frame_t;
 
 static node_t *finish_deep_call_syntax_frame(
@@ -778,14 +779,19 @@ static node_t *finish_deep_call_syntax_frame(
   int argument_capacity = 16;
   call->arguments = calloc(
       (size_t)argument_capacity, sizeof(*call->arguments));
-  if (!call->arguments) {
+  call->argument_tokens = calloc(
+      (size_t)argument_capacity, sizeof(*call->argument_tokens));
+  if (!call->arguments || !call->argument_tokens) {
     diag_emit_internalf_in(
         diagnostics(ctx), DIAG_ERR_INTERNAL_OOM, "%s",
         diag_message_for_in(diagnostics(ctx), DIAG_ERR_INTERNAL_OOM));
   }
   if (first_argument) {
+    call->argument_tokens[argument_count] =
+        frame->first_argument_token;
     call->arguments[argument_count++] = first_argument;
   } else if (curtok(ctx)->kind != TK_RPAREN) {
+    call->argument_tokens[argument_count] = curtok(ctx);
     call->arguments[argument_count++] = parse_call_argument(ctx);
   }
   while (curtok(ctx)->kind == TK_COMMA) {
@@ -797,9 +803,14 @@ static node_t *finish_deep_call_syntax_frame(
       call->arguments = pda_xreallocarray_in(
           diagnostics(ctx), call->arguments,
           (size_t)argument_capacity, sizeof(*call->arguments));
+      call->argument_tokens = pda_xreallocarray_in(
+          diagnostics(ctx), call->argument_tokens,
+          (size_t)argument_capacity, sizeof(*call->argument_tokens));
     }
+    call->argument_tokens[argument_count] = curtok(ctx);
     call->arguments[argument_count++] = parse_call_argument(ctx);
   }
+  call->closing_token = curtok(ctx);
   tk_expect_ctx(ctx->tokenizer_context, ')');
   call->argument_count = argument_count;
   return (node_t *)call;
@@ -821,6 +832,7 @@ static node_t *parse_deep_first_argument_call_chain(
     frames[index].callee = parse_identifier_syntax(identifier, ctx);
     frames[index].call_token = curtok(ctx);
     tk_expect_ctx(ctx->tokenizer_context, '(');
+    frames[index].first_argument_token = curtok(ctx);
   }
 
   node_t *argument = finish_deep_call_syntax_frame(
@@ -844,9 +856,18 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   int nargs = 0;
   int arg_cap = 16;
   node->arguments = calloc(arg_cap, sizeof(node_t *));
+  node->argument_tokens = calloc(
+      (size_t)arg_cap, sizeof(*node->argument_tokens));
+  if (!node->arguments || !node->argument_tokens) {
+    diag_emit_internalf_in(
+        diagnostics(ctx), DIAG_ERR_INTERNAL_OOM, "%s",
+        diag_message_for_in(diagnostics(ctx), DIAG_ERR_INTERNAL_OOM));
+  }
   if (curtok(ctx)->kind == TK_RPAREN) {
+    node->closing_token = curtok(ctx);
     set_curtok(ctx, curtok(ctx)->next);
   } else {
+    node->argument_tokens[nargs] = curtok(ctx);
     node->arguments[nargs++] = parse_call_argument(ctx);
     while (curtok(ctx)->kind == TK_COMMA) {
       set_curtok(ctx, curtok(ctx)->next);
@@ -856,9 +877,14 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
         node->arguments = pda_xreallocarray_in(
             diagnostics(ctx), node->arguments,
             (size_t)arg_cap, sizeof(node_t *));
+        node->argument_tokens = pda_xreallocarray_in(
+            diagnostics(ctx), node->argument_tokens,
+            (size_t)arg_cap, sizeof(*node->argument_tokens));
       }
+      node->argument_tokens[nargs] = curtok(ctx);
       node->arguments[nargs++] = parse_call_argument(ctx);
     }
+    node->closing_token = curtok(ctx);
     tk_expect_ctx(ctx->tokenizer_context, ')');
   }
   node->argument_count = nargs;

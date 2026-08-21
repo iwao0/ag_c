@@ -18571,6 +18571,15 @@ static void test_funcall(
   psx_frontend_expression_hir_t expression =
       resolve_test_expression_input_hir(test_suite_session, "add(1, 2)", &syntax);
   ASSERT_EQ(ND_FUNCALL, syntax->kind);
+  node_function_call_t *call = (node_function_call_t *)syntax;
+  ASSERT_TRUE(call->argument_tokens != NULL);
+  ASSERT_EQ(TK_NUM, call->argument_tokens[0]->kind);
+  ASSERT_EQ(4, call->argument_tokens[0]->byte_offset);
+  ASSERT_EQ(TK_NUM, call->argument_tokens[1]->kind);
+  ASSERT_EQ(7, call->argument_tokens[1]->byte_offset);
+  ASSERT_TRUE(call->closing_token != NULL);
+  ASSERT_EQ(TK_RPAREN, call->closing_token->kind);
+  ASSERT_EQ(8, call->closing_token->byte_offset);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(root));
   ASSERT_EQ(2, psx_hir_node_child_count(root));
@@ -18584,6 +18593,15 @@ static void test_funcall(
       "foo((1,2), 3)", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(ND_FUNCALL, syntax->kind);
+  call = (node_function_call_t *)syntax;
+  ASSERT_TRUE(call->argument_tokens != NULL);
+  ASSERT_EQ(TK_LPAREN, call->argument_tokens[0]->kind);
+  ASSERT_EQ(4, call->argument_tokens[0]->byte_offset);
+  ASSERT_EQ(TK_NUM, call->argument_tokens[1]->kind);
+  ASSERT_EQ(11, call->argument_tokens[1]->byte_offset);
+  ASSERT_TRUE(call->closing_token != NULL);
+  ASSERT_EQ(TK_RPAREN, call->closing_token->kind);
+  ASSERT_EQ(12, call->closing_token->byte_offset);
   ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(root));
   ASSERT_EQ(2, psx_hir_node_child_count(root));
   ASSERT_EQ(PSX_HIR_COMMA,
@@ -20118,6 +20136,16 @@ static void test_parse_invalid(
   expect_parse_fail_at_column(
       test_suite_session,
       "int main(void) { return _Alignof(restrict int); }", "E3117", 34);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int add(int a, int b) { return a + b; }\n"
+      "int main(void) { return add(1); }",
+      "E3103", 30);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int add(int a, int b) { return a + b; }\n"
+      "int main(void) { return add(1, 2, 3); }",
+      "E3103", 35);
   expect_parse_fail_at_column(
       test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);

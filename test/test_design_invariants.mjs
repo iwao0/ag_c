@@ -6978,7 +6978,33 @@ if (/\bnode_func_t\b/.test(astSource) ||
     ) ||
     !functionCallStruct ||
     !/\bnode_t\s*\*\*\s*arguments\s*;/.test(functionCallStruct[1]) ||
+    !/\btoken_t\s*\*\*\s*argument_tokens\s*;/.test(functionCallStruct[1]) ||
+    !/\btoken_t\s*\*\s*closing_token\s*;/.test(functionCallStruct[1]) ||
     !/\bnode_t\s*\*\s*callee\s*;/.test(functionCallStruct[1]) ||
+    !/node->argument_tokens\[nargs\]\s*=\s*curtok\(ctx\)/.test(
+      parserExpressionSource,
+    ) ||
+    !/node->closing_token\s*=\s*curtok\(ctx\)/.test(
+      parserExpressionSource,
+    ) ||
+    !/frames\[index\]\.first_argument_token\s*=\s*curtok\(ctx\)/.test(
+      parserExpressionSource,
+    ) ||
+    !/call->argument_tokens\[argument_count\]\s*=/.test(
+      parserExpressionSource,
+    ) ||
+    !/call->closing_token\s*=\s*curtok\(ctx\)/.test(
+      parserExpressionSource,
+    ) ||
+    !/direct_call_arity_failure_token\s*\([^)]*call[^)]*&resolution[^)]*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/call->argument_count\s*<\s*resolution->parameter_count[^]*?return\s+call->closing_token/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/call->argument_tokens\[resolution->parameter_count\]/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     /\b(?:callee_type|callee_qual_type|direct_name|is_implicit_declaration|parameters|signature|lvars|is_static)\b/.test(
       functionCallStruct[1],
     ) ||

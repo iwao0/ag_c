@@ -195,6 +195,8 @@ typedef struct node_function_call_t node_function_call_t;
 struct node_function_call_t {
   node_t base;
   node_t **arguments;
+  token_t **argument_tokens;
+  token_t *closing_token;
   int argument_count;
   node_t *callee;
 };

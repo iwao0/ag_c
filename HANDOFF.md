@@ -39079,3 +39079,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 3 fixture、左右反転control、4 structured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。argument変換、pointer compatibility、aggregate value semantics、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`too_few_args`と`too_many_args`の単純call arity 2件だけをClang strictと比較し、callまたは余分なargument token選択だけで閉じる場合に限る。argument型変換、variadic、unprototyped call、deep expressionには入らない。
+
+### このセッション（続き1333）: call arityのE3103を不足・過剰位置へ分けた
+- 対象選定:
+  - 前回候補の`too_few_args`と`too_many_args`だけをClang C11 strict、Native、Wasmで比較した。3系統とも拒否しE3103 parityは維持していたが、Clangは引数不足で閉じ括弧、過剰で最初の余分なargumentを指し、Native/Wasmはどちらもcall開き括弧を指していた。
+  - argument型変換、variadic、unprototyped call、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - function-call Syntaxはcall開き括弧だけをsourceに持ち、各argumentの開始tokenと閉じ括弧を失っていた。`node_function_call_t`へ`argument_tokens`と`closing_token`を追加し、通常parserと既存の深いfirst-argument call-chain parserの双方で保持するようにした。
+  - call type resolutionが`PSX_CALL_TYPES_ARGUMENT_COUNT_MISMATCH`を返した場合だけ、実引数が固定parameter数より少なければ閉じ括弧、多ければparameter数番目、すなわち最初の余分なargumentをE3103 source overrideに使う。callの受理/拒否、argument型解決、E3103 ID・文言、builtin/atomic固有の後段判定は変更していない。
+- coverage:
+  - Syntax境界では通常callの各argument開始offsetと閉じ括弧offset、括弧付きcomma expressionを第1argumentに持つcallでも外側argument開始を保持することを固定した。
+  - structured diagnosticへ引数不足の閉じ括弧column 30、過剰の最初の余分なargument column 35を追加した。design invariantでは通常・深いcall parser双方のtoken保持とarity token選択を固定した。
+  - differential coverage表へE3103の不足・過剰それぞれのsource方針を追記した。
+- 確認:
+  - 対象2 fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。修正後のNative/Wasm 4/4経路はE3103を維持し、引数不足で`)`、過剰で`3`を報告してClangのcolumn 30/35と一致した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_language_analysis`はwarningなしで成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**3.81秒**。
+  - `./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**13.77秒**。
+  - `make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**3.36秒**。3 gateの並列wallは**13.77秒**だった。
+  - `git diff --check`も成功した。
+- 未実施:
+  - 対象2 fixture、2 structured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。argument型変換、variadic、unprototyped call、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`break_outside_loop_or_switch`、`continue_outside_loop`、`case_outside_switch`、`default_outside_switch`の単純statement 4件だけをClang strictと比較し、statement keyword token選択だけで閉じる場合に限る。loop/switch CFG、VLA scope、nested control flow、deep expressionには入らない。
