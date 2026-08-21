@@ -40705,3 +40705,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。atomic型、非定数幅、named member、nested aggregate、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`anonymous_unnamed_bitfield_only` fixtureの無名bit-fieldだけを含む単一anonymous structをClang strict、Native、Wasmで比較し、recursive named-member検査の診断IDと位置を確認する。多段nest、named member、atomic型、非定数幅には入らない。
+
+### このセッション（続き1420）: anonymous unnamed-bitfield-only structのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`anonymous_unnamed_bitfield_only` fixtureにある、単一のanonymous structが有効な幅の無名bit-fieldだけを含むcaseをClang C11 strict、Native、Wasmで比較した。
+  - 多段nest、named member、atomic型、非定数幅、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangは内側anonymous structを`struct`の3行3列でnamed-memberなしとして報告した。Native/Wasmも内側aggregateを先に検査し、無名bit-field宣言先頭`unsigned`を4行5列でE3064と実トークン`unsigned`として報告した。
+  - 外側aggregateへ進む前に内側anonymous aggregateのnamed-member要件を拒否し、unnamed-bitfield-only基準と同じaggregate body代表token方針で両backendが一致することを確認した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様のnestとインデントを持つE3064 column 5 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、anonymous member昇格、bit-field幅評価、record identity、aggregate layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`unsigned`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.60秒 / user 3.00秒 / sys 0.29秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。多段nest、named member、atomic型、非定数幅、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`anonymous_member_direct_name_conflict` fixtureの単一direct memberと単一anonymous structから昇格する同名memberだけをClang strict、Native、Wasmで比較し、衝突診断IDと位置を確認する。recursive conflict、多段nest、異種declaratorには入らない。
