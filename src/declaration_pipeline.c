@@ -1242,7 +1242,12 @@ int psx_apply_function_definition_parameter_pipeline(
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
     return 1;
   }
-  if (applied > 0) state->result->has_unnamed_parameter = 1;
+  if (applied > 0) {
+    state->result->has_unnamed_parameter = 1;
+    if (!state->result->unnamed_parameter_token)
+      state->result->unnamed_parameter_token =
+          parameter->declarator.diagnostic_token;
+  }
   return 1;
 }
 

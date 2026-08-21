@@ -13358,6 +13358,15 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     !/psx_qual_type_t\s*\*\s*parameter_qual_types\s*;/.test(
       functionDefinitionPipelineResultStruct[1],
     ) ||
+    !/token_t\s*\*\s*unnamed_parameter_token\s*;/.test(
+      functionDefinitionPipelineResultStruct[1],
+    ) ||
+    !/applied\s*>\s*0[^]*?has_unnamed_parameter\s*=\s*1[^]*?unnamed_parameter_token[^]*?parameter->declarator\.diagnostic_token/.test(
+      declarationPipelineSource,
+    ) ||
+    !/applied\.has_unnamed_parameter[^]*?source_token\s*=\s*definition->declarator\.diagnostic_token[^]*?applied\.unnamed_parameter_token[^]*?ps_diag_missing_in\(\s*diagnostics,\s*source_token/.test(
+      functionDefinitionResolutionSource,
+    ) ||
     /\bpsx_type_t\b/.test(
       functionDefinitionPipelineResultStruct[1],
     ) ||

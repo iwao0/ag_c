@@ -88,6 +88,7 @@ typedef struct {
   int parameter_bound_expression_count;
   int nargs;
   int has_unnamed_parameter;
+  token_t *unnamed_parameter_token;
   psx_qual_type_t function_qual_type;
 } psx_function_definition_pipeline_result_t;
 

@@ -228,8 +228,11 @@ static int resolve_function_definition_header(
     return 0;
   }
   if (applied.has_unnamed_parameter) {
+    token_t *source_token = definition->declarator.diagnostic_token;
+    if (applied.unnamed_parameter_token)
+      source_token = applied.unnamed_parameter_token;
     ps_diag_missing_in(
-        diagnostics, definition->declarator.diagnostic_token,
+        diagnostics, source_token,
         diag_text_for_in(diagnostics, DIAG_TEXT_PARAMETER));
     return 0;
   }

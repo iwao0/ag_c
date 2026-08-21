@@ -38432,3 +38432,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象2fixture、2項probe、隣接2対照、positive正本をClang strict/Native/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - old-style identifier-listの通常/nested宣言位置は閉じた。次も既存identifier/keyword tokenだけで閉じる通常サイズのdeclaration/statement制約を少数比較し、`extern void`、`_Alignas`受理方針、duplicate caseの式位置には入らない。
+
+### このセッション（続き1305）: function definitionのunnamed parameter E3065をparameter delimiterへ移した
+- 対象選定:
+  - function parameter・variadic・main・returning-array/function制約の既存13fixtureをClang C11 strictとNativeで比較した。duplicate名、variadic位置、storage class、main parameter、不完全record parameterは既に同じtoken位置だった。
+  - `int invalid(int) { ... }`だけはClangがabstract parameter直後の`)`を指す一方、ag_cはfunction名`invalid`を指していた。pointer形`int invalid(int *)`もClangが`)`を指す同じ差分だった。
+  - returning-array/functionはdeclarator shape内部、unnamed array parameterでClangが指す`[`もarray suffix内部tokenの保持方針へ入るため分離した。式、深いabstract declarator、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - parserはunnamed parameterの`declarator.diagnostic_token`としてabstract declarator直後tokenを保持していたが、function-definition pipeline結果は`has_unnamed_parameter`の真偽値だけを返し、source tokenを失っていた。最終header resolverはfunction declarator名を固定fallbackにしていた。
+  - pipeline結果へ最初の`unnamed_parameter_token`も保持し、E3065の最終診断だけがそれを使う。tokenがない回復状態では従来のfunction declarator tokenへfallbackする。
+  - sole `void` marker、named parameter、parameter型形成・lowering、ABI順序、受理可否、診断ID・文言は変更していない。design invariantはpipelineでの最初のtoken保持とheader resolverでのsource利用を固定し、診断文言のexact matchにはしていない。
+- coverage:
+  - 既存`funcdef_unnamed_parameter` fixtureがshould_reject正本とNative/Wasm共用compile-fail registryへ登録済みなのでfixtureは追加していない。differential coverage表へ単純/pointer形と深いarray形の境界を追加した。
+- 確認:
+  - `funcdef_unnamed_parameter`とpointer probeはClang strict、Native、Wasm objectがすべて拒否し、Native/WasmはE3065を維持してClangと同じ`)`位置で一致した。
+  - unnamed array probeはNative/Wasmともfunction名からparameter末尾`)`へ改善したが、Clangの`[`位置はarray declarator内部の別課題として未変更。今回の完了根拠には含めていない。
+  - sole `void`、named scalar、named array parameterのcontrolはClang strict、Native、Wasm objectがすべて受理した。不完全recordのnamed parameterはNative/Wasmとも従来の`value`位置を維持した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.65秒 / user 3.09秒 / sys 0.25秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.65秒 / user 11.89秒 / sys 1.60秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.14秒 / user 0.76秒 / sys 0.49秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象fixture、pointer/array probe、named/void control、不完全record対照をClang strict/Native/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・declarator、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - unnamed scalar/pointer parameterの診断位置は閉じた。array abstract declarator内部位置は保留し、次も既存identifier/keyword/delimiter tokenだけで閉じる通常サイズのdeclaration/statement制約を少数比較する。`extern void`、`_Alignas`受理方針、duplicate caseには入らない。
