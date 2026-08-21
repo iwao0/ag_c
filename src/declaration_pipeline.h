@@ -65,6 +65,7 @@ typedef struct {
   int is_noreturn;
   int is_block_scope;
   const char *diag_context;
+  token_t *specifier_tok;
   token_t *diag_tok;
 } psx_function_declaration_pipeline_request_t;
 
@@ -196,6 +197,7 @@ typedef struct {
   int has_alignment_specifier;
   int requested_alignment;
   int has_initializer;
+  token_t *specifier_tok;
   token_t *diag_tok;
 } psx_block_extern_declaration_pipeline_request_t;
 

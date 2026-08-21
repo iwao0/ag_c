@@ -7326,6 +7326,28 @@ if (!functionDeclarationPipelineRequest ||
     "function declaration pipeline must resolve names from semantic context only",
   );
 }
+if (!/token_t\s*\*specifier_tok\s*;/.test(
+      functionDeclarationPipelineRequest[1],
+    ) ||
+    !/case\s+PSX_FUNCTION_DECLARATION_MAIN_FUNCTION_SPECIFIER:[^]*?source_token\s*=\s*request->diag_tok[^]*?token\s*=\s*request->specifier_tok[^]*?token\s*!=\s*request->diag_tok[^]*?TK_INLINE[^]*?TK_NORETURN[^]*?source_token\s*=\s*token[^]*?diagnostics,\s*source_token,\s*context/.test(
+      declarationPipelineSource,
+    ) ||
+    !/\.specifier_tok\s*=\s*specifier_tok/.test(
+      toplevelDeclarationFrontendSource,
+    ) ||
+    !/\.specifier_tok\s*=\s*definition->return_specifier\.diagnostic_token/.test(
+      frontendFunctionDefinitionSource,
+    ) ||
+    !/\.specifier_tok\s*=\s*declaration->specifier\.diagnostic_token/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\.specifier_tok\s*=\s*request->specifier_tok/.test(
+      declarationPipelineSource,
+    )) {
+  throw new Error(
+    "hosted main function-specifier diagnostics must preserve the offending keyword across file, definition, and block declaration pipelines",
+  );
+}
 const blockExternDeclarationPipeline = declarationPipelineSource.match(
   /int\s+psx_apply_block_extern_declaration_pipeline\s*\([^]*?\n\}/,
 );

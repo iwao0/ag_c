@@ -267,6 +267,8 @@ static int resolve_function_definition_header(
               .is_noreturn =
                   definition->return_specifier.type_spec.is_noreturn,
               .diag_context = "funcdef",
+              .specifier_tok =
+                  definition->return_specifier.diagnostic_token,
               .diag_tok = (token_t *)name,
           })) {
     ps_diag_ctx_in(

@@ -8925,6 +8925,8 @@ static int preflight_direct_local_declaration(
                   .requested_alignment =
                       specifier_resolution.requested_alignment,
                   .has_initializer = initializer->has_initializer,
+                  .specifier_tok =
+                      declaration->specifier.diagnostic_token,
                   .diag_tok = (token_t *)name,
               }))
         return 0;
