@@ -40667,3 +40667,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、named-member診断source確認、structured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。file scope、typedef、union、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`static_assert_only_struct` fixtureの成功する単一`_Static_assert(1, ...)`だけを持つstructをClang strict、Native、Wasmで比較し、static assertionがnamed member要件を満たさない診断IDと位置を確認する。失敗assertion、複雑な条件式、通常memberには入らない。
+
+### このセッション（続き1418）: static-assert-only structのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`static_assert_only_struct` fixtureにある、成功する単一`_Static_assert(1, "ok")`だけを持つstructをClang C11 strict、Native、Wasmで比較した。
+  - 失敗assertion、複雑な条件式、通常member、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangはnamed memberを持たないstructを空struct extensionとして`struct`の2行1列へ報告した。Native/Wasmはaggregate body内の`_Static_assert`を3行3列でE3064と実トークン`_Static_assert`として報告した。
+  - 成功するstatic assertionは検査自体を通過してもnamed member要件を満たさず、既存のaggregate body開始token方針で両backendが一致することを確認した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行とインデントを持つE3064 column 3 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、static assertion評価、record identity、aggregate layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Static_assert`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.59秒 / user 2.99秒 / sys 0.29秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。失敗assertion、複雑な条件式、通常member、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`unnamed_bitfield_only_struct` fixtureの単一の無名bit-fieldだけを持つstructをClang strict、Native、Wasmで比較し、無名bit-fieldがnamed member要件を満たさない診断IDと位置を確認する。atomic型、非定数幅、named member、nested aggregateには入らない。

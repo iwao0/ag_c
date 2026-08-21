@@ -21829,9 +21829,13 @@ static void test_parse_invalid(
       "  return 0;\n"
       "}",
       "E3064", 17);
-  expect_parse_fail(test_suite_session,
-      "struct Check { _Static_assert(1, \"ok\"); }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Check {\n"
+      "  _Static_assert(1, \"ok\");\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 3);
   expect_parse_fail(test_suite_session,
       "struct Bits { unsigned int : 1; }; "
       "int main(void) { return 0; }");
