@@ -21839,10 +21839,12 @@ static void test_parse_invalid(
       "int main(void) { struct Local { enum { LOCAL_WIDTH=2 }; "
       "int values[LOCAL_WIDTH]; } value={{1,2}}; "
       "return value.values[1] != 2; }");
-  expect_parse_fail_with_message(test_suite_session,
-      "struct Item { enum { ITEM_READY=1 }; }; "
-      "int main(void) { return 0; }",
-      "E3064");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Item {\n"
+      "  enum { ITEM_READY = 1 };\n"
+      "};",
+      "E3064", 3);
   expect_parse_fail_at_column(
       test_suite_session,
       "struct Item {\n"
