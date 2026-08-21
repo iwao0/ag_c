@@ -39895,3 +39895,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。parameter、nested pointer、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_restrict_nested_pointer`の2段pointer宣言1件だけをClang strictと比較し、同段Atomic/restrictを持つ内側または外側どちらのpointer operatorを指すかだけで閉じる場合に限る。3段以上、typedef、parameter、initializerには入らない。
+
+### このセッション（続き1376）: 2段pointer内側Atomic/restrictのE3064列を固定した
+- 対象選定:
+  - 前回候補の`atomic_restrict_nested_pointer`だけをClang C11 strict、Native、Wasmで比較した。
+  - 3段以上、typedef、parameter、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - `int * _Atomic restrict *invalid_pointer`では同段Atomic/restrictが最初の内側pointerに属し、三系統ともClangと同じ最初のpointer operator `*`を指していた。
+  - structured diagnosticへE3064 column 5を追加し、共有走査が後続の外側pointer operatorを誤選択しないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、pointer階層、canonical QualType、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`*`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.67秒 / user 3.01秒 / sys 0.32秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。3段以上、typedef、parameter、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存parser coverageにある対になる`int ** _Atomic restrict invalid_inner_pointer` 2段形だけを一時probeでClang strictと比較し、Atomic/restrictを持つ2番目のpointer operatorを指すかだけで閉じる場合に限る。3段以上、typedef、parameter、initializerには入らない。
