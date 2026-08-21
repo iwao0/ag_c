@@ -39606,3 +39606,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較と1 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。function body、old-style parameter、array parameter、parameter lowering、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`inline_object`と`noreturn_object`の単純なfile-scope object 2件だけをClang strictと比較し、`inline`または`_Noreturn` keywordのtoken選択だけで閉じる場合に限る。function pointer、typedef、parameter、member、mixed declaratorには入らない。
+
+### このセッション（続き1361）: file-scope objectのfunction-specifier E3064列を回帰固定した
+- 対象選定:
+  - 前回候補の`inline_object`と`noreturn_object`だけをClang C11 strict、Native、Wasmで比較した。
+  - function pointer、typedef、parameter、member、mixed declarator、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Native/Wasmは既にClangと同じ先頭function specifierを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへobject `inline`とobject `_Noreturn`のE3064 column 1を追加した。
+  - file-scope objectへのfunction-specifier適用制約だけを固定し、受理/拒否、型形成、symbol登録、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はE3064と`inline`または`_Noreturn`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.68秒 / user 3.05秒 / sys 0.32秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較と2 structured columnsで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。function pointer、typedef、parameter、member、mixed declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`inline_parameter`の単純なprototype parameter 1件だけをClang strictと比較し、`inline` keywordのtoken選択だけで閉じる場合に限る。function pointer、parameter adjustment、nested declaratorには入らない。
