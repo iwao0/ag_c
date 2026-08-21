@@ -40783,3 +40783,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。preprocessor directive-only、pragma、include、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`preprocessor_only_translation_unit` fixtureの単一object-like `#define`だけをClang strict、Native、Wasmで比較し、preprocessing後のEOF診断IDと位置を確認する。function-like macro、conditional、include、pragmaには入らない。
+
+### このセッション（続き1424）: preprocessor-only translation unitのE3064 EOF行を固定した
+- 対象選定:
+  - 前回候補の既存`preprocessor_only_translation_unit` fixtureにある、末尾改行付きの単一object-like `#define PREPROCESSOR_ONLY_TRANSLATION_UNIT 1`だけを持つtranslation unitをClang C11 strict、Native、Wasmで比較した。
+  - function-like macro、conditional、include、pragma、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clangはdirective終端直後の1行45列へempty-translation-unit診断を報告した。Native/Wasmはpreprocessing後に残る2行目のEOFへE3064と実トークン`EOF`を報告した。
+  - raw parser helperではdirective処理を再現できないため、file pipelineを通るE2E compile-fail registryの期待値を単なる`E3064`から`:2: E3064`へ強化した。
+  - 直前にstructured positionを固定したcomment-only fixtureもfile pipeline上の同じ2行目を検証できるよう、隣接E2E caseを`:2: E3064`へ揃えた。
+  - compiler sourceは変更せず、受理/拒否、macro登録、preprocessing lifecycle、translation-unit lifecycle、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路は2行目のE3064と実トークン`EOF`を報告した。
+  - focused Native file-pipeline確認はcomment-only／preprocessor-onlyの2/2件で`:2: E3064`と`EOF`を確認した。
+  - `make -j4 build/test_e2e`はwarningなしで成功した。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、隣接2件のfocused file-pipeline確認、E2E registry再ビルドで境界を確認したため、parser suite、preprocess suite、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。function-like macro、conditional、include、pragma、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`variably_modified_typedef_array_member` fixtureの単一identifier VLA boundを持つblock-scope typedef arrayと単一struct memberだけをClang strict、Native、Wasmで比較し、variably-modified member拒否の診断IDと位置を確認する。pointer typedef variant、複合bound式、nested aggregateには入らない。
