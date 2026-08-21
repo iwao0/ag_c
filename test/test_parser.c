@@ -20355,6 +20355,18 @@ static void test_parse_invalid(
       "E2022", 27);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) { return @; }",
+      "E2028", 25);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return \"\\x\"[0]; }",
+      "E2011", 26);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return '\\x'; }",
+      "E2011", 26);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Alignas((1, 16)) int value; int main(void) { return 0; }",
       "E3064", 10);
   expect_parse_fail_at_column(

@@ -226,7 +226,7 @@ int tk_emit_string_literal_bytes(const char *s, int len, int char_width,
 int tk_read_escape_char_ctx(tokenizer_context_t *ctx, char **pp) {
   char *p = *pp;
   if (*p == 'x' && !tk_is_xdigit(p[1])) {
-    TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1);
+    TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p - 1);
   }
   if (*p == 'u' || *p == 'U') {
     uint32_t cp = 0;
@@ -263,7 +263,7 @@ int tk_read_escape_char_ctx(tokenizer_context_t *ctx, char **pp) {
 void tk_skip_escape_in_literal_ctx(tokenizer_context_t *ctx, char **pp) {
   char *p = *pp;
   if (*p == 'x' && !tk_is_xdigit(p[1])) {
-    TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1);
+    TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p - 1);
   }
   if (*p == 'u' || *p == 'U') {
     uint32_t cp = 0;

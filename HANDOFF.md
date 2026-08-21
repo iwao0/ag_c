@@ -38919,3 +38919,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3 fixture、E2029/prefix control、4つのstructured column、tokenizer/parserの直接gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。literal decoding全体、Unicode、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`tokenizer_unexpected_character`と`tokenizer_hex_escape_missing_digits_{string,character}`の単純3件だけをClang strictと比較し、診断pointer選択だけで閉じる場合に限る。UCN、長いescape、literal decoding全体には入らない。
+
+### このセッション（続き1326）: 不正hex escapeのE2011をbackslashへ移した
+- 対象選定:
+  - 前回候補の`tokenizer_unexpected_character`と`tokenizer_hex_escape_missing_digits_{string,character}`だけをClang C11 strict、Native、Wasmで比較した。3 fixtureとも3系統が拒否し、Native/Wasmの診断IDとcaretは一致していた。
+  - UCN、長いescape、literal decoding全体、Unicode identifier、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - 予期しない`@`のE2028はすでにClangと同じ実文字column 25を指していたため、compiler sourceは変更しなかった。
+  - digitを1つも持たない`\\x`のE2011は、escape parserへ渡す`p`が`x`を指す状態で`p + 1`をsourceにしており、closing quoteまたは後続の非hex文字へずれていた。stringのskip経路とcharacterのread経路をともに`p - 1`へ変更し、escape開始backslashを指すようにした。
+  - escapeの受理/拒否、値decode、hex digit消費、E2011 ID・文言、general/UCN escapeの診断は変更していない。
+- coverage:
+  - structured diagnosticへ予期しない`@` E2028 column 25、string/characterのdigit欠落hex escape E2011 column 26を追加した。
+  - differential coverage表のbackslash位置境界をgeneral escapeだけでなくhex escapeにも広げた。
+- 確認:
+  - 対象3 fixtureはClang strict、Native、Wasmの9/9経路がexit 1だった。Native/Wasm 6/6経路はE2028/E2011と同じcaretを報告し、修正後のhex escape 2件はClangと同じbackslash位置へ移った。
+  - 既存`tokenizer_hex_escape_nonhex_string`とcharacter版小型probeもClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4はE2011とbackslash位置を維持した。probeファイルは確認後に削除した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_tokenizer`はwarningなしで成功した。
+  - `./build/test_parser` = **OK: All unit tests passed**、**real 3.43秒**。
+  - `./build/test_tokenizer` = **OK: All unit tests passed**、**real 0.32秒**。両unitは並列実行した。
+- 未実施:
+  - 対象3 fixture、nonhex string/character control、3つのstructured column、tokenizer/parserの直接gateを確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。UCN、長いescape、literal decoding全体、Unicode、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`tokenizer_integer_too_large`、`tokenizer_numeric_multiple_decimal_points`、`tokenizer_numeric_suffix_concatenated`の単純3件だけをClang strictと比較し、診断pointer選択だけで閉じる場合に限る。Unicode suffix、数値型体系、fuzzには入らない。
