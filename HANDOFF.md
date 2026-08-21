@@ -40478,3 +40478,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。comma/nonconstant/overflow幅式、member access、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`incomplete_enum_bitfield` fixtureのforward-declared enumと単一member `enum mode value : 1;`だけをClang strict、Native、Wasmで比較し、不完全enum bit-field型制約の診断IDと位置を確認する。enum定義、member access、initializer、width式派生には入らない。
+
+### このセッション（続き1408）: incomplete enum bit-fieldのE3064列を固定した
+- 対象選定:
+  - 前回候補は現物fixtureの識別子名がHANDOFF案と異なっていたため、実際の`enum value;`と単一member `enum value member : 1;`をClang C11 strict、Native、Wasmで比較した。
+  - enum定義、member access、initializer、width式派生、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clang strictはforward enum自体を2行6列でpedantic errorにし、対象fieldの不完全型制約を4行14列の`member`にも報告した。Native/Wasmはfield制約をE3064と実トークン`member`で報告した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行とインデントを持つE3064 column 14 assertionへ強化し、forward宣言のenum tag、使用側enum tag、幅定数、colonへfield診断がずれないことを固定した。
+  - compiler sourceは変更せず、forward-enum extension、受理/拒否、enum identity、bit-field layout、width評価、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`member`を報告した。Clangのfield不完全型診断は4行14列だった。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.52秒 / user 2.93秒 / sys 0.29秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。enum定義、member access、initializer、width式派生、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`incomplete_enum_object` fixtureのforward-declared enumと単一object `enum value object;`だけをClang strict、Native、Wasmで比較し、不完全enum object制約の診断IDとobject位置を確認する。enum定義、initializer、sizeof、pointer派生には入らない。

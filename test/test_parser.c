@@ -22057,10 +22057,14 @@ static void test_parse_invalid(
       "};\n"
       "int main(void) { return 0; }",
       "E3064", 9);
-  expect_parse_fail(test_suite_session,
-      "enum Incomplete; "
-      "struct Bits { enum Incomplete value : 1; }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "enum value;\n"
+      "struct record {\n"
+      "  enum value member : 1;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 14);
   expect_parse_fail(test_suite_session,
       "int width_mismatch(int); "
       "int width_mismatch(long value) { return (int)value; }");
