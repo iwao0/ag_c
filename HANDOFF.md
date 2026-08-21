@@ -40517,3 +40517,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - Native/Wasm共通source、structured parser regression、対象fixture、record遅延control、該当design invariantで直接境界を確認したため、language-analysis、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。enum定義、initializer、sizeof、pointer派生、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`incomplete_enum_member` fixtureのforward-declared enumと単一memberだけをClang strict、Native、Wasmで比較し、不完全enum member制約の診断ID・文言・member位置を確認する。enum定義、initializer、bit-field、anonymous aggregateには入らない。
+
+### このセッション（続き1410）: incomplete enum memberのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`incomplete_enum_member` fixtureにある`enum value;`と単一member `enum value member;`だけをClang C11 strict、Native、Wasmで比較した。
+  - enum定義、initializer、bit-field、anonymous aggregate、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Clang strictはforward enum自体を2行6列でpedantic errorにし、対象fieldの不完全型制約を4行14列の`member`にも報告した。Native/Wasmは既存の専用E3064文言と実トークン`member`を報告した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行とインデントを持つE3064 column 14 assertionへ強化し、forward宣言のenum tag、使用側enum tag、semicolonへfield診断がずれないことを固定した。
+  - compiler sourceは変更せず、forward-enum extension、受理/拒否、enum identity、aggregate layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路は専用E3064文言と実トークン`member`を報告した。Clangのfield不完全型診断は4行14列だった。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.64秒 / user 3.03秒 / sys 0.30秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。enum定義、initializer、bit-field、anonymous aggregate、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`empty_enum` fixtureの単一の空enum定義だけをClang strict、Native、Wasmで比較し、enumerator必須制約の診断IDとbrace位置を確認する。enumerator値式、nested enum、initializerには入らない。

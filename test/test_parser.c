@@ -21903,9 +21903,14 @@ static void test_parse_invalid(
       "enum value object;\n"
       "int main(void) { return 0; }",
       "E3064", 12);
-  expect_parse_fail(test_suite_session,
-      "enum Incomplete; struct Holder { enum Incomplete member; }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "enum value;\n"
+      "struct record {\n"
+      "  enum value member;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 14);
   expect_parse_fail(test_suite_session,
       "enum Recursive { RecursiveSize = sizeof(enum Recursive) }; "
       "int main(void) { return 0; }");
