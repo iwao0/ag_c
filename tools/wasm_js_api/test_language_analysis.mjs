@@ -6930,6 +6930,11 @@ try {
 }
 
 reportTestTiming("operand hover and incomplete enum initializer");
+if (languageAnalysisFocus === "operand-hover") {
+  compiler.dispose();
+  console.log("wasm language analysis operand hover tests passed");
+  process.exit(0);
+}
 const incompleteEnumInvalidSource = {
   name: "incomplete-enum-invalid.c",
   source: "enum { INCOMPLETE_ENUM_INVALID_BASE = 3, " +

@@ -38006,3 +38006,20 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 51秒のmacro focusがNative/Wasm snapshot parity、inactive directive、再利用/fresh instanceを対象化しているため、1354秒規模の`make test-wasm-js-api`と全E2Eは反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 通常C11制約の主要表は未着手候補なしのため、次も少数Clang strict probeで実差分を確認してから修正する。長時間Wasm検証は変更領域に対応するfocus targetを優先し、全suiteは統合節目へ残す。
+
+### このセッション（続き1286）: operand-hover系Wasm検証のfocus targetを追加した
+- 対象選定:
+  - cast operand、`sizeof` operand、statement/case、enum initializerのhover・補完回復群には専用targetがなく、この領域の変更確認が1354秒規模の`make test-wasm-js-api`へ流れやすかった。
+  - 既存JS suiteには当該群の直後に`reportTestTiming("operand hover and incomplete enum initializer")`があり、安全な終了境界として利用できる。個々のtest caseや通常の全suite経路は変更していない。
+- 変更:
+  - `AGC_LANGUAGE_ANALYSIS_FOCUS=operand-hover`の場合だけ上記checkpointでcompilerをdisposeして成功終了する分岐を追加した。
+  - `Makefile`へ`test-wasm-language-analysis-operand-hover`を追加し、既存focus targetと同様にruntime symbol manifest、self-host Wasm API、Native language-analysis test binaryを依存物にした。
+- 確認:
+  - `/usr/bin/time -p make test-wasm-language-analysis-operand-hover` = **wasm language analysis operand hover tests passed**、**real 117.68秒 / user 117.78秒 / sys 0.83秒**。全suite実測約1354秒に対してwall timeを約91%削減した。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.15秒 / user 11.62秒 / sys 1.52秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.31秒 / user 0.74秒 / sys 0.41秒**。
+  - `/usr/bin/time -p node --check tools/wasm_js_api/test_language_analysis.mjs` = 成功、**real 0.03秒 / user 0.02秒 / sys 0.00秒**。`make -n test-wasm-language-analysis-operand-hover`と`git diff --check`も成功した。
+- 未実施:
+  - 新focusが対象checkpointまで完走したため、1354秒規模の`make test-wasm-js-api`と全E2Eは反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 次候補:
+  - operand-hover領域の変更では新focusを使う。117秒の前半には基礎・macro群も含まれるため、さらに短縮する場合は共有helperのscopeを壊さずtest groupを明示分割する。compiler修正は引き続き通常サイズの少数Clang strict probeから実差分を選ぶ。
