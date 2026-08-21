@@ -20532,6 +20532,20 @@ static void test_parse_invalid(
       "E3064", 9);
   expect_parse_fail_at_column(
       test_suite_session,
+      "struct record {\n"
+      "  static int member;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct value {\n"
+      "  _Thread_local int member;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 3);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
   expect_parse_fail_at_column(
       test_suite_session,

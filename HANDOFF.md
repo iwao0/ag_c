@@ -39552,3 +39552,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較と2 structured columnsで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。typedef name resolution、redeclaration、linkage、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`aggregate_member_static_storage`と`thread_local_aggregate_member`の単純なmember storage-class適用2件だけをClang strictと比較し、`static`または`_Thread_local` keywordのtoken選択だけで閉じる場合に限る。member layout、anonymous aggregate、bit-field、nested declaratorには入らない。
+
+### このセッション（続き1358）: member storage-class不正適用2件のE3064列を回帰固定した
+- 対象選定:
+  - 前回候補の`aggregate_member_static_storage`と`thread_local_aggregate_member`だけをClang C11 strict、Native、Wasmで比較した。
+  - member layout、anonymous aggregate、bit-field、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Native/Wasmは既にClangと同じstorage keywordを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへmember `static`とmember `_Thread_local`のE3064 column 3を追加した。
+  - member declarationのstorage-class適用制約だけを固定し、受理/拒否、型形成、member layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はE3064と`static`または`_Thread_local`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.71秒 / user 3.01秒 / sys 0.35秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較と2 structured columnsで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member layout、anonymous aggregate、bit-field、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`parameter_extern_storage`の単純なprototype parameter 1件だけをClang strictと比較し、`extern` keywordのtoken選択だけで閉じる場合に限る。old-style parameter、array parameter、parameter adjustment、nested declaratorには入らない。
