@@ -21708,14 +21708,16 @@ static void test_parse_invalid(
       "  return 0;\n"
       "}",
       "E3064", 3, 1);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* A local declaration cannot apply _Atomic to a function typedef. */\n"
       "typedef int function_type(void);\n"
+      "\n"
       "int main(void) {\n"
       "  _Atomic function_type function;\n"
       "  return 0;\n"
       "}",
-      "E3064", 3);
+      "E3064", 5, 3);
   expect_parse_fail_at_column(
       test_suite_session,
       "typedef int function_type(void);\n"
