@@ -40057,3 +40057,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。cast、generic association、pointer派生、initializer、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`nested_atomic_pointer_type`からinitializerを外した`_Atomic(int * _Atomic) pointer;` 1件だけを一時probeで比較し、外側またはpointer qualifier側どちらの`_Atomic`を指すかだけを確認する。initializer、pointer階層追加、expression evaluationには入らない。
+
+### このセッション（続き1385）: nested Atomic pointer specifierのE3064列を固定した
+- 対象選定:
+  - 前回候補として既存`nested_atomic_pointer_type`からinitializerを外した`_Atomic(int * _Atomic) pointer;` 1件だけを一時probeとしてClang C11 strict、Native、Wasmで比較した。
+  - initializer、pointer階層追加、cast、generic association、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともClangと同じ1行1列の外側`_Atomic`を指し、Native/WasmはE3064を報告した。
+  - structured diagnosticへ外側specifierのE3064 column 1を追加し、内側pointer qualifier側の`_Atomic`へ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、pointer型、canonical QualType、診断ID・文言、declarator形成は変更していない。
+- 確認:
+  - 対象probeはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.81秒 / user 3.11秒 / sys 0.35秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象probeの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。initializer、pointer階層追加、cast、generic association、expression evaluation、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_incomplete_record` fixtureのforward declarationと`_Atomic(struct incomplete) value;`だけをClang strict、Native、Wasmで比較し、完全object型制約が外側`_Atomic`を指すかだけを確認する。record定義、member access、initializer、expression evaluationには入らない。
