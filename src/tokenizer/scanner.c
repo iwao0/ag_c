@@ -36,6 +36,7 @@ static char *tk_skip_ignored_fallback(
 
   // ブロックコメント /* ... */
   if (*p == '/' && p[1] == '*') {
+    char *comment_start = p;
     *has_space = true;
     p += 2;
     bool closed = false;
@@ -52,7 +53,9 @@ static char *tk_skip_ignored_fallback(
       p++;
     }
     if (!closed) {
-      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT, p);
+      TK_DIAG_AT_IN(
+          ctx, DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT,
+          comment_start);
     }
     return p;
   }

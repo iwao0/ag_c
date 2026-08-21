@@ -245,7 +245,7 @@ int tk_read_escape_char_ctx(tokenizer_context_t *ctx, char **pp) {
     case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
       break;
     default:
-      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
+      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p - 1);
   }
 
   char *bs = p - 1;
@@ -253,7 +253,7 @@ int tk_read_escape_char_ctx(tokenizer_context_t *ctx, char **pp) {
   uint32_t out = 0;
   int len = (int)strlen(bs);
   if (!tk_parse_escape_value(bs, len, &idx, &out)) {
-    TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
+    TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p - 1);
   }
   *pp = bs + idx;
   return (int)out;
@@ -282,7 +282,7 @@ void tk_skip_escape_in_literal_ctx(tokenizer_context_t *ctx, char **pp) {
     case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
       break;
     default:
-      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
+      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p - 1);
   }
 
   if (*p == 'x') {

@@ -271,7 +271,7 @@ static bool tokenize_string_literal(
   while (true) {
     if (*p == '\0' || *p == '\n') {
       TK_DIAG_ATF_IN(
-          ctx, DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED, p, "%s",
+          ctx, DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED, token_start, "%s",
           TK_DIAG_MESSAGE_IN(
               ctx, DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED));
     }

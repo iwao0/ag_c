@@ -20305,6 +20305,39 @@ static void test_parse_invalid(
       "E3058", 15);
   expect_parse_fail_at_column(
       test_suite_session,
+      "const char *name = __func__;\n"
+      "int main(void) { return name != 0; }",
+      "E3066", 20);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return 0x; }",
+      "E2017", 26);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return 08; }",
+      "E2023", 26);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return 1uu; }",
+      "E2016", 26);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return 1lll; }",
+      "E2016", 26);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return 0; } /* unterminated",
+      "E2009", 30);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "const char *value = \"unterminated;",
+      "E2026", 21);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "const char *value = \"\\q\";",
+      "E2013", 22);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Alignas((1, 16)) int value; int main(void) { return 0; }",
       "E3064", 10);
   expect_parse_fail_at_column(

@@ -96,23 +96,24 @@ static void parse_int_suffix(
     tokenizer_context_t *ctx, parsed_num_t *num, char **pp,
     unsigned long long val, bool is_decimal, char *err_loc) {
   char *p = *pp;
+  char *suffix_start = p;
   bool seen_u = false;
   int long_cnt = 0;
 
   while (true) {
     if (*p == 'u' || *p == 'U') {
-      if (seen_u) TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+      if (seen_u) TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, suffix_start, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
       seen_u = true;
       p++;
       continue;
     }
     if (*p == 'l' || *p == 'L') {
       if ((p[1] == 'l' || p[1] == 'L')) {
-        if (long_cnt == 2) TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+        if (long_cnt == 2) TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, suffix_start, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
         long_cnt = 2;
         p += 2;
       } else {
-        if (long_cnt == 2) TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+        if (long_cnt == 2) TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, suffix_start, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
         long_cnt = 1;
         p++;
       }
@@ -122,7 +123,7 @@ static void parse_int_suffix(
   }
 
   if (tk_is_ident_start_byte(*p))
-    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, suffix_start, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
 
   choose_int_type(ctx, num, val, is_decimal, seen_u, long_cnt, err_loc);
   *pp = p;
@@ -308,6 +309,10 @@ static bool parse_zero_prefixed_number(
     if (has_hex_float_marker(p)) {
       parse_float_literal(ctx, num, &p, true);
     } else {
+      if (!tk_is_xdigit(p[2])) {
+        TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_INVALID, p + 1,
+                       "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_INVALID));
+      }
       p += 2;
       parse_integer_literal_with_base(ctx, num, &p, 16, false, err_loc);
     }
@@ -333,7 +338,7 @@ static bool parse_zero_prefixed_number(
 
   if (tk_is_digit(p[1])) {
     if (p[1] == '8' || p[1] == '9') {
-      TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID, p, "%s",
+      TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID, p + 1, "%s",
                      TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID));
     }
     p++;
