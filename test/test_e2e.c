@@ -2357,6 +2357,25 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"assignment_incomplete_array_rejected",
      "fixture:test/fixtures/should_reject/assignment_incomplete_array.c",
      "E3098"},
+    {"assignment_to_assignment_result_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "assignment_to_assignment_result.c",
+     "E3062"},
+    {"assignment_to_comma_result_rejected",
+     "fixture:test/fixtures/should_reject/assignment_to_comma_result.c",
+     "E3062"},
+    {"assignment_to_conditional_result_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "assignment_to_conditional_result.c",
+     "E3062"},
+    {"compound_assignment_to_comma_result_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "compound_assignment_to_comma_result.c",
+     "E3062"},
+    {"compound_assignment_to_conditional_result_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "compound_assignment_to_conditional_result.c",
+     "E3062"},
     {"excess_scalar_initializer_file_scope_rejected",
      "fixture:test/fixtures/should_reject/"
      "excess_scalar_initializer_file_scope.c",

@@ -16,6 +16,24 @@ static const char *direct_incdec_operator_name(int node_kind) {
              : NULL;
 }
 
+static const char *direct_assignment_operator_name(
+    token_kind_t token_kind) {
+  switch (token_kind) {
+    case TK_ASSIGN: return "=";
+    case TK_PLUSEQ: return "+=";
+    case TK_MINUSEQ: return "-=";
+    case TK_MULEQ: return "*=";
+    case TK_DIVEQ: return "/=";
+    case TK_MODEQ: return "%=";
+    case TK_SHLEQ: return "<<=";
+    case TK_SHREQ: return ">>=";
+    case TK_ANDEQ: return "&=";
+    case TK_XOREQ: return "^=";
+    case TK_OREQ: return "|=";
+    default: return NULL;
+  }
+}
+
 static const char *direct_control_statement_name(int node_kind) {
   switch (node_kind) {
     case ND_IF: return "if";
@@ -297,13 +315,17 @@ int psx_diagnose_syntax_typed_hir_rejection_in_context(
                     diagnostics,
                     DIAG_ERR_PARSER_INCDEC_POINTER_NOT_COMPLETE_OBJECT));
       return 1;
-    case PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE:
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE: {
+      const char *operator_name =
+          token ? direct_assignment_operator_name(token->kind) : NULL;
+      if (!operator_name) operator_name = "=";
       diag_emit_tokf_in(
           diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED, token,
           diag_message_for_in(
               diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED),
-          "=");
+          operator_name);
       return 1;
+    }
     case PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_CONST_TARGET:
       diag_emit_tokf_in(
           diagnostics, DIAG_ERR_PARSER_CONST_ASSIGNMENT, token,

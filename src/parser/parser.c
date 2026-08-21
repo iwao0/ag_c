@@ -759,7 +759,8 @@ static node_block_t *parse_funcdef_body_block(
       ps_parser_leave_recovery_block_in(runtime_context);
       return NULL;
     }
-    if (body->body[i]) body->body[i]->tok = stmt_tok;
+    if (body->body[i] && !body->body[i]->tok)
+      body->body[i]->tok = stmt_tok;
     i++;
   }
   body->body[i] = NULL;

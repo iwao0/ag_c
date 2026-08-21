@@ -7208,6 +7208,14 @@ static void assert_direct_function_rejection(
   ASSERT_TRUE(typed_hir == NULL);
   ASSERT_EQ(expected_rejection, failure.rejection);
   ASSERT_EQ(expected_node_kind, failure.source_node_kind);
+  if (expected_rejection ==
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE) {
+    ASSERT_TRUE(failure.source_token != NULL);
+    ASSERT_EQ(expected_node_kind == ND_COMPOUND_ASSIGN
+                  ? TK_PLUSEQ
+                  : TK_ASSIGN,
+              failure.source_token->kind);
+  }
 
   ps_dispose_function_definition_syntax(
       &item.value.function_header);
@@ -11699,6 +11707,31 @@ static void test_direct_function_typed_hir_resolution_boundary(
       "int __direct_assign_non_lvalue(void) { 1 = 2; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE,
       ND_ASSIGN);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_assign_assignment_result(void) { "
+      "int left=1, right=2; (left=right)=3; return left; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE,
+      ND_ASSIGN);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_assign_comma_result(void) { "
+      "int left=1, right=2; (left,right)=3; return right; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE,
+      ND_ASSIGN);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_assign_conditional_result(void) { "
+      "int left=1, right=2; (1?left:right)=3; return left; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE,
+      ND_ASSIGN);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_compound_assign_comma_result(void) { "
+      "int left=1, right=2; (left,right)+=3; return right; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE,
+      ND_COMPOUND_ASSIGN);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_compound_assign_conditional_result(void) { "
+      "int left=1, right=2; { (1?left:right)+=3; } return left; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE,
+      ND_COMPOUND_ASSIGN);
   assert_direct_function_rejection(test_suite_session,
       "int __direct_assign_const(void) { "
       "const int value = 0; value = 1; return 0; }",

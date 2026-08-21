@@ -12449,6 +12449,45 @@ if (!/token_t\s+\*comma_tok\s*=\s*curtok\(ctx\)[^]*?comma->tok\s*=\s*comma_tok/.
     "composite expression Syntax nodes must retain their operator source tokens",
   );
 }
+if (!/if\s*\(\s*body->body\[i\]\s*&&\s*!body->body\[i\]->tok\s*\)\s*body->body\[i\]->tok\s*=\s*stmt_tok/.test(
+      parserStreamSource,
+    ) ||
+    !/if\s*\(\s*node->body\[i\]\s*&&\s*!node->body\[i\]->tok\s*\)\s*node->body\[i\]->tok\s*=\s*stmt_tok/.test(
+      parserStatementSource,
+    )) {
+  throw new Error(
+    "statement block builders must preserve expression operator source tokens",
+  );
+}
+const directAssignmentOperatorSpellings = [
+  ["TK_ASSIGN", "="],
+  ["TK_PLUSEQ", "+="],
+  ["TK_MINUSEQ", "-="],
+  ["TK_MULEQ", "*="],
+  ["TK_DIVEQ", "/="],
+  ["TK_MODEQ", "%="],
+  ["TK_SHLEQ", "<<="],
+  ["TK_SHREQ", ">>="],
+  ["TK_ANDEQ", "&="],
+  ["TK_XOREQ", "^="],
+  ["TK_OREQ", "|="],
+];
+if (directAssignmentOperatorSpellings.some(
+      ([tokenKind, spelling]) =>
+        !semanticTreeResolutionSource.includes(
+          `case ${tokenKind}: return "${spelling}";`,
+        ),
+    ) ||
+    !/token\s*\?\s*direct_assignment_operator_name\(token->kind\)\s*:\s*NULL/.test(
+      semanticTreeResolutionSource,
+    ) ||
+    !/DIAG_ERR_PARSER_LVALUE_REQUIRED[^]*?operator_name/.test(
+      semanticTreeResolutionSource,
+    )) {
+  throw new Error(
+    "assignment lvalue diagnostics must report the actual assignment operator",
+  );
+}
 const unaryPlusParser = parserExpressionSource.match(
   /if\s*\(\s*k\s*==\s*TK_PLUS\s*\)\s*\{[^]*?\n\s*\}/,
 )?.[0] ?? "";

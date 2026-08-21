@@ -38111,3 +38111,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規3fixtureを3 compilerで直接確認し、parser unitと共通compile-fail registryへ登録したため、全should_reject、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - composite expressionのsource tokenは共通parser構築点で閉じた。次も通常サイズの宣言・statement・value-category制約を少数のClang strict probeから選び、既存coverage済みの領域は再実装しない。
+
+### このセッション（続き1291）: 非lvalue代入のE3062を実際の代入演算子へ戻した
+- 対象選定:
+  - pointer比較・条件式のnull pointer constant境界を、literal `0`、非整数定数式の`(0, 0)`、automatic objectのzeroでClang C11 strictと比較した。Clang/ag_cはliteralだけを受理し、残りを正しく拒否したため変更しなかった。
+  - 代入式、comma式、conditional式の結果を単純代入先または`+=`先にする浅い5形は、Clang/ag_cとも正しく拒否した。一方、Clangが外側の代入演算子を指すのに対し、ag_cのE3062は`(`または先頭identifierを指し、複合代入でもmessageを常に`=`と表示する実差分を確認した。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - assignment parser自身は`=`・`+=`等のoperator tokenをroot Syntax nodeへ保持していたが、function bodyとnested blockのbuilderが解析済みstatement rootのtokenを文頭tokenで無条件上書きしていた。
+  - `parse_funcdef_body_block()`と`parse_stmt_block()`はroot tokenが未設定のstatementだけへ文頭tokenをfallback設定する。control/local/null statementの従来位置を維持しつつ、assignmentや前回修正したbinary・comma・conditional等がparserで確定したsource tokenを壊さない。
+  - E3062のoperator名はrejectionのsource tokenからC11の11代入演算子へ局所mappingする。tokenが無い異常経路だけ従来の`=`へfallbackし、semantic rejection種別、AST形、代入semanticsは変更していない。
+  - design invariantは両block builderのfallback-only設定と11演算子mappingを固定し、ローカライズ済み診断文言のexact matchにはしていない。
+- coverage:
+  - parser direct Typed HIR unitへ、assignment/comma/conditional結果への単純代入とcomma/conditional結果への`+=`を追加し、rejection sourceがそれぞれ`TK_ASSIGN`・`TK_PLUSEQ`であることを検査した。conditional `+=`はnested block内へ置き、両block builderを動的に通した。
+  - should_rejectへ`assignment_to_assignment_result`、`assignment_to_comma_result`、`assignment_to_conditional_result`、`compound_assignment_to_comma_result`、`compound_assignment_to_conditional_result`を追加し、Native/Wasm共用compile-fail registryへE3062で登録した。fixture一覧とdifferential coverage表も更新した。
+- 確認:
+  - 新規5fixtureはhost Clang `-std=c11 -pedantic-errors`、ag_c Native、Wasm objectがすべて拒否した。Native/WasmのE3062は単純代入3件で実際の`=`、複合代入2件で実際の`+=` token上に一致し、operator名も同じ表示になった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、最終実行は**real 3.61秒 / user 3.09秒 / sys 0.24秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.11秒 / user 11.57秒 / sys 1.52秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.37秒 / user 0.74秒 / sys 0.44秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 新規5fixtureを3 compilerで直接確認し、parser unitと共通compile-fail registryへ登録したため、全should_reject、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - statement blockによるroot source token破壊は両共通builderで閉じた。次も通常サイズの宣言・statement・value-category制約を少数のClang strict probeから選び、長時間suiteは対応するfocused gateがない場合だけ追加を検討する。

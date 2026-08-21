@@ -190,7 +190,8 @@ static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
         context->syntax.leave_block_scope(context->syntax.context);
       return NULL;
     }
-    if (node->body[i]) node->body[i]->tok = stmt_tok;
+    if (node->body[i] && !node->body[i]->tok)
+      node->body[i]->tok = stmt_tok;
     i++;
   }
   node->body[i] = NULL;
