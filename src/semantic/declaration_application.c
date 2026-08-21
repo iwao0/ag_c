@@ -672,6 +672,44 @@ token_t *psx_declaration_specifier_token_for_kinds(
   return fallback;
 }
 
+token_t *psx_atomic_restrict_pointer_token(
+    token_t *start, token_t *end, token_t *restrict_token) {
+  if (!start || !restrict_token) return NULL;
+  token_t *pointer_token = NULL;
+  int has_atomic = 0;
+  int has_target_restrict = 0;
+  for (token_t *token = start;
+       token && token != end; token = token->next) {
+    if (token->kind == TK_MUL) {
+      if (pointer_token && has_atomic && has_target_restrict)
+        return pointer_token;
+      pointer_token = token;
+      has_atomic = 0;
+      has_target_restrict = 0;
+      continue;
+    }
+    if (!pointer_token) continue;
+    if (token->kind == TK_ATOMIC) {
+      has_atomic = 1;
+      continue;
+    }
+    if (token == restrict_token && token->kind == TK_RESTRICT) {
+      has_target_restrict = 1;
+      continue;
+    }
+    if (token->kind == TK_CONST || token->kind == TK_VOLATILE ||
+        token->kind == TK_RESTRICT)
+      continue;
+    if (has_atomic && has_target_restrict) return pointer_token;
+    pointer_token = NULL;
+    has_atomic = 0;
+    has_target_restrict = 0;
+  }
+  return pointer_token && has_atomic && has_target_restrict
+             ? pointer_token
+             : NULL;
+}
+
 int psx_validate_parsed_decl_specifier_constraints_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier,
@@ -705,6 +743,9 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
     token_t *source_token = psx_declaration_specifier_token_for_kinds(
         specifier, diagnostic_token,
         (const token_kind_t[]){TK_RESTRICT}, 1);
+    token_t *pointer_token = psx_atomic_restrict_pointer_token(
+        specifier->diagnostic_token, diagnostic_token, source_token);
+    if (pointer_token) source_token = pointer_token;
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",

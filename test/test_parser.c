@@ -20607,6 +20607,16 @@ static void test_parse_invalid(
       "E3064", 17);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int * _Atomic restrict invalid_pointer;\n"
+      "int main(void) { return 0; }",
+      "E3064", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int * restrict _Atomic invalid_pointer;\n"
+      "int main(void) { return 0; }",
+      "E3064", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "_Atomic(void) value;\n"
       "int main(void) { return 0; }",
       "E3064", 1);

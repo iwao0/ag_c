@@ -11204,10 +11204,13 @@ if (!/psx_semantic_type_table_pointer_can_be_restrict_qualified\s*\([^]*?pointer
     !/token_t\s*\*psx_type_name_restrict_qualifier_token\s*\([^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?syntax->declarator\.diagnostic_token[^]*?TK_RESTRICT[^]*?syntax->diagnostic_token/.test(
       typeNameResolutionSource,
     ) ||
-    !/static\s+token_t\s*\*type_name_atomic_restrict_pointer_token\s*\([^]*?token->kind\s*==\s*TK_MUL[^]*?token->kind\s*==\s*TK_ATOMIC[^]*?token\s*==\s*restrict_token\s*&&\s*token->kind\s*==\s*TK_RESTRICT[^]*?return\s+pointer_token/.test(
-      typeNameResolutionSource,
+    !/token_t\s*\*psx_atomic_restrict_pointer_token\s*\([^]*?token->kind\s*==\s*TK_MUL[^]*?token->kind\s*==\s*TK_ATOMIC[^]*?token\s*==\s*restrict_token\s*&&\s*token->kind\s*==\s*TK_RESTRICT[^]*?return\s+pointer_token/.test(
+      declarationApplicationSource,
     ) ||
-    !/psx_type_name_restrict_qualifier_token\s*\([^]*?type_name_atomic_restrict_pointer_token\s*\(\s*syntax,\s*source_token\s*\)[^]*?if\s*\(pointer_token\)\s*return\s+pointer_token/.test(
+    !/psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?psx_atomic_restrict_pointer_token\s*\(\s*specifier->diagnostic_token,\s*diagnostic_token,\s*source_token\s*\)[^]*?if\s*\(pointer_token\)\s*source_token\s*=\s*pointer_token/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_type_name_restrict_qualifier_token\s*\([^]*?psx_atomic_restrict_pointer_token\s*\(\s*syntax->diagnostic_token,\s*syntax->end,\s*source_token\s*\)[^]*?if\s*\(pointer_token\)\s*return\s+pointer_token/.test(
       typeNameResolutionSource,
     ) ||
     !/validate_resolved_type_name_qual_type\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?psx_type_name_restrict_qualifier_token\(type_name\)/.test(
@@ -11232,7 +11235,7 @@ if (!/psx_semantic_type_table_pointer_can_be_restrict_qualified\s*\([^]*?pointer
       typeNameResolutionSource,
     )) {
   throw new Error(
-    "restrict qualifiers must preserve canonical metadata through declaration and type-query validation, using the pointer token for same-level atomic/restrict type names and the qualifier token otherwise",
+    "restrict qualifiers must preserve canonical metadata through declaration and type-query validation, using the pointer token for same-level atomic/restrict declarators and type names and the qualifier token otherwise",
   );
 }
 if (!/semantic_type_has_invalid_atomic_qualification\s*\([^]*?PSX_TYPE_QUALIFIER_ATOMIC[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?!psx_semantic_type_is_complete_object_in[^]*?shape\.kind\s*==\s*PSX_TYPE_POINTER[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?shape\.kind\s*==\s*PSX_TYPE_FUNCTION/.test(
