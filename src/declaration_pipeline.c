@@ -1014,9 +1014,12 @@ static int append_definition_parameter(
           semantic_context,
           base_qual_type,
           &applied, &resolution)) {
+    token_t *source_token = psx_declaration_specifier_token_for_kinds(
+        &parameter->specifier, parameter->declarator.diagnostic_token,
+        (const token_kind_t[]){TK_RESTRICT}, 1);
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context),
-        parameter->declarator.diagnostic_token, "param",
+        source_token, "param",
         "canonical parameter declaration resolution failed");
   }
   if (result_index < 0) result_index = result->nargs;

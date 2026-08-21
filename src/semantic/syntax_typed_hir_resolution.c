@@ -1535,14 +1535,22 @@ static int note_direct_semantic_rejection(
   return 0;
 }
 
+static int note_direct_semantic_rejection_at_token(
+    direct_resolution_context_t *context,
+    psx_syntax_typed_hir_rejection_t rejection,
+    const node_t *source, const token_t *source_token) {
+  note_direct_semantic_rejection(context, rejection, source);
+  if (context && context->failure && source_token)
+    context->failure->source_token = source_token;
+  return 0;
+}
+
 static int note_direct_initializer_rejection(
     direct_resolution_context_t *context,
     psx_syntax_typed_hir_rejection_t rejection,
     const node_t *source, const token_t *failure_token) {
-  note_direct_semantic_rejection(context, rejection, source);
-  if (context && context->failure && failure_token)
-    context->failure->source_token = failure_token;
-  return 0;
+  return note_direct_semantic_rejection_at_token(
+      context, rejection, source, failure_token);
 }
 
 static int note_direct_integer_rejection(
@@ -1785,7 +1793,8 @@ static psx_qual_type_t direct_type_before_application(
 static int validate_direct_type_query_type(
     direct_resolution_context_t *context,
     const node_t *source, psx_qual_type_t queried_qual_type,
-    int is_sizeof, int allow_incomplete_extension) {
+    int is_sizeof, int allow_incomplete_extension,
+    const token_t *invalid_restrict_token) {
   psx_type_shape_t shape = {0};
   if (!context || !source ||
       !direct_describe_qual_type(context, queried_qual_type, &shape))
@@ -1798,10 +1807,10 @@ static int validate_direct_type_query_type(
         source);
   if (psx_semantic_type_table_has_invalid_restrict_qualification(
           direct_semantic_types(context), queried_qual_type))
-    return note_direct_semantic_rejection(
+    return note_direct_semantic_rejection_at_token(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
-        source);
+        source, invalid_restrict_token);
   if (psx_semantic_type_has_invalid_atomic_qualification_in(
           context->semantic_context, queried_qual_type))
     return note_direct_semantic_rejection(
@@ -1939,7 +1948,8 @@ static int resolve_direct_sizeof_type_name(
   if (queried_qual_type.type_id == PSX_TYPE_ID_INVALID ||
       !validate_direct_type_query_type(
           context, &query->base, queried_qual_type, 1,
-          has_zero_length_array_extension))
+          has_zero_length_array_extension,
+          psx_type_name_restrict_qualifier_token(&type_name)))
     return 0;
 
   int maximum_factors = effective_application.array_bound_count;
@@ -2220,7 +2230,8 @@ static int resolve_direct_alignof_type_name(
           base_resolution.base_qual_type, &application);
   return queried_qual_type.type_id != PSX_TYPE_ID_INVALID &&
          validate_direct_type_query_type(
-             context, &query->base, queried_qual_type, 0, 0) &&
+             context, &query->base, queried_qual_type, 0, 0,
+             psx_type_name_restrict_qualifier_token(&type_name)) &&
          psx_resolve_alignof_qual_type_plan_in(
              context->semantic_context, queried_qual_type,
              &binding->plan);
@@ -2469,7 +2480,7 @@ static int resolve_direct_type_query(
       }
       if (queried_qual_type.type_id != PSX_TYPE_ID_INVALID &&
           !validate_direct_type_query_type(
-              context, syntax, queried_qual_type, 1, 0))
+              context, syntax, queried_qual_type, 1, 0, NULL))
         return 0;
       if (!resolved && operand->kind == ND_STRING) {
         const node_string_t *string =

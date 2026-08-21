@@ -2597,6 +2597,9 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "restrict_typedef_function_pointer_type_name.c",
      "E3064"},
+    {"restrict_builtin_scalar_type_name_rejected",
+     "fixture:test/fixtures/should_reject/restrict_builtin_scalar_type_name.c",
+     "E3117"},
     {"restrict_typedef_scalar_type_name_rejected",
      "fixture:test/fixtures/should_reject/restrict_typedef_scalar_type_name.c",
      "E3117"},
@@ -2605,6 +2608,10 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "E3064"},
     {"restrict_function_pointer_parameter_rejected",
      "fixture:test/fixtures/should_reject/restrict_function_pointer_parameter.c",
+     "E3064"},
+    {"restrict_function_pointer_parameter_declaration_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "restrict_function_pointer_parameter_declaration.c",
      "E3064"},
     {"restrict_function_pointer_member_rejected",
      "fixture:test/fixtures/should_reject/restrict_function_pointer_member.c",

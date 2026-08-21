@@ -14,6 +14,18 @@ static psx_scope_lookup_point_t type_name_lookup_point(
   };
 }
 
+token_t *psx_type_name_restrict_qualifier_token(
+    const psx_type_name_ref_t *type_name) {
+  if (!type_name || !type_name->syntax) return NULL;
+  const psx_parsed_type_name_t *syntax = type_name->syntax;
+  token_t *source_token = psx_declaration_specifier_token_for_kinds(
+      &syntax->specifier, syntax->declarator.diagnostic_token,
+      (const token_kind_t[]){TK_RESTRICT}, 1);
+  return source_token == syntax->declarator.diagnostic_token
+             ? syntax->diagnostic_token
+             : source_token;
+}
+
 static psx_qual_type_t apply_reference_qualifiers(
     psx_qual_type_t base,
     const psx_parsed_decl_specifier_t *specifier) {
@@ -129,7 +141,7 @@ static int validate_resolved_type_name_qual_type(
           resolved)) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context),
-        type_name->syntax->diagnostic_token, "type-name",
+        psx_type_name_restrict_qualifier_token(type_name), "type-name",
         "restrict qualifier requires a pointer to an object or "
         "incomplete type");
     return 0;

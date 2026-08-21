@@ -38480,3 +38480,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象positiveのClang/Native/Wasm実行、既存2fixtureと浅いprobe/controlの直接診断、parser structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・declarator、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 基本integer/floating/void/_Boolの順序とsource位置は閉じた。次は既存対応範囲内の`_Complex`/`_Imaginary`語順を少数比較し、標準方針差が見えた場合は広げず、通常のidentifier/keyword/delimiter診断へ戻る。
+
+### このセッション（続き1307）: invalid restrictをcanonical制約検査まで保持し、E3064/E3117をqualifier位置へ揃えた
+- 対象選定:
+  - 前回候補の`_Complex`は合法なlong/double語順がClang C11 strictと一致した。`_Imaginary`はClangが未対応として拒否する一方ag_cは受理する実装方針差だったため変更せず、function/storage specifierの既存16件へ移ったが、これらも拒否token位置まで一致した。
+  - 浅い差分として、function-pointer parameterのdefinition/prototypeはClangが`restrict`を指すのにag_cはparameter名または`int`、function-pointer type-nameは`int`、scalar/Atomic pointerの`sizeof` type-nameは`sizeof`を指していた。さらに組込みscalarの`sizeof(restrict int)`は通常診断でなくE0006「direct function Syntax rejection has no diagnostic」へ落ちた。
+  - 既存canonical restrict検査とparserが保持するtokenだけで閉じ、deep expression/declarator、標準方針、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - built-in declaration specifierと`_Atomic(type-name)` specifierは、基底型がpointerでない時点で`PSX_TYPE_ID_INVALID`を返し、後段の文脈別canonical制約検査へinvalid restrict metadataを渡していなかった。早期shape拒否を除き、`PSX_TYPE_QUALIFIER_RESTRICT`をQualTypeへ保持して既存の再帰的pointer/pointee検査へ統一した。合法なtypedef/object pointerは従来どおり通る。
+  - definition/prototype parameterのcanonical解決失敗は、specifier先頭からdeclarator末尾まで既存token scannerで`TK_RESTRICT`を選ぶ。restrict以外のprototype失敗は従来のspecifier token fallbackを維持する。
+  - type-name共通helperが同じ範囲から`restrict`を選び、cast等の通常type-name診断とdirect `sizeof`/`_Alignof`のfailure source tokenで共有する。direct Typed HIRにはsemantic rejection IDを変えず任意tokenを付加する小さい共通helperを追加し、initializerの既存token付き拒否もそこへ委譲した。
+- coverage:
+  - 組込みscalar type-nameとfunction-pointer prototype parameterのshould_reject fixtureを追加し、Native/Wasm共用compile-fail registryへE3117/E3064として登録した。既存definition、function-pointer type-name、typedef scalar type-name、Atomic restrict pointer type-nameと合わせてClang strict/Native/Wasmの`restrict`位置を直接確認した。
+  - parser structured diagnosticは`sizeof(restrict int)`、`_Alignof(restrict int)`、function-pointer cast、prototype parameterのE3117/E3064 columnを直接固定する。design invariantはspecifier段階でmetadataを失わないこと、parameter/type-name/type-queryのtoken伝播、sizeof/alignof両call siteを固定し、user-facing文言のexact matchにはしていない。
+- 確認:
+  - 対象6fixtureはClang strict、Native、Wasmがすべて拒否し、Native/WasmはE3064/E3117を維持してClangと同じ`restrict` tokenを指した。restrict should_reject 22件はNative/Wasm合計44/44経路がexit 1を維持した。
+  - positiveのobject pointer fixture、`sizeof(int *restrict)`、typedef pointer type-nameの`sizeof(restrict pointer_type)`はClang strict/Native/Wasmすべて受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.62秒 / user 3.02秒 / sys 0.26秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.75秒 / user 11.97秒 / sys 1.63秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.07秒 / user 0.76秒 / sys 0.49秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`と`make -j4 build/test_e2e`はwarningなしで成功し、`git diff --check`も成功した。
+- 未実施:
+  - restrict正本22件のNative/Wasm直接拒否、対象6件のClang strict/Native/Wasm source位置、positive 3形、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。deep expression/declarator、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - restrictの通常宣言、parameter、type-name、type-query位置は閉じた。`_Imaginary`方針差と既に一致したfunction/storage specifierへは戻らず、次も通常サイズのdeclaration/statement制約から既存identifier/keyword/delimiter tokenだけで閉じる差分を少数比較する。`_Alignas`受理方針とduplicate caseの式位置には入らない。

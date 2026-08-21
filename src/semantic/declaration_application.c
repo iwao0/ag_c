@@ -499,16 +499,8 @@ psx_qual_type_t psx_apply_parsed_decl_specifier_qual_type_in_contexts(
       type.qualifiers |= PSX_TYPE_QUALIFIER_CONST;
     if (specifier->type_spec.is_volatile_qualified)
       type.qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
-    if (specifier->type_spec.is_restrict_qualified) {
-      psx_type_shape_t shape = {0};
-      if (!psx_semantic_type_table_describe(
-              ps_ctx_semantic_type_table_in(semantic_context),
-              type.type_id, &shape) ||
-          shape.kind != PSX_TYPE_POINTER)
-        return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                                 PSX_TYPE_QUALIFIER_NONE};
+    if (specifier->type_spec.is_restrict_qualified)
       type.qualifiers |= PSX_TYPE_QUALIFIER_RESTRICT;
-    }
     return type;
   }
   apply_decl_tag_action(
@@ -1249,9 +1241,14 @@ void psx_apply_parsed_function_parameters_in_contexts(
                 .allow_incomplete_object = 1,
             },
             &parameter_resolution)) {
+      token_t *source_token = psx_declaration_specifier_token_for_kinds(
+          &parameter->specifier, parameter->declarator.diagnostic_token,
+          (const token_kind_t[]){TK_RESTRICT}, 1);
+      if (source_token == parameter->declarator.diagnostic_token)
+        source_token = parameter->specifier.diagnostic_token;
       ps_diag_ctx_in(
           ps_ctx_diagnostics(semantic_context),
-          parameter->specifier.diagnostic_token, "param",
+          source_token, "param",
           "canonical prototype parameter resolution failed");
     }
     psx_qual_type_t adjusted_qual_type =

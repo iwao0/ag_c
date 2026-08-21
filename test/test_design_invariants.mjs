@@ -10902,6 +10902,14 @@ if (!/int\s+op_index\s*=\s*declarator->declarator_shape\.count[^]*?parse_context
     "array parameter qualifiers and static must be restricted to the outermost array type derivation and static must not repeat",
   );
 }
+const declSpecifierQualifierApplication =
+  declarationResolutionSource.match(
+    /static psx_qual_type_t apply_decl_specifier_qualifiers\([^]*?\n\}/,
+  )?.[0] ?? "";
+const parsedDeclSpecifierApplication =
+  declarationApplicationSource.match(
+    /psx_qual_type_t psx_apply_parsed_decl_specifier_qual_type_in_contexts\([^]*?\n\}/,
+  )?.[0] ?? "";
 if (!/psx_semantic_type_table_pointer_can_be_restrict_qualified\s*\([^]*?pointer_shape\.kind\s*!=\s*PSX_TYPE_POINTER[^]*?pointee_shape\.kind\s*!=\s*PSX_TYPE_FUNCTION/.test(
       semanticTypeIdentitySource,
     ) ||
@@ -10917,14 +10925,44 @@ if (!/psx_semantic_type_table_pointer_can_be_restrict_qualified\s*\([^]*?pointer
     !/apply_reference_qualifiers\s*\([^]*?syntax->is_restrict_qualified[^]*?PSX_TYPE_QUALIFIER_RESTRICT/.test(
       typeNameResolutionSource,
     ) ||
-    !/validate_direct_type_query_type\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE/.test(
+    !/specifier->is_restrict_qualified\)\s*type\.qualifiers\s*\|=\s*PSX_TYPE_QUALIFIER_RESTRICT/.test(
+      declSpecifierQualifierApplication,
+    ) ||
+    /shape\.kind\s*!=\s*PSX_TYPE_POINTER[^]*?invalid_qual_type/.test(
+      declSpecifierQualifierApplication,
+    ) ||
+    !/specifier->type_spec\.is_restrict_qualified\)\s*type\.qualifiers\s*\|=\s*PSX_TYPE_QUALIFIER_RESTRICT/.test(
+      parsedDeclSpecifierApplication,
+    ) ||
+    /specifier->type_spec\.is_restrict_qualified[^]*?shape\.kind\s*!=\s*PSX_TYPE_POINTER/.test(
+      parsedDeclSpecifierApplication,
+    ) ||
+    !/token_t\s*\*psx_type_name_restrict_qualifier_token\s*\([^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?syntax->declarator\.diagnostic_token[^]*?TK_RESTRICT[^]*?syntax->diagnostic_token/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/validate_resolved_type_name_qual_type\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?psx_type_name_restrict_qualifier_token\(type_name\)/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/note_direct_semantic_rejection_at_token\s*\([^]*?failure->source_token\s*=\s*source_token/.test(
       syntaxTypedHirResolutionSource,
+    ) ||
+    !/validate_direct_type_query_type\s*\([^]*?invalid_restrict_token[^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?note_direct_semantic_rejection_at_token\s*\([^]*?invalid_restrict_token/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    (syntaxTypedHirResolutionSource.match(
+      /psx_type_name_restrict_qualifier_token\(&type_name\)/g,
+    )?.length ?? 0) < 2 ||
+    !/resolve_definition_parameter\s*\([^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?parameter->declarator\.diagnostic_token[^]*?TK_RESTRICT[^]*?source_token,\s*"param",\s*"canonical parameter declaration resolution failed"/.test(
+      declarationPipelineSource,
+    ) ||
+    !/psx_resolve_parameter_declaration\s*\([^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?parameter->declarator\.diagnostic_token[^]*?TK_RESTRICT[^]*?source_token,\s*"param",\s*"canonical prototype parameter resolution failed"/.test(
+      declarationApplicationSource,
     ) ||
     !/psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?restrict qualifier requires a pointer to an object or[^]*?incomplete type/.test(
       typeNameResolutionSource,
     )) {
   throw new Error(
-    "restrict qualifiers must be validated against canonical pointer pointee identity and reject function or atomic-qualified pointers",
+    "restrict qualifiers must preserve canonical metadata through declaration and type-query validation and diagnose the qualifier token",
   );
 }
 if (!/semantic_type_has_invalid_atomic_qualification\s*\([^]*?PSX_TYPE_QUALIFIER_ATOMIC[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?!psx_semantic_type_is_complete_object_in[^]*?shape\.kind\s*==\s*PSX_TYPE_POINTER[^]*?shape\.kind\s*==\s*PSX_TYPE_ARRAY[^]*?shape\.kind\s*==\s*PSX_TYPE_FUNCTION/.test(

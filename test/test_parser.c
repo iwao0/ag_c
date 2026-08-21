@@ -20010,6 +20010,18 @@ static void test_parse_invalid(
       test_suite_session, "unsigned signed value;", "E3006", 10);
   expect_parse_fail_at_column(
       test_suite_session, "double signed value;", "E3006", 8);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return sizeof(restrict int); }", "E3117", 32);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return _Alignof(restrict int); }", "E3117", 34);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int apply(int (*restrict callback)(void));", "E3064", 17);
   expect_parse_ok(test_suite_session,
       "typedef double long OrderedLongDouble; "
       "typedef signed long long SignedWide; "
