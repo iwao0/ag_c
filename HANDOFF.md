@@ -39204,3 +39204,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象3 fixtureの三系統比較と3 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。label/switch意味解析、VLA scope、nested statement、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`return_value_from_void_function`と`bare_return_from_nonvoid_function`の単純return 2件だけをClang strictと比較し、return keywordまたは式先頭token選択だけで閉じる場合に限る。fallthrough CFG、aggregate/complex return、noreturn、deep expressionには入らない。
+
+### このセッション（続き1339）: void/non-void returnのE3005 keyword位置を回帰固定した
+- 対象選定:
+  - 前回候補の`return_value_from_void_function`と`bare_return_from_nonvoid_function`だけをClang C11 strict、Native、Wasmで比較した。
+  - fallthrough CFG、aggregate/complex return、`_Noreturn`、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 2件ともNative/Wasmは既にClangと同じ`return` keywordを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへvoid関数からの値returnとnon-void関数からのbare returnのE3005 column 3を追加した。
+  - differential coverage表へ両方向のreturn制約のsource位置方針を追記した。return型制約、受理/拒否、E3005 ID・文言は変更していない。
+- 確認:
+  - 対象2 fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はE3005と`return` keywordを報告した。
+  - `make -j4 build/test_parser`は成功し、対象binaryが最新であることを確認した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.59秒 / user 2.97秒 / sys 0.30秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象2 fixtureの三系統比較と2 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。fallthrough CFG、aggregate/complex return、`_Noreturn`、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`funcdef_unnamed_parameter`と`named_void_parameter`の単純parameter 2件だけをClang strictと比較し、parameter identifierまたは閉じ括弧token選択だけで閉じる場合に限る。nested declarator、array/function parameter、typedef-void、variadicには入らない。
