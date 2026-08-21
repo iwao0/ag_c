@@ -40294,3 +40294,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member access、initializer、width式派生、unnamed bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_bitfield_specifier` fixtureの単一member `_Atomic(unsigned int) value : 3;`だけをClang strict、Native、Wasmで比較し、Atomic type specifier形式でもbit-field member名を指すか確認する。member access、initializer、width式派生、typedef、unnamed bit-fieldには入らない。
+
+### このセッション（続き1398）: Atomic type specifier bit-fieldのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_bitfield_specifier` fixtureにある単一member `_Atomic(unsigned int) value : 3;`だけをClang C11 strict、Native、Wasmで比較した。
+  - member access、initializer、width式派生、typedef、unnamed bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともbit-field member名`value`を指し、Clangは3行25列、Native/WasmはE3064と実トークン`value`を報告した。
+  - 既存の非構造化`expect_parse_fail`をfixture同様の改行とインデントを持つE3064 column 25 assertionへ強化し、`_Atomic` type specifier、内側type-name、幅定数、colonへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、atomic type specifier形成、bit-field layout、width評価、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`value`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.73秒 / user 3.04秒 / sys 0.34秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member access、initializer、width式派生、typedef、unnamed bit-field、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_bitfield_typedef` fixtureの`typedef _Atomic unsigned int atomic_uint;`と単一member `atomic_uint value : 3;`だけをClang strict、Native、Wasmで比較し、typedef経由でもbit-field member名を指すか確認する。member access、initializer、width式派生、unnamed bit-fieldには入らない。
