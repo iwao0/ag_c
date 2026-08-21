@@ -21594,9 +21594,12 @@ static void test_parse_invalid(
       "return *pointer+callback()+(*array_pointer)[0]+"
       "(*array_pointer)[1]+duplicate+qualified+sizeof(pair)+"
       "bits.left+bits.right==0; }");
-  expect_parse_fail(test_suite_session,
-      "typedef int function_type(void); "
-      "_Atomic function_type function; int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "typedef int function_type(void);\n"
+      "_Atomic function_type function;\n"
+      "int main(void) { return 0; }",
+      "E3064", 1);
   expect_parse_fail(test_suite_session,
       "typedef int function_type(void); int main(void) { "
       "_Atomic function_type function; return 0; }");
