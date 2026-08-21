@@ -16011,9 +16011,13 @@ static void test_aggregate_member_resolution_boundary(
   expect_parse_fail(test_suite_session,
       "struct NegativeWidth { unsigned int value : -1; }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(test_suite_session,
-      "struct NamedZeroWidth { unsigned int value : 0; }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct record {\n"
+      "  unsigned int value : 0;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 16);
   expect_parse_fail(test_suite_session,
       "struct BoolWidth { _Bool value : 2; }; "
       "int main(void) { return 0; }");
