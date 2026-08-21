@@ -152,6 +152,7 @@ typedef struct {
 typedef struct {
   node_t base;
   node_t *condition;
+  token_t *condition_token;
 } node_static_assert_t;
 
 // Numeric node.

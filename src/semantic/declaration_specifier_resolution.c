@@ -167,6 +167,7 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
               context->semantic_context, context->global_registry,
               context->local_registry,
               item->value.static_assertion.condition,
+              item->value.static_assertion.condition_token,
               item->value.static_assertion.diagnostic_token))
         return PSX_DECL_SPECIFIER_VALUE_INVALID;
       continue;

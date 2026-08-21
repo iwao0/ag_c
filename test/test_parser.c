@@ -12085,6 +12085,8 @@ static void test_toplevel_static_assert_frontend_boundary(
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_STATIC_ASSERT, item.kind);
   ASSERT_TRUE(item.value.static_assertion.condition != NULL);
+  ASSERT_TRUE(item.value.static_assertion.condition_token != NULL);
+  ASSERT_EQ(TK_NUM, item.value.static_assertion.condition_token->kind);
   ASSERT_EQ(ND_NUM, item.value.static_assertion.condition->kind);
   ASSERT_EQ(0, as_num(item.value.static_assertion.condition)->val);
 
@@ -12121,6 +12123,9 @@ static void test_block_static_assert_syntax_hir_boundary(
       (node_static_assert_t *)syntax_body->body[0];
   node_t *syntax_condition = syntax_assertion->condition;
   ASSERT_TRUE(syntax_condition != NULL);
+  ASSERT_TRUE(syntax_assertion->condition_token != NULL);
+  ASSERT_EQ(TK_NUM, syntax_assertion->condition_token->kind);
+  ASSERT_EQ(TK_EQEQ, syntax_condition->tok->kind);
 
   const psx_typed_hir_tree_t *typed_hir = NULL;
   psx_resolved_hir_build_failure_t failure;
@@ -20022,6 +20027,38 @@ static void test_parse_invalid(
   expect_parse_fail_at_column(
       test_suite_session,
       "int apply(int (*restrict callback)(void));", "E3064", 17);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "_Static_assert(0, \"failure\"); int main(void) { return 0; }",
+      "E3012", 16);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int value=1; _Static_assert(value, \"failure\"); "
+      "int main(void) { return 0; }",
+      "E3010", 29);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { _Static_assert(0, \"failure\"); return 0; }",
+      "E3012", 33);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) { int value=1; "
+      "_Static_assert(value, \"failure\"); return 0; }",
+      "E3010", 46);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "struct Value { _Static_assert(0, \"failure\"); int member; };",
+      "E3012", 31);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "_Static_assert((1, 1), \"failure\"); "
+      "int main(void) { return 0; }",
+      "E3010", 16);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(int count) { int values[count]; "
+      "_Static_assert(sizeof(values)>0, \"failure\"); return 0; }",
+      "E3010", 57);
   expect_parse_ok(test_suite_session,
       "typedef double long OrderedLongDouble; "
       "typedef signed long long SignedWide; "

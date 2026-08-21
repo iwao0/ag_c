@@ -342,7 +342,8 @@ int psx_apply_static_assert_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    const node_t *condition, token_t *diag_tok) {
+    const node_t *condition, token_t *condition_token,
+    token_t *diag_tok) {
   if (!semantic_context || !global_registry || !local_registry || !condition)
     return 0;
   ag_diagnostic_context_t *diagnostics =
@@ -364,16 +365,21 @@ int psx_apply_static_assert_in_contexts(
           .value = constant_result.value,
       },
       &resolution);
+  if (!condition_token)
+    condition_token = condition->tok ? condition->tok : diag_tok;
   if (resolution.status == PSX_STATIC_ASSERT_NOT_CONSTANT) {
-    diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST,
-                   diag_tok, "%s",
-                   diag_message_for_in(diagnostics,
-                       DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST));
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST,
+        condition_token, "%s",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST));
   }
   if (resolution.status == PSX_STATIC_ASSERT_FAILED) {
-    diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED,
-                   diag_tok, "%s",
-                   diag_message_for_in(diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED,
+        condition_token, "%s",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
   }
   return resolution.status == PSX_STATIC_ASSERT_OK;
 }

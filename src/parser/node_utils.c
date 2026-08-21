@@ -1766,13 +1766,15 @@ node_t *psx_node_new_null_statement_syntax_in(
 }
 
 node_t *psx_node_new_static_assert_syntax_in(
-    arena_context_t *arena_context, node_t *condition, token_t *token) {
+    arena_context_t *arena_context, node_t *condition,
+    token_t *condition_token, token_t *token) {
   node_static_assert_t *node = arena_alloc_in(
       arena_context, sizeof(*node));
   if (!node) return NULL;
   node->base.kind = ND_STATIC_ASSERT;
   node->base.tok = token;
   node->condition = condition;
+  node->condition_token = condition_token;
   return &node->base;
 }
 

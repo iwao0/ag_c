@@ -7941,9 +7941,15 @@ if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
     ) ||
     !/parse_assignment_expression/.test(
       staticAssertDeclarationHeader,
+    ) ||
+    !/token_t\s*\*condition_token\s*;/.test(
+      staticAssertDeclarationHeader,
+    ) ||
+    !/tk_expect_ctx\(tokenizer_context, '\('\)[^]*?declaration->condition_token\s*=\s*current_token\(runtime_context\)[^]*?declaration->condition\s*=\s*context->parse_assignment_expression/.test(
+      staticAssertDeclarationSource,
     )) {
   throw new Error(
-    "static assert syntax parsing must depend only on parser runtime and an explicit assignment-expression service",
+    "static assert syntax parsing must depend only on parser runtime, use an explicit assignment-expression service, and retain the condition start token",
   );
 }
 const parserSemanticContextImplementation = await readFile(
@@ -12276,14 +12282,38 @@ if (!/\bpsx_resolve_member_hir_node_spec_in\s*\(/.test(
 if (!/#include\s+"static_assert_resolution\.h"/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/typedef\s+struct\s*\{[^]*?node_t\s+base\s*;[^]*?node_t\s*\*condition\s*;[^]*?token_t\s*\*condition_token\s*;[^]*?\}\s*node_static_assert_t\s*;/.test(
+      astHeader,
+    ) ||
+    !/psx_node_new_static_assert_syntax_in\s*\([^]*?token_t\s*\*condition_token[^]*?node->condition_token\s*=\s*condition_token/.test(
+      nodeUtilsSource,
+    ) ||
+    !/parse_local_static_assert_syntax\s*\([^]*?assertion\.condition[^]*?assertion\.condition_token[^]*?assertion\.diagnostic_token/.test(
+      localDeclarationFrontendSource,
+    ) ||
+    !/int\s+psx_apply_static_assert_in_contexts\s*\([^]*?token_t\s*\*condition_token[^]*?if\s*\(!condition_token\)[^]*?condition->tok[^]*?DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST[^]*?condition_token[^]*?DIAG_ERR_PARSER_STATIC_ASSERT_FAILED[^]*?condition_token/.test(
+      declarationRegistrationSource,
+    ) ||
+    !/static_assertion\.condition[^]*?static_assertion\.condition_token[^]*?static_assertion\.diagnostic_token/.test(
+      scopeGraphFrontendTranslationUnitSource,
+    ) ||
+    !/static_assertion\.condition[^]*?static_assertion\.condition_token[^]*?static_assertion\.diagnostic_token/.test(
+      declarationApplicationSource,
+    ) ||
+    !/static_assertion\.condition[^]*?static_assertion\.condition_token[^]*?static_assertion\.diagnostic_token/.test(
+      declarationSpecifierResolutionSource,
+    ) ||
     !/case\s+ND_STATIC_ASSERT\s*:\s*\{[^]*?psx_resolve_static_assert\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_STATIC_ASSERT\s*:\s*\{[^]*?PSX_STATIC_ASSERT_NOT_CONSTANT[^]*?note_direct_semantic_rejection_at_token\s*\([^]*?assertion->condition_token[^]*?PSX_STATIC_ASSERT_FAILED[^]*?note_direct_semantic_rejection_at_token\s*\([^]*?assertion->condition_token/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/case\s+ND_STATIC_ASSERT\s*:\s*\{[^]*?\.kind\s*=\s*PSX_HIR_NOP/.test(
       syntaxTypedHirResolutionSource,
     )) {
   throw new Error(
-    "block static assertions must resolve through the shared constant rule and become direct HIR NOP statements without mutating Syntax",
+    "static assertions must preserve condition-start tokens across toplevel, aggregate, and block resolution while becoming direct HIR NOP statements",
   );
 }
 

@@ -23,7 +23,8 @@ static node_t *parse_local_static_assert_syntax(void *context) {
       });
   return psx_node_new_static_assert_syntax_in(
       ps_parser_runtime_arena(adapter->runtime_context),
-      assertion.condition, assertion.diagnostic_token);
+      assertion.condition, assertion.condition_token,
+      assertion.diagnostic_token);
 }
 
 static int parse_local_decl_specifier_syntax(

@@ -13,6 +13,7 @@ typedef struct {
 
 typedef struct {
   node_t *condition;
+  token_t *condition_token;
   token_t *diagnostic_token;
 } psx_parsed_static_assert_declaration_t;
 

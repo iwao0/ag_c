@@ -39,6 +39,7 @@ void psx_parse_static_assert_syntax_with_context(
   tk_set_current_token_ctx(
       tokenizer_context, current_token(runtime_context)->next);
   tk_expect_ctx(tokenizer_context, '(');
+  declaration->condition_token = current_token(runtime_context);
   declaration->condition =
       context->parse_assignment_expression(context->context);
   tk_expect_ctx(tokenizer_context, ',');

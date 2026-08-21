@@ -80,6 +80,7 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
       psx_apply_static_assert_in_contexts(
           semantic_context, global_registry, local_registry,
           item->value.static_assertion.condition,
+          item->value.static_assertion.condition_token,
           item->value.static_assertion.diagnostic_token);
       continue;
     }

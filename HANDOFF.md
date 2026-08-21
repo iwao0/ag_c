@@ -38504,3 +38504,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - restrict正本22件のNative/Wasm直接拒否、対象6件のClang strict/Native/Wasm source位置、positive 3形、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。deep expression/declarator、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - restrictの通常宣言、parameter、type-name、type-query位置は閉じた。`_Imaginary`方針差と既に一致したfunction/storage specifierへは戻らず、次も通常サイズのdeclaration/statement制約から既存identifier/keyword/delimiter tokenだけで閉じる差分を少数比較する。`_Alignas`受理方針とduplicate caseの式位置には入らない。
+
+### このセッション（続き1308）: `_Static_assert`のE3010/E3012をcondition先頭へ移した
+- 対象選定:
+  - 式評価を伴わない`_Static_assert` message構文3件、単純void object、void functionのvalue returnはClang C11 strictと既に同じ`)`、message operand、identifier、`return`位置だった。empty translation unitはClangが末尾comment位置、ag_cがcomment除去後EOFを指すsource-manager境界なので保留した。
+  - false condition、floating/object/comma/VLA `sizeof`のnon-ICE conditionでは、Clangがcondition先頭の`0`、`1.0`、`value`、`(`、`sizeof`を指す一方、ag_cは全て`_Static_assert` keywordへ固定していた。`for`初期節のstatic assertionはClangと受理方針が異なる既存境界なので、今回のClang一致対象には含めていない。
+  - condition定数評価、式ASTのoperator token方針、文法受理、巨大入力、fuzz、資源stress、security監査系は変更していない。
+- 原因と変更:
+  - parsed static-assert syntaxはkeyword tokenとcondition ASTを保持していたが、conditionを読む直前のtokenを残していなかった。leaf式の`condition->tok`は先頭を指す一方、binary/comma ASTは設計上operator tokenを保持するため、後からAST rootだけではcondition先頭を復元できなかった。
+  - `_Static_assert(`直後、assignment-expressionをparseする前のcurrent tokenを`condition_token`として専用に保持する。toplevel/aggregate用parsed syntaxとblock用`node_static_assert_t`へ伝播し、共通registrationとdirect Typed HIR rejectionがE3010/E3012 sourceに使う。tokenがない回復状態では従来のcondition AST token、keyword tokenへfallbackする。
+  - condition ASTのoperator token、static-assert resolution status、診断ID・文言、message構文診断、Typed HIRのNOP化は変更していない。
+- coverage:
+  - parser boundaryはparsed toplevelとblock Syntaxがcondition先頭tokenをkeyword/operator tokenと別に保持することを直接固定した。structured diagnosticはtoplevel/block/aggregateのfalse/non-ICEに加え、parenthesized commaとVLA `sizeof` conditionのE3010/E3012 columnを固定する。
+  - design invariantはparse前token capture、parsed/node metadata、toplevel/aggregate/block各consumer、direct failure token伝播を固定し、user-facing文言のexact matchにはしていない。既存fixtureとregistryを使うため新規fixtureは追加していない。
+- 確認:
+  - `static_assert_{false_condition,floating_condition,variable_condition,comma_condition,sizeof_vla}`はClang strict、Native、Wasmが全て拒否し、Native/WasmはE3010/E3012を維持してClangと同じ`0`、`1.0`、`value`、`(`、`sizeof` tokenを指した。block/aggregateのfalse probeも3系統で`0`位置が一致した。
+  - static-assert should_reject正本14件はNative/Wasm合計28/28経路がexit 1を維持した。missing/identifier/non-string messageのE2006/E3011位置も維持し、positiveのtoplevel、block statement、typedef-array-sizeof 3fixtureはClang strict/Native/Wasm全て受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.52秒 / user 3.15秒 / sys 0.28秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.76秒 / user 11.90秒 / sys 1.64秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.10秒 / user 0.77秒 / sys 0.52秒**。`node --check test/test_design_invariants.mjs`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功し、`git diff --check`も成功した。
+- 未実施:
+  - static-assert正本14件のNative/Wasm直接拒否、対象5件とblock/aggregate probeのClang strict/Native/Wasm source位置、message3件、positive3件、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - static-assertのmessageとcondition位置は閉じた。次は既存`sizeof`/`_Alignof`の単純なincomplete/function型fixtureを少数比較し、type-name/keyword tokenだけで閉じる差分を探す。VLA runtime評価、深いdeclarator、`_Alignas`受理方針、duplicate case式には入らない。

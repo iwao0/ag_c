@@ -9304,15 +9304,21 @@ static int preflight_direct_statement_impl(
           },
           &resolution);
       if (resolution.status == PSX_STATIC_ASSERT_NOT_CONSTANT)
-        return note_direct_semantic_rejection(
+        return note_direct_semantic_rejection_at_token(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_NOT_CONSTANT,
-            syntax);
+            syntax,
+            assertion->condition_token
+                ? assertion->condition_token
+                : assertion->condition->tok);
       if (resolution.status == PSX_STATIC_ASSERT_FAILED)
-        return note_direct_semantic_rejection(
+        return note_direct_semantic_rejection_at_token(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_FAILED,
-            syntax);
+            syntax,
+            assertion->condition_token
+                ? assertion->condition_token
+                : assertion->condition->tok);
       return 1;
     }
     case ND_RETURN: {

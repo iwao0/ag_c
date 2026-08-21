@@ -210,6 +210,7 @@ int psx_frontend_next_function_with_resolver(
       psx_apply_static_assert_in_contexts(
           semantic_context, global_registry, local_registry,
           item.value.static_assertion.condition,
+          item.value.static_assertion.condition_token,
           item.value.static_assertion.diagnostic_token);
       continue;
     }

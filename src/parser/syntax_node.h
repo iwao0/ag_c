@@ -23,7 +23,8 @@ node_t *psx_node_new_raw_assign_in(
 node_t *psx_node_new_null_statement_syntax_in(
     arena_context_t *arena_context, token_t *token);
 node_t *psx_node_new_static_assert_syntax_in(
-    arena_context_t *arena_context, node_t *condition, token_t *token);
+    arena_context_t *arena_context, node_t *condition,
+    token_t *condition_token, token_t *token);
 node_t *psx_node_new_compound_literal_in(
     arena_context_t *arena_context,
     psx_type_name_ref_t type_name, node_t *initializer, token_t *token);
