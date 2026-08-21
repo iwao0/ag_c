@@ -39534,3 +39534,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較と1 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member layout、anonymous aggregate、bit-field、typedef resolution、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`typedef_with_static`と`typedef_thread_local`の同一宣言内storage-class衝突2件だけをClang strictと比較し、`static`または`_Thread_local` keywordのtoken選択だけで閉じる場合に限る。typedef name resolution、redeclaration、linkage、nested declaratorには入らない。
+
+### このセッション（続き1357）: typedef/storage-class衝突2件のE3064列を回帰固定した
+- 対象選定:
+  - 前回候補の`typedef_with_static`と`typedef_thread_local`だけをClang C11 strict、Native、Wasmで比較した。
+  - typedef name resolution、redeclaration、linkage、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - Native/Wasmは既にClangと同じ第2storage keywordを指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへ`typedef static`と`typedef _Thread_local`のE3064 column 9を追加した。
+  - 同一宣言内storage-class衝突だけを固定し、受理/拒否、typedef名登録、型形成、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの6/6経路がexit 1だった。Native/Wasm 4/4経路はE3064と`static`または`_Thread_local`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.66秒 / user 3.03秒 / sys 0.32秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較と2 structured columnsで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。typedef name resolution、redeclaration、linkage、nested declarator、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`aggregate_member_static_storage`と`thread_local_aggregate_member`の単純なmember storage-class適用2件だけをClang strictと比較し、`static`または`_Thread_local` keywordのtoken選択だけで閉じる場合に限る。member layout、anonymous aggregate、bit-field、nested declaratorには入らない。
