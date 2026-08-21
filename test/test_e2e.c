@@ -2919,7 +2919,7 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "E3064"},
     {"atomic_typedef_array_type_name_rejected",
      "fixture:test/fixtures/should_reject/atomic_typedef_array_type_name.c",
-     "E3117"},
+     "E3064"},
     {"atomic_incomplete_record_pointer_outer_rejected",
      "fixture:test/fixtures/should_reject/atomic_incomplete_record_pointer_outer.c",
      "E3064"},

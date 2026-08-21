@@ -41201,3 +41201,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。type-name、nested pointer、VLA typedef、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_typedef_array_type_name` fixtureの`sizeof(_Atomic array_type)`だけをClang strict、Native、Wasmで比較する。E2E registryはE3117、近接parser assertionはE3064を期待しているため、まず実際の診断ID・位置とfixture経路の差を確認する。`_Alignof`、compound literal、VLA typedefには広げない。
+
+### このセッション（続き1446）: atomic array typedef type-nameの期待IDと位置を修正した
+- 対象選定:
+  - 前回候補の既存`atomic_typedef_array_type_name` fixtureにある、`sizeof(_Atomic array_type)`だけをClang C11 strict、Native、Wasmで比較し、E2E registryのE3117と近接parser assertionのE3064の差を調べた。
+  - `_Alignof`、compound literal、VLA typedef、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と修正:
+  - compile-fail harnessはexpected_diagをstderr内で厳密に検索しており、E2EのE3117とparserのE3064は同時成立しないことを確認した。
+  - Clangは無効なatomic-qualified array type-nameの`_Atomic`を5行17列へ報告した。Native/Wasmも同じ`_Atomic`を5行17列でE3064・`[type-name]`・実トークン`_Atomic`として報告した。
+  - E2E registryだけが実装とparser契約からずれたE3117を保持していたため、期待IDをE3064へ訂正した。
+  - 既存のE3064 column 17 assertionをfixtureと同じ先頭comment・typedef・空行・sizeof配置を持つE3064 position 5:17 assertionへ強化した。
+  - compiler sourceは変更せず、受理/拒否、type-name resolution、sizeof semantics、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser build/test_e2e`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.61秒 / user 2.96秒 / sys 0.32秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、E2E harness確認、structured position、parser suite全件で境界を確認したため、全compile-fail registry、全E2E、language-analysis、design invariants、1354秒規模の`make test-wasm-js-api`は反復しない。`_Alignof`、compound literal、VLA typedef、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_incomplete_record_pointer_outer` fixtureの`_Atomic struct item *pointer`だけをClang strict、Native、Wasmで比較し、outer pointer declaratorでもincomplete atomic base typeを拒否する診断IDと位置を行まで確認する。complete record、nested pointer、cross-translation-unitには入らない。

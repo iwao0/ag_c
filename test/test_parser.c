@@ -21785,14 +21785,15 @@ static void test_parse_invalid(
       "  return pointer != 0;\n"
       "}",
       "E3064", 3, 1);
-  expect_parse_fail_at_column(
+  expect_parse_fail_at_position(
       test_suite_session,
+      "/* An atomic-qualified array typedef is invalid even in a type name. */\n"
       "typedef int array_type[2];\n"
       "\n"
       "int main(void) {\n"
       "  return sizeof(_Atomic array_type);\n"
       "}",
-      "E3064", 17);
+      "E3064", 5, 17);
   expect_parse_fail_at_column(
       test_suite_session,
       "typedef int array_type[2];\n"
