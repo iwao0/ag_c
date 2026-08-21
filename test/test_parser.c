@@ -21812,8 +21812,11 @@ static void test_parse_invalid(
       "struct Empty {};\n"
       "int main(void) { return 0; }",
       "E3064", 15);
-  expect_parse_fail(test_suite_session,
-      "union Empty {} value; int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "union Empty {} value;\n"
+      "int main(void) { return 0; }",
+      "E3064", 14);
   expect_parse_fail(test_suite_session,
       "typedef struct Empty {} Empty; int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
