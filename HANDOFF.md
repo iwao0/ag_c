@@ -40859,3 +40859,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。二重pointer、union、複合bound式、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`variably_modified_typedef_union_member` fixtureの同じ単一identifier VLA typedefから二重pointerを派生させたunion member `Row **values`だけをClang strict、Native、Wasmで比較し、unionでもVM制約を拒否する診断IDと位置を確認する。struct variantの追加、三重pointer、複合bound式には入らない。
+
+### このセッション（続き1428）: VM union double-pointer memberのE3064位置を固定した
+- 対象選定:
+  - 前回候補の既存`variably_modified_typedef_union_member` fixtureにある、単一identifier `count`をboundに持つblock-scope VLA typedef `Row`から二重pointerを派生させたunion member `Row **values`だけをClang C11 strict、Native、Wasmで比較した。
+  - struct variantの追加、三重pointer、複合bound式、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - ClangはVM union double-pointer memberのmember名`values`を5行11列へ報告した。Native/Wasmも同じ`values`を5行11列でE3064と実トークン`values`として報告した。
+  - 二重pointerでもVLA typedef由来のvariably-modified性が保持され、structと同じaggregate member制約がunionにも適用される位置が三系統で一致することを確認した。
+  - 既存parserにはstruct二重pointerとunion単pointerが別々にあったため両方を保持し、fixtureどおりのunion二重pointerをE3064 position 4:11 assertionとして追加した。
+  - compiler sourceは変更せず、受理/拒否、VLA bound評価、pointer derivation、union layout、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`values`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 4.16秒 / user 3.49秒 / sys 0.35秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較、structured position、parser suite全件で境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。struct variantの追加、三重pointer、複合bound式、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - VLA member fixture群のarray／pointer／pointer typedef／union境界が揃ったため、次は既存`atomic_const_type` fixtureの単一`_Atomic(const int)` declarationだけをClang strict、Native、Wasmで比較し、qualified type拒否の診断IDと位置を行まで確認する。volatile、nested atomic、aggregate atomicには入らない。

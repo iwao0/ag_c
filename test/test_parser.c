@@ -22053,6 +22053,16 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session,
       "void probe(int count) { typedef int Row[count]; "
       "union Item { Row *values; }; }");
+  expect_parse_fail_at_position(
+      test_suite_session,
+      "void probe(int count) {\n"
+      "  typedef int Row[count];\n"
+      "  union Item {\n"
+      "    Row **values;\n"
+      "  };\n"
+      "}\n"
+      "int main(void) { return 0; }",
+      "E3064", 4, 11);
   expect_parse_ok(test_suite_session,
       "void probe(int count) { typedef int Row[count]; "
       "typedef int Fixed[4]; Row *local_pointer=0; "
