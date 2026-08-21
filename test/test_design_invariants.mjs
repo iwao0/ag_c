@@ -9407,6 +9407,29 @@ if (!/psx_validate_parsed_standalone_tag_specifier_constraints_in_context\s*\([^
     "standalone tag declarations must ignore storage, CV, atomic, and alignment specifiers while sharing typedef, restrict, function, and declared-entity constraints",
   );
 }
+const declarationSpecifierConstraintValidator =
+  declarationApplicationSource.match(
+    /int\s+psx_validate_parsed_decl_specifier_constraints_in_context\s*\([^]*?\n\}\n\nvoid\s+psx_apply_parsed_standalone_tag_in_contexts/,
+  )?.[0] ?? "";
+if (!/static\s+token_t\s*\*declaration_specifier_token_for_kinds\s*\([^]*?specifier->diagnostic_token[^]*?token\s*!=\s*fallback[^]*?token->next[^]*?return\s+fallback/.test(
+      declarationApplicationSource,
+    ) ||
+    (declarationSpecifierConstraintValidator.match(
+      /ps_ctx_diagnostics\(semantic_context\),\s*source_token/g,
+    )?.length ?? 0) < 5 ||
+    !/TK_AUTO,\s*TK_REGISTER/.test(
+      declarationSpecifierConstraintValidator,
+    ) ||
+    !/token_t\s+\*source_token\s*=\s*is_function\s*\?[^]*?TK_AUTO,\s*TK_REGISTER[^]*?:\s*diagnostic_token;/.test(
+      declarationSpecifierConstraintValidator,
+    ) ||
+    !/TK_THREAD_LOCAL,\s*TK_AUTO,\s*TK_REGISTER,\s*TK_STATIC/.test(
+      declarationSpecifierConstraintValidator,
+    )) {
+  throw new Error(
+    "storage class constraint diagnostics must point to the offending declaration specifier while preserving file-object declarators",
+  );
+}
 const semanticTypeEntry = semanticTypeIdentitySource.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*psx_semantic_type_entry_t\s*;/,
 );

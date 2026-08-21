@@ -38134,3 +38134,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規5fixtureを3 compilerで直接確認し、parser unitと共通compile-fail registryへ登録したため、全should_reject、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - statement blockによるroot source token破壊は両共通builderで閉じた。次も通常サイズの宣言・statement・value-category制約を少数のClang strict probeから選び、長時間suiteは対応するfocused gateがない場合だけ追加を検討する。
+
+### このセッション（続き1292）: storage class制約のE3064を該当specifierへ移した
+- 対象選定:
+  - `for`初期宣言、switch/loop制御式、単項演算子、compound literal型、`restrict`境界は既存のClang strict・Native/Wasm coverageで閉じていたため重複修正しなかった。
+  - function definition/declarationへ不正な`auto`・`register`を付ける通常サイズの浅い形を比較した。受理可否はClang/ag_cとも拒否で一致したが、Clangがstorage keywordを指すfile/block function形でag_cのE3064は後続の宣言名を指していた。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+- 原因と変更:
+  - 共通declaration specifier validatorはspecifier開始tokenを保持していたが、全制約診断へdeclarator tokenだけを渡していた。
+  - specifier開始からdeclarator直前までを走査し、各制約に該当するstorage keywordだけを選ぶ局所helperを追加した。aggregate member、parameter、file/block function、block-scope `_Thread_local`の既存E3064分岐へ接続し、型形成・名前登録・受理可否は変更していない。
+  - Clangも宣言名を指すfile-scope objectと`for (static int counter; ...)`は従来の宣言名位置を維持した。storage class同士の衝突もparserが第2specifierを既に指すため共通validator側の位置を変更していない。
+  - design invariantは保存済みspecifier tokenからdeclarator直前までの限定走査、対象5分岐が選択したsource tokenを診断へ渡すこと、file-scopeではfunctionだけをspecifier位置へ移すことを固定する。診断文言のexact matchにはしていない。
+- coverage:
+  - should_rejectへ`register_function_definition`と`block_auto_function`を追加し、Native/Wasm共用compile-fail registryへE3064で登録した。fixture一覧とdifferential coverage表も更新した。
+- 確認:
+  - 新規2件と既存代表5件はhost Clang `-std=c11 -pedantic-errors`、ag_c Native、Wasm objectがすべて拒否した。対象となるNative/WasmのE3064は`register`、`auto`、`_Thread_local`、`static`の実際のspecifier token上で一致した。
+  - `file_scope_register_object`と`for_initializer_static_object`は3 compilerが拒否し、Native/WasmはClangと同じ宣言名位置を維持した。合法なfile/block `extern`とfile `static`の対照2件は3 compilerがすべて受理した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、最終実行は**real 3.57秒 / user 3.01秒 / sys 0.24秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.04秒 / user 11.52秒 / sys 1.51秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、最終実行は**real 3.13秒 / user 0.74秒 / sys 0.43秒**。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e`はwarningなしで成功した。
+- 未実施:
+  - 新規2件と代表的な既存違反を3 compiler、合法対照2件を3 compilerで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - storage classのsource tokenは既存specifier列だけで局所的に閉じた。次も通常サイズの宣言・statement制約を少数のClang strict probeから選び、既存coverage済みの領域は再実装しない。

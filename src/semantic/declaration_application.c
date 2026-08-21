@@ -663,6 +663,19 @@ int psx_validate_parsed_standalone_tag_specifier_constraints_in_context(
   return 1;
 }
 
+static token_t *declaration_specifier_token_for_kinds(
+    const psx_parsed_decl_specifier_t *specifier,
+    token_t *fallback, const token_kind_t *kinds, int kind_count) {
+  token_t *token = specifier ? specifier->diagnostic_token : NULL;
+  for (; token && token != fallback && token->kind != TK_EOF;
+       token = token->next) {
+    for (int i = 0; i < kind_count; i++) {
+      if (token->kind == kinds[i]) return token;
+    }
+  }
+  return fallback;
+}
+
 int psx_validate_parsed_decl_specifier_constraints_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier,
@@ -759,8 +772,14 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   }
   if (declaration_context == PSX_DECLARATION_CONTEXT_MEMBER &&
       psx_decl_specifier_has_storage_class(specifier)) {
+    token_t *source_token = declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        (const token_kind_t[]){
+            TK_TYPEDEF, TK_EXTERN, TK_STATIC, TK_AUTO, TK_REGISTER,
+            TK_THREAD_LOCAL},
+        6);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "aggregate member declaration cannot use a storage class");
     return 0;
@@ -768,16 +787,26 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
   if (is_parameter &&
       (has_typedef || type_spec->is_extern || type_spec->is_static ||
        type_spec->is_auto || type_spec->is_thread_local)) {
+    token_t *source_token = declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        (const token_kind_t[]){
+            TK_TYPEDEF, TK_EXTERN, TK_STATIC, TK_AUTO, TK_THREAD_LOCAL},
+        5);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "parameter declaration may only use the 'register' storage class");
     return 0;
   }
   if (declaration_context == PSX_DECLARATION_CONTEXT_FILE &&
       (type_spec->is_auto || type_spec->is_register)) {
+    token_t *source_token = is_function
+        ? declaration_specifier_token_for_kinds(
+              specifier, diagnostic_token,
+              (const token_kind_t[]){TK_AUTO, TK_REGISTER}, 2)
+        : diagnostic_token;
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "file-scope declaration cannot use 'auto' or 'register'");
     return 0;
@@ -787,8 +816,18 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
        type_spec->is_register ||
        (declaration_context == PSX_DECLARATION_CONTEXT_BLOCK &&
         type_spec->is_static))) {
+    const token_kind_t file_kinds[] = {
+        TK_THREAD_LOCAL, TK_AUTO, TK_REGISTER};
+    const token_kind_t block_kinds[] = {
+        TK_THREAD_LOCAL, TK_AUTO, TK_REGISTER, TK_STATIC};
+    token_t *source_token = declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        declaration_context == PSX_DECLARATION_CONTEXT_BLOCK
+            ? block_kinds
+            : file_kinds,
+        declaration_context == PSX_DECLARATION_CONTEXT_BLOCK ? 4 : 3);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "invalid storage class for a function declaration");
     return 0;
@@ -797,8 +836,11 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
       declaration_context == PSX_DECLARATION_CONTEXT_BLOCK &&
       type_spec->is_thread_local &&
       !type_spec->is_static && !type_spec->is_extern) {
+    token_t *source_token = declaration_specifier_token_for_kinds(
+        specifier, diagnostic_token,
+        (const token_kind_t[]){TK_THREAD_LOCAL}, 1);
     ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        ps_ctx_diagnostics(semantic_context), source_token,
         "declaration-specifier",
         "block-scope '_Thread_local' requires 'static' or 'extern'");
     return 0;

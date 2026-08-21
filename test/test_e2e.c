@@ -4477,8 +4477,15 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"auto_function_definition_rejected",
      "fixture:test/fixtures/should_reject/auto_function_definition.c",
      "E3064"},
+    {"register_function_definition_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "register_function_definition.c",
+     "E3064"},
     {"block_static_function_declaration_rejected",
      "fixture:test/fixtures/should_reject/block_static_function.c",
+     "E3064"},
+    {"block_auto_function_declaration_rejected",
+     "fixture:test/fixtures/should_reject/block_auto_function.c",
      "E3064"},
     {"block_scope_extern_initializer_rejected",
      "fixture:test/fixtures/should_reject/"
