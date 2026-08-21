@@ -8593,6 +8593,8 @@ static void parse_analysis_source_body(analysis_parse_state_t *state) {
                      &state->frontend, state->session,
                      state->tokenizer, tokens))
     return;
+  psx_frontend_stream_set_incomplete_source_mode(
+      &state->frontend, 1);
   state->started = 1;
   psx_frontend_function_t function;
   while (psx_frontend_next_function_with_resolver(

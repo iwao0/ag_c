@@ -179,6 +179,12 @@ int psx_frontend_stream_begin(
   return 1;
 }
 
+void psx_frontend_stream_set_incomplete_source_mode(
+    psx_frontend_stream_t *stream, int enabled) {
+  if (!stream) return;
+  stream->is_incomplete_source = enabled ? 1 : 0;
+}
+
 int psx_frontend_next_function_with_resolver(
     psx_frontend_stream_t *stream, psx_frontend_function_t *result,
     psx_frontend_function_resolver_t resolver,
@@ -338,7 +344,8 @@ int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
     return 0;
   ag_diagnostic_context_t *diagnostics =
       ag_compilation_session_diagnostic_context(stream->session);
-  if (!ps_parser_stream_has_external_declaration(&stream->parser) &&
+  if (!stream->is_incomplete_source &&
+      !ps_parser_stream_has_external_declaration(&stream->parser) &&
       !diag_has_error_records_in(diagnostics)) {
     ps_diag_ctx_in(
         diagnostics,

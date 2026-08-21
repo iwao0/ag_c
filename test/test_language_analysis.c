@@ -13944,7 +13944,7 @@ static int test_macro_definition_hover(ag_target_info_t target) {
             &snapshot, "BRANCH_MACRO", AG_LANGUAGE_SYMBOL_MACRO) == NULL &&
             (!hover_symbol(&snapshot) ||
              hover_symbol(&snapshot)->kind != AG_LANGUAGE_SYMBOL_MACRO) &&
-            find_diagnostic(&snapshot, "E3016") == NULL,
+            snapshot.diagnostic_count == 0,
         "inactive macro definition omitted");
   ag_language_analysis_snapshot_dispose(&snapshot);
 
@@ -13956,7 +13956,7 @@ static int test_macro_definition_hover(ag_target_info_t target) {
             (header_bundle_t){0}, defaults, &snapshot, &error),
         "non-define directive analysis");
   CHECK(!hover_symbol(&snapshot) &&
-            find_diagnostic(&snapshot, "E3016") == NULL,
+            snapshot.diagnostic_count == 0,
         "non-define directive has no macro hover");
   ag_language_analysis_snapshot_dispose(&snapshot);
 

@@ -16,6 +16,7 @@ typedef struct {
   psx_parser_name_environment_t local_name_environment;
   ag_compilation_session_t *session;
   unsigned char is_started;
+  unsigned char is_incomplete_source;
 } psx_frontend_stream_t;
 
 typedef struct {
@@ -26,6 +27,8 @@ int psx_frontend_stream_begin(
     psx_frontend_stream_t *stream,
     ag_compilation_session_t *session,
     tokenizer_context_t *tk_ctx, token_t *start);
+void psx_frontend_stream_set_incomplete_source_mode(
+    psx_frontend_stream_t *stream, int enabled);
 int psx_frontend_next_function(
     psx_frontend_stream_t *stream, psx_frontend_function_t *function);
 int psx_frontend_stream_end(psx_frontend_stream_t *stream);

@@ -3409,6 +3409,10 @@ const frontendTranslationUnitSource = await readFile(
   "src/frontend/translation_unit.c",
   "utf8",
 );
+const languageAnalysisSource = await readFile(
+  "src/language_analysis.c",
+  "utf8",
+);
 if (!/ag_source_manager_reset_translation_unit\s*\(\s*session->source_manager\s*\)/.test(
       compilationSessionSource,
     ) ||
@@ -3994,11 +3998,17 @@ if (!/size_t\s+external_declaration_count\s*;/.test(
     !/ps_parser_stream_has_external_declaration\s*\([^]*?external_declaration_count\s*>\s*0/.test(
       parserStreamSource,
     ) ||
-    !/psx_frontend_stream_end\s*\([^]*?!ps_parser_stream_has_external_declaration\s*\(&stream->parser\)[^]*?!diag_has_error_records_in\s*\(diagnostics\)[^]*?translation unit requires at least one external declaration/.test(
+    !/psx_frontend_stream_set_incomplete_source_mode\s*\([^]*?stream->is_incomplete_source\s*=\s*enabled\s*\?\s*1\s*:\s*0/.test(
       frontendTranslationUnitSource,
+    ) ||
+    !/psx_frontend_stream_end\s*\([^]*?!stream->is_incomplete_source[^]*?!ps_parser_stream_has_external_declaration\s*\(&stream->parser\)[^]*?!diag_has_error_records_in\s*\(diagnostics\)[^]*?translation unit requires at least one external declaration/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/parse_analysis_source_body\s*\([^]*?psx_frontend_stream_begin\s*\([^]*?psx_frontend_stream_set_incomplete_source_mode\s*\(\s*&state->frontend,\s*1\s*\)/.test(
+      languageAnalysisSource,
     )) {
   throw new Error(
-    "translation-unit validation must count parsed external declarations rather than source tokens",
+    "translation-unit validation must count declarations while allowing explicit incomplete language-analysis sources",
   );
 }
 if (!/frontend_session_is_complete\s*\([^)]*\)\s*\{\s*return\s+ag_compilation_session_is_complete\s*\(session\)\s*;\s*\}/.test(

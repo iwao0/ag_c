@@ -37985,3 +37985,24 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - negative 2件を3 compiler、positiveをNative/WAT/Wasm objectで直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深いanonymous aggregate、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - initializer要素数、control制御式、enum値範囲、aggregate member重複の受理可否は既存共通経路で閉じている。次も通常サイズの別の宣言・statement制約を少数probeから選び、source metadataの再帰探索や深い式へは広げない。
+
+### このセッション（続き1285）: incompleteなlanguage-analysis sourceからtranslation-unit制約を分離した
+- 対象選定:
+  - function storage class、宣言子なし宣言、UCN、block/static compound literal addressを通常サイズのClang C11 strict probeで確認したが、現行ag_cと一致していたため変更していない。外部c-testsuiteのskip 7件もGNU拡張またはstrict Cで意図的に対象外の形だった。
+  - 長時間の全Wasm JS APIを避けて既存focus群を各60秒上限で計測した。`inline-tags`等は0〜7秒、`same-typedef-declarators`は26秒で完了した一方、`macros` focusだけがinactive `#define`上のcursorで26秒後にE3064 trapした。
+  - 通常コンパイルではmacro定義だけのtranslation unitをC11どおり拒否する必要があるが、language-analysisはcursor位置までのrecovery sourceを解析するため、その位置ではexternal declarationがまだ存在しない正当な未完成状態になる。
+- 原因と変更:
+  - `psx_frontend_stream_end()`へ追加済みのexternal declaration必須検査が、通常コンパイルとlanguage-analysis recoveryの両方へ無条件に適用されていた。Nativeはfatal recoveryでsnapshotまで進める場合があったが、self-host Wasmはraw trapになってmacro focusを中断していた。
+  - frontend streamへ明示的なincomplete-source modeを追加し、language-analysisのparse入口だけが有効化する。終端検査はこのmodeではE3064を出さず、通常のcompiler entryでは従来どおりparser streamのexternal declaration countを要求する。
+  - macro definitionのNative unitはinactive branchとpragma cursorでdiagnosticsが完全に空であることを検査し、design invariantはmodeの設定API、通常終端検査、language-analysis入口での限定使用を固定する。coverage表も通常compileとeditor recoveryの境界を追記した。
+- 確認:
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 4.10秒 / user 3.07秒 / sys 0.23秒**。通常compileの空translation-unit制約を含む。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.83秒 / user 11.78秒 / sys 1.54秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.15秒 / user 0.74秒 / sys 0.44秒**。
+  - `/usr/bin/time -p make wasm-selfhost-api` = **real 44.50秒 / user 42.66秒 / sys 0.95秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-macros` = **wasm language analysis macro tests passed**、**real 51.43秒 / user 51.76秒 / sys 0.53秒**。修正前のE3064 trapを解消した。
+  - `preprocessor_only_translation_unit.c`はag_c NativeとWasm objectの双方が引き続きE3064で拒否した。
+- 未実施:
+  - 51秒のmacro focusがNative/Wasm snapshot parity、inactive directive、再利用/fresh instanceを対象化しているため、1354秒規模の`make test-wasm-js-api`と全E2Eは反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 通常C11制約の主要表は未着手候補なしのため、次も少数Clang strict probeで実差分を確認してから修正する。長時間Wasm検証は変更領域に対応するfocus targetを優先し、全suiteは統合節目へ残す。
