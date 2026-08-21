@@ -21682,10 +21682,15 @@ static void test_parse_invalid(
       "};\n"
       "int main(void) { return 0; }",
       "E3064", 25);
-  expect_parse_fail(test_suite_session,
-      "typedef _Atomic unsigned int atomic_uint; "
-      "struct flags { atomic_uint value : 3; }; "
-      "int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "typedef _Atomic unsigned int atomic_uint;\n"
+      "\n"
+      "struct flags {\n"
+      "  atomic_uint value : 3;\n"
+      "};\n"
+      "int main(void) { return 0; }",
+      "E3064", 15);
   expect_parse_fail(test_suite_session,
       "struct flags { _Atomic unsigned int : 0; }; "
       "int main(void) { return 0; }");
