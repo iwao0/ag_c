@@ -883,7 +883,8 @@ static int flat_initializer_designated_span(
 static int flat_initializer_apply_value(
     psx_flat_initializer_context_t *context,
     const psx_initializer_object_span_t *target,
-    const node_t *value, int range_grouped);
+    const node_t *value, const token_t *value_token,
+    int range_grouped);
 
 static int flat_initializer_next_active_cursor(
     const psx_flat_initializer_context_t *context,
@@ -977,7 +978,7 @@ static int flat_initializer_apply_designated_ranges(
     return flat_initializer_designated_span(
                context, object, entry, ranges, last_target) &&
            flat_initializer_apply_value(
-               context, last_target, entry->value, 1);
+               context, last_target, entry->value, NULL, 1);
   }
   if (!ranges[designator_index].is_range) {
     return flat_initializer_apply_designated_ranges(
@@ -1154,8 +1155,11 @@ static int flat_initializer_apply_list(
         }
       }
     }
+    const token_t *value_token =
+        entry->designator_count == 0 ? entry->tok : NULL;
     if (!flat_initializer_apply_value(
-            context, &target, entry->value, range_grouped))
+            context, &target, entry->value, value_token,
+            range_grouped))
       return 0;
     cursor = target.leaf_end;
   }
@@ -1165,7 +1169,8 @@ static int flat_initializer_apply_list(
 static int flat_initializer_apply_value(
     psx_flat_initializer_context_t *context,
     const psx_initializer_object_span_t *target,
-    const node_t *value, int range_grouped) {
+    const node_t *value, const token_t *value_token,
+    int range_grouped) {
   if (!context || !target || !value) return 0;
   if (value->kind == ND_INIT_LIST) {
     psx_type_shape_t target_shape = {0};
@@ -1198,18 +1203,14 @@ static int flat_initializer_apply_value(
               (int)string->char_width, string->str_prefix_kind,
               &string_plan);
       if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK) {
-        if (status == PSX_CHARACTER_ARRAY_INITIALIZER_OUT_OF_MEMORY) {
-          context->failure_status =
-              PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY;
-        } else if (status ==
-                   PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG) {
-          context->failure_status =
-              PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_TOO_LONG;
-        } else {
-          context->failure_status =
-              PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_INCOMPATIBLE;
-        }
-        return 0;
+        psx_local_initializer_status_t failure_status =
+            status == PSX_CHARACTER_ARRAY_INITIALIZER_OUT_OF_MEMORY
+                ? PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY
+                : status == PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG
+                      ? PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_TOO_LONG
+                      : PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_INCOMPATIBLE;
+        return flat_initializer_fail(
+            context, failure_status, value_token);
       }
       if (string_plan.unit_count !=
           target->leaf_end - target->leaf_begin)

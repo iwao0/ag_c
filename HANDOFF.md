@@ -38788,3 +38788,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3 storage形、前回の配列式control、positive 2群、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。braced string、member、compound literal、多次元配列、prefix型体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 非braced単純文字列の位置は閉じた。次は既存`static_character_array_{embedded_null,concatenated_string}_too_long`と`automatic_character_array_braced_string_too_long`だけを比較し、現在のtoken選択で既にClang strictと一致するか確認する。member、compound literal、多次元配列、prefix型には入らない。
+
+### このセッション（続き1320）: braced文字配列の長すぎる文字列E3027をliteralへ移した
+- 対象選定:
+  - 前回候補の`static_character_array_embedded_null_too_long`と`static_character_array_concatenated_string_too_long`はClang C11 strict、Native、Wasmが既に同じ文字列literalを指していたため変更しなかった。
+  - `char text[2] = {"abc"};`はautomatic fixtureに加えてfile-scopeとstatic localの小型probeを比較した。3 storage形とも拒否するが、Clangは内側の文字列literalを指す一方、Native/Wasmは外側initializer listの`{`を指していた。member、compound literal、多次元配列、designator、prefix型体系、深い式、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 原因と変更:
+  - file/static-localが通るflat initializer plannerは各entryのtokenを既に保持していたが、character-array string plannerの長さ超過・幅不一致statusを変換するときにtokenをfailureへ残していなかった。非designated listの既存`entry->tok`をapply helperへ渡し、この2つのstring failureだけ`flat_initializer_fail()`へ保存する。designated entryの`entry->tok`は`.`または`[`を指すため従来どおりtoken未指定とし、対象外の診断位置を変えていない。
+  - direct flat diagnosticはE3027/E3099に限ってplanのfailure tokenを優先し、tokenがない場合だけ従来のlist tokenへfallbackする。余剰要素、designator failure、通常の型不一致が既に持つtoken選択は変更していない。
+  - automatic direct経路は単一文字列braced初期化を専用fast pathで処理してflat plannerを通らないため、同じ1 entryの値と認識済みstring nodeが一致する場合だけentry tokenを選ぶhelperを追加した。文字数・code-unit幅・終端NUL判定、E3027/E3099 ID・文言、direct非braced経路は変更していない。
+- coverage:
+  - structured diagnosticはfile/automatic/static-localの単一文字列braced E3027 columnを文字列literal開始で固定した。
+  - design invariantはflat plannerの非designated call siteだけがentry tokenを渡し、designated call siteは未指定を維持すること、character-array string failureだけtoken付きfailureへ変換すること、flat/direct fast pathがそのtokenを診断へ渡すことを固定した。designatorのvalue専用token metadataは追加していない。
+  - differential coverage表をdirectおよび単一文字列bracedの3 storage形が文字列literalを指す境界へ更新した。
+- 確認:
+  - file/automatic/static-localのbraced過長文字列はClang strict、Native、Wasmが全て拒否した。修正後のNative/Wasmは3形全てE3027と文字列token`abc`を指し、6/6経路がexit 1だった。
+  - braced prefix不一致`short values[3] = {u"hi"};`も3系統が拒否し、Native/WasmはE3099と文字列token`hi`を指した。非braced過長文字列とfile/localの余剰array initializerはNative/Wasm 6/6経路で従来のliteralまたは余剰要素位置を維持した。
+  - designated member controlの`.text = "abc"`はNative/Wasm 2/2経路でE3027と従来の外側`{`位置を維持し、entry先頭の`.`へredirectしないことを確認した。
+  - positiveの`ordinary_character_array_exact_boundaries`はClang strict、Native、Wasm objectの3/3 compile経路で受理し、Clang/Nativeの2/2 executableもexit 0だった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.62秒 / user 3.07秒 / sys 0.28秒**。
+  - `/usr/bin/time -p make test-language-analysis` = **language analysis tests passed (70 scenarios)**、**real 13.70秒 / user 11.94秒 / sys 1.61秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.24秒 / user 0.78秒 / sys 0.50秒**。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+- 未実施:
+  - 対象3 storage形、prefix/非braced/余剰要素control、positive fixture、structured range、3つの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。member、compound literal、多次元配列、designator chain、prefix型体系、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 単一文字列braced初期化の位置は閉じた。次は既存`character_array_member_string_too_long`と`character_array_compound_literal_string_too_long`だけをClang strictと比較し、今回のflat failure token伝播で既に一致するか確認する。多次元配列、designator、再帰brace、prefix型体系には入らない。

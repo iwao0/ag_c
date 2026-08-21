@@ -7584,6 +7584,36 @@ if (!staticScalarInitializerValidation ||
     "static character-array string diagnostics must use the initializer token while invalid array expressions use the declarator token",
   );
 }
+const flatInitializerApplyValue =
+  explicitDiagnosticInitializerResolutionSource.match(
+    /static int flat_initializer_apply_value\([^]*?\n}\n\nstatic int\ninitializer_type_size/,
+  );
+if (!flatInitializerApplyValue ||
+    !/PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG[^]*?PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_TOO_LONG[^]*?flat_initializer_fail\(\s*context,\s*failure_status,\s*value_token\)/.test(
+      flatInitializerApplyValue[0],
+    ) ||
+    !/value_token\s*=\s*entry->designator_count\s*==\s*0\s*\?\s*entry->tok\s*:\s*NULL[^]*?flat_initializer_apply_value\(\s*context,\s*&target,\s*entry->value,\s*value_token/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    !/flat_initializer_apply_value\(\s*context,\s*last_target,\s*entry->value,\s*NULL,\s*1\)/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    !/status\s*==\s*PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_TOO_LONG\)[^]*?PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG,[^]*?plan->failure_token\s*\?[^]*?:\s*initializer->value_tok/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/status\s*==\s*PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_INCOMPATIBLE\)[^]*?PSX_CHARACTER_ARRAY_INITIALIZER_WIDTH_MISMATCH,[^]*?plan->failure_token\s*\?[^]*?:\s*initializer->value_tok/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/direct_character_array_string_initializer_token\([^]*?list->entries\[0\]\.value\s*==\s*\(const node_t \*\)string[^]*?return list->entries\[0\]\.tok/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/string_initializer_token\s*=\s*direct_character_array_string_initializer_token\([^]*?initializer,\s*string_initializer\)[^]*?reject_direct_character_array_initializer\([^]*?string_initializer_token\s*\?\s*string_initializer_token\s*:\s*initializer->value_tok/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "nondesignated braced character-array string failures must preserve the initializer entry token without redirecting designated entries",
+  );
+}
 if (!/has_variably_modified_type\s*&&\s*object_shape\.kind\s*==\s*PSX_TYPE_ARRAY/.test(
       declarationPipelineSource,
     ) ||

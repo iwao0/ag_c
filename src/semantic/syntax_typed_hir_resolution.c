@@ -8171,11 +8171,15 @@ static int preflight_direct_flat_initializer(
   if (status == PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_TOO_LONG)
     return reject_direct_character_array_initializer(
         context, PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG,
-        initializer->value_tok);
+        plan->failure_token
+            ? (token_t *)plan->failure_token
+            : initializer->value_tok);
   if (status == PSX_LOCAL_INITIALIZER_CHARACTER_ARRAY_INCOMPATIBLE)
     return reject_direct_character_array_initializer(
         context, PSX_CHARACTER_ARRAY_INITIALIZER_WIDTH_MISMATCH,
-        initializer->value_tok);
+        plan->failure_token
+            ? (token_t *)plan->failure_token
+            : initializer->value_tok);
   if (status != PSX_LOCAL_INITIALIZER_OK) return 0;
 
   psx_qual_type_t *evaluation_types = NULL;
@@ -8313,6 +8317,22 @@ static const node_string_t *direct_character_array_string_initializer(
       return (const node_string_t *)list->entries[0].value;
   }
   return NULL;
+}
+
+static token_t *direct_character_array_string_initializer_token(
+    const psx_parsed_initializer_t *initializer,
+    const node_string_t *string) {
+  if (!initializer || !string) return NULL;
+  if (initializer->kind == PSX_DECL_INIT_LIST &&
+      initializer->value &&
+      initializer->value->kind == ND_INIT_LIST) {
+    const node_init_list_t *list =
+        (const node_init_list_t *)initializer->value;
+    if (list->entry_count == 1 && list->entries &&
+        list->entries[0].value == (const node_t *)string)
+      return list->entries[0].tok;
+  }
+  return initializer->value_tok;
 }
 
 static const node_string_t *
@@ -9162,6 +9182,9 @@ static int preflight_direct_local_declaration(
         direct_character_array_string_initializer_for_type(
             context, declaration_qual_type, initializer);
     if (type_shape.kind == PSX_TYPE_ARRAY && string_initializer) {
+      token_t *string_initializer_token =
+          direct_character_array_string_initializer_token(
+              initializer, string_initializer);
       psx_character_array_initializer_status_t status =
           psx_plan_character_array_string_initializer(
               ps_ctx_arena(context->semantic_context),
@@ -9181,7 +9204,10 @@ static int preflight_direct_local_declaration(
       }
       if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK)
         return reject_direct_character_array_initializer(
-            context, status, initializer->value_tok);
+            context, status,
+            string_initializer_token
+                ? string_initializer_token
+                : initializer->value_tok);
     } else if (initializer->has_initializer &&
         initializer->kind == PSX_DECL_INIT_LIST) {
       if (!preflight_direct_flat_initializer(
