@@ -62,6 +62,10 @@ typedef struct {
   int registered_member_count;
   char *conflicting_name;
   int conflicting_name_len;
+  const char *conflicting_source_name;
+  const char *conflicting_source_input;
+  int conflicting_source_byte_offset;
+  int conflicting_source_byte_length;
 } psx_aggregate_member_declaration_resolution_t;
 
 void psx_aggregate_layout_init(

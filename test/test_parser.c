@@ -15569,6 +15569,9 @@ static void test_aggregate_member_resolution_boundary(
     ag_compilation_session_t *test_suite_session) {
   printf("test_aggregate_member_resolution_boundary...\n");
   reset_test_translation_unit_state(test_suite_session);
+  ag_source_manager_set_current_name(
+      ag_compilation_session_source_manager(test_suite_session),
+      "aggregate-member-resolution.c");
 
   ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct LayoutBoundary { "
@@ -15690,6 +15693,27 @@ static void test_aggregate_member_resolution_boundary(
   ASSERT_EQ(4, promoted_record->member_count);
   ASSERT_EQ(16, promoted_record->size);
   ASSERT_EQ(8, promoted_record->alignment);
+  psx_decl_id_t promoted_b_id =
+      ps_ctx_record_member_declaration_id_in(
+          test_semantic_context(test_suite_session),
+          record_ids[3], "b", 1);
+  const psx_scope_declaration_t *promoted_b_declaration =
+      psx_scope_graph_declaration(
+          test_scope_graph(test_suite_session), promoted_b_id);
+  ASSERT_TRUE(promoted_b_declaration != NULL);
+  ASSERT_TRUE(promoted_b_declaration->source_name != NULL);
+  ASSERT_TRUE(strcmp(
+      promoted_b_declaration->source_name,
+      "aggregate-member-resolution.c") == 0);
+  ASSERT_TRUE(promoted_b_declaration->source_input != NULL);
+  const char *promoted_b_source = strstr(
+      promoted_b_declaration->source_input, "int b : 3");
+  ASSERT_TRUE(promoted_b_source != NULL);
+  ASSERT_EQ(
+      (int)(promoted_b_source + 4 -
+            promoted_b_declaration->source_input),
+      promoted_b_declaration->source_byte_offset);
+  ASSERT_EQ(1, promoted_b_declaration->source_byte_length);
   ASSERT_EQ(1, constraint_record->member_count);
   ASSERT_EQ(8, constraint_record->size);
   ASSERT_EQ(8, constraint_record->alignment);
@@ -20311,6 +20335,24 @@ static void test_parse_invalid(
       "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
       "struct Flexible { int count; int values[]; int tail; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Outer {\n"
+      "  int value;\n"
+      "  struct {\n"
+      "    long value;\n"
+      "  };\n"
+      "};\n"
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct Outer {\n"
+      "  int value;\n"
+      "  struct {\n"
+      "    struct {\n"
+      "      long value;\n"
+      "    };\n"
+      "  };\n"
+      "};\n"
       "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
       "struct Bits { double value : 1; }; "

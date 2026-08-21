@@ -5164,6 +5164,22 @@ const declarationRegistrationHeader = await readFile(
   "src/semantic/declaration_registration.h",
   "utf8",
 );
+if (!/record_member_source_declaration\s*\([^]*?ps_ctx_record_member_declaration_id_in[^]*?psx_scope_graph_declaration/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/note_promoted_member_sources\s*\([^]*?psx_scope_graph_note_declaration_source/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/PSX_AGGREGATE_MEMBER_DUPLICATE[^]*?conflicting_source_name\s*=\s*source->source_name[^]*?conflicting_source_byte_offset\s*=\s*source->source_byte_offset/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/PSX_AGGREGATE_MEMBER_DUPLICATE[^]*?token_ident_t\s+promoted_member_token[^]*?conflicting_source_byte_offset[^]*?TK_IDENT[^]*?duplicate_diag_tok\s*=\s*&promoted_member_token\.pp\.base/.test(
+      declarationRegistrationSource,
+    )) {
+  throw new Error(
+    "promoted anonymous member conflicts must retain the nested member diagnostic source",
+  );
+}
 if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
       declarationRegistrationSource,
     )) {

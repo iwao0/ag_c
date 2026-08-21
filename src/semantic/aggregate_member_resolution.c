@@ -361,6 +361,52 @@ static int collect_promoted_aggregate_members(
   return 1;
 }
 
+static const psx_scope_declaration_t *record_member_source_declaration(
+    psx_semantic_context_t *semantic_context,
+    psx_record_id_t record_id, const char *name, int name_len) {
+  if (!semantic_context || record_id == PSX_RECORD_ID_INVALID ||
+      !name || name_len <= 0)
+    return NULL;
+  psx_decl_id_t declaration_id =
+      ps_ctx_record_member_declaration_id_in(
+          semantic_context, record_id, name, name_len);
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_declaration(
+          ps_ctx_scope_graph(semantic_context), declaration_id);
+  if (!declaration || !declaration->source_name ||
+      !declaration->source_input || declaration->source_byte_offset < 0 ||
+      declaration->source_byte_length <= 0)
+    return NULL;
+  return declaration;
+}
+
+static void note_promoted_member_sources(
+    psx_semantic_context_t *semantic_context,
+    psx_record_id_t source_record_id, psx_record_id_t owner_record_id,
+    const psx_record_member_decl_t *promoted_declarations,
+    int promoted_count) {
+  if (!semantic_context || source_record_id == PSX_RECORD_ID_INVALID ||
+      owner_record_id == PSX_RECORD_ID_INVALID ||
+      !promoted_declarations || promoted_count <= 0)
+    return;
+  psx_scope_graph_t *scope_graph = ps_ctx_scope_graph(semantic_context);
+  for (int i = 0; i < promoted_count; i++) {
+    const psx_record_member_decl_t *promoted = &promoted_declarations[i];
+    const psx_scope_declaration_t *source = record_member_source_declaration(
+        semantic_context, source_record_id,
+        promoted->name, promoted->len);
+    psx_decl_id_t destination_id =
+        ps_ctx_record_member_declaration_id_in(
+            semantic_context, owner_record_id,
+            promoted->name, promoted->len);
+    if (!source || destination_id == PSX_DECL_ID_INVALID) continue;
+    (void)psx_scope_graph_note_declaration_source(
+        scope_graph, destination_id, source->source_name,
+        source->source_input, source->source_byte_offset,
+        source->source_byte_length);
+  }
+}
+
 void psx_resolve_aggregate_member_declaration(
     psx_aggregate_layout_state_t *layout,
     const psx_aggregate_member_declaration_request_t *request,
@@ -581,9 +627,6 @@ void psx_resolve_aggregate_member_declaration(
     memcpy(batch_layouts + own_member_count, promoted_layouts,
            (size_t)promoted_count * sizeof(*batch_layouts));
   }
-  free(promoted_declarations);
-  free(promoted_layouts);
-
   int conflict_index = -1;
   int registered =
       batch_count <= 0 ||
@@ -598,12 +641,36 @@ void psx_resolve_aggregate_member_declaration(
           batch_declarations[conflict_index].name;
       resolution->conflicting_name_len =
           batch_declarations[conflict_index].len;
+      if (is_anonymous_aggregate && conflict_index >= own_member_count) {
+        const psx_scope_declaration_t *source =
+            record_member_source_declaration(
+                semantic_context, type_shape.record_id,
+                resolution->conflicting_name,
+                resolution->conflicting_name_len);
+        if (source) {
+          resolution->conflicting_source_name = source->source_name;
+          resolution->conflicting_source_input = source->source_input;
+          resolution->conflicting_source_byte_offset =
+              source->source_byte_offset;
+          resolution->conflicting_source_byte_length =
+              source->source_byte_length;
+        }
+      }
     }
+    free(promoted_declarations);
+    free(promoted_layouts);
     free(batch_declarations);
     free(batch_layouts);
     return;
   }
   resolution->registered_member_count = batch_count;
+  if (is_anonymous_aggregate && promoted_count > 0) {
+    note_promoted_member_sources(
+        semantic_context, type_shape.record_id, layout->record_id,
+        promoted_declarations, promoted_count);
+  }
+  free(promoted_declarations);
+  free(promoted_layouts);
   free(batch_declarations);
   free(batch_layouts);
   *layout = working_layout;

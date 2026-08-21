@@ -13,6 +13,15 @@
 #include "../parser/local_registry.h"
 #include "../source_manager.h"
 
+static int source_line_for_offset(const char *input, int byte_offset) {
+  if (!input || byte_offset < 0) return 0;
+  int line = 1;
+  for (int offset = 0; offset < byte_offset && input[offset]; offset++) {
+    if (input[offset] == '\n') line++;
+  }
+  return line;
+}
+
 static void note_current_declaration_source(
     psx_semantic_context_t *semantic_context,
     psx_c_namespace_t name_space, const char *name, int name_len,
@@ -292,8 +301,34 @@ int psx_apply_aggregate_member_declaration(
         "cannot be an array element");
   }
   if (resolution.status == PSX_AGGREGATE_MEMBER_DUPLICATE) {
+    token_ident_t promoted_member_token = {0};
+    token_t *duplicate_diag_tok = diag_tok;
+    if (resolution.conflicting_source_name &&
+        resolution.conflicting_source_input &&
+        resolution.conflicting_source_byte_offset >= 0 &&
+        resolution.conflicting_source_byte_length > 0) {
+      ag_source_manager_t *sources = diag_context_source_manager(diagnostics);
+      promoted_member_token.pp.base.source_input =
+          resolution.conflicting_source_input;
+      promoted_member_token.pp.base.line_no = source_line_for_offset(
+          resolution.conflicting_source_input,
+          resolution.conflicting_source_byte_offset);
+      promoted_member_token.pp.base.byte_offset =
+          resolution.conflicting_source_byte_offset;
+      promoted_member_token.pp.base.byte_length =
+          resolution.conflicting_source_byte_length;
+      promoted_member_token.pp.base.file_name_id = ag_source_manager_intern_name(
+          sources, resolution.conflicting_source_name);
+      promoted_member_token.pp.base.kind = TK_IDENT;
+      promoted_member_token.str =
+          (char *)resolution.conflicting_source_input +
+          resolution.conflicting_source_byte_offset;
+      promoted_member_token.len =
+          resolution.conflicting_source_byte_length;
+      duplicate_diag_tok = &promoted_member_token.pp.base;
+    }
     ps_diag_ctx_in(diagnostics,
-        diag_tok, "member",
+        duplicate_diag_tok, "member",
         "メンバ '%.*s' は同じaggregate内で重複しています (C11 6.7.2.1)",
         resolution.conflicting_name_len,
         resolution.conflicting_name ? resolution.conflicting_name : "");

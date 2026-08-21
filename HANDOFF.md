@@ -37960,3 +37960,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - negative 3件を3 compiler、positiveを4経路で直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、variadic ABIの再検証、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - hosted `main`のvariadicnessもcanonical function shapeで閉じた。次は`main`やClang固有複合修飾から離れ、通常サイズの別の宣言・statement制約を少数probeから選ぶ。
+
+### このセッション（続き1284）: anonymous aggregate昇格memberの重複診断rangeを修正した
+- 対象選定:
+  - `main`から離れ、通常サイズのinitializer・control statement・enum・aggregate制約を少数のClang C11 strict probeで比較した。initializer要素過多/brace階層、`if`/`while`/`do`/`for`のnon-scalar制御式、enum値範囲は既存coverageと共通診断が揃っていたため変更していない。
+  - 直接member重複とanonymous aggregateから昇格するmember重複はともにClang/ag_cが拒否したが、後者のag_c診断だけが内側の重複名`value`ではなく、identifierを持たない外側anonymous宣言の閉じ`;`を指していた。1段、anonymous sibling、再帰昇格で同じrangeずれを確認した。
+  - 受理規則、aggregate layout、initializer、深い式、巨大入力、security監査系には広げていない。
+- 原因と変更:
+  - anonymous aggregateのmember昇格ではcanonical member declaration/layoutをowner recordへコピーしていたが、ScopeGraphに記録済みの元member source metadataを昇格先bindingへ伝播していなかった。
+  - 共通aggregate member resolverにsource recordのmember declarationを引く小さいhelperを追加し、昇格登録成功時にsource name/input/byte rangeをowner bindingへコピーする。再帰昇格は各成功段で同じmetadataを引き継ぐ。
+  - 昇格batchの登録が重複でrollbackされた場合は、衝突した内側memberのsource metadataをresolutionへ返す。診断層はそのrangeから一時identifier tokenを構成し、既存E3064を実際の重複名へ出す。semantic RecordDeclへsyntax tokenは保持していない。
+- coverage:
+  - parser unitへ直接外側名との1段衝突と再帰昇格衝突を追加した。aggregate member boundaryでは昇格済み`b` bindingのsource name、byte offset、byte lengthが内側宣言名を指すことを構造化metadataで検査し、localized診断文言のexact-match testにはしていない。
+  - should_rejectへ`anonymous_member_direct_name_conflict`と`anonymous_member_recursive_name_conflict`を追加し、Native/Wasm compile-fail registryへE3064で登録した。
+  - design invariantは元member declaration lookup、昇格成功時のScopeGraph source伝播、衝突resolutionのsource range返却、診断用identifier token構築を固定する。differential coverageとshould_reject一覧も更新した。
+- 確認:
+  - negative 2件はhost Clang `-std=c11 -pedantic-errors`、ag_c Native、Wasm objectがすべて拒否した。Native/WasmはともにE3064で一致し、1段形はfixture 5行目、再帰形は6行目の内側`value` tokenを指した。
+  - 衝突しない2個のanonymous memberを使う正例はag_c Native compile/link/run、WAT compile/assemble/validate/`wasm-interp`、Wasm object compile/validateがすべて成功し、WATは`main() => i32:0`だった。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、最終実行は**real 3.87秒 / user 3.15秒 / sys 0.26秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.51秒 / user 0.77秒 / sys 0.51秒**。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 12.49秒 / user 10.90秒 / sys 1.58秒**。
+  - `/usr/bin/time -p make wasm-selfhost-api` = **real 44.25秒 / user 42.49秒 / sys 0.96秒**。`make -q wasm-selfhost-api`もcurrentを確認し、`build/test_e2e`はwarningなしでビルドした。`node --check test/test_design_invariants.mjs`と`git diff --check`も成功した。
+- 未実施:
+  - negative 2件を3 compiler、positiveをNative/WAT/Wasm objectで直接確認したため、全E2Eと全Wasm fixture scanは反復しない。1354秒規模の`make test-wasm-js-api`、深いanonymous aggregate、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - initializer要素数、control制御式、enum値範囲、aggregate member重複の受理可否は既存共通経路で閉じている。次も通常サイズの別の宣言・statement制約を少数probeから選び、source metadataの再帰探索や深い式へは広げない。

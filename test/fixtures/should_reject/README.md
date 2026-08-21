@@ -86,6 +86,7 @@ timeout、または`E0006`内部不変条件違反へ落ちるfixtureが1件で�
 | hosted `main`のvariadic制約 | `variadic_main_function_definition`, `variadic_main_function_declaration`, `variadic_main_block_declaration` |
 | standalone tag宣言のspecifier・宣言対象制約 | `standalone_tag_restrict_qualifier`, `standalone_tag_inline_specifier`, `standalone_tag_noreturn_specifier`, `standalone_anonymous_struct`, `local_standalone_anonymous_union` |
 | aggregate定義のnamed member制約 | `empty_struct_definition`, `empty_union_object`, `empty_struct_typedef`, `local_empty_struct_object`, `static_assert_only_struct`, `unnamed_bitfield_only_struct`, `anonymous_unnamed_bitfield_only` |
+| anonymous aggregateの昇格member名重複 | `anonymous_member_direct_name_conflict`, `anonymous_member_recursive_name_conflict` |
 | translation unitのexternal declaration必須制約 | `empty_translation_unit`, `preprocessor_only_translation_unit` |
 | `for`初期宣言のobject/storage class制約 | `for_initializer_typedef_declaration`, `for_initializer_static_object`, `for_initializer_extern_object`, `for_initializer_function_declaration`, `for_initializer_standalone_tag` |
 | external/internal linkage再宣言制約 | `object_extern_then_static_linkage`, `object_static_then_plain_linkage`, `object_plain_then_static_linkage`, `function_extern_then_static_linkage`, `function_plain_then_static_linkage`, `block_extern_then_file_static_linkage`, `thread_local_extern_then_static_linkage` |

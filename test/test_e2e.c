@@ -2780,6 +2780,14 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "fixture:test/fixtures/should_reject/"
      "anonymous_unnamed_bitfield_only.c",
      "E3064"},
+    {"anonymous_member_direct_name_conflict_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "anonymous_member_direct_name_conflict.c",
+     "E3064"},
+    {"anonymous_member_recursive_name_conflict_rejected",
+     "fixture:test/fixtures/should_reject/"
+     "anonymous_member_recursive_name_conflict.c",
+     "E3064"},
     {"empty_translation_unit_rejected",
      "fixture:test/fixtures/should_reject/empty_translation_unit.c",
      "E3064"},
