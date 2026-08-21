@@ -38070,3 +38070,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 新規negativeと合法対照2件を3 compiler、隣接する既存negative 3件をNative/Wasmで直接確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - address-ofのrvalue member分類は既存共通resolverへ接続した。次も通常サイズのvalue categoryまたは宣言制約を少数のClang strict probeから選び、既存coverage済みの領域は再実装しない。
+
+### このセッション（続き1289）: Wasm language-analysis focusから無関係な先行groupを分離した
+- 対象選定:
+  - enum値範囲、standalone tagへの`_Alignas`、aggregate rvalueを`_Generic`・comma・assignmentで1段包んだmember address、`#include` directive構文を既存coverageとClang C11 strictで確認した。enumとincludeは既存Native/Wasm fixtureで閉じ、残りもClang/ag_cが一致したためcompiler semantic変更は加えていない。深い式・宣言子、巨大入力、fuzz、資源stress、security監査系へは広げていない。
+  - 前回追加した`test-wasm-language-analysis-operand-hover`は全suite約1354秒より短いものの117.68秒を要した。focus対象より前の`basic/documentation`と`macros`が無条件実行されており、operand hoverと無関係な約110秒を占めていた。
+- 変更:
+  - JS suiteの`basic/documentation` groupはfocusなし、または新しい`basic-documentation` focusのときだけ実行する。`macros` groupはfocusなし、または`macros` focusのときだけ実行する。focusなしの全suiteでは両groupとoperand groupの内容・順序を従来どおり維持する。
+  - 後続groupも使う純粋な`byteOffsetForIndex()` helperをmodule scopeへ移し、group guardによって共有helperが消えないようにした。個々のsnapshot、Native/Wasm parity、fresh/reused compiler検査は削減していない。
+  - Makefileへ`test-wasm-language-analysis-basic-documentation`を追加し、basic/documentation groupも全suiteから独立して検証できるようにした。
+- 確認:
+  - `/usr/bin/time -p make test-wasm-language-analysis-basic-documentation` = **wasm language analysis basic and documentation tests passed**、**real 12.36秒 / user 12.90秒 / sys 0.27秒**。
+  - `/usr/bin/time -p make test-wasm-language-analysis-macros` = **wasm language analysis macro tests passed**、**real 24.71秒 / user 25.01秒 / sys 0.37秒**。変更前51.43秒から約52%短縮した。
+  - `/usr/bin/time -p make test-wasm-language-analysis-operand-hover` = **wasm language analysis operand hover tests passed**、最終実行は**real 7.03秒 / user 7.48秒 / sys 0.37秒**。変更前117.68秒から約94%短縮した。
+  - `/usr/bin/time -p ./build/test_language_analysis` = **language analysis tests passed (70 scenarios)**、**real 13.11秒 / user 11.60秒 / sys 1.50秒**。
+  - `/usr/bin/time -p make test-design-invariants` = runtime manifest、design invariants、package exportsすべて成功、**real 3.34秒 / user 0.74秒 / sys 0.41秒**。`node --check tools/wasm_js_api/test_language_analysis.mjs`、新targetの`make -n`、`git diff --check`も成功した。
+- 未実施:
+  - focusなしのcontrol flowは同じ3 groupを同順序で通り、各groupを独立targetで完走したため、1354秒規模の`make test-wasm-js-api`は反復しない。全E2E、深い式・宣言子、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - compiler修正は通常サイズの宣言・statement制約を引き続き少数のClang strict probeから選ぶ。language-analysisのbasic/documentation、macro、operand-hover変更では今回の3 focused targetを使い、全suiteは統合節目へ残す。

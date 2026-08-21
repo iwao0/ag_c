@@ -20,6 +20,10 @@ function reportTestTiming(label) {
   }
 }
 
+function byteOffsetForIndex(source, index) {
+  return Buffer.byteLength(source.slice(0, index));
+}
+
 function symbol(snapshot, name, kind) {
   return snapshot.completionItems.find((item) =>
     item.name === name && item.kind === kind);
@@ -4075,6 +4079,8 @@ if (languageAnalysisFocus === "declarator-array-bounds") {
   process.exit(0);
 }
 
+if (!languageAnalysisFocus ||
+    languageAnalysisFocus === "basic-documentation") {
 const paritySource = {
   name: "main.c",
   source: "/* 日本語 */\n#include <parity.h>\ntypedef unsigned long Size; int global_value;\nint main(int parameter) { const int *local; parity_",
@@ -4734,7 +4740,16 @@ for (let revision = 1; revision <= 3; revision++) {
     }
   }
 }
+reportTestTiming("basic and documentation");
+}
 
+if (languageAnalysisFocus === "basic-documentation") {
+  compiler.dispose();
+  console.log("wasm language analysis basic and documentation tests passed");
+  process.exit(0);
+}
+
+if (!languageAnalysisFocus || languageAnalysisFocus === "macros") {
 const macroProjectSources = [
   "/** project macro v1 */\n" +
     "#define PROJECT_DOC 10\n" +
@@ -4745,7 +4760,6 @@ const macroProjectSources = [
   "#define PROJECT_DOC 30\n" +
     "int macro_project_main(void) { return PROJECT_DOC; }\n",
 ];
-reportTestTiming("basic and documentation");
 const macroProjectCompiler = await createCompiler(wasmModule);
 try {
   for (let revision = 1; revision <= 3; revision++) {
@@ -5175,10 +5189,6 @@ const macroDefinitionCases = [
     rawName: "REDEFINED_MACRO", replacement: "13", parameters: [],
   },
 ];
-
-function byteOffsetForIndex(source, index) {
-  return Buffer.byteLength(source.slice(0, index));
-}
 
 function assertMacroDefinitionSnapshot(result, macroCase, label,
   requireComplete = true) {
@@ -5862,6 +5872,7 @@ for (const macroCase of snakeMacroCases) {
 }
 
 reportTestTiming("macros");
+}
 if (process.env.AGC_LANGUAGE_ANALYSIS_FOCUS === "macros") {
   compiler.dispose();
   console.log("wasm language analysis macro tests passed");
