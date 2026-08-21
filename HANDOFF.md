@@ -39168,3 +39168,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象3 fixture、3 structured column、parser/language-analysis/design-invariantsの短いgateを確認したため、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。folded/converted duplicate case、複合定数式、switch CFG、VLA scope、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`declaration_as_{if,else,while,do,for,switch}_body`の単純statement構文6件だけをClang strictと比較し、body先頭token選択だけで閉じる場合に限る。制御フロー意味解析、VLA、nested statement、deep expressionには入らない。
+
+### このセッション（続き1337）: 制御構文bodyのdeclaration診断位置を回帰固定した
+- 対象選定:
+  - 前回候補の`declaration_as_{if,else,while,do,for,switch}_body` 6件だけをClang C11 strict、Native、Wasmで比較した。
+  - 制御フロー意味解析、VLA、nested statement、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 6件ともNative/Wasmは既にClangと同じbody先頭のdeclaration specifier `int`を指していたため、compiler sourceの変更は不要だった。
+  - structured diagnosticへif/else/while/do/for/switch 6構文のE3064 column 5を追加し、body先頭から診断位置がずれないことを固定した。
+  - differential coverage表へselection/iteration body declarationのsource位置方針を追記した。構文の受理/拒否、E3064 ID・文言は変更していない。
+- 確認:
+  - 対象6 fixtureはClang strict、Native、Wasmの18/18経路がexit 1だった。Native/Wasm 12/12経路はE3064とbody先頭の`int`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.60秒 / user 2.97秒 / sys 0.30秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象6 fixtureの三系統比較と6 structured columnで直接境界を確認するため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。制御フロー意味解析、VLA、nested statement、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`declaration_immediately_after_{label,case,default}`の単純label構文3件だけをClang strictと比較し、declaration先頭token選択だけで閉じる場合に限る。label/switch意味解析、VLA scope、nested statementには入らない。

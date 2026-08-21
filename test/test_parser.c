@@ -20253,6 +20253,57 @@ static void test_parse_invalid(
       "E3064", 10);
   expect_parse_fail_at_column(
       test_suite_session,
+      "int main(void) {\n"
+      "  if (1)\n"
+      "    int value = 0;\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  if (1)\n"
+      "    return 0;\n"
+      "  else\n"
+      "    int value = 0;\n"
+      "  return 1;\n"
+      "}",
+      "E3064", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  while (0)\n"
+      "    int value = 0;\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  do\n"
+      "    int value = 0;\n"
+      "  while (0);\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  for (;;)\n"
+      "    int value = 0;\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "int main(void) {\n"
+      "  switch (1)\n"
+      "    int value = 0;\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 5);
+  expect_parse_fail_at_column(
+      test_suite_session,
       "int main(void) { return (int (*restrict)(void))0; }", "E3064", 32);
   expect_parse_fail_at_column(
       test_suite_session,
