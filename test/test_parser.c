@@ -21600,9 +21600,14 @@ static void test_parse_invalid(
       "_Atomic function_type function;\n"
       "int main(void) { return 0; }",
       "E3064", 1);
-  expect_parse_fail(test_suite_session,
-      "typedef int function_type(void); int main(void) { "
-      "_Atomic function_type function; return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "typedef int function_type(void);\n"
+      "int main(void) {\n"
+      "  _Atomic function_type function;\n"
+      "  return 0;\n"
+      "}",
+      "E3064", 3);
   expect_parse_fail(test_suite_session,
       "typedef int function_type(void); "
       "struct callbacks { _Atomic function_type callback; }; "
