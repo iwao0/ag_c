@@ -21640,9 +21640,12 @@ static void test_parse_invalid(
       "_Atomic array_type values;\n"
       "int main(void) { return 0; }",
       "E3064", 1);
-  expect_parse_fail(test_suite_session,
-      "typedef int array_type[2]; "
-      "_Atomic array_type *pointer; int main(void) { return 0; }");
+  expect_parse_fail_at_column(
+      test_suite_session,
+      "typedef int array_type[2];\n"
+      "_Atomic array_type *pointer;\n"
+      "int main(void) { return 0; }",
+      "E3064", 1);
   expect_parse_fail(test_suite_session,
       "typedef int array_type[2]; "
       "int main(void) { return sizeof(_Atomic array_type); }");

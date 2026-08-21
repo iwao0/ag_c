@@ -40237,3 +40237,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。array使用、pointer派生、type-name、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_typedef_array_pointer_outer` fixtureのarray typedefと`_Atomic array_type *pointer;`だけをClang strict、Native、Wasmで比較し、外側pointer declaratorがarray baseへのAtomic制約の診断位置を変えないか確認する。pointer使用、nested pointer、type-name、initializerには入らない。
+
+### このセッション（続き1395）: outer pointer付きarray typedefへのAtomic qualifierのE3064列を固定した
+- 対象選定:
+  - 前回候補の既存`atomic_typedef_array_pointer_outer` fixtureにあるarray typedefと`_Atomic array_type *pointer;`だけをClang C11 strict、Native、Wasmで比較した。
+  - pointer使用、nested pointer、type-name、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 結果とcoverage:
+  - 三系統ともClangと同じ使用宣言3行1列の`_Atomic`を指し、Native/WasmはE3064を報告した。
+  - 既存の非構造化`expect_parse_fail`を改行付きのE3064 column 1 assertionへ強化し、外側pointer operator、array typedef定義側、pointer identifierへ診断がずれないことを固定した。
+  - compiler sourceは変更せず、受理/拒否、pointer派生、array typedef identity、array bound、canonical QualType、診断ID・文言は変更していない。
+- 確認:
+  - 対象fixtureはClang strict、Native、Wasmの3/3経路がexit 1で、Native/Wasm 2/2経路はE3064と実トークン`_Atomic`を報告した。
+  - `make -j4 build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.71秒 / user 3.02秒 / sys 0.33秒**。
+  - `git diff --check`も成功した。
+- 未実施:
+  - compiler sourceは変更せず、対象fixtureの三系統比較とstructured columnで直接境界を確認したため、language-analysis、design invariants、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。pointer使用、nested pointer、type-name、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_typedef_array_type_name` fixtureの`sizeof(_Atomic array_type)`内のtype-nameだけをClang strict、Native、Wasmで比較し、type-name解決経路でも`_Atomic`を指すか確認する。operand評価、nested expression、pointer派生、initializerには入らない。
