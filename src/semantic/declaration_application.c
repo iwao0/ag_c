@@ -1303,7 +1303,12 @@ void psx_apply_parsed_function_parameters_in_contexts(
       token_t *source_token = psx_declaration_specifier_token_for_kinds(
           &parameter->specifier, parameter->declarator.diagnostic_token,
           (const token_kind_t[]){TK_RESTRICT}, 1);
-      if (source_token == parameter->declarator.diagnostic_token)
+      token_t *pointer_token = psx_atomic_restrict_pointer_token(
+          parameter->specifier.diagnostic_token,
+          parameter->declarator.diagnostic_token, source_token);
+      if (pointer_token)
+        source_token = pointer_token;
+      else if (source_token == parameter->declarator.diagnostic_token)
         source_token = parameter->specifier.diagnostic_token;
       ps_diag_ctx_in(
           ps_ctx_diagnostics(semantic_context),

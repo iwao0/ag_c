@@ -39835,3 +39835,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 対象2 fixtureと近傍2 fixture、parser、design invariantsで直接境界を確認したため、language-analysis、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。parameter、typedef、nested pointer、initializer、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
 - 浅い次候補:
   - 次は既存`atomic_restrict_pointer_parameter`の単純なprototype parameter 1件だけをClang strictと比較し、parameter固有経路の`*`またはqualifier token選択だけで閉じる場合に限る。definition、typedef parameter、callback、nested pointerには入らない。
+
+### このセッション（続き1373）: Atomic/restrict parameterのE3064位置をClangへ揃えた
+- 対象選定:
+  - 前回候補の`atomic_restrict_pointer_parameter` prototypeと、同じparameter declaratorを持つ単純なdefinition一時probeだけをClang C11 strict、Native、Wasmで比較した。
+  - typedef parameter、callback、nested pointer、body expressionの解析、deep expression、巨大入力、fuzz、資源stress、security監査系には広げていない。
+- 修正:
+  - Clangはprototypeを2行20列、definitionを1行20列のpointer operator `*`で拒否する一方、Native/Wasmは両parameter固有失敗経路で`restrict`をE3064 sourceにしていた。
+  - prototypeの`psx_resolve_parameter_declaration()`失敗とdefinitionの`resolve_definition_parameter()`失敗の直後で、前回共通化した`psx_atomic_restrict_pointer_token()`を呼ぶようにした。
+  - 同段Atomic/restrictの場合だけparameter declarator内の`TK_MUL`を使い、通常のscalar restrict parameterは従来どおり`restrict` tokenを維持する。受理/拒否、parameter adjustment、canonical QualType、ABI、診断ID・文言、function bodyは変更していない。
+- coverage:
+  - structured diagnosticへprototypeとdefinitionのE3064 column 20を追加した。
+  - design invariantへ、prototype/definitionの両parameter失敗経路が同じ共有トークン選択を使う境界を追加した。
+- 確認:
+  - prototypeとdefinitionはClang strict、Native、Wasmの6/6経路がexit 1で、Native/Wasm 4/4経路はE3064と実トークン`*`を報告した。
+  - 直接宣言とtype-nameはNativeで引き続き`*`を報告し、`restrict_nonpointer_parameter`はNative/Wasm 2/2経路で従来どおり`restrict`を報告した。
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser`はwarningなしで成功した。
+  - `/usr/bin/time -p ./build/test_parser` = **OK: All unit tests passed**、**real 3.70秒 / user 3.09秒 / sys 0.33秒**。
+  - `/usr/bin/time -p node test/test_design_invariants.mjs` = **design invariants: ok**、**real 3.01秒 / user 0.72秒 / sys 0.47秒**。
+  - `make test-design-invariants`はruntime symbol manifest、design invariants、Wasm JS package exports smokeの全てで成功した。
+  - `git diff --check`も成功した。
+- 未実施:
+  - prototype/definitionの三系統比較と近傍3経路、parser、design invariantsで直接境界を確認したため、language-analysis、全compile-fail registry、全E2E、1354秒規模の`make test-wasm-js-api`は反復しない。typedef parameter、callback、nested pointer、body expression解析、deep expression、巨大入力、fuzz、資源stress、security監査系も実行しない。
+- 浅い次候補:
+  - 次は既存`atomic_specifier_restrict_pointer`の単純な`restrict _Atomic(int *)`直接宣言1件だけをClang strictと比較し、specifier形式で`restrict`・`_Atomic`・`*`のどれを指すかだけで閉じる場合に限る。typedef、parameter、nested pointer、initializerには入らない。

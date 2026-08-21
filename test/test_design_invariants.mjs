@@ -11225,10 +11225,10 @@ if (!/psx_semantic_type_table_pointer_can_be_restrict_qualified\s*\([^]*?pointer
     (syntaxTypedHirResolutionSource.match(
       /psx_type_name_restrict_qualifier_token\(&type_name\)/g,
     )?.length ?? 0) < 2 ||
-    !/resolve_definition_parameter\s*\([^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?parameter->declarator\.diagnostic_token[^]*?TK_RESTRICT[^]*?source_token,\s*"param",\s*"canonical parameter declaration resolution failed"/.test(
+    !/resolve_definition_parameter\s*\([^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?parameter->declarator\.diagnostic_token[^]*?TK_RESTRICT[^]*?psx_atomic_restrict_pointer_token\s*\(\s*parameter->specifier\.diagnostic_token,\s*parameter->declarator\.diagnostic_token,\s*source_token\s*\)[^]*?if\s*\(pointer_token\)\s*source_token\s*=\s*pointer_token[^]*?source_token,\s*"param",\s*"canonical parameter declaration resolution failed"/.test(
       declarationPipelineSource,
     ) ||
-    !/psx_resolve_parameter_declaration\s*\([^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?parameter->declarator\.diagnostic_token[^]*?TK_RESTRICT[^]*?source_token,\s*"param",\s*"canonical prototype parameter resolution failed"/.test(
+    !/psx_resolve_parameter_declaration\s*\([^]*?psx_declaration_specifier_token_for_kinds\s*\([^]*?parameter->declarator\.diagnostic_token[^]*?TK_RESTRICT[^]*?psx_atomic_restrict_pointer_token\s*\(\s*parameter->specifier\.diagnostic_token,\s*parameter->declarator\.diagnostic_token,\s*source_token\s*\)[^]*?if\s*\(pointer_token\)[^]*?source_token\s*=\s*pointer_token[^]*?source_token,\s*"param",\s*"canonical prototype parameter resolution failed"/.test(
       declarationApplicationSource,
     ) ||
     !/psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?psx_semantic_type_table_has_invalid_restrict_qualification[^]*?restrict qualifier requires a pointer to an object or[^]*?incomplete type/.test(
